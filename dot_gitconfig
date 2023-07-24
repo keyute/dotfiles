@@ -13,7 +13,6 @@
 	process = git-lfs filter-process
 	required = true
 	clean = git-lfs clean -- %f
-
 [gpg]
 	format = ssh
 [gpg "ssh"]
@@ -21,7 +20,5 @@
 	allowedSignersFile = ~/.ssh/allowed_signers
 [commit]
 	gpgsign = true
-
 [url "ssh://git@git.keyute.io/"]
 	insteadOf = https://git.keyute.io/
-
