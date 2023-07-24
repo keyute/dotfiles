@@ -6,7 +6,7 @@ Host git.edstem.org
 Match Host git.keyute.io Exec "! nslookup git.keyute.io | grep -qE '10\.0\.2\.9'"
   ProxyCommand /opt/homebrew/bin/cloudflared access ssh --hostname ssh.git.keyute.io
 
-{{ if ne .chezmoi.os "darwin" }}
+{{ if eq .chezmoi.os "darwin" }}
 # Fig ssh integration. Keep at the bottom of this file.
 Match all
   Include ~/.fig/ssh
