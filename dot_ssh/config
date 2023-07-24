@@ -1,15 +1,15 @@
-{{ if eq .chezmoi.os "darwin" }}
+
 Host *
   IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
-{{ end }}
+
 Host git.edstem.org
   IdentityFile "~/.ssh/university_of_sydney.pub"
   IdentitiesOnly yes
 Match Host git.keyute.io Exec "! nslookup git.keyute.io | grep -qE '10\.0\.2\.9'"
   ProxyCommand $HOMEBREW_PREFIX/bin/cloudflared access ssh --hostname ssh.git.keyute.io
 
-{{ if eq .chezmoi.os "darwin" }}
+
 # Fig ssh integration. Keep at the bottom of this file.
 Match all
   Include ~/.fig/ssh
-{{ end }}
+
