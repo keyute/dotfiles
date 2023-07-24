@@ -10,6 +10,7 @@ call plug#end()
 " General Vim Config
 set mouse=a
 set ttimeoutlen=0
+set number
 
 " Cursor for iTerm
 if $TERM_PROGRAM =~ "iTerm"
