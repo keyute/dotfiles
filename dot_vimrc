@@ -11,6 +11,7 @@ call plug#end()
 set mouse=a
 set ttimeoutlen=0
 set number
+set wrap!
 
 " Cursor for iTerm
 if $TERM_PROGRAM =~ "iTerm"
