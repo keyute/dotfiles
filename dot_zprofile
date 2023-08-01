@@ -1,8 +1,8 @@
 # Fig pre block. Keep at the top of this file.
 [[ -f "$HOME/.fig/shell/zprofile.pre.zsh" ]] && builtin source "$HOME/.fig/shell/zprofile.pre.zsh"
+
 # Added by Toolbox App
 export PATH="$PATH:/Users/keyute/Library/Application Support/JetBrains/Toolbox/scripts"
-
 
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
