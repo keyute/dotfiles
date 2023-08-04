@@ -14,5 +14,8 @@ bindkey '^[[B' history-substring-search-down
 
 export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
 
+export GOPRIVATE="git.keyute.io"
+export GOPATH="$HOME/.go"
+
 # Fig post block. Keep at the bottom of this file.
 [[ -f "$HOME/.fig/shell/zshrc.post.zsh" ]] && builtin source "$HOME/.fig/shell/zshrc.post.zsh"
