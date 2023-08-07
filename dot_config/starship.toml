@@ -1,2 +1,5 @@
 [battery]
 disabled = true
+
+[cmd_duration]
+style = 'bold red'

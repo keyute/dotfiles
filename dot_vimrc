@@ -1,8 +1,6 @@
 " Plugin System
 call plug#begin()
 Plug 'itchyny/lightline.vim'
-set laststatus=2
-set noshowmode
 Plug 'neoclide/coc.nvim', {'branch': 'release'}
 Plug 'jiangmiao/auto-pairs'
 Plug 'NLKNguyen/papercolor-theme'
@@ -14,9 +12,12 @@ set mouse=a
 set ttimeoutlen=0
 set number
 set wrap!
-
-" Theme
 colorscheme PaperColor
+
+" Lightline Config
+set laststatus=2
+set noshowmode
+let g:lightline = {'colorscheme': 'PaperColor'}
 
 " Cursor for iTerm
 if $TERM_PROGRAM =~ "iTerm"
