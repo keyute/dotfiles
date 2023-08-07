@@ -74,10 +74,11 @@ require('lazy').setup({
     end
   },
   {
-    "romgrk/barbar.nvim",
+    "akinsho/bufferline.nvim",
     dependencies = {
       "nvim-tree/nvim-web-devicons"
-    }
+    },
+    opts = {}
   },
   {
     "lukas-reineke/indent-blankline.nvim",
