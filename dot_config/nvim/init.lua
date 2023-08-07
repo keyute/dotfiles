@@ -78,7 +78,20 @@ require('lazy').setup({
     dependencies = {
       "nvim-tree/nvim-web-devicons"
     },
-    opts = {}
+    opts = {
+      options = {
+        diagnostics = "coc",
+        diagnostics_indicator = function(_, _, diagnostics_dict, _)
+          local s = " "
+          for e, n in pairs(diagnostics_dict) do
+            local sym = e == "error" and " "
+              or (e == "warning" and " " or "" )
+            s = s .. n .. sym
+          end
+          return s
+        end
+      }
+    }
   },
   {
     "lukas-reineke/indent-blankline.nvim",
