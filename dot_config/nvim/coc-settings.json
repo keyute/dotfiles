@@ -1,3 +1,5 @@
 {
-  "suggest.noselect": true
+  "suggest.noselect": true,
+  "sumneko-lua.enableNvimLuaDev": true,
+  "Lua.workspace.checkThirdParty": false
 }
