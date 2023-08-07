@@ -3,3 +3,6 @@ disabled = true
 
 [cmd_duration]
 style = 'bold red'
+
+[gcloud]
+disabled = true
