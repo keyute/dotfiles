@@ -21,5 +21,8 @@ export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
 export GOPRIVATE="git.keyute.io"
 export GOPATH="$HOME/.go"
 
+alias vim=nvim
+alias vi=nvim
+
 # Fig post block. Keep at the bottom of this file.
 [[ -f "$HOME/.fig/shell/zshrc.post.zsh" ]] && builtin source "$HOME/.fig/shell/zshrc.post.zsh"

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# .vimrc hash: {{ include "dot_vimrc" | sha256sum }}
+# init.vim hash: {{ include "dot_config/nvim/init.vim" | sha256sum }}
 
 vim +'PlugClean!' +qa
 vim +'PlugInstall! --sync' +qa

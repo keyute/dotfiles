@@ -8,23 +8,13 @@ Plug 'vimpostor/vim-lumen'
 call plug#end()
 
 " General Vim Config
-set mouse=a
-set ttimeoutlen=0
 set number
 set wrap!
 colorscheme PaperColor
 
 " Lightline Config
-set laststatus=2
 set noshowmode
 let g:lightline = {'colorscheme': 'PaperColor'}
-
-" Cursor for iTerm
-if $TERM_PROGRAM =~ "iTerm"
-  let &t_SI = "\<Esc>]50;CursorShape=1\x7"
-  let &t_SR = "\<Esc>]50;CursorShape=2\x7"
-  let &t_EI = "\<Esc>]50;CursorShape=0\x7"
-endif
 
 " Indentation
 set expandtab
@@ -41,3 +31,4 @@ inoremap <expr><S-TAB> coc#pum#visible() ? coc#pum#prev(1) : "\<C-h>"
 
 " coc related settings
 let g:coc_global_extensions = ['coc-json', 'coc-yaml', 'coc-vimlsp', 'coc-toml']
+
