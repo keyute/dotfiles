@@ -29,15 +29,6 @@ require('lazy').setup({
     end
   },
   {
-    "windwp/nvim-autopairs",
-    event = "InsertEnter",
-    opts = {
-      check_ts = true,
-      enable_check_bracket_line = true,
-      ignored_next_char = "[%w%.]"
-    }
-  },
-  {
     'NLKNguyen/papercolor-theme',
     config = function()
       vim.cmd([[colorscheme PaperColor]])
@@ -58,12 +49,15 @@ require('lazy').setup({
   {
     "nvim-treesitter/nvim-treesitter",
     build = ":TSUpdate",
-    config = function ()
+    config = function()
       local configs = require("nvim-treesitter.configs")
       configs.setup({
         ensure_installed = {"lua", "json", "yaml", "toml"},
-        highlight = { enable = true }
+        highlight = { enable = true },
+        indent = { enable = true }
       })
+      vim.wo.foldmethod = "expr"
+      vim.wo.foldexpr = "nvim_treesitter#foldexpr()"
     end
   },
   {
@@ -98,6 +92,46 @@ require('lazy').setup({
     opts = {
       show_current_context = true
     }
+  },
+  {
+    "windwp/nvim-autopairs",
+    event = "InsertEnter",
+    opts = {
+      check_ts = true,
+      enable_check_bracket_line = true,
+      ignored_next_char = "[%w%.]"
+    }
+  },
+  {
+    "kevinhwang91/nvim-ufo",
+    dependencies = {
+      "kevinhwang91/promise-async",
+      {
+        "luukvbaal/statuscol.nvim",
+        config = function()
+          local builtin = require("statuscol.builtin")
+          require("statuscol").setup({
+            relculright = true,
+            segments = {
+              {text = {builtin.foldfunc}, click = "v:lua.ScFa"},
+              {text = {"%s"}, click = "v:lua.ScSa"},
+              {text = {builtin.lnumfunc, " "}, click = "v:lua.ScLa"}
+            }
+          })
+          vim.o.fillchars = [[eob: ,fold: ,foldopen:▼,foldsep: ,foldclose:▶]]
+        end
+      }
+    },
+    opts = {
+      provider_selector = function()
+        return {'treesitter', 'indent'}
+      end
+    },
+    config = function()
+      vim.o.foldcolumn = '1'
+      vim.o.foldlevel = 99
+      vim.o.foldlevelstart = 99
+    end
   }
 })
 
