@@ -25,7 +25,7 @@ require('lazy').setup({
       keyset("i", "<TAB>", 'coc#pum#visible() ? coc#pum#next(1) : v:lua.check_back_space() ? "<TAB>" : coc#refresh()', opts)
       keyset("i", "<S-TAB>", [[coc#pum#visible() ? coc#pum#prev(1) : "\<C-h>"]], opts)
 
-      vim.g.coc_global_extensions = {'coc-json', 'coc-yaml', 'coc-toml', 'coc-sumneko-lua'}
+      vim.g.coc_global_extensions = {'coc-json', 'coc-yaml', 'coc-toml', 'coc-sumneko-lua', "coc-sh"}
     end
   },
   {
@@ -52,7 +52,7 @@ require('lazy').setup({
     config = function()
       local configs = require("nvim-treesitter.configs")
       configs.setup({
-        ensure_installed = {"lua", "json", "yaml", "toml"},
+        ensure_installed = {"lua", "json", "yaml", "toml", "bash"},
         highlight = { enable = true },
         indent = { enable = true }
       })
