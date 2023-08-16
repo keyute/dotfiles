@@ -140,6 +140,7 @@ vim.wo.number = true
 vim.wo.wrap = false
 vim.o.clipboard = 'unnamed'
 vim.api.nvim_set_keymap('x', 'd', '"_d', { noremap = true, silent = true })
+vim.o.colorcolumn = "120"
 
 -- Indentation
 vim.o.expandtab = true
