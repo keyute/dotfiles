@@ -118,7 +118,7 @@ require('lazy').setup({
               {text = {builtin.lnumfunc, " "}, click = "v:lua.ScLa"}
             }
           })
-          vim.o.fillchars = [[eob: ,fold: ,foldopen:▼,foldsep: ,foldclose:▶]]
+          vim.o.fillchars = [[eob: ,fold: ,foldopen:,foldsep: ,foldclose:]]
         end
       }
     },
