@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# init.lua hash: {{ include ".config/nvim/init.lua" | sha256sum }}
+
+nvim --headless "+Lazy! sync" +qa
+nvim --headless "+TSUpdateSync" +qa
+nvim --headless "+CocUpdateSync" +qa
