@@ -52,7 +52,7 @@ require('lazy').setup({
     config = function()
       local configs = require("nvim-treesitter.configs")
       configs.setup({
-        ensure_installed = {"lua", "json", "yaml", "toml", "bash"},
+        ensure_installed = {"lua", "json", "yaml", "toml", "bash", "terraform"},
         highlight = { enable = true },
         indent = { enable = true }
       })
