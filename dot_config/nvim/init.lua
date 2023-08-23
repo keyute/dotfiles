@@ -25,14 +25,17 @@ require('lazy').setup({
       keyset("i", "<TAB>", 'coc#pum#visible() ? coc#pum#next(1) : v:lua.check_back_space() ? "<TAB>" : coc#refresh()', opts)
       keyset("i", "<S-TAB>", [[coc#pum#visible() ? coc#pum#prev(1) : "\<C-h>"]], opts)
 
-      vim.g.coc_global_extensions = {"coc-json", "coc-yaml", "coc-toml", "coc-sumneko-lua", "coc-sh", "coc-markdown-preview-enhanced", "coc-webview", "coc-pyright", "coc-vimtex"}
+      vim.g.coc_global_extensions = {
+        "coc-json", "coc-yaml", "coc-toml", "coc-sumneko-lua", "coc-sh", "coc-markdown-preview-enhanced", 
+        "coc-webview", "coc-pyright", "coc-vimtex"
+      }
     end
   },
   {
     'NLKNguyen/papercolor-theme',
     config = function()
-      vim.cmd([[colorscheme PaperColor]])
-    end,
+      vim.cmd.colorscheme('PaperColor')
+    end
   },
   {
     "f-person/auto-dark-mode.nvim",
@@ -49,13 +52,13 @@ require('lazy').setup({
   {
     "nvim-treesitter/nvim-treesitter",
     build = ":TSUpdate",
-    config = function()
-      local configs = require("nvim-treesitter.configs")
-      configs.setup({
-        ensure_installed = {"lua", "json", "yaml", "toml", "bash", "terraform", "python"},
-        highlight = { enable = true },
-        indent = { enable = true }
-      })
+    opts = {
+      ensure_installed = {"lua", "json", "yaml", "toml", "bash", "terraform", "python"},
+      highlight = { enable = true },
+      indent = { enable = true }
+    },
+    main = "nvim-treesitter.configs",
+    init = function()
       vim.wo.foldmethod = "expr"
       vim.wo.foldexpr = "nvim_treesitter#foldexpr()"
     end
@@ -64,7 +67,12 @@ require('lazy').setup({
     "itchyny/lightline.vim",
     config = function()
       vim.o.showmode = false
-      vim.g.lightline = { colorscheme = 'PaperColor' }
+      vim.g.lightline = {
+        colorscheme = 'PaperColor',
+        enable = {
+          tabline = 0
+        }
+      }
     end
   },
   {
@@ -74,6 +82,13 @@ require('lazy').setup({
     },
     opts = {
       options = {
+        offsets = {
+          {
+            filetype = "NvimTree",
+            text = "File Explorer",
+            text_align = "center"
+          }
+        },
         diagnostics = "coc",
         diagnostics_indicator = function(_, _, diagnostics_dict, _)
           local s = " "
@@ -127,13 +142,34 @@ require('lazy').setup({
         return {'treesitter', 'indent'}
       end
     },
-    config = function()
+    init = function()
       vim.o.foldcolumn = '1'
       vim.o.foldlevel = 99
       vim.o.foldlevelstart = 99
     end
   },
-  "lervag/vimtex"
+  "lervag/vimtex",
+  {
+    "nvim-tree/nvim-tree.lua",
+    dependencies = {
+      "nvim-tree/nvim-web-devicons"
+    },
+    opts = {
+      renderer = {
+        group_empty = true
+      },
+      filters = {
+        custom = {
+          ".DS_Store"
+        }
+      },
+    },
+    init = function()
+      vim.g.loaded_netrw = 1
+      vim.g.loaded_netrwPlugin = 1
+      vim.keymap.set("n", "<leader>e", ":NvimTreeFindFileToggle<CR>", {noremap = true, silent = true})
+    end
+  }
 })
 
 -- General Vim Config
