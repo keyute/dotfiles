@@ -5,7 +5,7 @@
 [init]
 	defaultBranch = main
 [core]
-	editor = vim
+	editor = nvim
 [pull]
 	rebase = true
 [filter "lfs"]
@@ -22,3 +22,5 @@
 	gpgsign = true
 [url "ssh://git@git.keyute.io/"]
 	insteadOf = https://git.keyute.io/
+[diff]
+	algorithm = histogram
