@@ -1,4 +1,4 @@
-return {
+local M = {
   "nvim-treesitter/nvim-treesitter",
   build = ":TSUpdate",
   opts = {
@@ -8,9 +8,10 @@ return {
     highlight = { enable = true },
     indent = { enable = true }
   },
-  main = "nvim-treesitter.configs",
-  init = function()
-    vim.wo.foldmethod = "expr"
-    vim.wo.foldexpr = "nvim_treesitter#foldexpr()"
-  end
+  main = "nvim-treesitter.configs"
 }
+
+vim.wo.foldmethod = "expr"
+vim.wo.foldexpr = "nvim_treesitter#foldexpr()"
+
+return M

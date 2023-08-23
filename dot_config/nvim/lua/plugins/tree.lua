@@ -1,4 +1,4 @@
-return {
+local M = {
   "nvim-tree/nvim-tree.lua",
   dependencies = {
     "nvim-tree/nvim-web-devicons"
@@ -12,10 +12,11 @@ return {
         ".DS_Store"
       }
     },
-  },
-  init = function()
-    vim.g.loaded_netrw = 1
-    vim.g.loaded_netrwPlugin = 1
-    vim.keymap.set("n", "<leader>e", ":NvimTreeFindFileToggle<CR>", {noremap = true, silent = true})
-  end
+  }
 }
+
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
+vim.keymap.set("n", "<leader>e", ":NvimTreeFindFileToggle<CR>", {noremap = true, silent = true})
+
+return M

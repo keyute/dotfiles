@@ -14,9 +14,6 @@ return {
       },
       close_icon = '',
       buffer_close_icon = '󰅖',
-      indicator = {
-        style = 'underline'
-      },
       hover = {
         enabled = true,
         delay = 200,
