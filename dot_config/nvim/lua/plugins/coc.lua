@@ -15,7 +15,7 @@ keyset("i", "<S-TAB>", [[coc#pum#visible() ? coc#pum#prev(1) : "\<C-h>"]], opts)
 
 vim.g.coc_global_extensions = {
   "coc-json", "coc-yaml", "coc-toml", "coc-sumneko-lua", "coc-sh", "coc-markdownlint",
-  "coc-webview", "coc-pyright", "coc-vimtex"
+  "coc-webview", "coc-pyright", "coc-vimtex", "coc-java"
 }
 
 return M
