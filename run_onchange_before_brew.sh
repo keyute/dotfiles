@@ -9,4 +9,4 @@ fi
 
 # Brewfile hash: {{ include "dot_Brewfile" | sha256sum }}
 
-brew bundle install --no-upgrade --no-lock --cleanup --global
+brew bundle install --no-lock --cleanup --global
