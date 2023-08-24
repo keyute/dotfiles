@@ -3,7 +3,8 @@ local M = {
   build = ":TSUpdate",
   opts = {
     ensure_installed = {
-      "lua", "json", "yaml", "toml", "bash", "terraform", "python", "markdown", "markdown_inline", "mermaid", "java"
+      "lua", "json", "yaml", "toml", "bash", "terraform", "python", "markdown", "markdown_inline", "mermaid", "java",
+      "kotlin"
     },
     highlight = { enable = true },
     indent = { enable = true }
