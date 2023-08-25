@@ -1,7 +1,8 @@
 local M = {
   "neoclide/coc.nvim",
   branch = "release",
-  event = "VeryLazy"
+  event = "VeryLazy",
+  cmd = {"CocInstall", "CocUpdateSync"}
 }
 
 function _G.check_back_space()
