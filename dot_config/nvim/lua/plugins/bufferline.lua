@@ -1,4 +1,4 @@
-return {
+local M = {
   "akinsho/bufferline.nvim",
   dependencies = {
     "nvim-tree/nvim-web-devicons"
@@ -9,11 +9,14 @@ return {
         {
           filetype = "NvimTree",
           text = "File Explorer",
-          text_align = "center"
+          text_align = "center",
         }
       },
       close_icon = '',
+      modified_icon = '●',
       buffer_close_icon = '󰅖',
+      left_trunc_marker = '',
+      right_trunc_marker = '',
       hover = {
         enabled = true,
         delay = 200,
@@ -32,3 +35,7 @@ return {
     }
   }
 }
+
+vim.o.mousemoveevent = true
+
+return M
