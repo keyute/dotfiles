@@ -6,6 +6,6 @@ local M = {
   priority = 1000
 }
 
-vim.opt.termguicolors = true
+vim.o.termguicolors = true
 
 return M
