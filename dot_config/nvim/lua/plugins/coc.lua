@@ -1,6 +1,7 @@
 local M = {
   "neoclide/coc.nvim",
-  branch = "release"
+  branch = "release",
+  event = "VeryLazy"
 }
 
 function _G.check_back_space()

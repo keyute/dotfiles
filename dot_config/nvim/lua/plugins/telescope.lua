@@ -1,14 +1,11 @@
-local M = {
+return {
   "nvim-telescope/telescope.nvim",
   dependencies = {
     "nvim-lua/plenary.nvim"
   },
-  cmd = "Telescope"
+  cmd = "Telescope",
+  keys = {
+    { "<leader>ff", "<cmd>Telescope find_files<cr>", desc = "Telescope Find Files" },
+    { "<leader>fg", "<cmd>Telescope live_grep<cr>", desc = "Telescope Live Grep" }
+  }
 }
-
-local opts = { silent = true, noremap = true }
-local keyset = vim.keymap.set
-keyset('n', '<leader>ff', ":Telescope find_files<CR>", opts)
-keyset('n', '<leader>fg', ':Telescope live_grep<CR>', opts)
-
-return M
