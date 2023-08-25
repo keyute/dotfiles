@@ -5,7 +5,7 @@ local M = {
     vim.cmd.colorscheme("material")
     require('material').setup({
       plugins = {
-        "indent-blankline", "nvim-tree", "nvim-web-devicons", "gitsigns", "telescope"
+        "indent-blankline", "nvim-tree", "nvim-web-devicons", "gitsigns", "telescope", "which-key"
       },
       contrast = {
         sidebars = true,
