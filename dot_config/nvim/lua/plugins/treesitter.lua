@@ -22,6 +22,7 @@ local M = {
   main = "nvim-treesitter.configs"
 }
 
+vim.o.updatetime = 0
 vim.wo.foldmethod = "expr"
 vim.wo.foldexpr = "nvim_treesitter#foldexpr()"
 

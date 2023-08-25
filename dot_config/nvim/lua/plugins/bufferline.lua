@@ -19,7 +19,7 @@ local M = {
       right_trunc_marker = '',
       hover = {
         enabled = true,
-        delay = 200,
+        delay = 0,
         reveal = {'close'}
       },
       diagnostics = "coc",
@@ -36,6 +36,7 @@ local M = {
   }
 }
 
+vim.o.mouse = 'a'
 vim.o.mousemoveevent = true
 
 return M
