@@ -14,7 +14,7 @@ brew "k9s"
 brew "kubernetes-cli"
 brew "krew"
 brew "minio-mc"
-brew "neovim"
+brew "neovim", args: ["HEAD"]
 brew "node@18", link: true
 brew "openjdk@17", link: true
 brew "python@3.11"
