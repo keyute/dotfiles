@@ -9,7 +9,7 @@ local M = {
   opts = {
     ensure_installed = {
       "lua", "json", "yaml", "toml", "bash", "terraform", "python", "markdown", "markdown_inline", "mermaid", "java",
-      "kotlin"
+      "kotlin", "sql"
     },
     highlight = { enable = true },
     indent = { enable = true },
