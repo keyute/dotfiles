@@ -4,6 +4,7 @@ local M = {
   dependencies = {
     "nvim-treesitter/nvim-treesitter-refactor"
   },
+  event = "VeryLazy",
   opts = {
     ensure_installed = {
       "lua", "json", "yaml", "toml", "bash", "terraform", "python", "markdown", "markdown_inline", "mermaid", "java",

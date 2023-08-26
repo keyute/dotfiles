@@ -3,6 +3,7 @@ local M = {
   dependencies = {
     'nvim-tree/nvim-web-devicons'
   },
+  event = "UIEnter",
   opts = {
     options = {
       theme = "material",
