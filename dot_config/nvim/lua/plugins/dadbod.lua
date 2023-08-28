@@ -1,7 +1,8 @@
 return {
   "kristijanhusak/vim-dadbod-ui",
   dependencies = {
-    'tpope/vim-dadbod'
+    'tpope/vim-dadbod',
+    'kristijanhusak/vim-dadbod-completion'
   },
   cmd = "DBUI",
   keys = {
