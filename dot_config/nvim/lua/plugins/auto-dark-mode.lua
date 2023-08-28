@@ -1,6 +1,6 @@
 return {
   "f-person/auto-dark-mode.nvim",
-  priority = 999,
+  event = "UIEnter",
   opts = {
     update_interval = 1000,
     set_dark_mode = function()
