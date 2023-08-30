@@ -23,7 +23,10 @@ vim.o.cursorline = true
 -- Keymaps
 local keyset = vim.keymap.set
 local keyopts = { silent = true, noremap = true }
+local allModes = {"i", "n", "v"}
 keyset('x', 'd', '"_d', keyopts)
+keyset(allModes, "<ScrollWheelLeft>", "<ScrollWheelRight>", keyopts)
+keyset(allModes, "<ScrollWheelRight>", "<ScrollWheelLeft>", keyopts)
 
 -- Indentation
 vim.o.expandtab = true
