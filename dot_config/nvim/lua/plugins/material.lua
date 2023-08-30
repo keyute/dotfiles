@@ -18,10 +18,18 @@ local M = {
 
 vim.o.termguicolors = true
 
-if vim.o.background == "light" then
-  vim.g.material_style = "lighter"
-else
-  vim.g.material_style = "darker"
+local handle = io.popen("defaults read -g AppleInterfaceStyle")
+if handle then
+  local result = handle:read("*a")
+  handle:close()
+
+  if result:match("^Dark") then
+    vim.o.background = "dark"
+    vim.g.material_style = "darker"
+  else
+    vim.o.background = "light"
+    vim.g.material_style = "lighter"
+  end
 end
 
 return M
