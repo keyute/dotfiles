@@ -24,10 +24,8 @@ if handle then
   handle:close()
 
   if result:match("^Dark") then
-    vim.o.background = "dark"
     vim.g.material_style = "darker"
   else
-    vim.o.background = "light"
     vim.g.material_style = "lighter"
   end
 end
