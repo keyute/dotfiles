@@ -18,4 +18,10 @@ local M = {
 
 vim.o.termguicolors = true
 
+if vim.o.background == "light" then
+  vim.g.material_style = "lighter"
+else
+  vim.g.material_style = "darker"
+end
+
 return M
