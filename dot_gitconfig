@@ -1,7 +1,7 @@
 [user]
 	name = Byran Low
 	email = git@lowbryan.com
-	signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN1cnWkTL+uTHWxf5cjZcFWjKx6SuMwqfdzJRoUlnAww
+	signingkey = key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN1cnWkTL+uTHWxf5cjZcFWjKx6SuMwqfdzJRoUlnAww Signing Key
 [init]
 	defaultBranch = main
 [core]
