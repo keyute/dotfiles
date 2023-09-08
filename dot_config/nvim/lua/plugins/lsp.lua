@@ -11,16 +11,49 @@ return {
     event = 'InsertEnter',
     dependencies = {
       { 'L3MON4D3/LuaSnip' },
-      { 'onsails/lspkind.nvim' }
+      {
+        'onsails/lspkind.nvim',
+        config = function()
+          local lspkind = require('lspkind')
+          lspkind.init({
+            symbol_map = {
+              Copilot = ''
+            }
+          })
+          vim.api.nvim_set_hl(0, "CmpItemKindCopilot", { fg = "#6CC644" })
+        end
+      },
+      {
+        'zbirenbaum/copilot-cmp',
+        dependencies = {
+          {
+            'zbirenbaum/copilot.lua',
+            cmd = "Copilot",
+            opts = {
+              suggestion = { enabled = false },
+              panel = { enabled = false }
+            }
+          }
+        },
+        opts = {}
+      }
     },
     config = function()
       require('lsp-zero.cmp').extend()
       local cmp = require('cmp')
       local cmp_action = require('lsp-zero').cmp_action()
       cmp.setup({
+        sources = {
+          { name = 'copilot' },
+          { name = 'nvim_lsp' }
+        },
         mapping = {
           ['<Tab>'] = cmp_action.tab_complete(),
-          ['<S-Tab>'] = cmp_action.select_prev_or_fallback()
+          ['<S-Tab>'] = cmp_action.select_prev_or_fallback(),
+          ['<CR>'] = cmp.mapping.confirm({
+            behaviour = cmp.ConfirmBehavior.Replace,
+            select = false
+          })
         },
         formatting = {
           fields = { 'abbr', 'kind', 'menu' },
