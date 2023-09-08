@@ -22,5 +22,15 @@ return {
     config = function()
       require("telescope").load_extension("emoji")
     end
+  },
+  {
+    "wintermute-cell/gitignore.nvim",
+    dependencies = {
+      "nvim-telescope/telescope.nvim"
+    },
+    cmd = "Gitignore",
+    keys = {
+      { "<leader>gi", "<cmd>Gitignore<cr>", desc = "Generate gitignore" }
+    }
   }
 }
