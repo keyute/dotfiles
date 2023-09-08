@@ -36,11 +36,18 @@ return {
   {
     'neovim/nvim-lspconfig',
     cmd = 'LspInfo',
-    event = { 'BufReadPre', 'BufNewFile' },
+    event = { 'BufRead', 'BufNewFile' },
     dependencies = {
       { 'hrsh7th/cmp-nvim-lsp' },
       { 'williamboman/mason-lspconfig.nvim' },
-      { 'williamboman/mason.nvim' }
+      { 'williamboman/mason.nvim' },
+      {
+        "kevinhwang91/nvim-ufo",
+        dependencies = {
+          "kevinhwang91/promise-async"
+        },
+        opts = {}
+      }
     },
     config = function()
       local lsp = require('lsp-zero')
@@ -61,6 +68,12 @@ return {
         info = '»'
       })
       require('lspconfig').lua_ls.setup(lsp.nvim_lua_ls())
+      local capabilities = vim.lsp.protocol.make_client_capabilities()
+      capabilities.textDocument.foldingRange = {
+        dynamicRegistration = false,
+        lineFoldingOnly = true
+      }
+      lsp.set_server_config(capabilities)
       lsp.setup()
     end
   }

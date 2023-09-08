@@ -5,6 +5,6 @@ return {
   },
   cmd = "Gitignore",
   keys = {
-    {"<leader>gi", "<cmd>Gitignore<cr>", desc = "Generate gitignore"}
+    { "<leader>gi", "<cmd>Gitignore<cr>", desc = "Generate gitignore" }
   }
 }

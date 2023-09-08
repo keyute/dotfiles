@@ -14,7 +14,7 @@ local M = {
     },
   },
   keys = {
-    {"<leader>e", "<cmd>NvimTreeFindFileToggle<cr>", "Toggle File Explorer"}
+    { "<leader>e", "<cmd>NvimTreeFindFileToggle<cr>", "Toggle File Explorer" }
   }
 }
 
