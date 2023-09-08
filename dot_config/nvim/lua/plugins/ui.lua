@@ -15,7 +15,7 @@ return {
     dependencies = {
       "nvim-tree/nvim-web-devicons"
     },
-    event = { "BufReadPre", "BufNewFile" },
+    event = "VeryLazy",
     opts = {
       options = {
         offsets = {
@@ -54,7 +54,7 @@ return {
   },
   {
     "lukas-reineke/indent-blankline.nvim",
-    event = { 'BufReadPre', 'BufNewFile' },
+    event = { 'BufReadPost', 'BufNewFile' },
     opts = {
       show_current_context = true
     }
@@ -64,7 +64,7 @@ return {
     dependencies = {
       'nvim-tree/nvim-web-devicons'
     },
-    event = { "BufReadPre", "BufNewFile" },
+    event = "VeryLazy",
     opts = {
       options = {
         theme = "material",

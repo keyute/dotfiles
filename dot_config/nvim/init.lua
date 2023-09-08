@@ -11,22 +11,8 @@ if not vim.loop.fs_stat(lazypath) then
   })
 end
 vim.opt.rtp:prepend(lazypath)
-require('lazy').setup("plugins")
-
--- General
-vim.wo.number = true
-vim.wo.wrap = false
-vim.o.clipboard = 'unnamed'
-vim.o.colorcolumn = "120"
-vim.o.cursorline = true
-
--- Keymaps
-local keyset = vim.keymap.set
-local keyopts = { silent = true, noremap = true }
-keyset('x', 'd', '"_d', keyopts)
-
--- Indentation
-vim.o.expandtab = true
-vim.o.tabstop = 2
-vim.o.shiftwidth = 2
-vim.o.softtabstop = 2
+require('lazy').setup({
+  { import = "plugins" },
+  { import = "plugins.extras" },
+  { import = "plugins.extras.lang" }
+})

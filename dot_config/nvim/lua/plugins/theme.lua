@@ -39,5 +39,15 @@ return {
         require('material.functions').change_style("lighter")
       end
     }
+  },
+  {
+    "goolord/alpha-nvim",
+    depdenencies = {
+      "nvim-tree/nvim-web-devicons"
+    },
+    event = "VimEnter",
+    config = function()
+      require('alpha').setup(require('alpha.themes.dashboard').config)
+    end
   }
 }

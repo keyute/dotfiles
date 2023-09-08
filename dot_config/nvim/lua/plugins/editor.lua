@@ -1,4 +1,19 @@
 vim.o.updatetime = 0
+vim.o.timeout = true
+vim.o.timeoutlen = 300
+vim.wo.number = true
+vim.wo.wrap = false
+vim.o.clipboard = 'unnamed'
+vim.o.colorcolumn = "120"
+vim.o.cursorline = true
+vim.o.expandtab = true
+vim.o.tabstop = 2
+vim.o.shiftwidth = 2
+vim.o.softtabstop = 2
+
+local keyset = vim.keymap.set
+local keyopts = { silent = true, noremap = true }
+keyset('x', 'd', '"_d', keyopts)
 
 return {
   {
@@ -23,7 +38,7 @@ return {
   },
   {
     'numToStr/Comment.nvim',
-    event = { "BufReadPre", "BufNewFile" },
+    event = "VeryLazy",
     opts = {}
   },
   {
@@ -32,7 +47,7 @@ return {
     dependencies = {
       "nvim-treesitter/nvim-treesitter-refactor"
     },
-    event = { "BufReadPre", "BufNewFile" },
+    event = { "BufReadPost", "BufNewFile" },
     cmd = "TSUpdateSync",
     opts = {
       ensure_installed = "all",
@@ -47,5 +62,10 @@ return {
       }
     },
     main = "nvim-treesitter.configs"
+  },
+  {
+    "folke/which-key.nvim",
+    event = "VeryLazy",
+    opts = {}
   }
 }
