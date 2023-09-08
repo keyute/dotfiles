@@ -1,6 +1,6 @@
 return {
   "lukas-reineke/indent-blankline.nvim",
-  event = "VeryLazy",
+  event = {'BufReadPre', 'BufNewFile'},
   opts = {
     show_current_context = true
   }

@@ -1,5 +1,18 @@
 local M = {
   "luukvbaal/statuscol.nvim",
+  dependencies = {
+    {
+      "lewis6991/gitsigns.nvim",
+      opts = {}
+    },
+    {
+      "kevinhwang91/nvim-ufo",
+      dependencies = {
+        "kevinhwang91/promise-async"
+      },
+      opts = {}
+    }
+  },
   event = "UIEnter",
   config = function()
     local builtin = require("statuscol.builtin")
