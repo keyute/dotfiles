@@ -48,7 +48,6 @@ return {
       "nvim-treesitter/nvim-treesitter-refactor"
     },
     event = { "BufReadPost", "BufNewFile" },
-    cmd = "TSUpdateSync",
     opts = {
       ensure_installed = "all",
       highlight = { enable = true },
