@@ -70,9 +70,12 @@ return {
   },
   {
     "smjonas/inc-rename.nvim",
-    keys = {
-      {"<leader>rn", "<cmd>IncRename ", desc = "Smart Rename"}
-    },
-    opts = {}
+    event = "VeryLazy",
+    config = function()
+      require("inc_rename").setup()
+      vim.keymap.set("n", "<leader>rn", function()
+        return ":IncRename " .. vim.fn.expand("<cword>")
+      end, {expr = true})
+    end
   }
 }
