@@ -67,5 +67,12 @@ return {
     "folke/which-key.nvim",
     event = "VeryLazy",
     opts = {}
+  },
+  {
+    "smjonas/inc-rename.nvim",
+    keys = {
+      {"<leader>rn", "<cmd>IncRename ", desc = "Smart Rename"}
+    },
+    opts = {}
   }
 }

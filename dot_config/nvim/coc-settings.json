@@ -1,8 +1,0 @@
-{
-  "suggest.noselect": true,
-  "sumneko-lua.enableNvimLuaDev": true,
-  "Lua.workspace.checkThirdParty": false,
-  "markdownlint.config": {
-    "line_length": false
-  }
-}
