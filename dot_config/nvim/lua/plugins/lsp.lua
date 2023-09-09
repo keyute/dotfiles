@@ -84,11 +84,14 @@ return {
     },
     config = function()
       local lsp = require('lsp-zero')
-      lsp.on_attach(function(_, bufnr)
+      lsp.on_attach(function(client, bufnr)
         lsp.default_keymaps({ buffer = bufnr })
         vim.keymap.set({ 'n', 'x' }, 'gq', function()
           vim.lsp.buf.format({ async = false, timeout_ms = 10000 })
         end, { buffer = bufnr, desc = 'Format Buffer' })
+        if client.supports_method('textDocument/inlayHint') then
+          vim.lsp.inlay_hint(bufnr, true)
+        end
       end)
       lsp.ensure_installed({
         'bashls', 'dockerls', 'docker_compose_language_service', 'gopls', 'gradle_ls', 'jsonls', 'jdtls',
@@ -100,7 +103,7 @@ return {
         hint = '⚑',
         info = '»'
       })
-      require('lspconfig').lua_ls.setup(lsp.nvim_lua_ls())
+      require('lspconfig').lua_ls.setup(lsp.nvim_lua_ls({ settings = { Lua = { hint = { enable = true } } } }))
       local capabilities = vim.lsp.protocol.make_client_capabilities()
       capabilities.textDocument.foldingRange = {
         dynamicRegistration = false,
