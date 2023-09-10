@@ -76,5 +76,11 @@ return {
         return ":IncRename " .. vim.fn.expand("<cword>")
       end, {expr = true})
     end
+  },
+  {
+    'nmac427/guess-indent.nvim',
+    event = {"BufReadPre", "BufNewFile"},
+    cmd = "GuessIndent",
+    opts = {}
   }
 }
