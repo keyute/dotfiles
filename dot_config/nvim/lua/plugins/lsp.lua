@@ -104,12 +104,12 @@ return {
         info = '»'
       })
       require('lspconfig').lua_ls.setup(lsp.nvim_lua_ls({ settings = { Lua = { hint = { enable = true } } } }))
-      local capabilities = vim.lsp.protocol.make_client_capabilities()
-      capabilities.textDocument.foldingRange = {
-        dynamicRegistration = false,
-        lineFoldingOnly = true
-      }
-      lsp.set_server_config(capabilities)
+      lsp.set_server_config({
+        capabilities = { textDocument = { foldingRange = {
+          dynamicRegistration = false,
+          lineFoldingOnly = true
+        }}}
+      })
       lsp.setup()
     end
   }
