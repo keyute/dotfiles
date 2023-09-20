@@ -60,13 +60,24 @@ return {
       'nvim-tree/nvim-web-devicons'
     },
     event = "VeryLazy",
-    opts = {
-      options = {
-        theme = "material",
-        section_separators = '',
-        component_separators = '|'
-      }
-    }
+    config = function()
+      local function is_markdown()
+        return vim.bo.filetype == "markdown" or vim.bo.filetype == "asciidoc"
+      end
+      local function wordcount()
+        return tostring(vim.fn.wordcount().words) .. ' words'
+      end
+      require('lualine').setup({
+        options = {
+          theme = "material",
+          section_separators = '',
+          component_separators = '|'
+        },
+        sections = {
+          lualine_x = {'encoding', 'fileformat', 'filetype', {wordcount, cond = is_markdown}}
+        }
+      })
+    end
   },
   {
     "luukvbaal/statuscol.nvim",
