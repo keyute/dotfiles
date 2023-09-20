@@ -74,7 +74,7 @@ return {
           component_separators = '|'
         },
         sections = {
-          lualine_x = {'encoding', 'fileformat', 'filetype', {wordcount, cond = is_markdown}}
+          lualine_x = { 'encoding', 'fileformat', 'filetype', { wordcount, cond = is_markdown } }
         }
       })
     end
