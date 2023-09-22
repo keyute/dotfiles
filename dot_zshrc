@@ -25,5 +25,7 @@ alias vim=nvim
 alias vi=nvim
 export EDITOR="nvim"
 
+setopt INC_APPEND_HISTORY
+
 # Fig post block. Keep at the bottom of this file.
 [[ -f "$HOME/.fig/shell/zshrc.post.zsh" ]] && builtin source "$HOME/.fig/shell/zshrc.post.zsh"
