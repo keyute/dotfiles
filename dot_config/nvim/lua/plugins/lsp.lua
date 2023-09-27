@@ -95,7 +95,7 @@ return {
       end)
       lsp.ensure_installed({
         'bashls', 'dockerls', 'docker_compose_language_service', 'gopls', 'gradle_ls', 'jsonls', 'jdtls',
-        'kotlin_language_server', 'texlab', 'lua_ls', 'marksman', 'pyright', 'sqlls', 'taplo', 'yamlls'
+        'kotlin_language_server', 'texlab', 'lua_ls', 'marksman', 'pyright', 'sqlls', 'taplo', 'yamlls', 'terraformls'
       })
       lsp.set_sign_icons({
         error = '✘',
