@@ -122,7 +122,7 @@ return {
       },
     },
     keys = {
-      { "<leader>e", "<cmd>NvimTreeFindFileToggle<cr>", "Toggle File Explorer" }
+      { "<leader>e", "<cmd>NvimTreeFindFileToggle<cr>", desc = "Toggle File Explorer" }
     }
   },
   {

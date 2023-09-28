@@ -74,16 +74,36 @@ return {
       require("inc_rename").setup()
       vim.keymap.set("n", "<leader>rn", function()
         return ":IncRename " .. vim.fn.expand("<cword>")
-      end, {expr = true})
+      end, { expr = true })
     end
   },
   {
     'nmac427/guess-indent.nvim',
-    event = {"BufReadPre", "BufNewFile"},
+    event = { "BufReadPre", "BufNewFile" },
     cmd = "GuessIndent",
     config = function()
-      require('guess-indent').setup{}
-      vim.api.nvim_create_autocmd("BufWritePost", {command = "GuessIndent"})
+      require('guess-indent').setup {}
+      vim.api.nvim_create_autocmd("BufWritePost", { command = "GuessIndent" })
     end
+  },
+  {
+    "nvim-pack/nvim-spectre",
+    dependencies = {
+      "nvim-lua/plenary.nvim"
+    },
+    keys = {
+      { "<leader>S", "<cmd>lua require('spectre').toggle()<cr>", desc = "Toggle Spectre" },
+      {
+        "<leader>sw",
+        "<cmd>lua require('spectre').open_visual({select_word=true})<cr>",
+        desc = "Search current word",
+        mode = { "n", "v" }
+      },
+      {
+        "<leader>sp",
+        "<cmd>lua require('spectre').open_file_search({select_word=true})<cr>",
+        desc = "Search on current file"
+      }
+    }
   }
 }
