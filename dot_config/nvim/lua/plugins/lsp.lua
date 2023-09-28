@@ -2,8 +2,10 @@ return {
   {
     'VonHeikemen/lsp-zero.nvim',
     lazy = true,
-    config = function()
-      require('lsp-zero.settings').preset({})
+    config = false,
+    init = function()
+      vim.g.lsp_zero_extend_cmp = 0
+      vim.g.lsp_zero_extend_lspconfig = 0
     end
   },
   {
@@ -39,9 +41,10 @@ return {
       }
     },
     config = function()
-      require('lsp-zero.cmp').extend()
+      local lsp_zero = require('lsp-zero')
+      lsp_zero.extend_cmp()
       local cmp = require('cmp')
-      local cmp_action = require('lsp-zero').cmp_action()
+      local cmp_action = lsp_zero.cmp_action()
       cmp.setup({
         sources = {
           { name = 'copilot' },
@@ -83,9 +86,10 @@ return {
       }
     },
     config = function()
-      local lsp = require('lsp-zero')
-      lsp.on_attach(function(client, bufnr)
-        lsp.default_keymaps({ buffer = bufnr })
+      local lsp_zero = require('lsp-zero')
+      lsp_zero.extend_lspconfig()
+      lsp_zero.on_attach(function(client, bufnr)
+        lsp_zero.default_keymaps({ buffer = bufnr })
         vim.keymap.set({ 'n', 'x' }, 'gq', function()
           vim.lsp.buf.format({ async = false, timeout_ms = 10000 })
         end, { buffer = bufnr, desc = 'Format Buffer' })
@@ -93,24 +97,35 @@ return {
           vim.lsp.inlay_hint(bufnr, true)
         end
       end)
-      lsp.ensure_installed({
-        'bashls', 'dockerls', 'docker_compose_language_service', 'gopls', 'gradle_ls', 'jsonls', 'jdtls',
-        'kotlin_language_server', 'texlab', 'lua_ls', 'marksman', 'pyright', 'sqlls', 'taplo', 'yamlls', 'terraformls'
+      require('mason-lspconfig').setup({
+        ensure_installed = {
+          'bashls', 'dockerls', 'docker_compose_language_service', 'gopls', 'gradle_ls', 'jsonls', 'jdtls',
+          'kotlin_language_server', 'texlab', 'lua_ls', 'marksman', 'pyright', 'sqlls', 'taplo', 'yamlls', 'terraformls'
+        },
+        handlers = {
+          lsp_zero.default_setup,
+          lua_ls = function()
+            local lua_opts = lsp_zero.nvim_lua_ls({ settings = { Lua = { hint = { enable = true } } } })
+            require('lspconfig').lua_ls.setup(lua_opts)
+          end
+        }
       })
-      lsp.set_sign_icons({
+      lsp_zero.set_sign_icons({
         error = '✘',
         warn = '▲',
         hint = '⚑',
         info = '»'
       })
-      require('lspconfig').lua_ls.setup(lsp.nvim_lua_ls({ settings = { Lua = { hint = { enable = true } } } }))
-      lsp.set_server_config({
-        capabilities = { textDocument = { foldingRange = {
-          dynamicRegistration = false,
-          lineFoldingOnly = true
-        }}}
+      lsp_zero.set_server_config({
+        capabilities = {
+          textDocument = {
+            foldingRange = {
+              dynamicRegistration = false,
+              lineFoldingOnly = true
+            }
+          }
+        }
       })
-      lsp.setup()
     end
   }
 }
