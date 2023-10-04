@@ -41,6 +41,7 @@ return {
       }
     },
     config = function()
+      vim.o.pumheight = 10
       local lsp_zero = require('lsp-zero')
       lsp_zero.extend_cmp()
       local cmp = require('cmp')
