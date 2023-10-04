@@ -83,7 +83,8 @@ return {
         dependencies = {
           "kevinhwang91/promise-async"
         },
-        opts = {}
+        opts = {},
+        lazy = false
       }
     },
     config = function()
