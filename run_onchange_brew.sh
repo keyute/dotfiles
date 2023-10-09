@@ -7,7 +7,7 @@ else
   echo "Brew is already installed. Skipping installation."
 fi
 
-# Brewfile hash: {{ include "dot_Brewfile" | sha256sum }}
+# Brewfile hash: {{ include ".Brewfile" | sha256sum }}
 
 brew bundle install --no-lock --cleanup --file $(chezmoi source-path .Brewfile)
 brew cleanup --prune=all
