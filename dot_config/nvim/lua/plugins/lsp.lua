@@ -83,7 +83,11 @@ return {
         dependencies = {
           "kevinhwang91/promise-async"
         },
-        opts = {},
+        opts = {
+          provider_selector = function()
+            return {'treesitter', 'indent'}
+          end
+        },
         lazy = false
       }
     },
@@ -117,16 +121,6 @@ return {
         warn = '▲',
         hint = '⚑',
         info = '»'
-      })
-      lsp_zero.set_server_config({
-        capabilities = {
-          textDocument = {
-            foldingRange = {
-              dynamicRegistration = false,
-              lineFoldingOnly = true
-            }
-          }
-        }
       })
     end
   }
