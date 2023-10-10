@@ -6,6 +6,12 @@ function set_win_title(){
 }
 precmd_functions+=(set_win_title)
 
+if type brew &>/dev/null
+then
+    FPATH="$(brew --prefix)/share/zsh/site-functions:$FPATH"
+fi
+autoload -Uz compinit && compinit
+
 source $HOME/.local/share/zsh/fzf-tab/fzf-tab.plugin.zsh
 source $HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $HOMEBREW_PREFIX/share/zsh-history-substring-search/zsh-history-substring-search.zsh
