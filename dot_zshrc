@@ -6,13 +6,21 @@ function set_win_title(){
 }
 precmd_functions+=(set_win_title)
 
-if type brew &>/dev/null
-then
+if type brew &>/dev/null; then
     FPATH="$(brew --prefix)/share/zsh/site-functions:$FPATH"
 fi
-autoload -Uz compinit && compinit
+
+zmodload zsh/complist
+autoload -U compinit; compinit
+_comp_options+=(globdots)
 
 source $HOME/.local/share/zsh/fzf-tab/fzf-tab.plugin.zsh
+zstyle ':completion:complete:git-*:argument-rest' sort false
+if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" != "Dark" ]; then
+    zstyle ':fzf-tab:*' default-color $'\033[30m'
+    zstyle ':fzf-tab:*' fzf-flags --color=light
+fi
+
 source $HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $HOMEBREW_PREFIX/share/zsh-history-substring-search/zsh-history-substring-search.zsh
 source $HOMEBREW_PREFIX/opt/zsh-fast-syntax-highlighting/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
