@@ -44,7 +44,26 @@ return {
     'glepnir/dashboard-nvim',
     event = 'VimEnter',
     opts = {
-      shortcut_type = 'number'
+      shortcut_type = 'number',
+      config = {
+        packages = { enable = false },
+        shortcut = {
+          {
+            icon = '󰱼',
+            desc = ' Files ',
+            group = 'Label',
+            action = 'Telescope find_files',
+            key = 'f'
+          },
+          {
+            icon = '󱎸',
+            desc = ' Grep ',
+            group = 'Number',
+            action = 'Telescope live_grep',
+            key = 'g'
+          }
+        }
+      }
     },
     dependencies = {
       'nvim-tree/nvim-web-devicons'
