@@ -41,13 +41,13 @@ return {
     }
   },
   {
-    "goolord/alpha-nvim",
-    depdenencies = {
-      "nvim-tree/nvim-web-devicons"
+    'glepnir/dashboard-nvim',
+    event = 'VimEnter',
+    opts = {
+      shortcut_type = 'number'
     },
-    event = "VimEnter",
-    config = function()
-      require('alpha').setup(require('alpha.themes.dashboard').config)
-    end
+    dependencies = {
+      'nvim-tree/nvim-web-devicons'
+    }
   }
 }
