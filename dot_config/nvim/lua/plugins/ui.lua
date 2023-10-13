@@ -120,7 +120,8 @@ return {
       },
       filters = {
         custom = {
-          ".DS_Store"
+          ".DS_Store",
+          ".git"
         }
       },
     },
