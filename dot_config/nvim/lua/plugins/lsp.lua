@@ -86,18 +86,13 @@ return {
         opts = {
           provider_selector = function()
             return function(bufnr)
-              local function handleFallbackException(err, providerName)
-                  if type(err) == 'string' and err:match('UfoFallbackException') then
-                      return require('ufo').getFolds(bufnr, providerName)
-                  else
-                      return require('promise').reject(err)
-                  end
+              local function handleFallbackException(providerName)
+                return require('ufo').getFolds(bufnr, providerName)
               end
-
-              return require('ufo').getFolds(bufnr, 'lsp'):catch(function(err)
-                  return handleFallbackException(err, 'treesitter')
-              end):catch(function(err)
-                  return handleFallbackException(err, 'indent')
+              return require('ufo').getFolds(bufnr, 'lsp'):catch(function()
+                return handleFallbackException('treesitter')
+              end):catch(function()
+                return handleFallbackException('indent')
               end)
             end
           end
@@ -120,7 +115,8 @@ return {
       require('mason-lspconfig').setup({
         ensure_installed = {
           'bashls', 'dockerls', 'docker_compose_language_service', 'gopls', 'gradle_ls', 'jsonls', 'jdtls',
-          'kotlin_language_server', 'texlab', 'lua_ls', 'marksman', 'pyright', 'sqlls', 'taplo', 'yamlls', 'terraformls'
+          'kotlin_language_server', 'texlab', 'lua_ls', 'marksman', 'pyright', 'sqlls', 'taplo', 'yamlls', 'terraformls',
+          "helm_ls"
         },
         handlers = {
           lsp_zero.default_setup,
