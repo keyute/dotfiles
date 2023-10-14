@@ -7,7 +7,7 @@ function set_win_title(){
 precmd_functions+=(set_win_title)
 
 if type brew &>/dev/null; then
-    FPATH="$(brew --prefix)/share/zsh/site-functions:$FPATH"
+    FPATH="$(brew --prefix)/share/zsh/site-functions:$(brew --prefix)/share/zsh-completions:$FPATH"
 fi
 
 zmodload zsh/complist

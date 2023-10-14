@@ -5,6 +5,7 @@ tap "cockroachdb/tap"
 tap "homebrew/bundle"
 tap "homebrew/services"
 brew "gettext"
+brew "cairo"
 brew "chezmoi"
 brew "cloudflared"
 brew "cmake"
@@ -14,6 +15,8 @@ brew "git-lfs"
 brew "gnu-sed"
 brew "go"
 brew "golang-migrate"
+brew "harfbuzz"
+brew "openjdk"
 brew "gradle"
 brew "helm"
 brew "k9s"
@@ -23,13 +26,14 @@ brew "minio-mc"
 brew "neovim", args: ["HEAD"]
 brew "node@18", link: true
 brew "openjdk@17", link: true
-brew "postgresql@15", link: true
+brew "postgresql@15", restart_service: true, link: true
 brew "python@3.11"
 brew "rabbitmq", restart_service: true
 brew "redis", restart_service: true
 brew "ripgrep"
 brew "starship"
 brew "zsh-autosuggestions"
+brew "zsh-completions"
 brew "zsh-fast-syntax-highlighting"
 brew "zsh-history-substring-search"
 brew "artginzburg/tap/sudo-touchid"
