@@ -62,7 +62,8 @@ return {
             action = 'Telescope live_grep',
             key = 'g'
           }
-        }
+        },
+        footer = {}
       },
       hide = { tabline = false }
     },
