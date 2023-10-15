@@ -1,3 +1,4 @@
 #!/bin/bash
 
-nvim --headless "+Lazy! sync" +qa
+nvim --headless "+Lazy! install" +qa
+nvim --headless "+Lazy! clean" +qa
