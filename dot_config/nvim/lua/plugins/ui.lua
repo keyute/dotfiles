@@ -119,11 +119,18 @@ return {
         group_empty = true
       },
       filters = {
+        git_ignored = false,
         custom = {
           ".DS_Store",
-          ".git"
+          ".git",
+          ".idea"
         }
       },
+      on_attach = function(bufnr)
+        local api = require('nvim-tree.api')
+        api.config.mappings.default_on_attach(bufnr)
+        vim.keymap.set('n', '<cr>', api.node.open_tab())
+      end
     },
     keys = {
       { "<leader>e", "<cmd>NvimTreeFindFileToggle<cr>", desc = "Toggle File Explorer" }
