@@ -63,7 +63,8 @@ return {
             key = 'g'
           }
         }
-      }
+      },
+      hide = { tabline = false }
     },
     dependencies = {
       'nvim-tree/nvim-web-devicons'
