@@ -133,5 +133,17 @@ return {
         info = '»'
       })
     end
+  },
+  {
+    "lewis6991/hover.nvim",
+    opts = {
+      init = function()
+        require('hover.providers.lsp')
+      end,
+      title = false
+    },
+    keys = {
+      { 'K',  "<cmd>lua require('hover').hover()<cr>",        desc = 'Hover' }
+    }
   }
 }
