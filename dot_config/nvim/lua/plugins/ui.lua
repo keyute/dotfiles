@@ -45,7 +45,22 @@ return {
   },
   {
     "Bekaboo/dropbar.nvim",
-    event = { 'BufReadPost', 'BufWritePost' }
+    event = { 'BufReadPost', 'BufWritePost' },
+    opts = {
+      sources = {
+        terminal = {
+          name = function(buf)
+            local name = vim.api.nvim_buf_get_name(buf)
+            local term = select(2, require('toggleterm.terminal').identify(name))
+            if term then
+              return term.display_name or term.name
+            else
+              return name
+            end
+          end
+        }
+      }
+    }
   },
   {
     "lukas-reineke/indent-blankline.nvim",
