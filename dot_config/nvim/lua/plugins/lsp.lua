@@ -123,6 +123,26 @@ return {
           lua_ls = function()
             local lua_opts = lsp_zero.nvim_lua_ls({ settings = { Lua = { hint = { enable = true } } } })
             require('lspconfig').lua_ls.setup(lua_opts)
+          end,
+          pyright = function()
+            local path = require('lspconfig/util').path
+            local function get_python_path(workspace)
+              if vim.env.VIRTUAL_ENV then
+                return path.join(vim.env.VIRTUAL_ENV, 'bin', 'python')
+              end
+              for _, pattern in ipairs({'*', '.*'}) do
+                local match = vim.fn.glob(path.join(workspace, pattern, 'pyvenv.cfg'))
+                if match ~= '' then
+                  return path.join(path.dirname(match), 'bin', 'python')
+                end
+              end
+              return vim.fn.exepath('python3') or vim.fn.exepath('python') or 'python'
+            end
+            require('lspconfig').pyright.setup({
+              before_init = function(_, config)
+                config.settings.python.pythonPath = get_python_path(config.root_dir)
+              end
+            })
           end
         }
       })
@@ -143,7 +163,7 @@ return {
       title = false
     },
     keys = {
-      { 'K',  "<cmd>lua require('hover').hover()<cr>",        desc = 'Hover' }
+      { 'K', "<cmd>lua require('hover').hover()<cr>", desc = 'Hover' }
     }
   }
 }
