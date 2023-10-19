@@ -92,17 +92,47 @@ return {
       "nvim-lua/plenary.nvim"
     },
     keys = {
-      { "<leader>S", "<cmd>lua require('spectre').toggle()<cr>", desc = "Toggle Spectre" },
+      {
+        "<leader>S",
+        function()
+          require('spectre').toggle()
+        end,
+        desc = "Toggle Spectre"
+      },
       {
         "<leader>sw",
-        "<cmd>lua require('spectre').open_visual({select_word=true})<cr>",
+        function()
+          require('spectre').open_visual({ select_word = true })
+        end,
         desc = "Search current word",
         mode = { "n", "v" }
       },
       {
         "<leader>sp",
-        "<cmd>lua require('spectre').open_file_search({select_word=true})<cr>",
+        function()
+          require('spectre').open_file_search({ select_word = true })
+        end,
         desc = "Search on current file"
+      }
+    }
+  },
+  {
+    "stevearc/conform.nvim",
+    keys = {
+      {
+        "gq",
+        function()
+          require('conform').format({ async = true, lsp_fallback = true })
+        end,
+        mode = "",
+        desc = "Format Buffer"
+      }
+    },
+    opts = {
+      formatters_by_ft = {
+        lua = { "stylua" },
+        python = { "isort", "black" },
+        javascript = { { "prettierd", "prettier" } }
       }
     }
   }

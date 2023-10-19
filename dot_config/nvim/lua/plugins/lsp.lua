@@ -114,9 +114,6 @@ return {
       lsp_zero.extend_lspconfig()
       lsp_zero.on_attach(function(client, bufnr)
         lsp_zero.default_keymaps({ buffer = bufnr })
-        vim.keymap.set({ 'n', 'x' }, 'gq', function()
-          vim.lsp.buf.format({ async = false, timeout_ms = 10000 })
-        end, { buffer = bufnr, desc = 'Format Buffer' })
         if client.supports_method('textDocument/inlayHint') then
           vim.lsp.inlay_hint(bufnr, true)
         end
@@ -172,7 +169,13 @@ return {
       title = false
     },
     keys = {
-      { 'K', "<cmd>lua require('hover').hover()<cr>", desc = 'Hover' }
+      {
+        'K',
+        function()
+          require('hover').hover()
+        end,
+        desc = 'Hover'
+      }
     }
   }
 }
