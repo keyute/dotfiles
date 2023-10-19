@@ -57,6 +57,15 @@ return {
           ['<CR>'] = cmp.mapping.confirm({
             behaviour = cmp.ConfirmBehavior.Replace,
             select = false
+          }),
+          ['<Esc>'] = cmp.mapping({
+            i = function()
+              if cmp.visible() then
+                cmp.close()
+              else
+                vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, true, true), 'n', true)
+              end
+            end
           })
         },
         formatting = {
@@ -130,7 +139,7 @@ return {
               if vim.env.VIRTUAL_ENV then
                 return path.join(vim.env.VIRTUAL_ENV, 'bin', 'python')
               end
-              for _, pattern in ipairs({'*', '.*'}) do
+              for _, pattern in ipairs({ '*', '.*' }) do
                 local match = vim.fn.glob(path.join(workspace, pattern, 'pyvenv.cfg'))
                 if match ~= '' then
                   return path.join(path.dirname(match), 'bin', 'python')
