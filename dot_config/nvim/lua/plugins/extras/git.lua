@@ -8,6 +8,12 @@ return {
     },
     opts = {},
     keys = {
-        { "<leader>gg", "<cmd>Neogit<cr>", desc = "Neogit" }
+        {
+            "<leader>gg",
+            function()
+                require('neogit').open({ kind = "split" })
+            end,
+            desc = "Neogit"
+        }
     }
 }
