@@ -4,7 +4,7 @@ return {
     priority = 1000,
     config = function()
       vim.o.termguicolors = true
-      local handle = io.popen("defaults read -g AppleInterfaceStyle")
+      local handle = io.popen("defaults read -g AppleInterfaceStyle 2>&1")
       if handle then
         local result = handle:read("*a")
         handle:close()
