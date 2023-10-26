@@ -115,7 +115,7 @@ return {
       require("statuscol").setup({
         relculright = true,
         segments = {
-          { text = { builtin.foldfunc, " "},      click = "v:lua.ScFa" },
+          { text = { builtin.foldfunc, " " }, click = "v:lua.ScFa" },
           { text = { "%s" },                  click = "v:lua.ScSa" },
           { text = { builtin.lnumfunc, " " }, click = "v:lua.ScLa" }
         }
@@ -150,8 +150,16 @@ return {
     event = "VeryLazy",
     opts = {
       presets = {
-        inc_rename = true
-      }
+        inc_rename = true,
+        long_message_to_split = true
+      },
+      lsp = {
+        override = {
+          ["vim.lsp.util.convert_input_to_markdown_lines"] = true,
+          ["vim.lsp.util.stylize_markdown"] = true,
+          ["cmp.entry.get_documentation"] = true
+        }
+      },
     },
     dependencies = {
       "MunifTanjim/nui.nvim",
