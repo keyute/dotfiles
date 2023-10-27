@@ -122,7 +122,7 @@ return {
         ensure_installed = {
           'bashls', 'dockerls', 'docker_compose_language_service', 'gopls', 'gradle_ls', 'jsonls', 'jdtls',
           'kotlin_language_server', 'texlab', 'lua_ls', 'marksman', 'pyright', 'sqlls', 'taplo', 'yamlls', 'terraformls',
-          "helm_ls"
+          "helm_ls", "ltex"
         },
         handlers = {
           lsp_zero.default_setup,

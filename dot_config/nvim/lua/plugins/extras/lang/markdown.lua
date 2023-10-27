@@ -1,13 +1,16 @@
 return {
-  "iamcco/markdown-preview.nvim",
-  ft = "markdown",
-  build = function()
-    vim.fn["mkdp#util#install"]()
-  end,
-  config = function()
-    vim.g.mkdp_preview_options = {
-      disable_filename = 1
+  "saimo/peek.nvim",
+  build = "deno task --quiet build",
+  opts = {
+    app = 'browser'
+  },
+  keys = {
+    {
+      "<leader>p",
+      function()
+        require('peek').open()
+      end,
+      desc = "Preview Markdown"
     }
-    vim.keymap.set("n", "<leader>p", ":MarkdownPreview<CR>", { silent = true, noremap = true })
-  end
+  }
 }
