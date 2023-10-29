@@ -149,6 +149,9 @@ return {
                 config.settings.python.pythonPath = get_python_path(config.root_dir)
               end
             })
+          end,
+          ltex = function()
+            require('lspconfig').ltex.setup({ settings = { ltex = { language = 'en-AU' } } })
           end
         }
       })
