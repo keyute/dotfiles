@@ -165,6 +165,9 @@ return {
   },
   {
     "lewis6991/hover.nvim",
+    depdenencies = {
+      "kevinhwang91/nvim-ufo"
+    },
     opts = {
       init = function()
         require('hover.providers.lsp')
@@ -175,7 +178,10 @@ return {
       {
         'K',
         function()
-          require('hover').hover()
+          local winid = require('ufo').peekFoldedLinesUnderCursor()
+          if not winid then
+            require('hover').hover()
+          end
         end,
         desc = 'Hover'
       }
