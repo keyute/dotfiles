@@ -1,6 +1,5 @@
-Include ~/.orbstack/ssh/config
-StrictHostKeyChecking accept-new
 Host *
+  StrictHostKeyChecking accept-new
   IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 Host git.edstem.org
   IdentityFile "~/.ssh/university_of_sydney.pub"
