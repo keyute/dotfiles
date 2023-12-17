@@ -19,7 +19,6 @@ brew "ghostscript"
 brew "git-lfs"
 brew "gnu-sed"
 brew "go"
-brew "golang-migrate"
 brew "gradle"
 brew "helm"
 brew "k9s"
@@ -28,7 +27,6 @@ brew "krew"
 brew "minio-mc"
 brew "neovim", args: ["HEAD"]
 brew "node@18"
-brew "openjdk@17", link: true
 brew "postgresql@15", restart_service: true, link: true
 brew "python@3.11"
 brew "rabbitmq", restart_service: true
