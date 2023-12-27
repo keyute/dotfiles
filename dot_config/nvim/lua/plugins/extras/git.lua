@@ -1,19 +1,20 @@
 return {
-    "NeogitOrg/neogit",
-    dependencies = {
-        "nvim-lua/plenary.nvim",
-        "nvim-telescope/telescope.nvim",
-        "sindrets/diffview.nvim",
-        "ibhagwan/fzf-lua"
-    },
-    opts = {},
-    keys = {
-        {
-            "<leader>gg",
-            function()
-                require('neogit').open({ kind = "split" })
-            end,
-            desc = "Neogit"
-        }
+  "kdheepak/lazygit.nvim",
+  dependencies = {
+    "nvim-lua/plenary.nvim",
+    "nvim-telescope/telescope.nvim"
+  },
+  keys = {
+    { "<leader>gg", ":LazyGit<CR>", desc = "LazyGit" },
+    {
+      "<leader>fl",
+      function()
+        require("telescope").extensions.lazygit.lazygit()
+      end,
+      desc = "LazyGit"
     }
+  },
+  config = function()
+    require("telescope").load_extension("lazygit")
+  end
 }

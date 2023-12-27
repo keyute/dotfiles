@@ -57,11 +57,6 @@ return {
               sources.markdown,
             }
           end
-          if vim.bo[buf].ft == 'NeogitCommitMessage' then
-            return {
-              sources.path,
-            }
-          end
           if vim.bo[buf].buftype == 'terminal' then
             return {
               sources.terminal,
