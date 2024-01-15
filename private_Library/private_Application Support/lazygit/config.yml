@@ -1,2 +1,4 @@
+git:
+  autoFetch: false
 services:
   'git.keyute.io': 'github:git.keyute.io'
