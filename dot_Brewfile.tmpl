@@ -41,7 +41,7 @@ brew "zsh-history-substring-search"
 brew "artginzburg/tap/sudo-touchid"
 brew "cockroachdb/tap/cockroach"
 cask "google-cloud-sdk"
-{{- if ne .chezmoi.os "darwin" }}
+{{- if eq .chezmoi.os "darwin" }}
 cask "mactex-no-gui"
 cask "orbstack"
 {{- end }}
