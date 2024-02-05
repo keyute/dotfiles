@@ -1,6 +1,5 @@
-eval "$(/opt/homebrew/bin/brew shellenv)"
-
 {{ if eq .chezmoi.os "darwin" }}
+eval "$(/opt/homebrew/bin/brew shellenv)"
 # Added by OrbStack: command-line tools and integration
 source ~/.orbstack/shell/init.zsh 2>/dev/null || :
 {{ end }}
