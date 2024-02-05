@@ -1,6 +1,6 @@
-{{ if ne .chezmoi.os "darwin" }}
+{{- if ne .chezmoi.os "darwin" }}
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-{{ end }}
+{{- end }}
 
 alias python='python3'
 alias lg='lazygit'
@@ -21,12 +21,12 @@ _comp_options+=(globdots)
 
 source $HOME/.local/share/zsh/fzf-tab/fzf-tab.plugin.zsh
 zstyle ':completion:complete:git-*:argument-rest' sort false
-{{ if eq .chezmoi.os "darwin" }}
+{{- if eq .chezmoi.os "darwin" }}
 if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" != "Dark" ]; then
     zstyle ':fzf-tab:*' default-color $'\033[30m'
     zstyle ':fzf-tab:*' fzf-flags --color=light
 fi
-{{ end }}
+{{- end }}
 
 source $HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $HOMEBREW_PREFIX/share/zsh-history-substring-search/zsh-history-substring-search.zsh
