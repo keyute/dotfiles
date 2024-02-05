@@ -4,7 +4,7 @@ local M = {
     priority = 1000,
     config = function()
       vim.o.termguicolors = true
-      if vim.fn.has('macunix') then
+      if vim.fn.has('macunix') == 1 then
         local handle = io.popen("defaults read -g AppleInterfaceStyle 2>&1")
         if handle then
           local result = handle:read("*a")
@@ -64,7 +64,7 @@ local M = {
   }
 }
 
-if vim.fn.has('macunix') then
+if vim.fn.has('macunix') == 1 then
   table.insert(M, {
     "f-person/auto-dark-mode.nvim",
     event = "VeryLazy",
