@@ -34,6 +34,8 @@ export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
 export GOPRIVATE="git.keyute.io"
 export GOPATH="$HOME/.go"
 
+export XDG_CONFIG_HOME="$HOME/.config"
+
 alias vim=nvim
 alias vi=nvim
 export EDITOR="nvim"
