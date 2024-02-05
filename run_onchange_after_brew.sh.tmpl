@@ -9,5 +9,5 @@ fi
 
 # Brewfile hash: {{ include "dot_Brewfile.tmpl" | sha256sum }}
 
-brew bundle install --no-lock --cleanup --no-upgrade --file $(chezmoi source-path .Brewfile)
+brew bundle install --no-lock --cleanup --no-upgrade --global
 brew cleanup --prune=all
