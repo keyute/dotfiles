@@ -1,7 +1,11 @@
 [user]
 	name = Byran Low
 	email = git@lowbryan.com
+	{{- if eq .chezmoi.os "darwin" }}
 	signingkey = key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN1cnWkTL+uTHWxf5cjZcFWjKx6SuMwqfdzJRoUlnAww Signing Key
+	{{- else }}
+	signingkey = ~/.ssh/signing_key.pub
+	{{- end }}
 [init]
 	defaultBranch = main
 [core]
