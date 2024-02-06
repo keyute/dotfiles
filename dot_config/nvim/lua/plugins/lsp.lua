@@ -85,8 +85,15 @@ return {
     event = { 'BufReadPre', 'BufNewFile' },
     dependencies = {
       { 'hrsh7th/cmp-nvim-lsp' },
-      { 'williamboman/mason-lspconfig.nvim' },
-      { 'williamboman/mason.nvim' },
+      {
+        'williamboman/mason-lspconfig.nvim',
+        dependencies = {
+          {
+            'williamboman/mason.nvim',
+            config = true
+          }
+        }
+      },
       {
         "kevinhwang91/nvim-ufo",
         dependencies = {
@@ -114,8 +121,9 @@ return {
       lsp_zero.extend_lspconfig()
       lsp_zero.on_attach(function(client, bufnr)
         lsp_zero.default_keymaps({ buffer = bufnr })
-        if client.supports_method('textDocument/inlayHint') then
-          vim.lsp.inlay_hint(bufnr, true)
+        if client.server_capabilities.inlayHintProvider then
+          vim.g.inlay_hints_visible = true
+          vim.lsp.inlay_hint.enable(bufnr, true)
         end
       end)
       require('mason-lspconfig').setup({
