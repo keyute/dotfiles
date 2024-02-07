@@ -7,9 +7,7 @@ vim.o.clipboard = 'unnamed'
 vim.o.colorcolumn = "120"
 vim.o.cursorline = true
 vim.o.expandtab = true
-vim.o.tabstop = 4
 vim.o.shiftwidth = 4
-vim.o.softtabstop = 4
 
 local keyset = vim.keymap.set
 local keyopts = { silent = true, noremap = true }
@@ -83,7 +81,7 @@ return {
     cmd = "GuessIndent",
     config = function()
       require('guess-indent').setup {}
-      vim.api.nvim_create_autocmd("BufWritePost", { command = "GuessIndent" })
+      vim.api.nvim_create_autocmd("BufWinEnter", { command = "silent GuessIndent" })
     end
   },
   {

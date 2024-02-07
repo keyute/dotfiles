@@ -113,6 +113,13 @@ return {
       local function wordcount()
         return tostring(vim.fn.wordcount().words) .. ' words'
       end
+      local function indentation()
+        if vim.o.expandtab then
+          return tostring(vim.o.shiftwidth) .. ' spaces'
+        else
+          return 'Tab'
+        end
+      end
       require('lualine').setup({
         options = {
           theme = "material",
@@ -120,7 +127,7 @@ return {
           component_separators = '|'
         },
         sections = {
-          lualine_x = { 'encoding', 'fileformat', 'filetype', { wordcount, cond = is_markdown } }
+          lualine_x = { indentation, 'encoding', 'fileformat', 'filetype', { wordcount, cond = is_markdown } }
         }
       })
     end
@@ -175,10 +182,18 @@ return {
     opts = {
       presets = {
         inc_rename = true,
-        long_message_to_split = true
+        long_message_to_split = true,
+        bottom_search = true,
+        command_palette = true,
       },
       lsp = {
         progress = {
+          enabled = false
+        },
+        hover = {
+          enabled = false
+        },
+        signature = {
           enabled = false
         }
       },
