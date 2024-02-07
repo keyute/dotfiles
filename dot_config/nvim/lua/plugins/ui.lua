@@ -103,7 +103,8 @@ return {
   {
     'nvim-lualine/lualine.nvim',
     dependencies = {
-      'nvim-tree/nvim-web-devicons'
+      'nvim-tree/nvim-web-devicons',
+      'AndreM222/copilot-lualine'
     },
     event = "VeryLazy",
     config = function()
@@ -127,7 +128,7 @@ return {
           component_separators = '|'
         },
         sections = {
-          lualine_x = { indentation, 'encoding', 'fileformat', 'filetype', { wordcount, cond = is_markdown } }
+          lualine_x = { 'copilot', indentation, 'encoding', 'fileformat', 'filetype', { wordcount, cond = is_markdown } }
         }
       })
     end

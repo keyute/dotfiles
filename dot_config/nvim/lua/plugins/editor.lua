@@ -81,7 +81,9 @@ return {
     cmd = "GuessIndent",
     config = function()
       require('guess-indent').setup {}
-      vim.api.nvim_create_autocmd("BufWinEnter", { command = "silent GuessIndent" })
+      local opts = { command = "silent GuessIndent" }
+      vim.api.nvim_create_autocmd("BufWinEnter", opts)
+      vim.api.nvim_create_autocmd("BufWritePost", opts)
     end
   },
   {
