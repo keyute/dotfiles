@@ -1,6 +1,6 @@
-[".local/share/zsh/fzf-tab"]
+[".local/share/antidote"]
   type = "git-repo"
-  url = "https://github.com/Aloxaf/fzf-tab.git"
+  url = "https://github.com/mattmc3/antidote.git"
   refreshPeriod = "168h"
 [".local/share/tmux"]
   type = "git-repo"

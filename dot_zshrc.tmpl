@@ -11,6 +11,9 @@ function set_win_title(){
 }
 precmd_functions+=(set_win_title)
 
+source $HOME/.local/share/antidote/antidote.zsh
+antidote load
+
 if type brew &>/dev/null; then
     FPATH="$(brew --prefix)/share/zsh/site-functions:$(brew --prefix)/share/zsh-completions:$FPATH"
 fi
