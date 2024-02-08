@@ -11,9 +11,6 @@ function set_win_title(){
 }
 precmd_functions+=(set_win_title)
 
-source $HOME/.local/share/antidote/antidote.zsh
-antidote load
-
 if type brew &>/dev/null; then
     FPATH="$(brew --prefix)/share/zsh/site-functions:$(brew --prefix)/share/zsh-completions:$FPATH"
 fi
@@ -22,7 +19,9 @@ zmodload zsh/complist
 autoload -U compinit; compinit
 _comp_options+=(globdots)
 
-source $HOME/.local/share/zsh/fzf-tab/fzf-tab.plugin.zsh
+source $HOME/.local/share/antidote/antidote.zsh
+antidote load
+
 zstyle ':completion:complete:git-*:argument-rest' sort false
 {{- if eq .chezmoi.os "darwin" }}
 if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" != "Dark" ]; then
@@ -30,10 +29,6 @@ if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" != "Dark" ]; then
     zstyle ':fzf-tab:*' fzf-flags --color=light
 fi
 {{- end }}
-
-source $HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-source $HOMEBREW_PREFIX/share/zsh-history-substring-search/zsh-history-substring-search.zsh
-source $HOMEBREW_PREFIX/opt/zsh-fast-syntax-highlighting/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
 
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
