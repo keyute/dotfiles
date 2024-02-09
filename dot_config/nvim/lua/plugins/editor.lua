@@ -43,7 +43,8 @@ return {
     "nvim-treesitter/nvim-treesitter",
     build = ":TSUpdate",
     dependencies = {
-      "nvim-treesitter/nvim-treesitter-refactor"
+      "nvim-treesitter/nvim-treesitter-refactor",
+      "windwp/nvim-ts-autotag",
     },
     event = { "BufReadPost", "BufNewFile" },
     opts = {
@@ -56,6 +57,9 @@ return {
           enable = true,
           keymaps = { smart_rename = "grr" }
         }
+      },
+      autotag = {
+        enable = true
       }
     },
     main = "nvim-treesitter.configs"
