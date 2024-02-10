@@ -8,6 +8,7 @@ vim.o.colorcolumn = "120"
 vim.o.cursorline = true
 vim.o.expandtab = true
 vim.o.shiftwidth = 4
+vim.o.tabstop = 4
 
 local keyset = vim.keymap.set
 local keyopts = { silent = true, noremap = true }
@@ -136,7 +137,8 @@ return {
       formatters_by_ft = {
         lua = { "stylua" },
         python = { "isort", "black" },
-        javascript = { { "prettierd", "prettier" } }
+        javascript = { { "prettierd", "prettier" } },
+        go = { "gofmt", "goimports" }
       }
     }
   }
