@@ -1,4 +1,4 @@
-local M = {
+return {
   {
     'marko-cerovac/material.nvim',
     priority = 1000,
@@ -61,23 +61,23 @@ local M = {
     dependencies = {
       'nvim-tree/nvim-web-devicons'
     }
-  }
-}
-
-if vim.fn.has('macunix') == 1 then
-  table.insert(M, {
+  },
+  {
     "f-person/auto-dark-mode.nvim",
     event = "VeryLazy",
-    opts = {
-      update_interval = 1000,
-      set_dark_mode = function()
-        require('material.functions').change_style("darker")
-      end,
-      set_light_mode = function()
-        require('material.functions').change_style("lighter")
+    config = function()
+      if vim.fn.has('macunix') == 0 then
+        return
       end
-    }
-  })
-end
-
-return M
+      require('auto-dark-mode').setup({
+        update_interval = 1000,
+        set_dark_mode = function()
+          require('material.functions').change_style("darker")
+        end,
+        set_light_mode = function()
+          require('material.functions').change_style("lighter")
+        end
+      })
+    end
+  }
+}
