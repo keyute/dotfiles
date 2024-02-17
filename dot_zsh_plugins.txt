@@ -4,4 +4,4 @@ zsh-users/zsh-autosuggestions
 zdharma-continuum/fast-syntax-highlighting kind:defer
 zsh-users/zsh-history-substring-search
 MichaelAquilina/zsh-autoswitch-virtualenv kind:defer
-sindresorhus/pure
+romkatv/powerlevel10k
