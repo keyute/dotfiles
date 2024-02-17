@@ -5,12 +5,6 @@ eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 alias python='python3'
 alias lg='lazygit'
 
-eval "$(starship init zsh)"
-function set_win_title(){
-    echo -ne "\033]0; $(basename "$PWD") \007"
-}
-precmd_functions+=(set_win_title)
-
 if type brew &>/dev/null; then
     FPATH="$(brew --prefix)/share/zsh/site-functions:$(brew --prefix)/share/zsh-completions:$FPATH"
 fi
