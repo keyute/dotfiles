@@ -1,7 +1,7 @@
 Aloxaf/fzf-tab
 zsh-users/zsh-completions
 zsh-users/zsh-autosuggestions
-zdharma-continuum/fast-syntax-highlighting kind:defer
+zdharma-continuum/fast-syntax-highlighting
 zsh-users/zsh-history-substring-search
-MichaelAquilina/zsh-autoswitch-virtualenv kind:defer
+MichaelAquilina/zsh-autoswitch-virtualenv
 romkatv/powerlevel10k
