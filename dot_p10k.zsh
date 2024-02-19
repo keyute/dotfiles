@@ -356,6 +356,7 @@
 
   # Remote Icons
   typeset -g POWERLEVEL9K_VCS_GIT_REMOTE_ICONS=(
+    '*@github.com:*'    VCS_GIT_GITHUB_ICON
     '*@git.keyute.io:*' VCS_GIT_GITHUB_ICON
     '?*'                VCS_GIT_ICON
     '*'                 ''
