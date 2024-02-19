@@ -354,6 +354,13 @@
   # Change the value of this parameter to show a different icon.
   typeset -g POWERLEVEL9K_VCS_UNTRACKED_ICON='?'
 
+  # Remote Icons
+  typeset -g POWERLEVEL9K_VCS_GIT_REMOTE_ICONS=(
+    '*@git.keyute.io:*' VCS_GIT_GITHUB_ICON
+    '?*'                VCS_GIT_ICON
+    '*'                 ''
+  )
+
   # Formatter for Git status.
   #
   # Example output: master wip ⇣42⇡42 *42 merge ~42 +42 !42 ?42.
