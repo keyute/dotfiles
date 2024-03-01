@@ -1,5 +1,8 @@
 git:
   autoFetch: false
+  paging:
+    colorArg: always
+    pager: diff-so-fancy
 services:
   'git.keyute.io': 'github:git.keyute.io'
 promptToReturnFromSubprocess: false
