@@ -11,7 +11,7 @@ else
   echo "Brew is already installed. Skipping installation."
 fi
 
-# Brewfile hash: {{ include "dot_Brewfile" . | sha256sum }}
+# Brewfile hash: {{ include "dot_Brewfile" | sha256sum }}
 
 brew bundle install --no-lock --cleanup --no-upgrade --global
 brew cleanup --prune=all
