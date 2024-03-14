@@ -25,6 +25,7 @@ brew "helm"
 brew "k9s"
 brew "kubernetes-cli"
 brew "krew"
+brew "kubecm"
 brew "lazygit"
 brew "neovim", args: ["HEAD"]
 brew "node"
@@ -34,11 +35,8 @@ brew "python@3.11"
 brew "rabbitmq", restart_service: true
 brew "redis", restart_service: true
 brew "ripgrep"
-brew "kubecm"
-cask "google-cloud-sdk"
-{{- if eq .chezmoi.os "darwin" }}
 brew "artginzburg/tap/sudo-touchid"
 brew "cockroachdb/tap/cockroach"
+cask "google-cloud-sdk"
 cask "mactex-no-gui"
 cask "orbstack"
-{{- end }}
