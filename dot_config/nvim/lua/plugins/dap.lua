@@ -9,9 +9,10 @@ return {
         { "<leader>de", function() require("dapui").eval() end,   desc = "Eval",  mode = { "n", "v" } },
       },
       config = function()
+        require("dap.ext.vscode").load_launchjs()
         local dap = require("dap")
         local dapui = require("dapui")
-        dapui.setup({})
+        dapui.setup()
         dap.listeners.after.event_initialized["dapui_config"] = function()
           dapui.open()
         end
