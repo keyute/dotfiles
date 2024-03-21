@@ -6,6 +6,6 @@ return {
   },
   cmd = "DBUI",
   keys = {
-    { "<leader>db", "<cmd>DBUI<cr>", desc = "Open Dadbod UI" }
+    { "<leader>bb", "<cmd>DBUI<cr>", desc = "Open Dadbod UI" }
   }
 }
