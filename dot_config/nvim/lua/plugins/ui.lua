@@ -190,12 +190,6 @@ return {
       lsp = {
         progress = {
           enabled = false
-        },
-        hover = {
-          enabled = false
-        },
-        signature = {
-          enabled = false
         }
       },
     },

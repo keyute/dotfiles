@@ -5,13 +5,14 @@ return {
     {
       "rcarriga/nvim-dap-ui",
       dependencies = {
-        "mfussenegger/nvim-dap"
-      }
+        "mfussenegger/nvim-dap",
+        "nvim-neotest/nvim-nio"
+      },
     },
     "williamboman/mason.nvim"
   },
   opts = {
-    ensure_installed = { "python" },
+    ensure_installed = { "python", "cppdbg" },
     automatic_installation = true
   }
 }
