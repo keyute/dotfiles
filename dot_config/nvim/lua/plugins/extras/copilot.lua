@@ -2,17 +2,26 @@ return {
   "CopilotC-Nvim/CopilotChat.nvim",
   dependencies = {
     "zbirenbaum/copilot.lua",
-    "nvim-lua/plenary.nvim"
+    "nvim-lua/plenary.nvim",
+    "nvim-telescope/telescope.nvim"
   },
-  opts = {
-    context = "buffers"
-  },
+  config = function()
+    local chat = require("CopilotChat")
+    local select = require("CopilotChat.select")
+    chat.setup({
+      context = "buffers",
+      selection = select.buffer
+    })
+  end,
   keys = {
-    { "<leader>cc", "<cmd>CopilotChatToggle<cr>",   desc = "Toggle Copilot Chat" },
-    { "<leader>ce", "<cmd>CopilotChatExplain<cr>",  desc = "Copilot Explain Code" },
-    { "<leader>ct", "<cmd>CopilotChatTests<cr>",    desc = "Copilot Generate Tests" },
-    { "<leader>cf", "<cmd>CopilotChatFix<cr>",      desc = "Copilot Fix Code" },
-    { "<leader>co", "<cmd>CopilotChatOptimize<cr>", desc = "Copilot Optimize Code" },
-    { "<leader>cd", "<cmd>CopilotChatDocs<cr>",     desc = "Copilot Generate Docs" }
+    { "<leader>c", "<cmd>CopilotChatToggle<cr>", desc = "Toggle Copilot Chat" },
+    {
+      "<leader>fc",
+      function()
+        local actions = require("CopilotChat.actions")
+        require("CopilotChat.integrations.telescope").pick(actions.prompt_actions())
+      end,
+      desc = "Copilot Prompt Actions"
+    }
   }
 }
