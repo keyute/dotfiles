@@ -4,7 +4,9 @@ return {
     "zbirenbaum/copilot.lua",
     "nvim-lua/plenary.nvim"
   },
-  opts = {},
+  opts = {
+    context = "buffers"
+  },
   keys = {
     { "<leader>cc", "<cmd>CopilotChatToggle<cr>",   desc = "Toggle Copilot Chat" },
     { "<leader>ce", "<cmd>CopilotChatExplain<cr>",  desc = "Copilot Explain Code" },
