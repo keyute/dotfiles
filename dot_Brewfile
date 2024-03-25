@@ -37,6 +37,5 @@ brew "redis", restart_service: true
 brew "ripgrep"
 brew "artginzburg/tap/sudo-touchid"
 brew "cockroachdb/tap/cockroach"
-cask "google-cloud-sdk"
 cask "mactex-no-gui"
 cask "orbstack"
