@@ -138,7 +138,10 @@ return {
         lua = { "stylua" },
         python = { "isort", "black" },
         javascript = { { "prettierd", "prettier" } },
-        go = { "gofmt", "goimports" }
+        go = { "gofmt", "goimports" },
+        markdown = { "deno_fmt" },
+        ["*"] = { "codespell" },
+        ["_"] = { "trim_whitespace" }
       }
     }
   }
