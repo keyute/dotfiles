@@ -41,6 +41,7 @@ brew "rabbitmq", restart_service: true
 brew "redis", restart_service: true
 brew "ripgrep"
 brew "stylua"
+brew "terraform"
 brew "artginzburg/tap/sudo-touchid"
 brew "cockroachdb/tap/cockroach"
 cask "mactex-no-gui"
