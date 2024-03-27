@@ -1,13 +1,11 @@
 #!/bin/bash
 
-{{- if ne .chezmoi.os "darwin" }}
-test -d ~/.linuxbrew && eval "$(~/.linuxbrew/bin/brew shellenv)"
-test -d /home/linuxbrew/.linuxbrew && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-{{- end }}
-
 if ! command -v brew &> /dev/null; then
   echo "Brew is not installed. Installing now..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  {{- if ne .chezmoi.os "darwin" }}
+  eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+  {{- end }}
 else
   echo "Brew is already installed. Skipping installation."
 fi

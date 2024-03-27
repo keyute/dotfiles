@@ -3,7 +3,7 @@ if [[ $SHLVL -eq 1 ]]; then
 fi
 
 {{- if ne .chezmoi.os "darwin" }}
-eval "$(/home/linuxbrew/.linuxbrew/brew shellenv)"
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 {{- end }}
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
