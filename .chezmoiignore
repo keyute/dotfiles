@@ -1,5 +1,6 @@
 {{- if eq .chezmoi.os "darwin" }}
 .ssh/signing_key.pub
+.Linuxbrewfile
 {{- else }}
 .Brewfile
 {{- end }}
