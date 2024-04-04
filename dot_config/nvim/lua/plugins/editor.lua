@@ -137,6 +137,7 @@ return {
 				javascript = { "prettierd" },
 				go = { "gofmt", "goimports" },
 				markdown = { "prettierd" },
+				yaml = { "yamlfmt" },
 				["*"] = { "codespell" },
 				["_"] = { "trim_whitespace" },
 			},
