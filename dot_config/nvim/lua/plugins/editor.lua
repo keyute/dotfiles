@@ -43,6 +43,11 @@ return {
 		dependencies = {
 			"nvim-treesitter/nvim-treesitter-refactor",
 			"windwp/nvim-ts-autotag",
+			{
+				"nvim-treesitter/nvim-treesitter-context",
+				main = "treesitter-context",
+				opts = {},
+			},
 		},
 		event = { "BufReadPost", "BufNewFile" },
 		opts = {
@@ -144,8 +149,9 @@ return {
 		},
 	},
 	{
-		"nvim-treesitter/nvim-treesitter-context",
-		main = "treesitter-context",
-		opts = {}
-	}
+		"HiPhish/rainbow-delimiters.nvim",
+		event = { "BufReadPost", "BufNewFile" },
+		main = "rainbow-delimiters.setup",
+		opts = {},
+	},
 }

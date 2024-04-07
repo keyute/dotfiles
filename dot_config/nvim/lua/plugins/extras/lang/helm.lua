@@ -1,4 +1,4 @@
 return {
-    "towolf/vim-helm",
-    event = { 'BufReadPre', "BufNewFile" }
+	"towolf/vim-helm",
+	event = { "BufReadPre", "BufNewFile" },
 }
