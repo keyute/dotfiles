@@ -46,7 +46,12 @@ return {
 			{
 				"nvim-treesitter/nvim-treesitter-context",
 				main = "treesitter-context",
-				opts = {},
+				opts = {
+					max_lines = 5,
+					min_window_height = 50,
+					trim_scope = 'inner',
+					multiline_threshold = 1
+				},
 			},
 		},
 		event = { "BufReadPost", "BufNewFile" },
