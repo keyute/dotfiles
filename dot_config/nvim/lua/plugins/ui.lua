@@ -46,45 +46,6 @@ return {
 	{
 		"Bekaboo/dropbar.nvim",
 		event = { "BufReadPost", "BufWritePost" },
-		opts = {
-			bar = {
-				sources = function(buf, _)
-					local sources = require("dropbar.sources")
-					local utils = require("dropbar.utils")
-					if vim.bo[buf].ft == "markdown" then
-						return {
-							sources.path,
-							sources.markdown,
-						}
-					end
-					if vim.bo[buf].buftype == "terminal" then
-						return {
-							sources.terminal,
-						}
-					end
-					return {
-						sources.path,
-						utils.source.fallback({
-							sources.lsp,
-							sources.treesitter,
-						}),
-					}
-				end,
-			},
-			sources = {
-				terminal = {
-					name = function(buf)
-						local name = vim.api.nvim_buf_get_name(buf)
-						local term = select(2, require("toggleterm.terminal").identify(name))
-						if term then
-							return term.display_name or term.name
-						else
-							return name
-						end
-					end,
-				},
-			},
-		},
 	},
 	{
 		"lukas-reineke/indent-blankline.nvim",
