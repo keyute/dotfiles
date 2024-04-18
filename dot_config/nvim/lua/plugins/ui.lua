@@ -46,6 +46,9 @@ return {
 	{
 		"Bekaboo/dropbar.nvim",
 		event = { "BufReadPost", "BufWritePost" },
+		dependencies = {
+			"nvim-tree/nvim-web-devicons",
+		},
 	},
 	{
 		"lukas-reineke/indent-blankline.nvim",
