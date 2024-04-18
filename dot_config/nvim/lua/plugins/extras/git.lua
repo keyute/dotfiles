@@ -6,7 +6,7 @@ return {
 			"nvim-telescope/telescope.nvim",
 		},
 		keys = {
-			{ "<leader>gg", ":LazyGit<CR>", desc = "LazyGit" },
+			{ "<leader>gg", "<cmd>LazyGit<CR>", desc = "LazyGit" },
 			{
 				"<leader>fl",
 				function()
@@ -22,12 +22,15 @@ return {
 	{
 		"sindrets/diffview.nvim",
 		cmd = { "DiffviewOpen", "DiffviewFileHistory" },
+		keys = {
+			{ "<leader>gd", "<cmd>DiffviewOpen<cr>", desc = "Diffview" },
+		},
 		opts = {
 			view = {
 				merge_tool = {
-					layout = "diff4_mixed"
-				}
-			}
-		}
+					layout = "diff4_mixed",
+				},
+			},
+		},
 	},
 }
