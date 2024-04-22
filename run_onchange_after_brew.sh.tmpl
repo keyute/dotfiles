@@ -10,12 +10,7 @@ else
   echo "Brew is already installed. Skipping installation."
 fi
 
-{{- if eq .chezmoi.os "darwin" }}
-# Brewfile hash: {{ include "dot_Brewfile" | sha256sum }}
+# Brewfile hash: {{ includeTemplate "dot_Brewfile.tmpl" . | sha256sum }}
 brew bundle install --no-lock --cleanup --no-upgrade --global
-{{- else }}
-# Brewfile hash: {{ include "dot_Linuxbrewfile" | sha256sum }}
-brew bundle install --no-lock --cleanup --no-upgrade --file .Linuxbrewfile
-{{- end }}
 
 brew cleanup --prune=all
