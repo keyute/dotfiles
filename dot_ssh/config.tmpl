@@ -7,16 +7,16 @@ Host usyd
   HostName git.edstem.org
   HostName github.sydney.edu.au
 Host usyd
-  IdentityFile "~/.ssh/usyd.pub"
+  IdentityFile "~/.ssh/usyd"
   IdentitiesOnly yes
 Match Host git.keyute.io Exec "! nslookup git.keyute.io | grep -qE '10\.0\.2\.9'"
   ProxyCommand /opt/homebrew/bin/cloudflared access ssh --hostname ssh.git.keyute.io
 Host git.keyute.io
-  IdentityFile "~/.ssh/github_enterprise.pub"
+  IdentityFile "~/.ssh/github_enterprise"
   IdentitiesOnly yes
 Host github.com
-  IdentityFile "~/.ssh/github.pub"
+  IdentityFile "~/.ssh/github"
   IdentitiesOnly yes
 Host 10.*
-  IdentityFile "~/.ssh/vmware.pub"
+  IdentityFile "~/.ssh/vmware"
   IdentitiesOnly yes
