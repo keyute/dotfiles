@@ -10,7 +10,59 @@ else
   echo "Brew is already installed. Skipping installation."
 fi
 
-# Brewfile hash: {{ includeTemplate "before_dot_Brewfile.tmpl" . | sha256sum }}
-brew bundle install --no-lock --cleanup --no-upgrade --global
+brew bundle install --no-lock --cleanup --no-upgrade --file=- <<EOF
+{{- if eq .chezmoi.os "darwin" }}
+tap "artginzburg/tap"
+brew "artginzburg/tap/sudo-touchid"
+cask "mactex-no-gui"
+tap "cockroachdb/tap"
+brew "cockroachdb/tap/cockroach"
+{{- end }}
+tap "buo/cask-upgrade"
+tap "hashicorp/tap"
+tap "homebrew/bundle"
+tap "homebrew/services"
+brew "argocd"
+brew "black"
+brew "freetype"
+brew "gettext"
+brew "cairo"
+brew "chezmoi"
+brew "cloudflared"
+brew "cmake"
+brew "codespell"
+brew "deno"
+brew "diff-so-fancy"
+brew "docker-completion"
+brew "fzf"
+brew "ghostscript"
+brew "git"
+brew "git-lfs"
+brew "gnu-sed"
+brew "go"
+brew "harfbuzz"
+brew "openjdk"
+brew "gradle"
+brew "helm"
+brew "isort"
+brew "k9s"
+brew "kubernetes-cli"
+brew "kubecm"
+brew "lazygit"
+brew "neovim", args: ["HEAD"]
+brew "node"
+brew "poetry"
+brew "postgresql@14", restart_service: true
+brew "prettierd"
+brew "python@3.11"
+brew "rabbitmq", restart_service: true
+brew "redis", restart_service: true
+brew "ripgrep"
+brew "stylua"
+brew "terraform"
+brew "yamlfmt"
+brew "hashicorp/tap/vault"
+brew "hashicorp/tap/vlt"
+EOF
 
 brew cleanup --prune=all
