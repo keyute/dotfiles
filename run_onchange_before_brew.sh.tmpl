@@ -10,7 +10,7 @@ else
   echo "Brew is already installed. Skipping installation."
 fi
 
-# Brewfile hash: {{ includeTemplate "dot_Brewfile.tmpl" . | sha256sum }}
+# Brewfile hash: {{ includeTemplate "before_dot_Brewfile.tmpl" . | sha256sum }}
 brew bundle install --no-lock --cleanup --no-upgrade --global
 
 brew cleanup --prune=all
