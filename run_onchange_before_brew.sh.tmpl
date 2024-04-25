@@ -10,7 +10,7 @@ else
   echo "Brew is already installed. Skipping installation."
 fi
 
-brew bundle install --no-lock --cleanup --no-upgrade --file=- <<EOF
+cat <<EOF >~/.Brewfile
 {{- if eq .chezmoi.os "darwin" }}
 tap "artginzburg/tap"
 brew "artginzburg/tap/sudo-touchid"
@@ -66,4 +66,5 @@ brew "hashicorp/tap/vlt"
 brew "gh"
 EOF
 
+brew bundle install --no-lock --cleanup --no-upgrade --global
 brew cleanup --prune=all
