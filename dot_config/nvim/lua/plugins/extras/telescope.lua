@@ -4,6 +4,10 @@ return {
 		dependencies = {
 			"nvim-lua/plenary.nvim",
 			"folke/noice.nvim",
+			{
+				"nvim-telescope/telescope-fzf-native.nvim",
+				build = "make",
+			},
 		},
 		cmd = "Telescope",
 		keys = {
@@ -11,6 +15,9 @@ return {
 			{ "<leader>fg", "<cmd>Telescope live_grep<cr>", desc = "Telescope Live Grep" },
 			{ "<leader>fn", "<cmd>Noice telescope<cr>", desc = "Telescope Noice" },
 		},
+		config = function()
+			require("telescope").load_extension("fzf")
+		end,
 	},
 	{
 		"xiyaowong/telescope-emoji.nvim",
