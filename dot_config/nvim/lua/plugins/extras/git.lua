@@ -40,7 +40,9 @@ return {
 			"nvim-telescope/telescope.nvim",
 			"nvim-tree/nvim-web-devicons",
 		},
-		opts = {},
+		opts = {
+			default_to_projects_v2 = true,
+		},
 		cmd = "Octo",
 	},
 }
