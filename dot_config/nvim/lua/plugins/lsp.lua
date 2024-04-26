@@ -204,6 +204,17 @@ return {
 						local cfg = require("go.lsp").config()
 						require("lspconfig").gopls.setup(cfg)
 					end,
+					tsserver = function()
+						require("lspconfig").tsserver.setup({
+							settings = {
+								typescript = {
+									preferences = {
+										importModuleSpecifier = "project-relative",
+									},
+								},
+							},
+						})
+					end,
 				},
 			})
 			lsp_zero.set_sign_icons({
