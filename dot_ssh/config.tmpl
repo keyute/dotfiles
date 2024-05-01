@@ -3,10 +3,7 @@ Include ~/.orbstack/ssh/config
 {{- end }}
 Host *
   StrictHostKeyChecking accept-new
-Host usyd
-  HostName git.edstem.org
-  HostName github.sydney.edu.au
-Host usyd
+Host git.edstem.org github.sydney.edu.au
   IdentityFile "~/.ssh/usyd"
   IdentitiesOnly yes
 Match Host git.keyute.io Exec "! nslookup git.keyute.io | grep -qE '10\.0\.2\.9'"
