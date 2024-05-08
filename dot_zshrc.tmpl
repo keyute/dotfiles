@@ -39,6 +39,7 @@ bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 
 export PATH="$PATH:$HOME/.local/bin"
+export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
 
 export GOPRIVATE="git.keyute.io"
 export GOPATH="$HOME/.go"
