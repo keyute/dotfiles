@@ -2,11 +2,8 @@
 
 # Lockfile hash: {{ include "dot_config/nvim/lazy-lock.json" | sha256sum }}
 
-echo "Installing missing nvim plugins..."
-nvim --headless "+Lazy! install" +qa
+echo "Updating nvim plugins..."
+nvim --headless "+Lazy! restore" +qa
 
 echo "Removing unused nvim plugins..."
 nvim --headless "+Lazy! clean" +qa
-
-echo "Updating nvim plugins..."
-nvim --headless "+Lazy! restore" +qa
