@@ -31,6 +31,8 @@ if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" != "Dark" ]; then
 fi
 {{- end }}
 
+eval "$(zoxide init zsh)"
+
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 
