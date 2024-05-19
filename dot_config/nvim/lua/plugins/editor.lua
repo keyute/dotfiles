@@ -49,8 +49,8 @@ return {
 				opts = {
 					max_lines = 5,
 					min_window_height = 50,
-					trim_scope = 'inner',
-					multiline_threshold = 1
+					trim_scope = "inner",
+					multiline_threshold = 1,
 				},
 			},
 		},
@@ -158,5 +158,13 @@ return {
 		event = { "BufReadPost", "BufNewFile" },
 		main = "rainbow-delimiters.setup",
 		opts = {},
+	},
+	{
+		"brenoprata10/nvim-highlight-colors",
+		event = { "BufReadPost", "BufNewFile" },
+		opts = {
+			render = "virtual",
+			enable_tailwind = true,
+		},
 	},
 }
