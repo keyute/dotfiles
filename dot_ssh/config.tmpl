@@ -6,7 +6,7 @@ Host *
 Host git.edstem.org github.sydney.edu.au
   IdentityFile "~/.ssh/usyd"
   IdentitiesOnly yes
-Match Host git.keyute.io Exec "! nslookup git.keyute.io | grep -qE '10\.0\.2\.9'"
+Match Host git.keyute.io Exec "! nslookup git.keyute.io | grep -qE '10\.0\.5\.2'"
   ProxyCommand $(which cloudflared) access ssh --hostname ssh.git.keyute.io
 Host github.com
   IdentityFile "~/.ssh/github"
