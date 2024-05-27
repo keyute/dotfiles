@@ -1,6 +1,6 @@
 [user]
 	name = Bryan Low
-	email = git@lowbryan.com
+	email = its@blow.sg
 	signingkey = ~/.ssh/signing.pub
 [init]
 	defaultBranch = main
