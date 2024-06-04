@@ -15,7 +15,7 @@ return {
 		dependencies = {
 			"nvim-tree/nvim-web-devicons",
 		},
-		event = "VeryLazy",
+		event = "BufReadPre",
 		opts = {
 			options = {
 				offsets = {
@@ -129,8 +129,7 @@ return {
 	{
 		"nvim-tree/nvim-tree.lua",
 		dependencies = {
-			"nvim-tree/nvim-web-devicons",
-			"akinsho/bufferline.nvim",
+			"nvim-tree/nvim-web-devicons"
 		},
 		opts = {
 			renderer = {
