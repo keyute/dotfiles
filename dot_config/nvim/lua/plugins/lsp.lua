@@ -129,20 +129,20 @@ return {
 			lsp_zero.on_attach(function(client, bufnr)
 				lsp_zero.default_keymaps({ buffer = bufnr })
 				if client.server_capabilities.inlayHintProvider then
-					vim.lsp.inlay_hint.enable(true)
-					local group = vim.api.nvim_create_augroup("InlayHints", {})
+					vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+					local group = vim.api.nvim_create_augroup("InlayHints", { clear = false })
 					vim.api.nvim_create_autocmd("InsertEnter", {
 						group = group,
 						buffer = bufnr,
 						callback = function()
-							vim.lsp.inlay_hint.enable(false)
+							vim.lsp.inlay_hint.enable(false, { bufnr = bufnr })
 						end,
 					})
 					vim.api.nvim_create_autocmd("InsertLeave", {
 						group = group,
 						buffer = bufnr,
 						callback = function()
-							vim.lsp.inlay_hint.enable(true)
+							vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
 						end,
 					})
 				end
