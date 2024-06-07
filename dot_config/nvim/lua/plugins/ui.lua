@@ -70,7 +70,7 @@ return {
 			"nvim-tree/nvim-web-devicons",
 			"AndreM222/copilot-lualine",
 		},
-		event = "VeryLazy",
+		event = "BufReadPre",
 		config = function()
 			local function is_markdown()
 				return vim.bo.filetype == "markdown" or vim.bo.filetype == "asciidoc"
