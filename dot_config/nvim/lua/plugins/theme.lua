@@ -59,7 +59,8 @@ return {
 ⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠙⠻⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠻⢿⣿⣿⣿⠟⠁⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠙⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 			]]
-			logo = string.rep("\n", 3) .. logo .. string.rep("\n", 3)
+			local spacing = 2
+			logo = string.rep("\n", spacing) .. logo .. string.rep("\n", spacing)
 			opts.config.header = vim.split(logo, "\n")
 			require("dashboard").setup(opts)
 		end,
