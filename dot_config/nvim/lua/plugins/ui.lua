@@ -15,7 +15,7 @@ return {
 		dependencies = {
 			"nvim-tree/nvim-web-devicons",
 		},
-		event = "BufReadPre",
+		event = { "BufReadPre", "BufNewFile" },
 		opts = {
 			options = {
 				offsets = {
@@ -45,7 +45,7 @@ return {
 	},
 	{
 		"Bekaboo/dropbar.nvim",
-		event = { "BufReadPost", "BufWritePost" },
+		event = { "BufReadPost", "BufWritePost", "BufNewFile" },
 		dependencies = {
 			"nvim-tree/nvim-web-devicons",
 		},
@@ -70,7 +70,7 @@ return {
 			"nvim-tree/nvim-web-devicons",
 			"AndreM222/copilot-lualine",
 		},
-		event = "BufReadPre",
+		event = { "BufReadPre", "BufNewFile" },
 		config = function()
 			local function is_markdown()
 				return vim.bo.filetype == "markdown" or vim.bo.filetype == "asciidoc"
@@ -129,7 +129,7 @@ return {
 	{
 		"nvim-tree/nvim-tree.lua",
 		dependencies = {
-			"nvim-tree/nvim-web-devicons"
+			"nvim-tree/nvim-web-devicons",
 		},
 		opts = {
 			renderer = {
