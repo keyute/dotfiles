@@ -106,7 +106,6 @@ return {
 	},
 	{
 		"luukvbaal/statuscol.nvim",
-		branch = "0.10",
 		dependencies = {
 			{
 				"lewis6991/gitsigns.nvim",
