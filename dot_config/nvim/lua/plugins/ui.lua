@@ -18,13 +18,6 @@ return {
 		event = { "BufReadPre", "BufNewFile" },
 		opts = {
 			options = {
-				offsets = {
-					{
-						filetype = "NvimTree",
-						text = "File Explorer",
-						text_align = "center",
-					},
-				},
 				close_icon = "",
 				modified_icon = "●",
 				buffer_close_icon = "󰅖",
@@ -126,28 +119,6 @@ return {
 		end,
 	},
 	{
-		"nvim-tree/nvim-tree.lua",
-		dependencies = {
-			"nvim-tree/nvim-web-devicons",
-		},
-		opts = {
-			renderer = {
-				group_empty = true,
-			},
-			filters = {
-				git_ignored = false,
-				custom = {
-					"^.DS_Store$",
-					"^.git$",
-					"^.idea$",
-				},
-			},
-		},
-		keys = {
-			{ "<leader>e", "<cmd>NvimTreeFindFileToggle<cr>", desc = "Toggle File Explorer" },
-		},
-	},
-	{
 		"folke/noice.nvim",
 		event = "VeryLazy",
 		opts = {
@@ -166,6 +137,24 @@ return {
 		dependencies = {
 			"MunifTanjim/nui.nvim",
 			"rcarriga/nvim-notify",
+		},
+	},
+	{
+		"mikavilpas/yazi.nvim",
+		dependencies = {
+			"nvim-lua/plenary.nvim",
+			keys = {
+				{
+					"<leader>e",
+					function()
+						require("yazi").yazi(nil, vim.fn.getcwd())
+					end,
+					desc = "File Manager",
+				},
+			},
+		},
+		opts = {
+			open_for_directories = true,
 		},
 	},
 }
