@@ -4,5 +4,5 @@ git:
     colorArg: always
     pager: diff-so-fancy
 services:
-  'git.keyute.io': 'github:git.keyute.io'
+  'git.keyute.io': 'gitlab:git.keyute.io'
 promptToReturnFromSubprocess: false
