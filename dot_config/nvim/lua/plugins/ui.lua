@@ -147,14 +147,11 @@ return {
 				{
 					"<leader>e",
 					function()
-						require("yazi").yazi(nil, vim.fn.getcwd())
+						require("yazi").yazi()
 					end,
 					desc = "File Manager",
 				},
 			},
-		},
-		opts = {
-			open_for_directories = true,
-		},
+		}
 	},
 }
