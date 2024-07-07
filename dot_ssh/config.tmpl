@@ -1,16 +1,20 @@
 {{- if eq .chezmoi.os "darwin" }}
 Include ~/.orbstack/ssh/config
+Host *
+  IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 {{- end }}
 Host *
   StrictHostKeyChecking accept-new
 Host git.edstem.org github.sydney.edu.au
-  IdentityFile "~/.ssh/usyd"
+  IdentityFile "~/.ssh/usyd.pub"
   IdentitiesOnly yes
 Match Host git.keyute.io Exec "! nslookup git.keyute.io | grep -qE '10\.0\.5\.2'"
   ProxyCommand $(which cloudflared) access ssh --hostname ssh.git.keyute.io
+  IdentityFile "~/.ssh/gitlab.pub"
+  IdentitiesOnly yes
 Host github.com
-  IdentityFile "~/.ssh/github"
+  IdentityFile "~/.ssh/github.pub"
   IdentitiesOnly yes
 Host 10.*
-  IdentityFile "~/.ssh/vmware"
+  IdentityFile "~/.ssh/vmware.pub"
   IdentitiesOnly yes

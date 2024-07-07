@@ -16,6 +16,9 @@
 	clean = git-lfs clean -- %f
 [gpg "ssh"]
 	allowedSignersFile = ~/.config/git/allowed_signers
+{{- if eq .chezmoi.os "darwin" }}
+	program = "/Applications/1Password.app/Contents/MacOS/op-ssh-sign"
+{{- end }}
 [commit]
 	gpgsign = true
 [url "ssh://git@git.keyute.io/"]
