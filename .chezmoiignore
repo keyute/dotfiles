@@ -1,3 +1,4 @@
 {{- if ne .chezmoi.os "darwin" }}
 .Brewfile
+.config/1Password/ssh/agent.toml
 {{- end }}
