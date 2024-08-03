@@ -54,3 +54,7 @@
 	tool = vimdiff
 [mergetool "vimdiff"]
 	path = nvim
+[includeIf "gitdir:~/Projects/work/**"]
+	path = ~/Projects/work/.gitconfig
+[includeIf "gitdir:~/Projects/github/**"]
+	path = ~/Projects/github/.gitconfig

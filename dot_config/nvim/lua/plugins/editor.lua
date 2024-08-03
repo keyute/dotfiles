@@ -91,12 +91,7 @@ return {
 		"nmac427/guess-indent.nvim",
 		event = { "BufReadPre", "BufNewFile" },
 		cmd = "GuessIndent",
-		config = function()
-			require("guess-indent").setup()
-			local opts = { command = "silent GuessIndent" }
-			vim.api.nvim_create_autocmd("BufWinEnter", opts)
-			vim.api.nvim_create_autocmd("BufWritePost", opts)
-		end,
+		opts = {}
 	},
 	{
 		"nvim-pack/nvim-spectre",
