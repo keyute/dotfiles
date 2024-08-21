@@ -38,6 +38,7 @@ brew "kubecm"
 brew "lazygit"
 brew "neovim"
 brew "node"
+brew "openjdk@21"
 brew "openshift-cli"
 brew "pipx"
 brew "postgresql@14", restart_service: true
