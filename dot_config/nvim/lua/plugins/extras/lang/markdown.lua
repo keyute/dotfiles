@@ -5,7 +5,7 @@ return {
 		config = function()
 			require("peek").setup({
 				app = "browser",
-				theme = vim.g.material_style == "lighter" and "light" or "dark",
+				theme = vim.o.bg,
 			})
 		end,
 		keys = {
