@@ -52,8 +52,8 @@ return {
 					{ name = "nvim_lsp" },
 				},
 				mapping = {
-					["<Tab>"] = cmp_action.tab_complete(),
-					["<S-Tab>"] = cmp_action.select_prev_or_fallback(),
+					["<Tab>"] = cmp_action.luasnip_supertab(),
+					["<S-Tab>"] = cmp_action.luasnip_shift_supertab(),
 					["<CR>"] = cmp.mapping.confirm({
 						behaviour = cmp.ConfirmBehavior.Replace,
 						select = false,
@@ -168,7 +168,7 @@ return {
 					"helm_ls",
 					"ltex",
 					"tailwindcss",
-					"tsserver",
+					"ts_ls",
 					"clangd",
 				},
 				handlers = {
