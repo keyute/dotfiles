@@ -91,7 +91,7 @@ return {
 		"nmac427/guess-indent.nvim",
 		event = { "BufReadPre", "BufNewFile" },
 		cmd = "GuessIndent",
-		opts = {}
+		opts = {},
 	},
 	{
 		"nvim-pack/nvim-spectre",
@@ -160,6 +160,17 @@ return {
 		opts = {
 			render = "virtual",
 			enable_tailwind = true,
+		},
+	},
+	{
+		"yetone/avante.nvim",
+		event = "VeryLazy",
+		dependencies = {
+			"nvim-treesitter/nvim-treesitter",
+			"stevearc/dressing.nvim",
+			"nvim-lua/plenary.nvim",
+			"MunifTanjim/nui.nvim",
+			"nvim-tree/nvim-web-devicons",
 		},
 	},
 }

@@ -21,8 +21,10 @@ return {
 	{
 		"MeanderingProgrammer/markdown.nvim",
 		dependencies = { "nvim-treesitter/nvim-treesitter" },
-		opts = {},
-		ft = "markdown",
+		opts = {
+			file_types = { "markdown", "Avante" },
+		},
+		ft = { "markdown", "Avante" },
 		keys = {
 			{
 				"<leader>m",

@@ -61,7 +61,6 @@ return {
 		"nvim-lualine/lualine.nvim",
 		dependencies = {
 			"nvim-tree/nvim-web-devicons",
-			"AndreM222/copilot-lualine",
 		},
 		event = { "BufReadPre", "BufNewFile" },
 		config = function()
@@ -86,7 +85,6 @@ return {
 				},
 				sections = {
 					lualine_x = {
-						"copilot",
 						indentation,
 						"encoding",
 						"fileformat",
@@ -152,6 +150,6 @@ return {
 					desc = "File Manager",
 				},
 			},
-		}
+		},
 	},
 }

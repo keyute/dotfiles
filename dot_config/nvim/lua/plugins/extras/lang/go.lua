@@ -5,12 +5,9 @@ return {
 		"neovim/nvim-lspconfig",
 		"nvim-treesitter/nvim-treesitter",
 	},
-	config = function()
-		require("go").setup()
-		require("go.env").load_env()
-	end,
+	opts = {},
 	ft = { "go", "gomod" },
 	build = function()
-		require("go.install").update_all()
+	require("go.install").update_all_sync()
 	end,
 }

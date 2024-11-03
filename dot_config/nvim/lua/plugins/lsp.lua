@@ -1,12 +1,9 @@
 return {
 	{
 		"VonHeikemen/lsp-zero.nvim",
+		branch = "v4.x",
 		lazy = true,
 		config = false,
-		init = function()
-			vim.g.lsp_zero_extend_cmp = 0
-			vim.g.lsp_zero_extend_lspconfig = 0
-		end,
 	},
 	{
 		"hrsh7th/nvim-cmp",
@@ -19,45 +16,31 @@ return {
 					local lspkind = require("lspkind")
 					lspkind.init({
 						symbol_map = {
-							Copilot = "",
+							Supermaven = "",
 						},
 					})
-					vim.api.nvim_set_hl(0, "CmpItemKindCopilot", { fg = "#6CC644" })
+					vim.api.nvim_set_hl(0, "CmpItemKindSupermaven", { fg = "#6CC644" })
 				end,
 			},
 			{
-				"zbirenbaum/copilot-cmp",
-				dependencies = {
-					{
-						"zbirenbaum/copilot.lua",
-						cmd = "Copilot",
-						opts = {
-							suggestion = { enabled = false },
-							panel = { enabled = false },
-						},
-					},
+				"supermaven-inc/supermaven-nvim",
+				opts = {
+					disable_inline_completion = true,
 				},
-				opts = {},
 			},
 		},
 		config = function()
-			vim.o.pumheight = 10
-			local lsp_zero = require("lsp-zero")
-			lsp_zero.extend_cmp()
 			local cmp = require("cmp")
-			local cmp_action = lsp_zero.cmp_action()
+			local cmp_action = require("lsp-zero").cmp_action()
 			cmp.setup({
 				sources = {
-					{ name = "copilot" },
+					{ name = "supermaven" },
 					{ name = "nvim_lsp" },
 				},
 				mapping = {
 					["<Tab>"] = cmp_action.luasnip_supertab(),
 					["<S-Tab>"] = cmp_action.luasnip_shift_supertab(),
-					["<CR>"] = cmp.mapping.confirm({
-						behaviour = cmp.ConfirmBehavior.Replace,
-						select = false,
-					}),
+					["<CR>"] = cmp.mapping.confirm({ select = false }),
 					["<Esc>"] = cmp.mapping({
 						i = function()
 							if cmp.visible() then
@@ -71,6 +54,11 @@ return {
 							end
 						end,
 					}),
+				},
+				snippet = {
+					expand = function(args)
+						require("luasnip").lsp_expand(args.body)
+					end,
 				},
 				formatting = {
 					fields = { "abbr", "kind", "menu" },
@@ -123,9 +111,21 @@ return {
 				lazy = false,
 			},
 		},
+		init = function()
+			vim.opt.signcolumn = "yes"
+		end,
 		config = function()
+			local lsp_capabilities = vim.tbl_deep_extend("force", require("cmp_nvim_lsp").default_capabilities(), {
+				textDocument = {
+					foldingRange = {
+						dynamicRegistration = false,
+						lineFoldingOnly = true,
+					},
+				},
+			})
+			local lsp_defaults = require("lspconfig").util.default_config
+			lsp_defaults.capabilities = vim.tbl_deep_extend("force", lsp_defaults.capabilities, lsp_capabilities)
 			local lsp_zero = require("lsp-zero")
-			lsp_zero.extend_lspconfig()
 			lsp_zero.on_attach(function(client, bufnr)
 				lsp_zero.default_keymaps({ buffer = bufnr })
 				if client.server_capabilities.inlayHintProvider then
@@ -172,7 +172,9 @@ return {
 					"clangd",
 				},
 				handlers = {
-					lsp_zero.default_setup,
+					function(server_name)
+						require("lspconfig")[server_name].setup({})
+					end,
 					lua_ls = function()
 						local lua_opts = lsp_zero.nvim_lua_ls({ settings = { Lua = { hint = { enable = true } } } })
 						require("lspconfig").lua_ls.setup(lua_opts)
