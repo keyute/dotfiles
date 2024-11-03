@@ -164,13 +164,25 @@ return {
 	},
 	{
 		"yetone/avante.nvim",
-		event = "VeryLazy",
+		build = "make",
+		cmd = { "AvanteAsk", "AvanteToggle", "AvanteChat" },
+		keys = {
+			"<leader>aa",
+			"<cmd>AvanteToggle<cr>",
+			desc = "Toggle Avante",
+		},
 		dependencies = {
 			"nvim-treesitter/nvim-treesitter",
 			"stevearc/dressing.nvim",
 			"nvim-lua/plenary.nvim",
 			"MunifTanjim/nui.nvim",
 			"nvim-tree/nvim-web-devicons",
+		},
+		opts = {
+			provider = "claude",
+			claude = {
+				api_key_name = { "op", "read", "op://Personal/Anthropic/api key" },
+			},
 		},
 	},
 }

@@ -4,6 +4,17 @@ return {
 		name = "catppuccin",
 		priority = 1000,
 		config = function()
+			require("catppuccin").setup({
+				integrations = {
+					dropbar = {
+						enabled = true,
+					},
+					indent_blankline = {
+						enabled = true,
+						colored_indent_levels = true,
+					},
+				},
+			})
 			vim.cmd.colorscheme("catppuccin")
 		end,
 	},
@@ -20,7 +31,7 @@ return {
 				vim.o.background = "light"
 				vim.cmd("colorscheme catppuccin")
 			end,
-		}
+		},
 	},
 	{
 		"glepnir/dashboard-nvim",

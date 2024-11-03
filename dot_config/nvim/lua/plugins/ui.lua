@@ -16,25 +16,28 @@ return {
 			"nvim-tree/nvim-web-devicons",
 		},
 		event = { "BufReadPre", "BufNewFile" },
-		opts = {
-			options = {
-				close_icon = "",
-				modified_icon = "●",
-				buffer_close_icon = "󰅖",
-				left_trunc_marker = "",
-				right_trunc_marker = "",
-				hover = {
-					enabled = true,
-					delay = 0,
-					reveal = { "close" },
+		config = function()
+			require("bufferline").setup({
+				highlights = require("catppuccin.groups.integrations.bufferline").get(),
+				options = {
+					close_icon = "",
+					modified_icon = "●",
+					buffer_close_icon = "󰅖",
+					left_trunc_marker = "",
+					right_trunc_marker = "",
+					hover = {
+						enabled = true,
+						delay = 0,
+						reveal = { "close" },
+					},
+					diagnostics = "nvim_lsp",
+					diagnostics_indicator = function(count, level, _, _)
+						local icon = level:match("error") and " " or " "
+						return " " .. icon .. count
+					end,
 				},
-				diagnostics = "nvim_lsp",
-				diagnostics_indicator = function(count, level, _, _)
-					local icon = level:match("error") and " " or " "
-					return " " .. icon .. count
-				end,
-			},
-		},
+			})
+		end,
 	},
 	{
 		"Bekaboo/dropbar.nvim",
@@ -50,6 +53,15 @@ return {
 		opts = {
 			indent = {
 				char = "▏",
+				highlight = {
+					"RainbowRed",
+					"RainbowYellow",
+					"RainbowBlue",
+					"RainbowOrange",
+					"RainbowGreen",
+					"RainbowViolet",
+					"RainbowCyan",
+				},
 			},
 			scope = {
 				show_start = false,
@@ -79,7 +91,7 @@ return {
 			end
 			require("lualine").setup({
 				options = {
-					theme = "material",
+					theme = "catppuccin",
 					section_separators = "",
 					component_separators = "|",
 				},
