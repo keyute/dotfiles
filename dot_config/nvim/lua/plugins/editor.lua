@@ -177,12 +177,17 @@ return {
 			"nvim-lua/plenary.nvim",
 			"MunifTanjim/nui.nvim",
 			"nvim-tree/nvim-web-devicons",
+			{
+				"zbirenbaum/copilot.lua",
+				cmd = "Copilot",
+				opts = {}
+			}
 		},
 		opts = {
-			provider = "claude",
-			claude = {
-				api_key_name = { "op", "read", "op://Personal/Anthropic/api key" },
-			},
+			provider = "copilot",
+			copilot = {
+				model = "claude-3.5-sonnet"
+			}
 		},
 	},
 }
