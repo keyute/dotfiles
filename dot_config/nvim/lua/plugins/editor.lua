@@ -168,7 +168,7 @@ return {
 		cmd = { "AvanteAsk", "AvanteToggle", "AvanteChat" },
 		keys = {
 			"<leader>aa",
-			"<cmd>AvanteToggle<cr>",
+			"<cmd>AvanteAsk<cr>",
 			desc = "Toggle Avante",
 		},
 		dependencies = {
