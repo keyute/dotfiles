@@ -167,9 +167,11 @@ return {
 		build = "make",
 		cmd = { "AvanteAsk", "AvanteToggle", "AvanteChat" },
 		keys = {
-			"<leader>aa",
-			"<cmd>AvanteAsk<cr>",
-			desc = "Toggle Avante",
+			{
+				"<leader>aa",
+				"<cmd>AvanteAsk<cr>",
+				desc = "Ask Avante",
+			},
 		},
 		dependencies = {
 			"nvim-treesitter/nvim-treesitter",
@@ -180,14 +182,14 @@ return {
 			{
 				"zbirenbaum/copilot.lua",
 				cmd = "Copilot",
-				opts = {}
-			}
+				opts = {},
+			},
 		},
 		opts = {
 			provider = "copilot",
 			copilot = {
-				model = "claude-3.5-sonnet"
-			}
+				model = "claude-3.5-sonnet",
+			},
 		},
 	},
 }
