@@ -36,6 +36,7 @@ brew "kubernetes-cli"
 brew "krew"
 brew "kubecm"
 brew "lazygit"
+brew "minio", restart_service: true
 brew "neovim"
 brew "node"
 brew "openjdk@21"
