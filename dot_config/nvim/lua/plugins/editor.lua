@@ -130,6 +130,7 @@ return {
 				"gq",
 				function()
 					require("conform").format({ async = true, lsp_fallback = true })
+					vim.cmd("silent GuessIndent")
 				end,
 				mode = "",
 				desc = "Format Buffer",
