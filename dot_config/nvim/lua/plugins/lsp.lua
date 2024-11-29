@@ -16,16 +16,21 @@ return {
 					local lspkind = require("lspkind")
 					lspkind.init({
 						symbol_map = {
-							Supermaven = "",
+							Copilot = "",
 						},
 					})
-					vim.api.nvim_set_hl(0, "CmpItemKindSupermaven", { fg = "#6CC644" })
+					vim.api.nvim_set_hl(0, "CmpItemKindCopilot", { fg = "#6CC644" })
 				end,
 			},
 			{
-				"supermaven-inc/supermaven-nvim",
-				opts = {
-					disable_inline_completion = true,
+				"zbirenbaum/copilot-cmp",
+				opts = {},
+				dependencies = {
+					{
+						"zbirenbaum/copilot.lua",
+						cmd = "Copilot",
+						opts = {},
+					},
 				},
 			},
 		},
@@ -34,7 +39,7 @@ return {
 			local cmp_action = require("lsp-zero").cmp_action()
 			cmp.setup({
 				sources = {
-					{ name = "supermaven" },
+					{ name = "copilot" },
 					{ name = "nvim_lsp" },
 				},
 				mapping = {
