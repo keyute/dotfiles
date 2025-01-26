@@ -3,6 +3,4 @@ git:
   paging:
     colorArg: always
     pager: diff-so-fancy
-services:
-  'git.keyute.io': 'gitlab:git.keyute.io'
 promptToReturnFromSubprocess: false
