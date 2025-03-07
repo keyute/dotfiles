@@ -16,14 +16,20 @@
       "provider": "openai",
       "apiKey": {{ onepasswordRead "op://Personal/OpenAI/api key" | quote }},
       "title": "OpenAI o1",
-      "contextLength": 128000
+      "contextLength": 200000
+    },
+    {
+      "model": "qwq:32b-q8_0",
+      "provider": "ollama",
+      "title": "QwQ",
+      "contextLength": 131072
     }
   ],
   "tabAutocompleteModel": {
     "title": "Qwen2.5-Coder",
     "provider": "ollama",
     "model": "qwen2.5-coder:1.5b-base-q8_0",
-    "contextLength": 32000
+    "contextLength": 32768
   },
   "embeddingsProvider": {
     "provider": "ollama",
