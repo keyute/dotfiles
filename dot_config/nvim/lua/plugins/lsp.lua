@@ -6,82 +6,49 @@ return {
 		config = false,
 	},
 	{
-		"hrsh7th/nvim-cmp",
+		"saghen/blink.cmp",
+		version = "*",
 		event = "InsertEnter",
-		dependencies = {
-			{ "L3MON4D3/LuaSnip" },
-			{
-				"onsails/lspkind.nvim",
-				config = function()
-					local lspkind = require("lspkind")
-					lspkind.init({
-						symbol_map = {
-							Copilot = "",
-						},
-					})
-					vim.api.nvim_set_hl(0, "CmpItemKindCopilot", { fg = "#6CC644" })
-				end,
-			},
-			{
-				"zbirenbaum/copilot-cmp",
-				opts = {},
-				dependencies = {
-					{
-						"zbirenbaum/copilot.lua",
-						cmd = "Copilot",
-						opts = {},
+		opts = {
+			keymap = { preset = "super-tab" },
+			sources = {
+				default = { "lsp", "path", "buffer", "snippets", "minuet" },
+				providers = {
+					minuet = {
+						name = "minuet",
+						module = "minuet.blink",
+						score_offset = 8,
 					},
 				},
 			},
 		},
-		config = function()
-			local cmp = require("cmp")
-			local cmp_action = require("lsp-zero").cmp_action()
-			cmp.setup({
-				sources = {
-					{ name = "copilot" },
-					{ name = "nvim_lsp" },
+		dependencies = {
+			"milanglacier/minuet-ai.nvim",
+			name = "minuet",
+			opts = {
+				provider = "openai_fim_compatible",
+				n_completions = 1,
+				context_window = 8000,
+				provider_options = {
+					openai_fim_compatible = {
+						api_key = "TERM",
+						name = "Qwen2.5 Coder",
+						end_point = "http://localhost:11434/v1/completions",
+						model = "qwen2.5-coder:3b-base-q8_0",
+					},
 				},
-				mapping = {
-					["<Tab>"] = cmp_action.luasnip_supertab(),
-					["<S-Tab>"] = cmp_action.luasnip_shift_supertab(),
-					["<CR>"] = cmp.mapping.confirm({ select = false }),
-					["<Esc>"] = cmp.mapping({
-						i = function()
-							if cmp.visible() then
-								cmp.close()
-							else
-								vim.api.nvim_feedkeys(
-									vim.api.nvim_replace_termcodes("<Esc>", true, true, true),
-									"n",
-									true
-								)
-							end
-						end,
-					}),
-				},
-				snippet = {
-					expand = function(args)
-						require("luasnip").lsp_expand(args.body)
-					end,
-				},
-				formatting = {
-					fields = { "abbr", "kind", "menu" },
-					format = require("lspkind").cmp_format({
-						mode = "symbol_text",
-						maxwidth = 50,
-						ellipsis_char = "...",
-					}),
-				},
-			})
-		end,
+			},
+			dependencies = {
+				"nvim-lua/plenary.nvim",
+			},
+		},
 	},
 	{
 		"neovim/nvim-lspconfig",
 		cmd = "LspInfo",
 		event = { "BufReadPre", "BufNewFile" },
 		dependencies = {
-			{ "hrsh7th/cmp-nvim-lsp" },
+			{ "saghen/blink.cmp" },
 			{
 				"williamboman/mason-lspconfig.nvim",
 				dependencies = {
@@ -120,7 +87,8 @@ return {
 			vim.opt.signcolumn = "yes"
 		end,
 		config = function()
-			local lsp_capabilities = vim.tbl_deep_extend("force", require("cmp_nvim_lsp").default_capabilities(), {
+			local lsp_defaults = require("lspconfig").util.default_config
+			lsp_defaults.capabilities = vim.tbl_deep_extend("force", lsp_defaults.capabilities, {
 				textDocument = {
 					foldingRange = {
 						dynamicRegistration = false,
@@ -128,8 +96,6 @@ return {
 					},
 				},
 			})
-			local lsp_defaults = require("lspconfig").util.default_config
-			lsp_defaults.capabilities = vim.tbl_deep_extend("force", lsp_defaults.capabilities, lsp_capabilities)
 			local lsp_zero = require("lsp-zero")
 			lsp_zero.on_attach(function(client, bufnr)
 				lsp_zero.default_keymaps({ buffer = bufnr })
