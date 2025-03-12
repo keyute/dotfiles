@@ -6,44 +6,6 @@ return {
 		config = false,
 	},
 	{
-		"saghen/blink.cmp",
-		version = "*",
-		event = "InsertEnter",
-		opts = {
-			keymap = { preset = "super-tab" },
-			sources = {
-				default = { "lsp", "path", "buffer", "snippets", "minuet" },
-				providers = {
-					minuet = {
-						name = "minuet",
-						module = "minuet.blink",
-						score_offset = 8,
-					},
-				},
-			},
-		},
-		dependencies = {
-			"milanglacier/minuet-ai.nvim",
-			name = "minuet",
-			opts = {
-				provider = "openai_fim_compatible",
-				n_completions = 1,
-				context_window = 8000,
-				provider_options = {
-					openai_fim_compatible = {
-						api_key = "TERM",
-						name = "Qwen2.5 Coder",
-						end_point = "http://localhost:11434/v1/completions",
-						model = "qwen2.5-coder:3b-base-q8_0",
-					},
-				},
-			},
-			dependencies = {
-				"nvim-lua/plenary.nvim",
-			},
-		},
-	},
-	{
 		"neovim/nvim-lspconfig",
 		cmd = "LspInfo",
 		event = { "BufReadPre", "BufNewFile" },
