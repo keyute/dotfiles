@@ -42,7 +42,30 @@ return {
 						end
 					end,
 				},
-				lazy = false,
+			},
+			{
+				"lewis6991/hover.nvim",
+				dependencies = {
+					"kevinhwang91/nvim-ufo",
+				},
+				opts = {
+					init = function()
+						require("hover.providers.lsp")
+					end,
+					title = false,
+				},
+				keys = {
+					{
+						"K",
+						function()
+							local winid = require("ufo").peekFoldedLinesUnderCursor()
+							if not winid then
+								require("hover").hover()
+							end
+						end,
+						desc = "Hover",
+					},
+				},
 			},
 		},
 		init = function()
@@ -159,29 +182,5 @@ return {
 				info = "»",
 			})
 		end,
-	},
-	{
-		"lewis6991/hover.nvim",
-		dependencies = {
-			"kevinhwang91/nvim-ufo",
-		},
-		opts = {
-			init = function()
-				require("hover.providers.lsp")
-			end,
-			title = false,
-		},
-		keys = {
-			{
-				"K",
-				function()
-					local winid = require("ufo").peekFoldedLinesUnderCursor()
-					if not winid then
-						require("hover").hover()
-					end
-				end,
-				desc = "Hover",
-			},
-		},
 	},
 }

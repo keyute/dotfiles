@@ -64,7 +64,7 @@ return {
 	},
 	{
 		"numToStr/Comment.nvim",
-		event = "VeryLazy",
+		event = { "BufReadPost", "BufNewFile" },
 		opts = {},
 	},
 	{
@@ -109,13 +109,18 @@ return {
 	},
 	{
 		"smjonas/inc-rename.nvim",
-		event = "VeryLazy",
-		config = function()
-			require("inc_rename").setup()
-			vim.keymap.set("n", "<leader>rn", function()
-				return ":IncRename " .. vim.fn.expand("<cword>")
-			end, { expr = true, desc = "IncRename" })
-		end,
+		name = "inc_rename",
+		opts = {},
+		keys = {
+			{
+				"<leader>rn",
+				function()
+					return ":IncRename " .. vim.fn.expand("<cword>")
+				end,
+				expr = true,
+				desc = "Rename",
+			},
+		},
 	},
 	{
 		"nmac427/guess-indent.nvim",
