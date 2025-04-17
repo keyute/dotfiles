@@ -1,0 +1,60 @@
+models:
+  - name: OpenAI o3
+    provider: openai
+    model: o3
+    apiKey: {{ onepasswordRead "op://Personal/OpenAI/api key" }}
+    defaultCompletionOptions:
+      contextLength: 200000
+  - name: OpenAI GPT-4.1
+    provider: openai
+    model: gpt-4.1
+    apiKey: {{ onepasswordRead "op://Personal/OpenAI/api key" }}
+    defaultCompletionOptions:
+      contextLength: 1047576
+  - name: Claude 3.7 Sonnet
+    provider: anthropic
+    model: claude-3-7-sonnet-latest
+    apiKey: {{ onepasswordRead "op://Personal/Anthropic/api key" }}
+    defaultCompletionOptions:
+      contextLength: 200000
+    cacheBehaviour:
+      cacheSystemMessage: true
+      cacheConversation: true
+  - name: Qwen2.5-Coder
+    provider: ollama
+    model: qwen2.5-coder:3b-base-q8_0
+    defaultCompletionOptions:
+      contextLength: 8000
+    roles:
+      - autocomplete
+  - name: Nomic Embed Text
+    provider: ollama
+    model: nomic-embed-text
+    roles:
+      - embed
+context:
+  - provider: codebase
+  - provider: file
+  - provider: code
+  - provider: currentFile
+  - provider: open
+prompts:
+  - name: check
+    description: Check for mistakes in my code
+    prompt: |
+      Please read the highlighted code and check for any mistakes. You should look for the following, and be extremely vigilant:
+        - Syntax errors
+        - Logic errors
+        - Security vulnerabilities
+        - Performance issues
+        - Anything else that looks wrong
+
+      Once you find an error, please explain it as clearly as possible, but without using extra words.
+      For example, instead of saying 'I think there is a syntax error on line 5', you should say 'Syntax error on line 5'.
+      Give your answer as one bullet point per mistake found.
+  - name: test
+    description: Write unit tests for highlighted code
+    prompt: |
+      Write a comprehensive set of unit tests for the selected code. It should setup, run tests that check for
+      correctness including important edge cases, and teardown. Ensure that the tests are complete and sophisticated.
+      Give the tests just as chat output, don't edit any file.
