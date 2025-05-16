@@ -36,6 +36,20 @@ return {
 				documentation = { auto_show = true, auto_show_delay_ms = 500 },
 			},
 		},
+		config = function(_, opts)
+			local capabilities = {
+				textDocument = {
+					foldingRange = {
+						dynamicRegistration = false,
+						lineFoldingOnly = true,
+					},
+				},
+			}
+			local cmp = require("blink.cmp")
+			capabilities = cmp.get_lsp_capabilities(capabilities)
+			vim.lsp.config("*", capabilities)
+			cmp.setup(opts)
+		end,
 		dependencies = {
 			"milanglacier/minuet-ai.nvim",
 			name = "minuet",
@@ -222,6 +236,55 @@ return {
 				endpoint = "https://api.anthropic.com",
 				model = "claude-3-7-sonnet-latest",
 				api_key_name = { "op", "read", "op://Personal/Anthropic/api key" },
+			},
+		},
+	},
+	{
+		"kevinhwang91/nvim-ufo",
+		dependencies = {
+			"kevinhwang91/promise-async",
+			"williamboman/mason-lspconfig.nvim",
+		},
+		event = { "BufReadPre", "BufNewFile" },
+		opts = {
+			provider_selector = function()
+				return function(bufnr)
+					local function handleFallbackException(providerName)
+						return require("ufo").getFolds(bufnr, providerName)
+					end
+					return require("ufo")
+						.getFolds(bufnr, "lsp")
+						:catch(function()
+							return handleFallbackException("treesitter")
+						end)
+						:catch(function()
+							return handleFallbackException("indent")
+						end)
+				end
+			end,
+		},
+	},
+	{
+		"lewis6991/hover.nvim",
+		dependencies = {
+			"kevinhwang91/nvim-ufo",
+		},
+		opts = {
+			init = function()
+				require("hover.providers.lsp")
+			end,
+			title = false,
+		},
+		keys = {
+			{
+				"K",
+				function()
+					local winid = require("ufo").peekFoldedLinesUnderCursor()
+					if not winid then
+						require("hover").hover()
+					end
+				end,
+				desc = "Hover",
 			},
 		},
 	},
