@@ -48,7 +48,7 @@ return {
 						api_key = "TERM",
 						name = "Qwen2.5 Coder",
 						end_point = "http://localhost:11434/v1/completions",
-						model = "qwen2.5-coder:3b-base-q8_0",
+						model = "qwen2.5-coder:7b-base-q6_K",
 					},
 				},
 			},
