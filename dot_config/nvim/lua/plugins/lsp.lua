@@ -10,7 +10,10 @@ vim.api.nvim_create_autocmd({ "InsertEnter", "InsertLeave" }, {
 	end,
 })
 
-vim.lsp.config("lua_ls", { settings = { Lua = { hint = { enable = true } } } })
+vim.lsp.config(
+	"lua_ls",
+	{ settings = { Lua = { hint = { enable = true }, workspace = { library = { vim.env.VIMRUNTIME } } } } }
+)
 vim.lsp.config("ltex", { settings = { ltex = { language = "en-AU" } } })
 vim.lsp.config(
 	"ts_ls",
