@@ -22,19 +22,32 @@ return {
 		opts = {
 			keymap = { preset = "super-tab" },
 			sources = {
-				default = { "lsp", "path", "buffer", "snippets", "minuet" },
+				default = { "lsp", "path", "buffer", "snippets", "minuet", "avante" },
 				providers = {
 					minuet = {
 						name = "minuet",
 						module = "minuet.blink",
-						score_offset = 8,
+						async = true,
+						timeout_ms = 3000,
+						score_offset = 50,
+					},
+					avante = {
+						name = "avante",
+						module = "blink-cmp-avante",
+						score_offset = 100,
 					},
 				},
 			},
 			completion = {
 				accept = { auto_brackets = { enabled = true } },
 				documentation = { auto_show = true, auto_show_delay_ms = 500 },
+				trigger = { prefetch_on_insert = false },
 			},
+			appearance = {
+				kind_icons = {
+					Ollama = "󰳆"
+				}
+			}
 		},
 		config = function(_, opts)
 			local capabilities = {
@@ -51,24 +64,27 @@ return {
 			cmp.setup(opts)
 		end,
 		dependencies = {
-			"milanglacier/minuet-ai.nvim",
-			name = "minuet",
-			opts = {
-				provider = "openai_fim_compatible",
-				n_completions = 1,
-				context_window = 8000,
-				provider_options = {
-					openai_fim_compatible = {
-						api_key = "TERM",
-						name = "Qwen2.5 Coder",
-						end_point = "http://localhost:11434/v1/completions",
-						model = "qwen2.5-coder:7b-base-q4_K_M",
+			{
+				"milanglacier/minuet-ai.nvim",
+				name = "minuet",
+				opts = {
+					provider = "openai_compatible",
+					n_completions = 1,
+					context_window = 8000,
+					provider_options = {
+						openai_compatible = {
+							name = "Ollama",
+							end_point = "http://localhost:11434/v1/chat/completions",
+							model = "qwen2.5-coder:7b-base-q4_K_M",
+							api_key = "TERM",
+						},
 					},
 				},
+				dependencies = {
+					"nvim-lua/plenary.nvim",
+				},
 			},
-			dependencies = {
-				"nvim-lua/plenary.nvim",
-			},
+			"Kaiser-Yang/blink-cmp-avante",
 		},
 	},
 	{
@@ -229,13 +245,25 @@ return {
 			"nvim-lua/plenary.nvim",
 			"MunifTanjim/nui.nvim",
 			"nvim-tree/nvim-web-devicons",
+			{
+				"HakonHarnes/img-clip.nvim",
+				opts = {
+					default = {
+						embed_image_as_base64 = true,
+						prompt_for_file_name = true,
+						drag_and_drop = {
+							insert_mode = true,
+						},
+					},
+				},
+			},
 		},
 		opts = {
-			provider = "claude",
-			claude = {
-				endpoint = "https://api.anthropic.com",
-				model = "claude-3-7-sonnet-latest",
-				api_key_name = { "op", "read", "op://Personal/Anthropic/api key" },
+			provider = "openai",
+			openai = {
+				endpoint = "https://api.kubecity.ai/v1",
+				model = "openai/gpt-4.1",
+				api_key_name = { "op", "read", "op://Personal/LiteLLM/api key" },
 			},
 		},
 	},
