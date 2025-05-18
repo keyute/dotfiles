@@ -1,0 +1,59 @@
+name: Assistant
+version: 0.0.1
+schema: v1
+
+models:
+  - name: GPT-4.1
+    provider: openai
+    model: openai/gpt-4.1
+    apiKey: ${{ secrets.LITELLM_API_KEY }}
+    apiBase: ${{ secrets.LITELLM_API_BASE }}
+    roles:
+      - chat
+      - edit
+      - apply
+  - name: Claude 3.7 Sonnet
+    provider: openai
+    model: anthropic/claude-3.7-sonnet
+    apiKey: ${{ secrets.LITELLM_API_KEY }}
+    apiBase: ${{ secrets.LITELLM_API_BASE }}\
+    roles:
+      - chat
+      - edit
+      - apply
+  - name: Qwen2.5 Coder
+    provider: ollama
+    model: qwen2.5-coder:7b-base-q4_K_M
+    roles:
+      - autocomplete
+  - name: BGE m3
+    provider: ollama
+    model: bge-m3:latest
+    roles:
+      - embed
+  - name: Cohere Rerank
+    provider: cohere
+    model: cohere/rerank-v3.5
+    apiKey: ${{ secrets.LITELLM_API_KEY }}
+    apiBase: ${{ secrets.LITELLM_API_BASE }}
+    roles:
+      - rerank
+context:
+  - provider: file
+  - provider: code
+  - provider: folder
+  - provider: diff
+  - provider: codebase
+    params:
+      nRetrieve: 1000
+      nFinal: 10
+      useReranking: true
+rules:
+  - >-
+    - Do not give unnecessary explanations and get straight to the point
+
+    - Assume that I have all the required technical knowledge to understand the
+    code and only bring relevant knowledge only to correct any misunderstandings
+    I have
+
+    - Always answer in a concise and easy to understand format
