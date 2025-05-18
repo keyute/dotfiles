@@ -8,6 +8,8 @@ models:
     model: openai/gpt-4.1
     apiKey: ${{ secrets.LITELLM_API_KEY }}
     apiBase: ${{ secrets.LITELLM_API_BASE }}
+    defaultCompletionOptions:
+      contextLength: 1000000
     roles:
       - chat
       - edit
@@ -16,7 +18,9 @@ models:
     provider: openai
     model: anthropic/claude-3.7-sonnet
     apiKey: ${{ secrets.LITELLM_API_KEY }}
-    apiBase: ${{ secrets.LITELLM_API_BASE }}\
+    apiBase: ${{ secrets.LITELLM_API_BASE }}
+    defaultCompletionOptions:
+      contextLength: 128000
     roles:
       - chat
       - edit
@@ -24,11 +28,15 @@ models:
   - name: Qwen2.5 Coder
     provider: ollama
     model: qwen2.5-coder:7b-base-q4_K_M
+    defaultCompletionOptions:
+      contextLength: 8000
     roles:
       - autocomplete
   - name: BGE m3
     provider: ollama
     model: bge-m3:latest
+    embedOptions:
+      maxChunkSize: 500
     roles:
       - embed
   - name: Cohere Rerank
