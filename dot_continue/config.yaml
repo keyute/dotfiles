@@ -51,6 +51,7 @@ context:
   - provider: code
   - provider: folder
   - provider: diff
+  - provider: url
   - provider: codebase
     params:
       nRetrieve: 1000
