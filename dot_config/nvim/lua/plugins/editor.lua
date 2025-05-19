@@ -75,7 +75,7 @@ return {
 						openai_compatible = {
 							name = "Ollama",
 							end_point = "http://localhost:11434/v1/chat/completions",
-							model = "qwen2.5-coder:7b-base-q4_K_M",
+							model = "qwen2.5-coder:3b-base-q4_K_M",
 							api_key = "TERM",
 						},
 					},
