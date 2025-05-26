@@ -14,9 +14,9 @@ models:
       - chat
       - edit
       - apply
-  - name: Claude 3.7 Sonnet
+  - name: Claude Sonnet 4
     provider: openai
-    model: anthropic/claude-3.7-sonnet
+    model: anthropic/claude-sonnet-4
     apiKey: ${{ secrets.LITELLM_API_KEY }}
     apiBase: ${{ secrets.LITELLM_API_BASE }}
     defaultCompletionOptions:
