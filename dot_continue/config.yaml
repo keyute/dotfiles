@@ -20,7 +20,18 @@ models:
     apiKey: ${{ secrets.LITELLM_API_KEY }}
     apiBase: ${{ secrets.LITELLM_API_BASE }}
     defaultCompletionOptions:
-      contextLength: 128000
+      contextLength: 200000
+    roles:
+      - chat
+      - edit
+      - apply
+  - name: Claude Opus 4
+    provider: openai
+    model: anthropic/claude-opus-4
+    apiKey: ${{ secrets.LITELLM_API_KEY }}
+    apiBase: ${{ secrets.LITELLM_API_BASE }}
+    defaultCompletionOptions:
+      contextLength: 200000
     roles:
       - chat
       - edit
