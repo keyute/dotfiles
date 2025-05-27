@@ -21,6 +21,9 @@ models:
     apiBase: ${{ secrets.LITELLM_API_BASE }}
     defaultCompletionOptions:
       contextLength: 200000
+    cacheBehavior:
+      cacheSystemMessage: true
+      cacheConversation: true
     roles:
       - chat
       - edit
@@ -32,6 +35,9 @@ models:
     apiBase: ${{ secrets.LITELLM_API_BASE }}
     defaultCompletionOptions:
       contextLength: 200000
+    cacheBehavior:
+      cacheSystemMessage: true
+      cacheConversation: true
     roles:
       - chat
       - edit
