@@ -1,8 +1,6 @@
 tap "artginzburg/tap"
 tap "buo/cask-upgrade"
 tap "hashicorp/tap"
-tap "homebrew/bundle"
-tap "homebrew/services"
 brew "argocd"
 brew "azure-cli"
 brew "black"
