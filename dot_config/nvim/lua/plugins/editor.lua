@@ -45,7 +45,7 @@ return {
 			},
 			appearance = {
 				kind_icons = {
-					Ollama = "󰳆"
+					Local = "󰳆"
 				}
 			}
 		},
@@ -73,9 +73,9 @@ return {
 					context_window = 8000,
 					provider_options = {
 						openai_compatible = {
-							name = "Ollama",
-							end_point = "http://localhost:11434/v1/chat/completions",
-							model = "qwen2.5-coder:3b-base-q4_K_M",
+							name = "Local",
+							end_point = "http://localhost:28100/v1/chat/completions",
+							model = "mlx-community/Qwen2.5-Coder-7B-4bit",
 							api_key = "TERM",
 						},
 					},
