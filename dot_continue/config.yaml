@@ -55,6 +55,7 @@ models:
     provider: openai
     model: mlx-community/Qwen2.5-Coder-7B-4bit
     apiBase: ${{ secrets.LOCAL_API_BASE }}
+    useLegacyCompletionsEndpoint: true
     defaultCompletionOptions:
       contextLength: 8000
     roles:
