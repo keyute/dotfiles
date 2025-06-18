@@ -6,10 +6,13 @@ models:
   - name: GPT-4.1
     provider: openai
     model: openai/gpt-4.1
-    apiKey: ${{ secrets.LITELLM_API_KEY }}
-    apiBase: ${{ secrets.LITELLM_API_BASE }}
+    apiKey: ${{ secrets.REMOTE_API_KEY }}
+    apiBase: ${{ secrets.REMOTE_API_BASE }}
     defaultCompletionOptions:
       contextLength: 1000000
+    capabilities:
+      - tool_use
+      - image_input
     roles:
       - chat
       - edit
@@ -17,13 +20,16 @@ models:
   - name: Claude Sonnet 4
     provider: openai
     model: anthropic/claude-sonnet-4
-    apiKey: ${{ secrets.LITELLM_API_KEY }}
-    apiBase: ${{ secrets.LITELLM_API_BASE }}
+    apiKey: ${{ secrets.REMOTE_API_KEY }}
+    apiBase: ${{ secrets.REMOTE_API_BASE }}
     defaultCompletionOptions:
       contextLength: 200000
     cacheBehavior:
       cacheSystemMessage: true
       cacheConversation: true
+    capabilities:
+      - tool_use
+      - image_input
     roles:
       - chat
       - edit
@@ -31,27 +37,32 @@ models:
   - name: Claude Opus 4
     provider: openai
     model: anthropic/claude-opus-4
-    apiKey: ${{ secrets.LITELLM_API_KEY }}
-    apiBase: ${{ secrets.LITELLM_API_BASE }}
+    apiKey: ${{ secrets.REMOTE_API_KEY }}
+    apiBase: ${{ secrets.REMOTE_API_BASE }}
     defaultCompletionOptions:
       contextLength: 200000
     cacheBehavior:
       cacheSystemMessage: true
       cacheConversation: true
+    capabilities:
+      - tool_use
+      - image_input
     roles:
       - chat
       - edit
       - apply
   - name: Qwen2.5 Coder
-    provider: ollama
-    model: qwen2.5-coder:3b-base-q4_K_M
+    provider: openai
+    model: mlx-community/Qwen2.5-Coder-7B-4bit
+    apiBase: ${{ secrets.LOCAL_API_BASE }}
     defaultCompletionOptions:
       contextLength: 8000
     roles:
       - autocomplete
-  - name: BGE m3
-    provider: ollama
-    model: bge-m3:latest
+  - name: Qwen3 Embedding
+    provider: openai
+    model: mlx-community/Qwen3-Embedding-4B-4bit-DWQ
+    apiBase: ${{ secrets.LOCAL_API_BASE }}
     embedOptions:
       maxChunkSize: 500
     roles:
@@ -59,8 +70,8 @@ models:
   - name: Cohere Rerank
     provider: cohere
     model: cohere/rerank-v3.5
-    apiKey: ${{ secrets.LITELLM_API_KEY }}
-    apiBase: ${{ secrets.LITELLM_API_BASE }}
+    apiKey: ${{ secrets.REMOTE_API_KEY }}
+    apiBase: ${{ secrets.REMOTE_API_BASE }}
     roles:
       - rerank
 context:
