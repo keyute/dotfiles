@@ -75,7 +75,7 @@ return {
 						openai_compatible = {
 							name = "Local",
 							end_point = "http://localhost:28100/v1/chat/completions",
-							model = "mlx-community/Qwen2.5-Coder-7B-4bit",
+							model = "mlx-community/Qwen2.5-Coder-3B-Instruct-4bit",
 							api_key = "TERM",
 						},
 					},
