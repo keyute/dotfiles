@@ -51,18 +51,17 @@ models:
       - chat
       - edit
       - apply
-  - name: Qwen2.5 Coder
+  - name: Autocomplete
     provider: openai
-    model: mlx-community/Qwen2.5-Coder-3B-Instruct-4bit
+    model: qwen2.5-coder:3b-base-q4_K_M
     apiBase: ${{ secrets.LOCAL_API_BASE }}
-    useLegacyCompletionsEndpoint: true
     defaultCompletionOptions:
       contextLength: 8000
     roles:
       - autocomplete
-  - name: Qwen3 Embedding
+  - name: Embedding
     provider: openai
-    model: mlx-community/Qwen3-Embedding-4B-4bit-DWQ
+    model: bge-m3:latest
     apiBase: ${{ secrets.LOCAL_API_BASE }}
     embedOptions:
       maxChunkSize: 500

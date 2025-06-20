@@ -68,15 +68,17 @@ return {
 				"milanglacier/minuet-ai.nvim",
 				name = "minuet",
 				opts = {
-					provider = "openai_compatible",
+					provider = "openai_fim_compatible",
 					n_completions = 1,
 					context_window = 8000,
 					provider_options = {
-						openai_compatible = {
+						openai_fim_compatible = {
 							name = "Local",
-							end_point = "http://localhost:28100/v1/chat/completions",
-							model = "mlx-community/Qwen2.5-Coder-3B-Instruct-4bit",
+							end_point = "http://localhost:11434/v1/completions",
+							model = "qwen2.5-coder:3b-base-q4_K_M",
 							api_key = "TERM",
+							stream = true,
+
 						},
 					},
 				},
