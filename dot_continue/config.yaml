@@ -3,40 +3,9 @@ version: 0.0.1
 schema: v1
 
 models:
-  - name: GPT-4.1
-    provider: openai
-    model: openai/gpt-4.1
-    apiKey: ${{ secrets.REMOTE_API_KEY }}
-    apiBase: ${{ secrets.REMOTE_API_BASE }}
-    defaultCompletionOptions:
-      contextLength: 1000000
-    capabilities:
-      - tool_use
-      - image_input
-    roles:
-      - chat
-      - edit
-      - apply
   - name: Claude Sonnet 4
     provider: openai
-    model: anthropic/claude-sonnet-4
-    apiKey: ${{ secrets.REMOTE_API_KEY }}
-    apiBase: ${{ secrets.REMOTE_API_BASE }}
-    defaultCompletionOptions:
-      contextLength: 200000
-    cacheBehavior:
-      cacheSystemMessage: true
-      cacheConversation: true
-    capabilities:
-      - tool_use
-      - image_input
-    roles:
-      - chat
-      - edit
-      - apply
-  - name: Claude Opus 4
-    provider: openai
-    model: anthropic/claude-opus-4
+    model: Claude#claude-sonnet-4-20250514
     apiKey: ${{ secrets.REMOTE_API_KEY }}
     apiBase: ${{ secrets.REMOTE_API_BASE }}
     defaultCompletionOptions:
@@ -67,7 +36,7 @@ models:
       maxChunkSize: 500
     roles:
       - embed
-  - name: Cohere Rerank
+  - name: Rerank
     provider: cohere
     model: cohere/rerank-v3.5
     apiKey: ${{ secrets.REMOTE_API_KEY }}
