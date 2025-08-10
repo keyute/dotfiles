@@ -5,7 +5,7 @@ schema: v1
 models:
   - name: Claude Sonnet 4
     provider: openai
-    model: anthropic/claude-sonnet-4
+    model: Claude#claude-sonnet-4-20250514
     apiKey: ${{ secrets.REMOTE_API_KEY }}
     apiBase: ${{ secrets.REMOTE_API_BASE }}
     defaultCompletionOptions:
