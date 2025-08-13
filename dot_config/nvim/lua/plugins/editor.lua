@@ -101,9 +101,9 @@ return {
 	},
 	{
 		"nvim-treesitter/nvim-treesitter",
+		branch = "main",
 		build = ":TSUpdate",
 		dependencies = {
-			"nvim-treesitter/nvim-treesitter-refactor",
 			"windwp/nvim-ts-autotag",
 			{
 				"nvim-treesitter/nvim-treesitter-context",
@@ -132,7 +132,6 @@ return {
 				enable = true,
 			},
 		},
-		main = "nvim-treesitter.configs",
 	},
 	{
 		"folke/which-key.nvim",
