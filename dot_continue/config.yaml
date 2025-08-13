@@ -10,8 +10,6 @@ models:
     apiBase: ${{ secrets.REMOTE_API_BASE }}
     defaultCompletionOptions:
       contextLength: 200000
-      reasoning: true
-      reasoningBudgetTokens: 32000
     cacheBehavior:
       cacheSystemMessage: true
       cacheConversation: true
@@ -22,6 +20,9 @@ models:
       - chat
       - edit
       - apply
+    requestOptions:
+      extraBodyProperties:
+        reasoning_effort: high
   - name: Autocomplete
     provider: openai
     model: qwen2.5-coder:3b-base-q4_K_M
