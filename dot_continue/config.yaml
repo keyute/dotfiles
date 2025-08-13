@@ -10,6 +10,7 @@ models:
     apiBase: ${{ secrets.REMOTE_API_BASE }}
     defaultCompletionOptions:
       contextLength: 200000
+      maxTokens: 32000
     cacheBehavior:
       cacheSystemMessage: true
       cacheConversation: true
