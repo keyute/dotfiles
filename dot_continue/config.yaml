@@ -24,6 +24,24 @@ models:
     requestOptions:
       extraBodyProperties:
         reasoning_effort: high
+  - name: GPT-5
+    provider: openai
+    model: openai/gpt-5
+    apiKey: ${{ secrets.REMOTE_API_KEY }}
+    apiBase: ${{ secrets.REMOTE_API_BASE }}
+    defaultCompletionOptions:
+      contextLength: 200000
+      maxTokens: 32000
+    capabilities:
+      - tool_use
+      - image_input
+    roles:
+      - chat
+      - edit
+      - apply
+    requestOptions:
+      extraBodyProperties:
+        reasoning_effort: high
   - name: Autocomplete
     provider: openai
     model: qwen2.5-coder:3b-base-q4_K_M
