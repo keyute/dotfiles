@@ -103,6 +103,7 @@ return {
 		"nvim-treesitter/nvim-treesitter",
 		build = ":TSUpdate",
 		dependencies = {
+			"nvim-treesitter/nvim-treesitter-refactor",
 			"windwp/nvim-ts-autotag",
 			{
 				"nvim-treesitter/nvim-treesitter-context",
@@ -116,6 +117,7 @@ return {
 			},
 		},
 		event = { "BufReadPost", "BufNewFile" },
+		main = "nvim-treesitter.configs",
 		opts = {
 			ensure_installed = "all",
 			highlight = { enable = true },
