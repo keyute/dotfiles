@@ -36,6 +36,7 @@ return {
 				"bashls",
 				"dockerls",
 				"docker_compose_language_service",
+				"eslint",
 				"gopls",
 				"gradle_ls",
 				"jsonls",
