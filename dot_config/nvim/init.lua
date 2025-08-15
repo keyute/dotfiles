@@ -693,11 +693,14 @@ require("lazy").setup({
 			end,
 			formatters_by_ft = {
 				lua = { "stylua" },
-				-- Conform can also run multiple formatters sequentially
-				-- python = { "isort", "black" },
-				--
-				-- You can use 'stop_after_first' to run the first available formatter from the list
-				-- javascript = { "prettierd", "prettier", stop_after_first = true },
+				python = { "isort", "black" },
+				javascript = { "prettierd", "prettier", stop_after_first = true },
+				javascriptreact = { "prettierd", "prettier", stop_after_first = true },
+				typescript = { "prettierd", "prettier", stop_after_first = true },
+				typescriptreact = { "prettierd", "prettier", stop_after_first = true },
+				go = { "gofmt", "goimports" },
+				markdown = { "prettierd" },
+				yaml = { "yamlfmt" },
 			},
 		},
 	},
@@ -810,7 +813,15 @@ require("lazy").setup({
 		name = "catppuccin",
 		priority = 1000, -- Make sure to load this before all the other start plugins.
 		config = function()
-			require("catppuccin").setup({})
+			---@diagnostic disable-next-line: missing-fields
+			require("catppuccin").setup({
+				integrations = {
+					indent_blankline = {
+						enabled = true,
+						colored_indent_levels = true,
+					},
+				},
+			})
 
 			-- Load the colorscheme here.
 			-- Like many other themes, this one has different styles, and you could load
