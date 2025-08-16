@@ -13,5 +13,8 @@ return {
 				"RainbowCyan",
 			},
 		},
+		exclude = {
+			filetypes = { "dashboard" },
+		},
 	},
 }
