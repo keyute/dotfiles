@@ -12,8 +12,11 @@ return {
 					condition = { true, builtin.not_empty },
 					click = "v:lua.ScLa",
 				},
-				{ text = { "%C" }, click = "v:lua.ScFa" },
+				{ text = { builtin.foldfunc, " " }, click = "v:lua.ScFa" },
 				{ text = { "%s" }, click = "v:lua.ScSa" },
+			},
+			clickhandlers = {
+				FoldOther = false,
 			},
 		})
 	end,
