@@ -157,6 +157,7 @@ require("lazy").setup({
 	{ import = "plugins.editor" },
 	{ import = "plugins.ui" },
 	{ import = "plugins.lsp" },
+	{ import = "plugins.terminal" },
 }, {
 	ui = {
 		icons = vim.g.have_nerd_font and {} or {
