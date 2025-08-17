@@ -46,6 +46,9 @@ vim.o.smartcase = true
 -- Keep signcolumn on by default
 vim.o.signcolumn = "yes"
 
+-- Visual line for max characters
+vim.o.colorcolumn = "120"
+
 -- Decrease update time
 vim.o.updatetime = 250
 
