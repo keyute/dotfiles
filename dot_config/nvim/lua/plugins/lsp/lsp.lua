@@ -132,7 +132,7 @@ return {
 			"dockerls",
 			"docker_compose_language_service",
 			"gopls",
-			"markdownlint-cli2",
+			"marksman",
 			"jsonls",
 			"helm_ls",
 			"tailwindcss",
