@@ -9,12 +9,12 @@ return {
 			"<leader>yf",
 			mode = { "n", "v" },
 			"<cmd>Yazi<cr>",
-			desc = "Open yazi at the current file",
+			desc = "Open [Y]azi at the current [F]ile",
 		},
 		{
 			"<leader>yd",
 			"<cmd>Yazi cwd<cr>",
-			desc = "Open the file manager in nvim's working directory",
+			desc = "Open [Y]azi in nvim's working [D]irectory",
 		},
 	},
 	opts = {
