@@ -33,7 +33,7 @@ return {
 			typescript = { "prettierd", "prettier", stop_after_first = true },
 			typescriptreact = { "prettierd", "prettier", stop_after_first = true },
 			go = { "gofmt", "goimports" },
-			markdown = { "prettierd" },
+			markdown = { "prettierd", "markdownlint-cli2" },
 			yaml = { "yamlfmt" },
 		},
 	},
