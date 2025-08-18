@@ -132,6 +132,7 @@ return {
 			"dockerls",
 			"docker_compose_language_service",
 			"gopls",
+			"marksman",
 			"jsonls",
 			"helm_ls",
 			"tailwindcss",
