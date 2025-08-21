@@ -123,6 +123,9 @@ return {
 					},
 				},
 			},
+			yamlls = {
+				filetype_exclude = { "helm" },
+			},
 		}
 
 		local ensure_installed = vim.tbl_keys(servers or {})
@@ -137,6 +140,7 @@ return {
 			"helm_ls",
 			"tailwindcss",
 			"ts_ls",
+			"yamlls",
 		})
 		require("mason-tool-installer").setup({ ensure_installed = ensure_installed })
 

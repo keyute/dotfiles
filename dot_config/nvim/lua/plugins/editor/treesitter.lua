@@ -2,6 +2,18 @@ return {
 	"nvim-treesitter/nvim-treesitter",
 	build = ":TSUpdate",
 	main = "nvim-treesitter.configs",
+	init = function()
+		vim.filetype.add({
+			extension = {
+				gotmpl = "gotmpl",
+			},
+			pattern = {
+				[".*/templates/.*%.tpl"] = "helm",
+				[".*/templates/.*%.ya?ml"] = "helm",
+				["helmfile.*%.ya?ml"] = "helm",
+			},
+		})
+	end,
 	opts = {
 		ensure_installed = {
 			"bash",
@@ -10,6 +22,8 @@ return {
 			"diff",
 			"dockerfile",
 			"go",
+			"gotmpl",
+			"helm",
 			"html",
 			"lua",
 			"luadoc",
