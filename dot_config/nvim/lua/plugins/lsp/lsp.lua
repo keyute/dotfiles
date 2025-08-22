@@ -139,6 +139,7 @@ return {
 			"jsonls",
 			"helm_ls",
 			"tailwindcss",
+			"terraformls",
 			"ts_ls",
 			"yamlls",
 		})

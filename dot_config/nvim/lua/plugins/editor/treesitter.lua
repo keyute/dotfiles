@@ -33,6 +33,7 @@ return {
 			"query",
 			"vim",
 			"vimdoc",
+			"terraform",
 			"tsx",
 			"typescript",
 			"yaml",
