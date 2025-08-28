@@ -5,6 +5,6 @@ return {
 	},
 	opts = {},
 	keys = {
-		{ "<leader>gi", "<cmd>Gitignore<cr>", desc = { "[G]it[I]gnore" } },
+		{ "<leader>gi", "<cmd>Gitignore<cr>", desc = "[G]it[I]gnore" },
 	},
 }
