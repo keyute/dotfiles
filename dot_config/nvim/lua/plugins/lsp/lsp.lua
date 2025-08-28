@@ -142,6 +142,7 @@ return {
 			"marksman",
 			"jsonls",
 			"helm_ls",
+			"pyright",
 			"tailwindcss",
 			"ts_ls",
 			"yamlls",

@@ -30,6 +30,7 @@ return {
 			"json",
 			"markdown",
 			"markdown_inline",
+			"python",
 			"query",
 			"vim",
 			"vimdoc",
