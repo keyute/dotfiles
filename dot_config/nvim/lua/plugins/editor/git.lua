@@ -4,6 +4,11 @@ return {
 		opts = {},
 	},
 	{
+		"akinsho/git-conflict.nvim",
+		version = "*",
+		opts = {},
+	},
+	{
 		"sindrets/diffview.nvim",
 		cmd = { "DiffviewOpen", "DiffviewFileHistory" },
 		keys = {

@@ -6,6 +6,7 @@ return {
 		"WhoIsSethDaniel/mason-tool-installer.nvim",
 		{ "j-hui/fidget.nvim", opts = {} },
 		"saghen/blink.cmp",
+		"b0o/schemastore.nvim",
 	},
 	config = function()
 		vim.api.nvim_create_autocmd("LspAttach", {
@@ -26,11 +27,6 @@ return {
 				map("gW", require("telescope.builtin").lsp_dynamic_workspace_symbols, "Open Workspace Symbols")
 				map("grt", require("telescope.builtin").lsp_type_definitions, "[G]oto [T]ype Definition")
 
-				-- This function resolves a difference between neovim nightly (version 0.11) and stable (version 0.10)
-				---@param client vim.lsp.Client
-				---@param method vim.lsp.protocol.Method
-				---@param bufnr? integer some lsp support methods only in specific files
-				---@return boolean
 				local function client_supports_method(client, method, bufnr)
 					if vim.fn.has("nvim-0.11") == 1 then
 						return client:supports_method(method, bufnr)
@@ -124,7 +120,15 @@ return {
 				},
 			},
 			yamlls = {
-				filetype_exclude = { "helm" },
+				settings = {
+					yaml = {
+						schemaStore = {
+							enable = false,
+							url = "",
+						},
+						schemas = require("schemastore").yaml.schemas(),
+					},
+				},
 			},
 		}
 
@@ -144,16 +148,15 @@ return {
 		})
 		require("mason-tool-installer").setup({ ensure_installed = ensure_installed })
 
+		for server, config in pairs(servers) do
+			if not vim.tbl_isempty(config) then
+				vim.lsp.config(server, config)
+			end
+		end
+
 		require("mason-lspconfig").setup({
 			ensure_installed = {},
-			automatic_installation = false,
-			handlers = {
-				function(server_name)
-					local server = servers[server_name] or {}
-					server.capabilities = vim.tbl_deep_extend("force", {}, capabilities, server.capabilities or {})
-					require("lspconfig")[server_name].setup(server)
-				end,
-			},
+			automatic_enable = true,
 		})
 	end,
 }
