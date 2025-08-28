@@ -3,7 +3,9 @@ return {
 	dependencies = {
 		"nvim-telescope/telescope.nvim",
 	},
-	opts = {},
+	config = function()
+		require("gitignore")
+	end,
 	keys = {
 		{ "<leader>gi", "<cmd>Gitignore<cr>", desc = "[G]it[I]gnore" },
 	},
