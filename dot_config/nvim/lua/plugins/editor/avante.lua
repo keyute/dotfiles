@@ -1,5 +1,6 @@
 return {
 	"yetone/avante.nvim",
+	build = "make",
 	dependencies = {
 		"nvim-lua/plenary.nvim",
 		"MunifTanjim/nui.nvim",
