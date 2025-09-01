@@ -17,7 +17,7 @@ return {
 			claude = {
 				endpoint = "https://api.kubecity.ai",
 				model = "anthropic/claude-sonnet-4",
-				api_key_name = "cmd:op read op://Personal/LiteLLM/api key",
+				api_key_name = 'cmd:op read "op://Personal/LiteLLM/api key"',
 				extra_request_body = {
 					reasoning_effort = "high",
 				},
