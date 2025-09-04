@@ -9,7 +9,7 @@ return {
 		"MeanderingProgrammer/render-markdown.nvim",
 	},
 	keys = {
-		{ "<leader>at", "<cmd>AvanteToggle<cr>", desc = "[A]vante [T]oggle" },
+		{ "<leader>aa", "<cmd>AvanteToggle<cr>", desc = "[A]sk [A]vante" },
 	},
 	opts = {
 		provider = "claude",
