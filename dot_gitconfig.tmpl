@@ -50,9 +50,9 @@
 [diff-so-fancy]
 	changeHunkIndicators = false
 [merge]
-	tool = vimdiff
-[mergetool "vimdiff"]
-	path = nvim
+	tool = diffview
+[mergetool "diffview"]
+	cmd = nvim -c "DiffviewOpen"
 [includeIf "gitdir:~/Projects/work/**"]
 	path = ~/Projects/work/.gitconfig
 [includeIf "gitdir:~/Projects/github/**"]
