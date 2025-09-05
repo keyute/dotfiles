@@ -10,6 +10,7 @@ return {
 	},
 	keys = {
 		{ "<leader>aa", "<cmd>AvanteToggle<cr>", desc = "[A]sk [A]vante" },
+		{ "<leader>an", "<cmd>AvanteChatNew<cr>", desc = "[A]vante [N]ew Chat"}
 	},
 	opts = {
 		provider = "claude",
