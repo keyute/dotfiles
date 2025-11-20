@@ -1,6 +1,6 @@
 git:
   autoFetch: false
-  paging:
-    colorArg: always
-    pager: diff-so-fancy
+  pagers:
+    - colorArg: always
+      pager: diff-so-fancy
 promptToReturnFromSubprocess: false
