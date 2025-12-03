@@ -25,12 +25,12 @@
         "type": "tokens-total"
       },
       {
-        "id": "52838946-a66a-40aa-8229-b9584033eea7",
-        "type": "flex-separator"
+        "id": "91561366-0791-414a-a72d-2922d7666bee",
+        "type": "separator"
       },
       {
         "id": "3297aa52-07da-49fb-ae28-63cadd9d654f",
-        "type": "git-changes"
+        "type": "git-branch"
       },
       {
         "id": "8687a76c-bfa6-44c3-959d-baf2cf723bed",
@@ -38,7 +38,7 @@
       },
       {
         "id": "440af67b-96cc-427a-a0b2-d348d92cf2cb",
-        "type": "git-branch"
+        "type": "git-changes"
       }
     ],
     [],
