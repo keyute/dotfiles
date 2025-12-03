@@ -33,8 +33,9 @@
         "type": "git-branch"
       },
       {
-        "id": "8687a76c-bfa6-44c3-959d-baf2cf723bed",
-        "type": "separator"
+        "id": "dc5058b0-5ea5-48d6-b9bc-5b28322cb8b2",
+        "type": "separator",
+        "character": " "
       },
       {
         "id": "440af67b-96cc-427a-a0b2-d348d92cf2cb",
