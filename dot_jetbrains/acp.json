@@ -1,0 +1,11 @@
+{
+    "agent_servers": {
+        "Claude Code": {
+            "command": "/opt/homebrew/bin/npx",
+            "args": [
+                "@zed-industries/claude-code-acp"
+            ],
+            "env": {}
+        }
+    }
+}
