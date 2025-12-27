@@ -35,6 +35,12 @@ return {
 			go = { "gofmt", "goimports" },
 			markdown = { "prettierd", "markdownlint-cli2" },
 			yaml = { "yamlfmt" },
+			sql = { "sqlfluff" },
+		},
+		formatters = {
+			sqlfluff = {
+				args = { "format", "--dialect=postgres", "-" },
+			},
 		},
 	},
 }
