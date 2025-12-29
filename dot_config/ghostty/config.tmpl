@@ -50,5 +50,6 @@
 
 theme = light:Catppuccin Latte,dark: Catppuccin Mocha
 font-family = PragmataPro Mono Liga
-keybind = super+v=paste_from_clipboard
-copy-on-select = clipboard
+{{- if eq .chezmoi.os "linux" }}
+keybind = ctrl+v=paste_from_clipboard
+{{- end }}
