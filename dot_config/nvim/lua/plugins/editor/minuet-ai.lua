@@ -1,3 +1,6 @@
+local is_macos = vim.loop.os_uname().sysname == "Darwin"
+local model = is_macos and "qwen2.5-coder:3b-base-q8_0" or "qwen2.5-coder:1.5b-base-q8_0"
+
 return {
 	"milanglacier/minuet-ai.nvim",
 	deps = {
@@ -15,7 +18,7 @@ return {
 				api_key = "TERM",
 				name = "Ollama",
 				end_point = "http://localhost:11434/v1/completions",
-				model = "qwen2.5-coder:3b-base-q8_0",
+				model = model,
 				optional = {
 					max_tokens = 56,
 					top_p = 0.9,
