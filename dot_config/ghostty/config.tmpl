@@ -50,10 +50,16 @@
 
 theme = light:Catppuccin Latte,dark: Catppuccin Mocha
 font-family = PragmataPro VF Mono Liga
-copy-on-select = clipboard
 font-size = 13
+font-variation = wght=497
+font-variation-bold = wght=700
+copy-on-select = clipboard
 window-width = 80
 window-height = 24
-{{- if eq .chezmoi.os "linux" }}
+
+{{- if eq .chezmoi.os "darwin" }}
+font-thicken = true
+font-thicken-strength = 100
+{{- else if eq .chezmoi.os "linux" }}
 keybind = ctrl+v=paste_from_clipboard
 {{- end }}
