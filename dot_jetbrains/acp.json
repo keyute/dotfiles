@@ -5,7 +5,7 @@
             "args": [
                 "@zed-industries/claude-code-acp@latest"
             ],
-            "env": {}
+            "use_idea_mcp": true
         }
     }
 }
