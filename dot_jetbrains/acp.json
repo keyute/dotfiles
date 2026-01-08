@@ -5,7 +5,10 @@
             "args": [
                 "@zed-industries/claude-code-acp@latest"
             ],
-            "use_idea_mcp": true
+            "use_idea_mcp": true,
+            "env": {
+                "MAX_THINKING_TOKENS": "10000"
+            }
         }
     }
 }
