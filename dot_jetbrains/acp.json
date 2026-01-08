@@ -7,7 +7,7 @@
             ],
             "use_idea_mcp": true,
             "env": {
-                "MAX_THINKING_TOKENS": "10000"
+                "MAX_THINKING_TOKENS": "32000"
             }
         }
     }
