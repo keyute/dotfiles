@@ -1,5 +1,5 @@
 local is_macos = vim.loop.os_uname().sysname == "Darwin"
-local model = is_macos and "qwen2.5-coder:3b-base-q8_0" or "qwen2.5-coder:1.5b-base-q8_0"
+local model = is_macos and "qwen2.5-coder:3b-base-q8_0" or "qwen2.5-coder:0.5b-base-q8_0"
 
 return {
 	"milanglacier/minuet-ai.nvim",
