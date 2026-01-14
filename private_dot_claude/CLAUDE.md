@@ -2,4 +2,4 @@
   library/API documentation. This means you should automatically use the Context7 MCP
   tools to resolve library id and get library docs without me having to explicitly ask.
 - Always analyse codebase for code style, implementation, design language and how code is stored together
-
+- Always keep your implementation simple, do not overengineer anything
