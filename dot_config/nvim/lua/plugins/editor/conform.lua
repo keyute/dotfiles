@@ -36,6 +36,9 @@ return {
 			markdown = { "prettierd", "markdownlint-cli2" },
 			yaml = { "yamlfmt" },
 			sql = { "sqlfluff" },
+			terraform = { "tofu_fmt" },
+			tf = { "tofu_fmt" },
+			["terraform-vars"] = { "tofu_fmt" },
 		},
 		formatters = {
 			sqlfluff = {

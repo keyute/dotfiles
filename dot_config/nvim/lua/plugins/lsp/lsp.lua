@@ -146,6 +146,7 @@ return {
 			"tailwindcss",
 			"ts_ls",
 			"yamlls",
+			"tofu_ls",
 		})
 		require("mason-tool-installer").setup({ ensure_installed = ensure_installed })
 
