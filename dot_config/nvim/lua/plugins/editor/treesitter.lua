@@ -37,6 +37,8 @@ return {
 			"tsx",
 			"typescript",
 			"yaml",
+			"terraform",
+			"hcl",
 		},
 		auto_install = true,
 		highlight = {
