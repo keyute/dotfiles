@@ -4,7 +4,7 @@ schema: v1
 models:
   - name: Autocomplete
     provider: ollama
-    model: qwen2.5-coder:1.5b-base-q8_0
+    model: {{- if eq .chezmoi.os "darwin" -}}qwen2.5-coder:3b-base-q8_0{{- else -}}qwen2.5-coder:0.5b-q8_0{{- end }}
     roles:
       - autocomplete
     defaultCompletionOptions:
