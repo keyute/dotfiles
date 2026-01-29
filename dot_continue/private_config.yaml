@@ -1,0 +1,11 @@
+name: Local Config
+version: 1.0.0
+schema: v1
+models:
+  - name: Autocomplete
+    provider: ollama
+    model: qwen2.5-coder:1.5b-base-q8_0
+    roles:
+      - autocomplete
+    defaultCompletionOptions:
+      contextLength: 8000
