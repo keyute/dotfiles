@@ -3,7 +3,8 @@
     "allow": [
       "mcp__context7",
       "WebSearch"
-    ]
+    ],
+    "defaultMode": "plan"
   },
   "statusLine": {
     "type": "command",
