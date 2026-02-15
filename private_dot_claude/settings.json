@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "mcp__context7",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch"
     ],
     "defaultMode": "plan"
   },
