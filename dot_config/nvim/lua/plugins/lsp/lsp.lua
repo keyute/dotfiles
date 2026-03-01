@@ -64,14 +64,28 @@ return {
 					client
 					and client:supports_method(vim.lsp.protocol.Methods.textDocument_inlayHint, event.buf)
 				then
+					vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
+
+					vim.api.nvim_create_autocmd("InsertEnter", {
+						buffer = event.buf,
+						callback = function()
+							vim.lsp.inlay_hint.enable(false, { bufnr = event.buf })
+						end,
+					})
+
+					vim.api.nvim_create_autocmd("InsertLeave", {
+						buffer = event.buf,
+						callback = function()
+							vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
+						end,
+					})
+
 					map("<leader>th", function()
 						vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({ bufnr = event.buf }))
 					end, "[T]oggle Inlay [H]ints")
 				end
 			end,
 		})
-
-		local virtual_text_config = { source = "if_many", spacing = 2 }
 
 		vim.diagnostic.config({
 			severity_sort = true,
@@ -85,19 +99,7 @@ return {
 					[vim.diagnostic.severity.HINT] = "󰌶 ",
 				},
 			} or {},
-			virtual_text = virtual_text_config,
-		})
-
-		vim.api.nvim_create_autocmd("InsertEnter", {
-			callback = function()
-				vim.diagnostic.config({ virtual_text = false })
-			end,
-		})
-
-		vim.api.nvim_create_autocmd("InsertLeave", {
-			callback = function()
-				vim.diagnostic.config({ virtual_text = virtual_text_config })
-			end,
+			virtual_text = { source = "if_many", spacing = 2 },
 		})
 
 		require("mason-tool-installer").setup({
