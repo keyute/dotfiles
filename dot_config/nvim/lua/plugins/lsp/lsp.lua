@@ -1,13 +1,17 @@
 return {
-	"mason-org/mason.nvim",
+	"mason-org/mason-lspconfig.nvim",
 	dependencies = {
+		{ "mason-org/mason.nvim", opts = {} },
+		"neovim/nvim-lspconfig",
 		"WhoIsSethDaniel/mason-tool-installer.nvim",
 		{ "j-hui/fidget.nvim", opts = {} },
 		"saghen/blink.cmp",
 		"b0o/schemastore.nvim",
 	},
 	config = function()
-		require("mason").setup()
+		vim.lsp.config("*", {
+			capabilities = require("blink.cmp").get_lsp_capabilities(),
+		})
 
 		vim.api.nvim_create_autocmd("LspAttach", {
 			group = vim.api.nvim_create_augroup("kickstart-lsp-attach", { clear = true }),
@@ -96,30 +100,27 @@ return {
 			end,
 		})
 
-		vim.lsp.config("*", {
-			capabilities = require("blink.cmp").get_lsp_capabilities(),
+		require("mason-tool-installer").setup({
+			ensure_installed = { "stylua" },
 		})
 
-		local servers = {
-			lua_ls = "lua-language-server",
-			bashls = "bash-language-server",
-			dockerls = "dockerfile-language-server",
-			docker_compose_language_service = "docker-compose-language-service",
-			gopls = "gopls",
-			marksman = "marksman",
-			jsonls = "json-lsp",
-			helm_ls = "helm-ls",
-			pyright = "pyright",
-			tailwindcss = "tailwindcss-language-server",
-			ts_ls = "typescript-language-server",
-			yamlls = "yaml-language-server",
-			tofu_ls = "tofu-ls",
-		}
-
-		vim.lsp.enable(vim.tbl_keys(servers))
-
-		local ensure_installed = vim.tbl_values(servers)
-		vim.list_extend(ensure_installed, { "stylua" })
-		require("mason-tool-installer").setup({ ensure_installed = ensure_installed })
+		require("mason-lspconfig").setup({
+			automatic_enable = true,
+			ensure_installed = {
+				"lua_ls",
+				"bashls",
+				"dockerls",
+				"docker_compose_language_service",
+				"gopls",
+				"marksman",
+				"jsonls",
+				"helm_ls",
+				"pyright",
+				"tailwindcss",
+				"ts_ls",
+				"yamlls",
+				"tofu_ls",
+			},
+		})
 	end,
 }
