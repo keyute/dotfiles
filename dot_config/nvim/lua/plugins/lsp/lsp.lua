@@ -103,7 +103,7 @@ return {
 		})
 
 		require("mason-tool-installer").setup({
-			ensure_installed = { "stylua" },
+			ensure_installed = { "stylua", "prettier", "prettierd" },
 		})
 
 		require("mason-lspconfig").setup({
@@ -122,6 +122,9 @@ return {
 				"ts_ls",
 				"yamlls",
 				"tofu_ls",
+				"html",
+				"cssls",
+				"taplo",
 			},
 		})
 	end,
