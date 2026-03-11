@@ -34,7 +34,7 @@ return {
 			typescriptreact = { "prettierd", "prettier", stop_after_first = true },
 			html = { "prettierd", "prettier", stop_after_first = true },
 			css = { "prettierd", "prettier", stop_after_first = true },
-			go = { "gofmt", "goimports" },
+			go = { "gofumpt", "goimports" },
 			toml = { "taplo" },
 			markdown = { "prettierd", "markdownlint-cli2" },
 			yaml = { "yamlfmt" },
