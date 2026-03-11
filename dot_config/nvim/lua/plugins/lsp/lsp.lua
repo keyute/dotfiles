@@ -103,7 +103,7 @@ return {
 		})
 
 		require("mason-tool-installer").setup({
-			ensure_installed = { "stylua", "prettier", "prettierd" },
+			ensure_installed = { "stylua", "prettier", "prettierd", "isort", "black", "markdownlint-cli2", "yamlfmt", "sqlfluff" },
 		})
 
 		require("mason-lspconfig").setup({
