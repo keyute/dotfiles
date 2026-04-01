@@ -26,7 +26,7 @@ return {
 						return tostring(vim.fn.wordcount().words) .. " words"
 					end,
 					cond = function()
-						return vim.bo.filetype == "markdown" or vim.bo.filetype == "asciidoc"
+						return vim.bo.filetype == "markdown" or vim.bo.filetype == "asciidoc" or vim.bo.filetype == "tex"
 					end,
 				},
 			},

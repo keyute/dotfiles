@@ -125,6 +125,7 @@ return {
 				"html",
 				"cssls",
 				"taplo",
+				"texlab",
 			},
 		})
 	end,
