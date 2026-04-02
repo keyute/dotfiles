@@ -36,8 +36,10 @@ eval "$(zoxide init zsh)"
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 
+{{- if eq .chezmoi.os "linux" }}
 export PATH="$PATH:$HOME/.local/bin"
 export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
+{{- end }}
 
 export GOPRIVATE="git.keyute.io"
 export GOPATH="$HOME/.go"
