@@ -3,22 +3,7 @@
     "allow": [
       "mcp__context7",
       "WebSearch",
-      "WebFetch",
-      "Bash(ls *)",
-      "Bash(grep *)",
-      "Bash(rg *)",
-      "Bash(which *)",
-      "Bash(wc *)",
-      "Bash(file *)",
-      "Bash(* --version)",
-      "Bash(* --help)",
-      "Bash(* --help *)",
-      "Bash(git log *)",
-      "Bash(git diff *)",
-      "Bash(git status)",
-      "Bash(git status *)",
-      "Bash(git show *)",
-      "Bash(git rev-parse *)"
+      "WebFetch"
     ],
     "defaultMode": "plan"
   },
