@@ -1,0 +1,52 @@
+agent_sandbox:
+  filesystem:
+    allow_write:
+      - ~/.npm/_cacache
+      - ~/.npm/_logs
+      - ~/.cache/uv
+    deny_read:
+      - ~/.ssh
+      - ~/.gnupg
+      - ~/.vault-token
+      - ~/.azure
+      - ~/.kube
+      - ~/.docker
+      - ~/.mc
+      - ~/.talos
+      - ~/.config/1Password
+      - ~/.config/op
+      - ~/.config/gcloud
+      - ~/.config/opentofu
+      - ~/.config/configstore
+      - ~/.local/share/uv/credentials
+      - ~/.claude
+      - ~/.claude.json
+      - ~/.codex
+      - ~/.zsh_history
+      - ~/.zhistory
+  network:
+    allowed_domains:
+      - github.com
+      - "*.github.com"
+      - "*.githubusercontent.com"
+      - registry.npmjs.org
+      - "*.npmjs.org"
+      - pypi.org
+      - files.pythonhosted.org
+      - proxy.golang.org
+      - sum.golang.org
+      - pkg.go.dev
+      - "*.anthropic.com"
+      - code.claude.com
+      - developers.openai.com
+      - developer.mozilla.org
+      - stackoverflow.com
+      - "*.stackexchange.com"
+      - nodejs.org
+agent_mcp_servers:
+  context7:
+    package_bin: context7-mcp
+    args: []
+    env:
+      CONTEXT7_API_KEY:
+        op: Personal/Context7/api key

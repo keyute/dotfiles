@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__context7",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "deny": {{ $denyRules := list }}{{ range .agent_sandbox.filesystem.deny_read }}{{ $denyRules = append $denyRules (printf "Read(%s)" .) }}{{ end }}{{ $denyRules | toJson }},
+    "defaultMode": "plan"
+  },
+  "model": "opusplan",
+  "statusLine": {
+    "type": "command",
+    "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "codex@openai-codex": true
+  },
+  "extraKnownMarketplaces": {
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    }
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "autoAllowBashIfSandboxed": true,
+    "network": {
+      "allowedDomains": {{ .agent_sandbox.network.allowed_domains | toJson }}
+    },
+    "filesystem": {
+      "allowWrite": {{ .agent_sandbox.filesystem.allow_write | toJson }},
+      "denyRead": {{ .agent_sandbox.filesystem.deny_read | toJson }}
+    }
+  },
+  "spinnerTipsEnabled": false,
+  "alwaysThinkingEnabled": true,
+  "theme": "auto",
+  "agentPushNotifEnabled": false
+}

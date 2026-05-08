@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+input=$(cat)
+[ -z "$input" ] && input='{}'
+
+servers=$(cat <<'CHEZMOI_MCP_JSON'
+{{ $out := dict -}}
+{{- range $name, $cfg := .agent_mcp_servers }}
+  {{- $args := list -}}
+  {{- range $cfg.args }}
+    {{- if kindIs "map" . -}}
+      {{- $ref := .op -}}
+      {{- if not (hasPrefix "op://" $ref) -}}
+        {{- $ref = printf "op://%s" $ref -}}
+      {{- end -}}
+      {{- $args = append $args (onepasswordRead $ref) -}}
+    {{- else -}}
+      {{- $args = append $args . -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $env := dict -}}
+  {{- range $key, $value := default (dict) (get $cfg "env") }}
+    {{- if kindIs "map" $value -}}
+      {{- $ref := $value.op -}}
+      {{- if not (hasPrefix "op://" $ref) -}}
+        {{- $ref = printf "op://%s" $ref -}}
+      {{- end -}}
+      {{- $env = set $env $key (onepasswordRead $ref) -}}
+    {{- else -}}
+      {{- $env = set $env $key $value -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $command := get $cfg "command" -}}
+  {{- if not $command -}}
+    {{- $command = printf "%s/node_modules/.bin/%s" $.chezmoi.sourceDir $cfg.package_bin -}}
+  {{- end -}}
+  {{- $entry := dict "type" "stdio" "command" $command "args" $args "env" $env -}}
+  {{- $out = set $out $name $entry -}}
+{{- end -}}
+{{ $out | toJson }}
+CHEZMOI_MCP_JSON
+)
+
+printf '%s\n' "$input" | jq --argjson servers "$servers" '.mcpServers = $servers'

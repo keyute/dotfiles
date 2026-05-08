@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# package.json: {{ include "package.json" | sha256sum }}
+# package-lock.json: {{ include "package-lock.json" | sha256sum }}
+
+npm ci --ignore-scripts --omit=dev --prefix "{{ .chezmoi.sourceDir }}"
