@@ -1,29 +1,29 @@
 agent_sandbox:
   filesystem:
-    allow_write:
-      - ~/.npm/_cacache
-      - ~/.npm/_logs
-      - ~/.cache/uv
-    deny_read:
-      - ~/.ssh
-      - ~/.gnupg
-      - ~/.vault-token
-      - ~/.azure
-      - ~/.kube
-      - ~/.docker
-      - ~/.mc
-      - ~/.talos
-      - ~/.config/1Password
-      - ~/.config/op
-      - ~/.config/gcloud
-      - ~/.config/opentofu
-      - ~/.config/configstore
-      - ~/.local/share/uv/credentials
-      - ~/.claude
-      - ~/.claude.json
-      - ~/.codex
-      - ~/.zsh_history
-      - ~/.zhistory
+    paths:
+      "~/.ssh": none
+      "~/.gnupg": none
+      "~/.vault-token": none
+      "~/.azure": none
+      "~/.kube": none
+      "~/.docker": none
+      "~/.mc": none
+      "~/.talos": none
+      "~/.config/1Password": none
+      "~/.config/op": none
+      "~/.config/gcloud": none
+      "~/.config/opentofu": none
+      "~/.config/configstore": none
+      "~/.local/share/uv/credentials": none
+      "~/.claude": none
+      "~/.claude/plugins": read
+      "~/.claude.json": none
+      "~/.codex": none
+      "~/.zsh_history": none
+      "~/.zhistory": none
+      "~/.npm/_cacache": write
+      "~/.npm/_logs": write
+      "~/.cache/uv": write
   network:
     allowed_domains:
       - github.com

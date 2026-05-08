@@ -53,11 +53,8 @@ fi
 cat <<'CHEZMOI_MANAGED_BLOCK'
 [permissions.workspace.filesystem]
 ":project_roots" = { "." = "write" }
-{{- range .agent_sandbox.filesystem.deny_read }}
-{{ . | toJson }} = "none"
-{{- end }}
-{{- range .agent_sandbox.filesystem.allow_write }}
-{{ . | toJson }} = "write"
+{{- range $path, $mode := .agent_sandbox.filesystem.paths }}
+{{ $path | toJson }} = {{ $mode | toJson }}
 {{- end }}
 
 [permissions.workspace.network]

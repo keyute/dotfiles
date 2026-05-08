@@ -1,3 +1,14 @@
+{{- $denyRead := list -}}
+{{- $allowRead := list -}}
+{{- $allowWrite := list -}}
+{{- range $path, $mode := .agent_sandbox.filesystem.paths -}}
+  {{- if eq $mode "none" -}}{{- $denyRead = append $denyRead $path -}}
+  {{- else if eq $mode "read" -}}{{- $allowRead = append $allowRead $path -}}
+  {{- else if eq $mode "write" -}}{{- $allowWrite = append $allowWrite $path -}}
+  {{- end -}}
+{{- end -}}
+{{- $permDeny := list -}}
+{{- range $denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {
   "permissions": {
     "allow": [
@@ -5,7 +16,7 @@
       "WebSearch",
       "WebFetch"
     ],
-    "deny": {{ $denyRules := list }}{{ range .agent_sandbox.filesystem.deny_read }}{{ $denyRules = append $denyRules (printf "Read(%s)" .) }}{{ end }}{{ $denyRules | toJson }},
+    "deny": {{ $permDeny | toJson }},
     "defaultMode": "plan"
   },
   "model": "opusplan",
@@ -34,8 +45,9 @@
       "allowedDomains": {{ .agent_sandbox.network.allowed_domains | toJson }}
     },
     "filesystem": {
-      "allowWrite": {{ .agent_sandbox.filesystem.allow_write | toJson }},
-      "denyRead": {{ .agent_sandbox.filesystem.deny_read | toJson }}
+      "allowWrite": {{ $allowWrite | toJson }},
+      "allowRead": {{ $allowRead | toJson }},
+      "denyRead": {{ $denyRead | toJson }}
     }
   },
   "spinnerTipsEnabled": false,
