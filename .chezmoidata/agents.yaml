@@ -18,7 +18,7 @@ agent_sandbox:
       "~/.claude": none
       "~/.claude/plugins": read
       "~/.claude.json": none
-      "~/.codex": none
+      "~/.codex": write
       "~/.zsh_history": none
       "~/.zhistory": none
       "~/.npm/_cacache": write
