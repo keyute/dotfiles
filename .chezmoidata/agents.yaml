@@ -44,6 +44,7 @@ agent_sandbox:
       - stackoverflow.com
       - "*.stackexchange.com"
       - nodejs.org
+      - chatgpt.com
 agent_mcp_servers:
   context7:
     package_bin: context7-mcp
