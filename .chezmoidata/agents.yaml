@@ -17,6 +17,7 @@ agent_sandbox:
       "~/.local/share/uv/credentials": none
       "~/.claude": none
       "~/.claude/plugins": read
+      "~/.claude/plugins/data": write
       "~/.claude.json": none
       "~/.codex": write
       "~/.zsh_history": none
