@@ -44,6 +44,7 @@ plan_mode_reasoning_effort = "high"
 approval_policy = "on-request"
 approvals_reviewer = "user"
 default_permissions = "workspace"
+sandbox_mode = "workspace-write"
 CHEZMOI_MANAGED_BLOCK
 
 if [ -n "$preserved_top" ]; then
@@ -51,7 +52,12 @@ if [ -n "$preserved_top" ]; then
 fi
 
 cat <<'CHEZMOI_MANAGED_BLOCK'
+[sandbox_workspace_write]
+network_access = true
+
 [permissions.workspace.filesystem]
+":minimal" = "read"
+":tmpdir" = "write"
 ":project_roots" = { "." = "write" }
 {{- range $path, $mode := .agent_sandbox.filesystem.paths }}
 {{ $path | toJson }} = {{ $mode | toJson }}
