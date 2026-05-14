@@ -17,6 +17,7 @@ return {
 	config = function()
 		require("livepreview.config").set({
 			picker = "telescope",
+			dynamic_root = true,
 		})
 	end,
 }
