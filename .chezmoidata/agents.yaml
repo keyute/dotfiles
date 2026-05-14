@@ -16,12 +16,12 @@ agent_sandbox:
       "~/.config/configstore": none
       "~/.local/share/uv/credentials": none
       "~/.claude": none
-      "~/.claude/plugins": read
-      "~/.claude/plugins/data": write
       "~/.claude.json": none
-      "~/.codex": write
+      "~/.codex": none
       "~/.zsh_history": none
       "~/.zhistory": none
+      "/opt/homebrew": read
+      "~/.go/bin": read
       "~/.npm/_cacache": write
       "~/.npm/_logs": write
       "~/.cache/uv": write
@@ -37,14 +37,12 @@ agent_sandbox:
       - proxy.golang.org
       - sum.golang.org
       - pkg.go.dev
-      - "*.anthropic.com"
-      - code.claude.com
-      - developers.openai.com
       - developer.mozilla.org
       - stackoverflow.com
       - "*.stackexchange.com"
       - nodejs.org
-      - chatgpt.com
+      - context7.com
+      - "*.context7.com"
 agent_mcp_servers:
   context7:
     package_bin: context7-mcp

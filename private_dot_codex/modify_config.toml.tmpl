@@ -62,6 +62,11 @@ network_access = true
 {{- range $path, $mode := .agent_sandbox.filesystem.paths }}
 {{ $path | toJson }} = {{ $mode | toJson }}
 {{- end }}
+"~/.gitconfig" = "read"
+"~/.config/git" = "read"
+"~/Projects/work/.gitconfig" = "read"
+"~/Projects/github/.gitconfig" = "read"
+"~/Projects/usyd/.gitconfig" = "read"
 
 [permissions.workspace.network]
 enabled = true
@@ -71,6 +76,9 @@ mode = "full"
 {{- range .agent_sandbox.network.allowed_domains }}
 {{ . | toJson }} = "allow"
 {{- end }}
+"developers.openai.com" = "allow"
+"*.openai.com" = "allow"
+"chatgpt.com" = "allow"
 
 {{ range $name, $cfg := .agent_mcp_servers }}
 [mcp_servers.{{ $name | toJson }}]

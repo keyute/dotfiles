@@ -1,12 +1,22 @@
 {{- $denyRead := list -}}
+{{- $sandboxDenyRead := list -}}
 {{- $allowRead := list -}}
 {{- $allowWrite := list -}}
 {{- range $path, $mode := .agent_sandbox.filesystem.paths -}}
-  {{- if eq $mode "none" -}}{{- $denyRead = append $denyRead $path -}}
+  {{- if eq $mode "none" -}}
+    {{- $denyRead = append $denyRead $path -}}
+    {{- if and (ne $path "~/.claude") (ne $path "~/.codex") -}}
+      {{- $sandboxDenyRead = append $sandboxDenyRead $path -}}
+    {{- end -}}
   {{- else if eq $mode "read" -}}{{- $allowRead = append $allowRead $path -}}
   {{- else if eq $mode "write" -}}{{- $allowWrite = append $allowWrite $path -}}
   {{- end -}}
 {{- end -}}
+{{- $allowRead = append $allowRead "~/.claude/plugins" -}}
+{{- $allowWrite = append $allowWrite "~/.claude/plugins/data" -}}
+{{- $allowWrite = append $allowWrite "~/.claude/projects" -}}
+{{- $allowWrite = append $allowWrite "~/.codex" -}}
+{{- $allowedDomains := concat .agent_sandbox.network.allowed_domains (list "*.anthropic.com" "code.claude.com" "developers.openai.com" "*.openai.com" "chatgpt.com") -}}
 {{- $permDeny := list -}}
 {{- range $denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {
@@ -42,12 +52,12 @@
     "failIfUnavailable": true,
     "autoAllowBashIfSandboxed": true,
     "network": {
-      "allowedDomains": {{ .agent_sandbox.network.allowed_domains | toJson }}
+      "allowedDomains": {{ $allowedDomains | uniq | toJson }}
     },
     "filesystem": {
       "allowWrite": {{ $allowWrite | toJson }},
       "allowRead": {{ $allowRead | toJson }},
-      "denyRead": {{ $denyRead | toJson }}
+      "denyRead": {{ $sandboxDenyRead | toJson }}
     }
   },
   "spinnerTipsEnabled": false,
