@@ -103,7 +103,7 @@ return {
 		})
 
 		require("mason-tool-installer").setup({
-			ensure_installed = { "stylua", "prettier", "prettierd", "ruff", "rumdl", "yamlfmt", "sqlfluff", "eslint_d" },
+			ensure_installed = { "stylua", "prettier", "prettierd", "ruff", "rumdl", "yamlfmt", "sqlfluff", "eslint_d", "golangci-lint" },
 		})
 
 		require("mason-lspconfig").setup({
