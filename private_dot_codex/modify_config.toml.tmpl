@@ -11,6 +11,7 @@ cleaned=$(printf '%s' "$input" | awk '
   /^[[:space:]]*\[mcp_servers(\.|])/                    { m=1; next }
   /^[[:space:]]*\[permissions(\.|])/                    { m=1; next }
   /^[[:space:]]*\[sandbox_workspace_write(\.|])/        { m=1; next }
+  /^[[:space:]]*\[tui(\.|])/                            { m=1; next }
   m && /^[[:space:]]*\[/                                { m=0 }
   m                                                     { next }
                                                         { print }
@@ -54,6 +55,10 @@ fi
 cat <<'CHEZMOI_MANAGED_BLOCK'
 [sandbox_workspace_write]
 network_access = true
+
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "git-branch", "branch-changes", "context-used", "used-tokens"]
+status_line_use_colors = true
 
 [permissions.workspace.filesystem]
 ":minimal" = "read"
