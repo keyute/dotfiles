@@ -5,7 +5,7 @@
 	defaultBranch = main
 [core]
 	editor = nvim
-	pager = diff-so-fancy | less --tabs=4 -RFX
+	pager = delta
 [pull]
 	rebase = true
 [filter "lfs"]
@@ -24,33 +24,24 @@
 	gpgsign = true
 [diff]
 	algorithm = histogram
+	colorMoved = default
 [gpg]
 	format = ssh
 [interactive]
-	diffFilter = diff-so-fancy --patch
+	diffFilter = delta --color-only
 [color]
 	ui = true
-[color "diff-highlight"]
-	oldNormal = red bold
-	oldHighlight = red bold 52
-	newNormal = green bold
-	newHighlight = green bold 22
-[color "diff"]
-	meta = 11
-	frag = magenta bold
-	func = 146 bold
-	commit = yellow bold
-	old = red bold
-	new = green bold
-	whitespace = red reverse
 [push]
 	autoSetupRemote = true
 [fetch]
 	prune = true
-[diff-so-fancy]
-	changeHunkIndicators = false
+[delta]
+	navigate = true
+	light = false
+	line-numbers = true
 [merge]
 	tool = diffview
+	conflictstyle = zdiff3
 [mergetool "diffview"]
 	cmd = nvim -c "DiffviewOpen"
 [includeIf "gitdir:~/Projects/work/**"]
