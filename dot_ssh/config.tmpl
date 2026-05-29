@@ -11,7 +11,7 @@ Host *
 Host git.edstem.org github.sydney.edu.au
   IdentityFile "~/.ssh/usyd.pub"
   IdentitiesOnly yes
-Match Host git.kubecity.com Exec "! nslookup git.kubecity.com | grep -qE '10\.40\.0\.20'"
+Match Host git.kubecity.com Exec "! nslookup git.kubecity.com | grep -qE '10\.40\.0\.30'"
   ProxyCommand $(which cloudflared) access ssh --hostname ssh.git.kubecity.com
 Host git.kubecity.com
   IdentityFile "~/.ssh/github_enterprise.pub"
