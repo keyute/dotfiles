@@ -63,7 +63,7 @@ status_line_use_colors = true
 [permissions.workspace.filesystem]
 ":minimal" = "read"
 ":tmpdir" = "write"
-":project_roots" = { "." = "write" }
+":workspace_roots" = { "." = "write" }
 {{- range $path, $mode := .agent_sandbox.filesystem.paths }}
 {{ $path | toJson }} = {{ $mode | toJson }}
 {{- end }}
