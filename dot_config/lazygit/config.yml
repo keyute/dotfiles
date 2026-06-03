@@ -2,5 +2,5 @@ git:
   autoFetch: false
   pagers:
     - colorArg: always
-      pager: delta --paging=never
+      pager: delta --paging=never --features $([ "$(theme-mode 2>/dev/null || echo dark)" = light ] && echo catppuccin-latte || echo catppuccin-mocha)
 promptToReturnFromSubprocess: false
