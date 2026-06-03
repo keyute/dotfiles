@@ -24,38 +24,35 @@ source $HOME/.local/share/antidote/antidote.zsh
 antidote load
 
 zstyle ':completion:complete:git-*:argument-rest' sort false
-{{- if eq .chezmoi.os "darwin" }}
+
 typeset -g _APPEARANCE=""
 _sync_appearance() {
-    local mode
-    defaults read -g AppleInterfaceStyle &>/dev/null && mode=dark || mode=light
+    local mode=$(theme-mode 2>/dev/null || echo dark)
     [[ $mode == $_APPEARANCE ]] && return
     _APPEARANCE=$mode
+    export LC_THEME_MODE=$mode
     if [[ $mode == light ]]; then
         zstyle ':fzf-tab:*' default-color $'\033[30m'
         zstyle ':fzf-tab:*' fzf-flags --color=light
+        export BAT_THEME="Catppuccin Latte"
     else
         zstyle -d ':fzf-tab:*' default-color
         zstyle -d ':fzf-tab:*' fzf-flags
+        export BAT_THEME="Catppuccin Mocha"
     fi
 }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _sync_appearance
-{{- end }}
 
 eval "$(zoxide init zsh)"
 
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 
-{{- if eq .chezmoi.os "linux" }}
 export PATH="$PATH:$HOME/.local/bin"
+{{- if eq .chezmoi.os "linux" }}
 export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
 {{- end }}
-
-export BAT_THEME="auto:system"
-export BAT_THEME_DARK="Catppuccin Mocha"
-export BAT_THEME_LIGHT="Catppuccin Latte"
 
 export GOPRIVATE="git.keyute.io"
 export GOPATH="$HOME/.go"

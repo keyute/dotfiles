@@ -1,0 +1,19 @@
+#!/bin/sh
+case "$(uname -s)" in
+  Darwin)
+    defaults read -g AppleInterfaceStyle >/dev/null 2>&1 && echo dark || echo light
+    ;;
+  *)
+    case "$LC_THEME_MODE" in
+      light) echo light; exit 0 ;;
+      dark)  echo dark;  exit 0 ;;
+    esac
+    if command -v gsettings >/dev/null 2>&1; then
+      case "$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)" in
+        *prefer-dark*) echo dark; exit 0 ;;
+        *prefer-light*|*default*) echo light; exit 0 ;;
+      esac
+    fi
+    echo dark
+    ;;
+esac

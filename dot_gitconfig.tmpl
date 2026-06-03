@@ -5,11 +5,7 @@
 	defaultBranch = main
 [core]
 	editor = nvim
-{{- if eq .chezmoi.os "darwin" }}
-	pager = delta --features "$(defaults read -g AppleInterfaceStyle >/dev/null 2>&1 && echo catppuccin-mocha || echo catppuccin-latte)"
-{{- else }}
-	pager = delta
-{{- end }}
+	pager = delta --features $([ "$(theme-mode 2>/dev/null || echo dark)" = light ] && echo catppuccin-latte || echo catppuccin-mocha)
 [pull]
 	rebase = true
 [filter "lfs"]
@@ -32,11 +28,7 @@
 [gpg]
 	format = ssh
 [interactive]
-{{- if eq .chezmoi.os "darwin" }}
-	diffFilter = delta --color-only --features "$(defaults read -g AppleInterfaceStyle >/dev/null 2>&1 && echo catppuccin-mocha || echo catppuccin-latte)"
-{{- else }}
-	diffFilter = delta --color-only
-{{- end }}
+	diffFilter = delta --color-only --features $([ "$(theme-mode 2>/dev/null || echo dark)" = light ] && echo catppuccin-latte || echo catppuccin-mocha)
 [color]
 	ui = true
 [push]
