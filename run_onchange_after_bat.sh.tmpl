@@ -1,0 +1,6 @@
+#!/bin/bash
+# tmThemes hash: {{ output "sh" "-c" (printf "cat %s/*.tmTheme 2>/dev/null | sha256sum" (joinPath .chezmoi.homeDir ".config/bat/themes")) | trim }}
+{{ if eq .chezmoi.os "darwin" -}}
+command -v bat >/dev/null || exit 0
+bat cache --build
+{{ end -}}

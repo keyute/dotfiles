@@ -25,10 +25,22 @@ antidote load
 
 zstyle ':completion:complete:git-*:argument-rest' sort false
 {{- if eq .chezmoi.os "darwin" }}
-if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null)" != "Dark" ]; then
-    zstyle ':fzf-tab:*' default-color $'\033[30m'
-    zstyle ':fzf-tab:*' fzf-flags --color=light
-fi
+typeset -g _APPEARANCE=""
+_sync_appearance() {
+    local mode
+    defaults read -g AppleInterfaceStyle &>/dev/null && mode=dark || mode=light
+    [[ $mode == $_APPEARANCE ]] && return
+    _APPEARANCE=$mode
+    if [[ $mode == light ]]; then
+        zstyle ':fzf-tab:*' default-color $'\033[30m'
+        zstyle ':fzf-tab:*' fzf-flags --color=light
+    else
+        zstyle -d ':fzf-tab:*' default-color
+        zstyle -d ':fzf-tab:*' fzf-flags
+    fi
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _sync_appearance
 {{- end }}
 
 eval "$(zoxide init zsh)"
@@ -41,6 +53,10 @@ export PATH="$PATH:$HOME/.local/bin"
 export PATH="${KREW_ROOT:-$HOME/.krew}/bin:$PATH"
 {{- end }}
 
+export BAT_THEME="auto:system"
+export BAT_THEME_DARK="Catppuccin Mocha"
+export BAT_THEME_LIGHT="Catppuccin Latte"
+
 export GOPRIVATE="git.keyute.io"
 export GOPATH="$HOME/.go"
 export PATH="$GOPATH/bin:$PATH"
@@ -49,6 +65,7 @@ export XDG_CONFIG_HOME="$HOME/.config"
 
 alias vim=nvim
 alias vi=nvim
+alias cat='bat --paging=never'
 export EDITOR="nvim"
 
 export HISTFILE="$HOME/.zhistory"

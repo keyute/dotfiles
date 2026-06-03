@@ -5,7 +5,11 @@
 	defaultBranch = main
 [core]
 	editor = nvim
+{{- if eq .chezmoi.os "darwin" }}
+	pager = delta --features "$(defaults read -g AppleInterfaceStyle >/dev/null 2>&1 && echo catppuccin-mocha || echo catppuccin-latte)"
+{{- else }}
 	pager = delta
+{{- end }}
 [pull]
 	rebase = true
 [filter "lfs"]
@@ -28,16 +32,21 @@
 [gpg]
 	format = ssh
 [interactive]
+{{- if eq .chezmoi.os "darwin" }}
+	diffFilter = delta --color-only --features "$(defaults read -g AppleInterfaceStyle >/dev/null 2>&1 && echo catppuccin-mocha || echo catppuccin-latte)"
+{{- else }}
 	diffFilter = delta --color-only
+{{- end }}
 [color]
 	ui = true
 [push]
 	autoSetupRemote = true
 [fetch]
 	prune = true
+[include]
+	path = ~/.config/delta/catppuccin.gitconfig
 [delta]
 	navigate = true
-	light = false
 	line-numbers = true
 [merge]
 	tool = diffview

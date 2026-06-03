@@ -6,3 +6,15 @@
   type = "git-repo"
   url = "https://github.com/gpakosz/.tmux.git"
   refreshPeriod = "168h"
+[".config/delta/catppuccin.gitconfig"]
+  type = "file"
+  url = "https://raw.githubusercontent.com/catppuccin/delta/main/catppuccin.gitconfig"
+  refreshPeriod = "168h"
+[".config/bat/themes/Catppuccin Latte.tmTheme"]
+  type = "file"
+  url = "https://github.com/catppuccin/bat/raw/main/themes/Catppuccin%20Latte.tmTheme"
+  refreshPeriod = "168h"
+[".config/bat/themes/Catppuccin Mocha.tmTheme"]
+  type = "file"
+  url = "https://github.com/catppuccin/bat/raw/main/themes/Catppuccin%20Mocha.tmTheme"
+  refreshPeriod = "168h"
