@@ -5,27 +5,33 @@
 {{- range $path, $mode := .agent_sandbox.filesystem.paths -}}
   {{- if eq $mode "none" -}}
     {{- $denyRead = append $denyRead $path -}}
-    {{- if and (ne $path "~/.claude") (ne $path "~/.codex") -}}
-      {{- $sandboxDenyRead = append $sandboxDenyRead $path -}}
-    {{- end -}}
+    {{- $sandboxDenyRead = append $sandboxDenyRead $path -}}
   {{- else if eq $mode "read" -}}{{- $allowRead = append $allowRead $path -}}
   {{- else if eq $mode "write" -}}{{- $allowWrite = append $allowWrite $path -}}
   {{- end -}}
 {{- end -}}
-{{- $allowRead = append $allowRead "~/.claude/plugins" -}}
-{{- $allowWrite = append $allowWrite "~/.claude/plugins/data" -}}
-{{- $allowWrite = append $allowWrite "~/.claude/projects" -}}
-{{- $allowWrite = append $allowWrite "~/.codex" -}}
-{{- $allowedDomains := concat .agent_sandbox.network.allowed_domains (list "*.anthropic.com" "code.claude.com" "developers.openai.com" "*.openai.com" "chatgpt.com") -}}
+{{- range $name, $agent := .agents -}}
+  {{- $denyRead = append $denyRead $agent.home -}}
+  {{- if ne $name "claude" -}}
+    {{- $sandboxDenyRead = append $sandboxDenyRead $agent.home -}}
+  {{- end -}}
+{{- end -}}
+{{- range .agents.claude.extras.readable_paths -}}
+  {{- $allowRead = append $allowRead . -}}
+{{- end -}}
+{{- range .agents.claude.extras.writable_paths -}}
+  {{- $allowWrite = append $allowWrite . -}}
+{{- end -}}
+{{- $allowedDomains := concat .agent_sandbox.network.allowed_domains .agents.claude.extras.allowed_domains -}}
+{{- $allowedPerms := list "WebSearch" "WebFetch" -}}
+{{- range $name, $cfg := .agent_mcp_servers -}}
+  {{- $allowedPerms = append $allowedPerms (printf "mcp__%s" $name) -}}
+{{- end -}}
 {{- $permDeny := list -}}
 {{- range $denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {
   "permissions": {
-    "allow": [
-      "mcp__context7",
-      "WebSearch",
-      "WebFetch"
-    ],
+    "allow": {{ $allowedPerms | toJson }},
     "deny": {{ $permDeny | toJson }},
     "defaultMode": "plan"
   },
@@ -35,18 +41,8 @@
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
     "padding": 0
   },
-  "enabledPlugins": {
-    "frontend-design@claude-plugins-official": true,
-    "codex@openai-codex": true
-  },
-  "extraKnownMarketplaces": {
-    "openai-codex": {
-      "source": {
-        "source": "github",
-        "repo": "openai/codex-plugin-cc"
-      }
-    }
-  },
+  "enabledPlugins": {{ .agents.claude.plugins | toJson }},
+  "extraKnownMarketplaces": {{ .agents.claude.marketplaces | toJson }},
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,

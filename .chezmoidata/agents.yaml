@@ -1,3 +1,18 @@
+agents:
+  claude:
+    home: "~/.claude"
+    extras:
+      readable_paths:
+        - "~/.claude/plugins"
+      writable_paths:
+        - "~/.claude/plugins/data"
+        - "~/.claude/projects"
+      allowed_domains:
+        - "*.anthropic.com"
+        - "code.claude.com"
+    plugins:
+      "frontend-design@claude-plugins-official": true
+    marketplaces: {}
 agent_sandbox:
   filesystem:
     paths:
@@ -15,9 +30,7 @@ agent_sandbox:
       "~/.config/opentofu": none
       "~/.config/configstore": none
       "~/.local/share/uv/credentials": none
-      "~/.claude": none
       "~/.claude.json": none
-      "~/.codex": none
       "~/.zsh_history": none
       "~/.zhistory": none
       "/opt/homebrew": read
