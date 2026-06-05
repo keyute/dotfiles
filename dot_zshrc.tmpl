@@ -44,7 +44,7 @@ _sync_appearance() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _sync_appearance
 
-eval "$(zoxide init zsh)"
+eval "$(zoxide init zsh --cmd cd)"
 
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
