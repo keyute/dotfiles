@@ -18,3 +18,11 @@
   type = "file"
   url = "https://github.com/catppuccin/bat/raw/main/themes/Catppuccin%20Mocha.tmTheme"
   refreshPeriod = "168h"
+[".config/k9s/skins/catppuccin-latte.yaml"]
+  type = "file"
+  url = "https://github.com/catppuccin/k9s/raw/main/dist/catppuccin-latte.yaml"
+  refreshPeriod = "168h"
+[".config/k9s/skins/catppuccin-mocha.yaml"]
+  type = "file"
+  url = "https://github.com/catppuccin/k9s/raw/main/dist/catppuccin-mocha.yaml"
+  refreshPeriod = "168h"

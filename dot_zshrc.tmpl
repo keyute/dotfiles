@@ -35,10 +35,12 @@ _sync_appearance() {
         zstyle ':fzf-tab:*' default-color $'\033[30m'
         zstyle ':fzf-tab:*' fzf-flags --color=light
         export BAT_THEME="Catppuccin Latte"
+        export K9S_SKIN="catppuccin-latte"
     else
         zstyle -d ':fzf-tab:*' default-color
         zstyle -d ':fzf-tab:*' fzf-flags
         export BAT_THEME="Catppuccin Mocha"
+        export K9S_SKIN="catppuccin-mocha"
     fi
 }
 autoload -Uz add-zsh-hook
