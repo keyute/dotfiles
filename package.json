@@ -1,7 +1,7 @@
 {
   "private": true,
   "dependencies": {
-    "@upstash/context7-mcp": "2.2.4",
+    "@upstash/context7-mcp": "3.1.0",
     "ccstatusline": "2.2.19"
   }
 }
