@@ -15,6 +15,21 @@
   library/API documentation. This means you should automatically use the Context7 MCP
   tools to resolve library id and get library docs without me having to explicitly ask.
 - Always keep your implementation simple, do not overengineer anything
+- Delegate to a subagent when a side task would dump output you will not
+  reference again into your main context (multi-file searches, reading large
+  files end-to-end, dependency/log triage, independent parallel research).
+  The subagent burns its own context window and hands you back only a summary.
+- Do NOT spawn a subagent when it would not actually save context: trivially
+  small tasks, sequential work where each step needs the previous step's full
+  output, edits where you must see the exact lines you change, or anything
+  you can resolve in one or two tool calls. Subagent spawn-up is not free —
+  it costs tokens and latency, so it must pay for itself in context saved.
+- Match the subagent's model tier to the task. Use the cheapest tier that
+  can do the job correctly: smallest tier for mechanical lookups, file
+  discovery, simple transforms; mid tier for routine implementation and
+  research; top tier only for architectural reasoning, unfamiliar codebases,
+  or work where a wrong answer is expensive. Never default to the top tier
+  just because the parent session uses it.
 - When writing code, always consider code style, implementation, design language and code colocation of similar patterns.
   If the project's CLAUDE.md rules are not sufficient to determine this, you must analyse the codebase to understand
   the specific pattern you must use for your implementation.
