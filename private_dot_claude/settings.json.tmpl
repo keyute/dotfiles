@@ -23,9 +23,13 @@
   {{- $allowWrite = append $allowWrite . -}}
 {{- end -}}
 {{- $allowedDomains := concat .agent_sandbox.network.allowed_domains .agents.claude.extras.allowed_domains -}}
+{{- $uid := output "id" "-u" | trim -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
 {{- range $name, $cfg := .agent_mcp_servers -}}
   {{- $allowedPerms = append $allowedPerms (printf "mcp__%s" $name) -}}
+{{- end -}}
+{{- range .agents.claude.extras.allowed_read_patterns -}}
+  {{- $allowedPerms = append $allowedPerms (printf "Read(%s)" (replace "{uid}" $uid .)) -}}
 {{- end -}}
 {{- $permDeny := list -}}
 {{- range $denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
@@ -35,7 +39,7 @@
     "deny": {{ $permDeny | toJson }},
     "defaultMode": "plan"
   },
-  "model": "opusplan",
+  "model": "opus",
   "statusLine": {
     "type": "command",
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
