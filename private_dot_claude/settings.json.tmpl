@@ -39,7 +39,7 @@
     "deny": {{ $permDeny | toJson }},
     "defaultMode": "plan"
   },
-  "model": "opus",
+  "model": "opus[1m]",
   "statusLine": {
     "type": "command",
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
