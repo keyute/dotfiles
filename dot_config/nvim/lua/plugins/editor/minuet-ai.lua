@@ -1,11 +1,11 @@
-local is_macos = vim.loop.os_uname().sysname == "Darwin"
+local is_macos = vim.uv.os_uname().sysname == "Darwin"
 local model = is_macos and "qwen2.5-coder:3b-base-q8_0" or "qwen2.5-coder:0.5b-base-q8_0"
 
 return {
 	"milanglacier/minuet-ai.nvim",
-	deps = {
+	dependencies = {
 		"nvim-lua/plenary.nvim",
-		"Saghen/blink.cmp",
+		"saghen/blink.cmp",
 	},
 	main = "minuet",
 	event = "InsertEnter",

@@ -24,7 +24,6 @@ return {
 			opts = {},
 		},
 		"folke/lazydev.nvim",
-		"Kaiser-Yang/blink-cmp-avante",
 	},
 	--- @module 'blink.cmp'
 	--- @type blink.cmp.Config
@@ -43,10 +42,9 @@ return {
 			trigger = { prefetch_on_insert = false },
 		},
 		sources = {
-			default = { "avante", "lsp", "path", "snippets", "lazydev", "minuet" },
+			default = { "lsp", "path", "snippets", "lazydev", "minuet" },
 			providers = {
 				lazydev = { module = "lazydev.integrations.blink", score_offset = 100 },
-				avante = { module = "blink-cmp-avante", name = "Avante" },
 				minuet = {
 					module = "minuet.blink",
 					name = "Minuet",
