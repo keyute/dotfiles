@@ -42,4 +42,4 @@ servers=$(cat <<'CHEZMOI_MCP_JSON'
 CHEZMOI_MCP_JSON
 )
 
-printf '%s\n' "$input" | jq --argjson servers "$servers" '.mcpServers = $servers'
+printf '%s\n' "$input" | jq -j --argjson servers "$servers" '.mcpServers = $servers'
