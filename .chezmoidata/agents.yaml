@@ -19,6 +19,7 @@ agents:
 agent_sandbox:
   filesystem:
     paths:
+      ".env": none
       "~/.ssh": none
       "~/.gnupg": none
       "~/.vault-token": none
