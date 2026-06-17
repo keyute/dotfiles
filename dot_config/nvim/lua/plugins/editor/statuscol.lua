@@ -1,5 +1,6 @@
 return {
 	"luukvbaal/statuscol.nvim",
+	event = { "BufReadPost", "BufNewFile" },
 	dependencies = {
 		"lewis6991/gitsigns.nvim",
 	},

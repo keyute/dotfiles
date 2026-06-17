@@ -1,11 +1,13 @@
 return {
 	{
 		"lewis6991/gitsigns.nvim",
+		event = { "BufReadPre", "BufNewFile" },
 		opts = {},
 	},
 	{
 		"akinsho/git-conflict.nvim",
 		version = "*",
+		event = { "BufReadPost", "BufNewFile" },
 		opts = {},
 	},
 	{

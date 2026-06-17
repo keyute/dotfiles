@@ -1,5 +1,6 @@
 return {
 	"nvim-lualine/lualine.nvim",
+	event = "VeryLazy",
 	dependencies = {
 		"nvim-tree/nvim-web-devicons",
 	},
@@ -25,7 +26,9 @@ return {
 						return tostring(vim.fn.wordcount().words) .. " words"
 					end,
 					cond = function()
-						return vim.bo.filetype == "markdown" or vim.bo.filetype == "asciidoc" or vim.bo.filetype == "tex"
+						return vim.bo.filetype == "markdown"
+							or vim.bo.filetype == "asciidoc"
+							or vim.bo.filetype == "tex"
 					end,
 				},
 			},

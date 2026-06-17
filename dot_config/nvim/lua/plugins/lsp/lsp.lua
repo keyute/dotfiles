@@ -1,5 +1,6 @@
 return {
 	"mason-org/mason-lspconfig.nvim",
+	event = { "BufReadPre", "BufNewFile" },
 	dependencies = {
 		{ "mason-org/mason.nvim", opts = {} },
 		"neovim/nvim-lspconfig",
@@ -21,21 +22,32 @@ return {
 					vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = "LSP: " .. desc })
 				end
 
-				map("grr", require("telescope.builtin").lsp_references, "[G]oto [R]eferences")
-				map("gri", require("telescope.builtin").lsp_implementations, "[G]oto [I]mplementation")
-				map("grd", require("telescope.builtin").lsp_definitions, "[G]oto [D]efinition")
+				map("grr", function()
+					require("telescope.builtin").lsp_references()
+				end, "[G]oto [R]eferences")
+				map("gri", function()
+					require("telescope.builtin").lsp_implementations()
+				end, "[G]oto [I]mplementation")
+				map("grd", function()
+					require("telescope.builtin").lsp_definitions()
+				end, "[G]oto [D]efinition")
 				map("grD", vim.lsp.buf.declaration, "[G]oto [D]eclaration")
-				map("gO", require("telescope.builtin").lsp_document_symbols, "Open Document Symbols")
-				map("gW", require("telescope.builtin").lsp_dynamic_workspace_symbols, "Open Workspace Symbols")
-				map("grt", require("telescope.builtin").lsp_type_definitions, "[G]oto [T]ype Definition")
+				map("gO", function()
+					require("telescope.builtin").lsp_document_symbols()
+				end, "Open Document Symbols")
+				map("gW", function()
+					require("telescope.builtin").lsp_dynamic_workspace_symbols()
+				end, "Open Workspace Symbols")
+				map("grt", function()
+					require("telescope.builtin").lsp_type_definitions()
+				end, "[G]oto [T]ype Definition")
 
 				local client = vim.lsp.get_client_by_id(event.data.client_id)
 				if
 					client
 					and client:supports_method(vim.lsp.protocol.Methods.textDocument_documentHighlight, event.buf)
 				then
-					local highlight_augroup =
-						vim.api.nvim_create_augroup("kickstart-lsp-highlight", { clear = false })
+					local highlight_augroup = vim.api.nvim_create_augroup("kickstart-lsp-highlight", { clear = false })
 					vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
 						buffer = event.buf,
 						group = highlight_augroup,
@@ -60,10 +72,7 @@ return {
 					})
 				end
 
-				if
-					client
-					and client:supports_method(vim.lsp.protocol.Methods.textDocument_inlayHint, event.buf)
-				then
+				if client and client:supports_method(vim.lsp.protocol.Methods.textDocument_inlayHint, event.buf) then
 					vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
 
 					vim.api.nvim_create_autocmd("InsertEnter", {
@@ -103,7 +112,17 @@ return {
 		})
 
 		require("mason-tool-installer").setup({
-			ensure_installed = { "stylua", "prettier", "prettierd", "ruff", "rumdl", "yamlfmt", "sqlfluff", "eslint_d", "golangci-lint" },
+			ensure_installed = {
+				"stylua",
+				"prettier",
+				"prettierd",
+				"ruff",
+				"rumdl",
+				"yamlfmt",
+				"sqlfluff",
+				"eslint_d",
+				"golangci-lint",
+			},
 		})
 
 		require("mason-lspconfig").setup({
