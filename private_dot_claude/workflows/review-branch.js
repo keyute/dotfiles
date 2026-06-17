@@ -10,6 +10,11 @@ export const meta = {
 
 const base = args?.base || 'main'
 const deep = !!(args && args.deep) // run as: review-branch { deep: true } for large/complex branches
+// optional freeform steer, e.g. review-branch { focus: 'the new auth flow' }
+const focus = (args && typeof args.focus === 'string' && args.focus.trim()) || ''
+const focusNote = focus
+  ? ` The reviewer specifically asked you to focus on: ${focus}. Prioritize this without ignoring other serious issues.`
+  : ''
 
 const FINDINGS = {
   type: 'object',
@@ -53,7 +58,7 @@ const mapModel = deep ? 'opus[1m]' : 'sonnet'
 const map = await agent(
   `Run \`git diff ${base}...HEAD --stat\` and \`git log ${base}..HEAD --oneline\`, then read the full diff ` +
   `(\`git diff ${base}...HEAD\`). Summarize in a few sentences: the intent of this branch, the main areas it ` +
-  `changes, and anything that looks risky, surprising, or incomplete.`,
+  `changes, and anything that looks risky, surprising, or incomplete.` + focusNote,
   { label: 'map', phase: 'Map', model: mapModel },
 )
 
@@ -64,7 +69,7 @@ const reviewed = await pipeline(
     agent(
       `Branch summary:\n${map}\n\n` +
       `Review the FULL branch diff (\`git diff ${base}...HEAD\`) for this dimension only: ${d.focus}. ` +
-      `Report concrete findings (file, line, severity blocker|warning|nit, note). Empty array if none.`,
+      `Report concrete findings (file, line, severity blocker|warning|nit, note). Empty array if none.` + focusNote,
       { label: `review:${d.key}`, phase: 'Review', model: 'sonnet', schema: FINDINGS },
     ),
   (review, d) =>
