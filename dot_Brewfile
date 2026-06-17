@@ -42,6 +42,8 @@ brew "git-delta"
 brew "git-lfs"
 # Open source programming language to build simple/reliable/efficient software
 brew "go"
+# Language server for the Go language
+brew "gopls"
 # Task is a task runner/build tool that aims to be simpler and easier to use
 brew "go-task"
 # Go Language's command-line interface for database migrations
@@ -70,6 +72,12 @@ brew "tree-sitter"
 brew "neovim"
 # Open-source, cross-platform JavaScript runtime environment
 brew "node"
+# Language Server Protocol implementation for TypeScript wrapping tsserver
+brew "typescript-language-server"
+# Static type checker for Python
+brew "pyright"
+# Language Server for the Lua language
+brew "lua-language-server"
 # OpenShift command-line interface tools
 brew "openshift-cli"
 # Drop-in replacement for Terraform. Infrastructure as Code Tool
