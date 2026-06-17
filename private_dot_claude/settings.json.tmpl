@@ -39,6 +39,9 @@
     "deny": {{ $permDeny | toPrettyJson | indent 4 | trim }},
     "defaultMode": "plan"
   },
+  "worktree": {
+    "baseRef": "head"
+  },
   "statusLine": {
     "type": "command",
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
@@ -62,8 +65,5 @@
   "spinnerTipsEnabled": false,
   "alwaysThinkingEnabled": true,
   "theme": "auto",
-  "agentPushNotifEnabled": false,
-  "worktree": {
-    "baseRef": "head"
-  }
+  "agentPushNotifEnabled": false
 }
