@@ -35,29 +35,28 @@
 {{- range $denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {
   "permissions": {
-    "allow": {{ $allowedPerms | toJson }},
-    "deny": {{ $permDeny | toJson }},
+    "allow": {{ $allowedPerms | toPrettyJson | indent 4 | trim }},
+    "deny": {{ $permDeny | toPrettyJson | indent 4 | trim }},
     "defaultMode": "plan"
   },
-  "model": "opus[1m]",
   "statusLine": {
     "type": "command",
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
     "padding": 0
   },
-  "enabledPlugins": {{ .agents.claude.plugins | toJson }},
-  "extraKnownMarketplaces": {{ .agents.claude.marketplaces | toJson }},
+  "enabledPlugins": {{ .agents.claude.plugins | toPrettyJson | indent 2 | trim }},
+  "extraKnownMarketplaces": {{ .agents.claude.marketplaces | toPrettyJson | indent 2 | trim }},
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,
     "autoAllowBashIfSandboxed": true,
     "network": {
-      "allowedDomains": {{ $allowedDomains | uniq | toJson }}
+      "allowedDomains": {{ $allowedDomains | uniq | toPrettyJson | indent 6 | trim }}
     },
     "filesystem": {
-      "allowWrite": {{ $allowWrite | toJson }},
-      "allowRead": {{ $allowRead | toJson }},
-      "denyRead": {{ $sandboxDenyRead | toJson }}
+      "allowWrite": {{ $allowWrite | toPrettyJson | indent 6 | trim }},
+      "denyRead": {{ $sandboxDenyRead | toPrettyJson | indent 6 | trim }},
+      "allowRead": {{ $allowRead | toPrettyJson | indent 6 | trim }}
     }
   },
   "spinnerTipsEnabled": false,
