@@ -42,12 +42,12 @@ brew "git-delta"
 brew "git-lfs"
 # Open source programming language to build simple/reliable/efficient software
 brew "go"
-# Language server for the Go language
-brew "gopls"
 # Task is a task runner/build tool that aims to be simpler and easier to use
 brew "go-task"
 # Go Language's command-line interface for database migrations
 brew "goose"
+# Language server for the Go language
+brew "gopls"
 # Package compiler and linker metadata toolkit
 brew "pkgconf"
 # Kubernetes package manager
@@ -64,6 +64,8 @@ brew "kubernetes-cli"
 brew "lazydocker"
 # Simple terminal UI for git commands
 brew "lazygit"
+# Language Server for the Lua language
+brew "lua-language-server"
 # Replacement for ls, cp and other commands for object storage
 brew "minio-mc"
 # Incremental parsing library
@@ -72,22 +74,20 @@ brew "tree-sitter"
 brew "neovim"
 # Open-source, cross-platform JavaScript runtime environment
 brew "node"
-# Language Server Protocol implementation for TypeScript wrapping tsserver
-brew "typescript-language-server"
-# Static type checker for Python
-brew "pyright"
-# Language Server for the Lua language
-brew "lua-language-server"
 # OpenShift command-line interface tools
 brew "openshift-cli"
 # Drop-in replacement for Terraform. Infrastructure as Code Tool
 brew "opentofu"
 # API for decoding and seeking in .opus files
 brew "opusfile"
+# Static type checker for Python
+brew "pyright"
 # Search tool like grep and The Silver Searcher
 brew "ripgrep"
 # Parser generator tool
 brew "tree-sitter-cli"
+# Language Server Protocol implementation for TypeScript wrapping tsserver
+brew "typescript-language-server"
 # Extremely fast Python package installer and resolver, written in Rust
 brew "uv"
 # Image processing library
