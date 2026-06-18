@@ -1,38 +1,25 @@
-{{- $denyRead := list -}}
-{{- $sandboxDenyRead := list -}}
-{{- $allowRead := list -}}
-{{- $allowWrite := list -}}
-{{- range $path, $mode := .agent_sandbox.filesystem.paths -}}
-  {{- if eq $mode "none" -}}
-    {{- $denyRead = append $denyRead $path -}}
-    {{- $sandboxDenyRead = append $sandboxDenyRead $path -}}
-  {{- else if eq $mode "read" -}}{{- $allowRead = append $allowRead $path -}}
-  {{- else if eq $mode "write" -}}{{- $allowWrite = append $allowWrite $path -}}
-  {{- end -}}
-{{- end -}}
-{{- range $name, $agent := .agents -}}
-  {{- $denyRead = append $denyRead $agent.home -}}
-  {{- if ne $name "claude" -}}
-    {{- $sandboxDenyRead = append $sandboxDenyRead $agent.home -}}
-  {{- end -}}
-{{- end -}}
-{{- range .agents.claude.extras.readable_paths -}}
+{{- $sb := fromJson (includeTemplate "agent-sandbox" (dict "self" "claude" "root" .)) -}}
+{{- $allowRead := $sb.allowRead -}}
+{{- $allowWrite := $sb.allowWrite -}}
+{{- $sandboxDenyRead := $sb.sandboxDenyRead -}}
+{{- $extras := .agents.claude.extras -}}
+{{- range $extras.readable_paths -}}
   {{- $allowRead = append $allowRead . -}}
 {{- end -}}
-{{- range .agents.claude.extras.writable_paths -}}
+{{- range $extras.writable_paths -}}
   {{- $allowWrite = append $allowWrite . -}}
 {{- end -}}
-{{- $allowedDomains := concat .agent_sandbox.network.allowed_domains .agents.claude.extras.allowed_domains -}}
+{{- $allowedDomains := concat .agent_sandbox.network.allowed_domains $extras.allowed_domains -}}
 {{- $uid := output "id" "-u" | trim -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
 {{- range $name, $cfg := .agent_mcp_servers -}}
   {{- $allowedPerms = append $allowedPerms (printf "mcp__%s" $name) -}}
 {{- end -}}
-{{- range .agents.claude.extras.allowed_read_patterns -}}
+{{- range $extras.allowed_read_patterns -}}
   {{- $allowedPerms = append $allowedPerms (printf "Read(%s)" (replace "{uid}" $uid .)) -}}
 {{- end -}}
 {{- $permDeny := list -}}
-{{- range $denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
+{{- range $sb.denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {
   "permissions": {
     "allow": {{ $allowedPerms | toPrettyJson | indent 4 | trim }},

@@ -1,0 +1,42 @@
+{{- /* agent-sandbox: resolve the agnostic sandbox filesystem policy for one agent.
+       input:  dict "self" <agent name> "root" <template data>
+       output: JSON {denyRead, sandboxDenyRead, allowRead, allowWrite} */ -}}
+{{- $self := .self -}}
+{{- $root := .root -}}
+{{- $denyRead := list -}}
+{{- $sandboxDenyRead := list -}}
+{{- $allowRead := list -}}
+{{- $allowWrite := list -}}
+{{- $fs := $root.agent_sandbox.filesystem -}}
+{{- $fsPaths := $fs.paths -}}
+{{- with index $fs.os_paths $root.chezmoi.os -}}
+  {{- $fsPaths = mergeOverwrite (deepCopy $fsPaths) . -}}
+{{- end -}}
+{{- range $path, $mode := $fsPaths -}}
+  {{- if eq $mode "none" -}}
+    {{- $denyRead = append $denyRead $path -}}
+    {{- $sandboxDenyRead = append $sandboxDenyRead $path -}}
+  {{- else if eq $mode "read" -}}{{- $allowRead = append $allowRead $path -}}
+  {{- else if eq $mode "write" -}}{{- $allowWrite = append $allowWrite $path -}}
+  {{- end -}}
+{{- end -}}
+{{- range $fs.resolved_paths -}}
+  {{- if lookPath .requires -}}
+    {{- $p := output "sh" "-c" .command | trim -}}
+    {{- if $p -}}
+      {{- if eq .mode "none" -}}
+        {{- $denyRead = append $denyRead $p -}}
+        {{- $sandboxDenyRead = append $sandboxDenyRead $p -}}
+      {{- else if eq .mode "read" -}}{{- $allowRead = append $allowRead $p -}}
+      {{- else if eq .mode "write" -}}{{- $allowWrite = append $allowWrite $p -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- range $name, $agent := $root.agents -}}
+  {{- $denyRead = append $denyRead $agent.home -}}
+  {{- if ne $name $self -}}
+    {{- $sandboxDenyRead = append $sandboxDenyRead $agent.home -}}
+  {{- end -}}
+{{- end -}}
+{{- dict "denyRead" $denyRead "sandboxDenyRead" $sandboxDenyRead "allowRead" $allowRead "allowWrite" $allowWrite | toJson -}}

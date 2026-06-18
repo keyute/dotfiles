@@ -41,11 +41,20 @@ agent_sandbox:
       "~/.claude.json": none
       "~/.zsh_history": none
       "~/.zhistory": none
-      "/opt/homebrew": read
       "~/.go/bin": read
       "~/.npm/_cacache": write
       "~/.npm/_logs": write
       "~/.cache/uv": write
+    # per-OS paths merged on the matching .chezmoi.os (override base modes); others skipped
+    os_paths:
+      darwin:
+        "/opt/homebrew": read
+      linux: {}
+    resolved_paths:
+      # path resolved at chezmoi render time; skipped if `requires` binary absent
+      - mode: write
+        requires: go
+        command: "go env GOCACHE"
   network:
     allowed_domains:
       - github.com
