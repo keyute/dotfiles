@@ -42,6 +42,7 @@ agent_sandbox:
       "~/.zsh_history": none
       "~/.zhistory": none
       "~/.go/bin": read
+      "~/.go/pkg/mod": write
       "~/.npm/_cacache": write
       "~/.npm/_logs": write
       "~/.cache/uv": write
