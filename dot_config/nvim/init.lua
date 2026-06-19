@@ -97,10 +97,6 @@ vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>")
 -- Diagnostic keymaps
 vim.keymap.set("n", "<leader>q", vim.diagnostic.setloclist, { desc = "Open diagnostic [Q]uickfix list" })
 
--- Change the next occurrence of the word under the cursor; repeat with `.`, skip with `n`.
--- Filetype-agnostic replacement for :%s (see `:help gn`). Use `grn` for LSP symbol rename.
-vim.keymap.set("n", "<leader>rw", "*Ncgn", { desc = "[R]ename [W]ord occurrences (cgn; repeat with .)" })
-
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
 -- is not what someone will guess without a bit more experience.
