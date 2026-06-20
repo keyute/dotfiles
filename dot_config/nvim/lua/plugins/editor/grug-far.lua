@@ -1,7 +1,13 @@
 return { -- Project-wide find & replace
 	"MagicDuck/grug-far.nvim",
 	cmd = "GrugFar",
-	opts = {},
+	opts = {
+		engines = {
+			ripgrep = {
+				extraArgs = "--hidden",
+			},
+		},
+	},
 	keys = {
 		{
 			"<leader>rr",
