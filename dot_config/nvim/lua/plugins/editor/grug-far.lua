@@ -4,7 +4,7 @@ return { -- Project-wide find & replace
 	opts = {
 		engines = {
 			ripgrep = {
-				extraArgs = "--hidden",
+				extraArgs = "--hidden --glob=!**/.git/*",
 			},
 		},
 	},
