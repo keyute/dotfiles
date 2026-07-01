@@ -36,7 +36,7 @@
   the specific pattern you must use for your implementation.
 - Do not read or inspect credential stores, shell history, agent transcripts/session stores, or auth config paths such as {{ join ", " $formatted }}, or similar sensitive paths unless the user explicitly asks for that specific path.
 - If you believe that you had access and read any credentials, you are to flag it so that I can rotate it immediately.
-- If you are doing a bugfix, and the project has unit tests, you are to understand how unit tests are written in the
+- If you are doing a bugfix, and the project has testing wired up, you are to understand how tests are written in the
   project first, then evaluate if writing tests is simple and meaningful. If it is, you are to write the tests, then
   validate the bug through the test, then fix the bug, and run the same tests to ensure that the bug is fixed.
 - If you are writing a test, ensure that it is minimal and meaningful, do not write test cases that are unnecessary.
