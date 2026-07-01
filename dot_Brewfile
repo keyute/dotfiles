@@ -74,8 +74,6 @@ brew "tree-sitter"
 brew "neovim"
 # Open-source, cross-platform JavaScript runtime environment
 brew "node"
-# OpenShift command-line interface tools
-brew "openshift-cli"
 # Drop-in replacement for Terraform. Infrastructure as Code Tool
 brew "opentofu"
 # API for decoding and seeking in .opus files
