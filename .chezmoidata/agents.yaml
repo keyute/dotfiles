@@ -57,6 +57,7 @@ agent_sandbox:
         requires: go
         command: "go env GOCACHE"
   network:
+    allow_local_binding: true
     allowed_domains:
       - github.com
       - "*.github.com"

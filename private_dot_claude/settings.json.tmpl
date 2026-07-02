@@ -42,6 +42,7 @@
     "failIfUnavailable": true,
     "autoAllowBashIfSandboxed": true,
     "network": {
+      "allowLocalBinding": {{ .agent_sandbox.network.allow_local_binding }},
       "allowedDomains": {{ $allowedDomains | uniq | toPrettyJson | indent 6 | trim }}
     },
     "filesystem": {
