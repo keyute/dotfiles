@@ -1,6 +1,15 @@
 agents:
   claude:
     home: "~/.claude"
+    # subpaths of home denied even to this agent itself (transcripts, credentials,
+    # history); the rest of home — notably projects/<proj>/memory — stays readable
+    sensitive_subpaths:
+      - ".env"
+      - ".credentials.json"
+      - "history.jsonl"
+      - "projects/**/*.jsonl"
+      - "shell-snapshots"
+      - "todos"
     extras:
       readable_paths:
         - "~/.claude/plugins"

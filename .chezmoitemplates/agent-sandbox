@@ -34,9 +34,15 @@
   {{- end -}}
 {{- end -}}
 {{- range $name, $agent := $root.agents -}}
-  {{- $denyRead = append $denyRead $agent.home -}}
   {{- if ne $name $self -}}
+    {{- $denyRead = append $denyRead $agent.home -}}
     {{- $sandboxDenyRead = append $sandboxDenyRead $agent.home -}}
+  {{- else -}}
+    {{- /* the agent's own home is denied only at its sensitive subpaths, so
+           features living under home (e.g. projects/<proj>/memory) keep working */ -}}
+    {{- range $agent.sensitive_subpaths -}}
+      {{- $denyRead = append $denyRead (printf "%s/%s" $agent.home .) -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 {{- dict "denyRead" $denyRead "sandboxDenyRead" $sandboxDenyRead "allowRead" $allowRead "allowWrite" $allowWrite | toJson -}}

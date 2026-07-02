@@ -1,0 +1,61 @@
+{{- $agent := .agents.claude -}}
+# Sandbox & permission reference
+
+Generated from `.chezmoidata/agents.yaml` in the chezmoi repo. To change anything
+here: edit that file, then `chezmoi apply`. Do not hand-edit `~/.claude/settings.json`.
+
+## The two enforcement layers
+
+1. **Bash sandbox** (`settings.json → sandbox`) governs shell commands. Reads are
+   allowed everywhere except `denyRead`; writes only inside `allowWrite`; outbound
+   network only to `allowedDomains`. The harness additionally always denies bash
+   access to the agent's own home (`{{ $agent.home }}`), with carve-outs for the
+   `readable_paths` listed below.
+2. **Permission rules** (`settings.json → permissions`) govern harness tools (Read,
+   Edit, WebFetch, MCP). Deny rules beat allow rules: a denied path can never be
+   carved back in with an allow — the deny itself must be narrowed in agents.yaml.
+
+## Path semantics
+
+- A relative pattern like `.env` matches at any depth (`terraform/.env` is blocked too).
+- A directory entry covers everything beneath it.
+- Modes: `none` = deny read+write, `read` = allow read, `write` = allow write.
+
+## Filesystem policy
+
+| Path | Mode |
+|------|------|
+{{ range $path, $mode := .agent_sandbox.filesystem.paths -}}
+| `{{ $path }}` | {{ $mode }} |
+{{ end -}}
+{{- with index .agent_sandbox.filesystem.os_paths .chezmoi.os -}}
+{{ range $path, $mode := . -}}
+| `{{ $path }}` ({{ $.chezmoi.os }} only) | {{ $mode }} |
+{{ end -}}
+{{- end }}
+Resolved at render time (skipped when the binary is absent):
+{{ range .agent_sandbox.filesystem.resolved_paths -}}
+- `{{ .command }}` → {{ .mode }} (requires `{{ .requires }}`)
+{{ end }}
+## Own home ({{ $agent.home }})
+
+Denied to this agent even for the Read tool (privacy — narrow in agents.yaml if needed):
+{{ range $agent.sensitive_subpaths -}}
+- `{{ $agent.home }}/{{ . }}`
+{{ end -}}
+Everything else under home is tool-readable — notably the per-project memory dirs
+(`{{ $agent.home }}/projects/<project>/memory/`), while transcripts
+(`projects/**/*.jsonl`) stay denied. Bash carve-outs: readable
+{{ range $i, $p := $agent.extras.readable_paths }}{{ if $i }}, {{ end }}`{{ $p }}`{{ end }}; writable
+{{ range $i, $p := $agent.extras.writable_paths }}{{ if $i }}, {{ end }}`{{ $p }}`{{ end }}.
+
+## Network
+
+- Local binding (e.g. dev servers on localhost): {{ if .agent_sandbox.network.allow_local_binding }}allowed{{ else }}blocked{{ end }}.
+- Outbound is blocked except these domains (plus agent extras):
+{{ range .agent_sandbox.network.allowed_domains -}}
+  - `{{ . }}`
+{{ end -}}
+{{ range $agent.extras.allowed_domains -}}
+  - `{{ . }}`
+{{ end -}}

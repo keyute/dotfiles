@@ -13,10 +13,6 @@ Check for:
 - Commands that are not idempotent when the script is re-run
 - Hardcoded paths that should use variables or XDG dirs
 - Missing error handling for external command failures
-- Chezmoi template issues: unresolved variables, incorrect `{{-` whitespace trimming
+- Chezmoi template issues: unresolved variables, incorrect `{{ "{{-" }}` whitespace trimming
 
-Do NOT flag: pure style/naming/formatting, or speculative issues you cannot tie to a specific line.
-Every finding must cite a real `file:line` in the diff — no inferred behavior.
-Severity: high = correctness/security/data-loss; medium = likely bug or maintainability risk; low = minor.
-
-Report each issue as: **[severity: low/medium/high]** `file:line` — description. End with a one-line summary.
+{{ template "reviewer-common.md" (dict "formatting" "pure style/naming/formatting") }}
