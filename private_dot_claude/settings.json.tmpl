@@ -30,6 +30,7 @@
   "worktree": {
     "baseRef": "head"
   },
+  "disableRemoteControl": true,
   "statusLine": {
     "type": "command",
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
@@ -42,8 +43,8 @@
     "failIfUnavailable": true,
     "autoAllowBashIfSandboxed": true,
     "network": {
-      "allowLocalBinding": {{ .agent_sandbox.network.allow_local_binding }},
-      "allowedDomains": {{ $allowedDomains | uniq | toPrettyJson | indent 6 | trim }}
+      "allowedDomains": {{ $allowedDomains | uniq | toPrettyJson | indent 6 | trim }},
+      "allowLocalBinding": {{ .agent_sandbox.network.allow_local_binding }}
     },
     "filesystem": {
       "allowWrite": {{ $allowWrite | toPrettyJson | indent 6 | trim }},
@@ -53,10 +54,9 @@
   },
   "spinnerTipsEnabled": false,
   "alwaysThinkingEnabled": true,
+  "tui": "fullscreen",
+  "skipWorkflowUsageWarning": true,
   "theme": "auto",
   "agentPushNotifEnabled": false,
-  "skipWorkflowUsageWarning": true,
-  "disableDeepLinkRegistration": "disable",
-  "disableRemoteControl": true,
-  "tui": "fullscreen"
+  "disableDeepLinkRegistration": "disable"
 }
