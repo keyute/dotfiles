@@ -1,6 +1,7 @@
 tap "artginzburg/tap", trusted: true
 tap "buo/cask-upgrade", trusted: true
 tap "hashicorp/tap", trusted: true
+tap "jundot/omlx", "https://github.com/jundot/omlx"
 tap "siderolabs/tap", trusted: true
 # Clone of cat(1) with syntax highlighting and Git integration
 brew "bat"
@@ -106,6 +107,8 @@ brew "hashicorp/tap/vault"
 brew "siderolabs/tap/talosctl"
 # Meta Package for common Sidero Labs tools
 brew "siderolabs/tap/sidero-tools"
+# MLX inference server (Apple Silicon) for local code autocomplete — headless daemon
+brew "jundot/omlx/omlx", start_service: true
 # Command-line interface for 1Password
 cask "1password-cli"
 # Terminal-based AI coding assistant

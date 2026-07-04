@@ -1,5 +1,6 @@
 {{- if ne .chezmoi.os "darwin" }}
 .Brewfile
+.omlx/settings.json
 {{- end }}
 package.json
 package-lock.json

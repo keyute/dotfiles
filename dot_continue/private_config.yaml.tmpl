@@ -3,9 +3,23 @@ version: 1.0.0
 schema: v1
 models:
   - name: Autocomplete
+{{- if eq .chezmoi.os "darwin" }}
+    # macOS: oMLX (MLX) serving JetBrains Mellum-4b. oMLX passes the prompt through
+    # as-is, so we hand it a raw FIM prompt via the legacy /v1/completions endpoint.
+    # Mellum uses SPM-order tokens (no pipes), unlike Qwen.
+    provider: openai
+    model: Mellum-4b-base-4bit
+    apiBase: http://localhost:11434/v1
+    apiKey: unused
+    useLegacyCompletionsEndpoint: true
+    promptTemplates:
+      autocomplete: "{{ `<fim_suffix>{{{suffix}}}<fim_prefix>{{{prefix}}}<fim_middle>` }}"
+{{- else }}
+    # Linux: Ollama applies the Qwen FIM template itself, no custom template needed.
     provider: ollama
-    model: {{ if eq .chezmoi.os "darwin" -}}qwen2.5-coder:3b-base-q8_0{{- else -}}qwen2.5-coder:0.5b-q8_0{{- end }}
+    model: qwen2.5-coder:1.5b-base-q4_0
+{{- end }}
     roles:
       - autocomplete
     defaultCompletionOptions:
-      contextLength: 8000
+      contextLength: 2048

@@ -1,5 +1,28 @@
 local is_macos = vim.uv.os_uname().sysname == "Darwin"
-local model = is_macos and "qwen2.5-coder:3b-base-q8_0" or "qwen2.5-coder:0.5b-base-q8_0"
+
+-- macOS runs oMLX (MLX) serving JetBrains Mellum-4b; Linux runs Ollama serving Qwen.
+-- Both listen on 11434, so only the model (and macOS's FIM template) differ.
+local fim = {
+	api_key = "TERM",
+	name = "Ollama",
+	end_point = "http://localhost:11434/v1/completions",
+	model = is_macos and "Mellum-4b-base-4bit" or "qwen2.5-coder:1.5b-base-q4_0",
+	optional = {
+		max_tokens = 128,
+		top_p = 0.9,
+	},
+}
+
+if is_macos then
+	-- oMLX passes the prompt through as-is (no server-side suffix handling), and
+	-- Mellum uses SPM-order FIM tokens (no pipes), so embed them here and disable suffix.
+	fim.template = {
+		prompt = function(context_before_cursor, context_after_cursor, _)
+			return "<fim_suffix>" .. context_after_cursor .. "<fim_prefix>" .. context_before_cursor .. "<fim_middle>"
+		end,
+		suffix = false,
+	}
+end
 
 return {
 	"milanglacier/minuet-ai.nvim",
@@ -14,16 +37,7 @@ return {
 		n_completions = 1,
 		context_window = 8000,
 		provider_options = {
-			openai_fim_compatible = {
-				api_key = "TERM",
-				name = "Ollama",
-				end_point = "http://localhost:11434/v1/completions",
-				model = model,
-				optional = {
-					max_tokens = 56,
-					top_p = 0.9,
-				},
-			},
+			openai_fim_compatible = fim,
 		},
 	},
 }
