@@ -1,7 +1,7 @@
 tap "artginzburg/tap", trusted: true
 tap "buo/cask-upgrade", trusted: true
 tap "hashicorp/tap", trusted: true
-tap "jundot/omlx", "https://github.com/jundot/omlx"
+tap "jundot/omlx", "https://github.com/jundot/omlx", trusted: true
 tap "siderolabs/tap", trusted: true
 # Clone of cat(1) with syntax highlighting and Git integration
 brew "bat"
