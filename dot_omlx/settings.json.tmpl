@@ -47,7 +47,7 @@
   },
   "auth": {
     "api_key": null,
-    "secret_key": null,
+    "secret_key": {{ list .chezmoi.hostname "omlx" | join "|" | sha256sum | quote }},
     "skip_api_key_verification": false,
     "sub_keys": []
   },
