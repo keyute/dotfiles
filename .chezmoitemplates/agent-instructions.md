@@ -57,3 +57,4 @@
   project first, then evaluate if writing tests is simple and meaningful. If it is, you are to write the tests, then
   validate the bug through the test, then fix the bug, and run the same tests to ensure that the bug is fixed.
 - If you are writing a test, ensure that it is minimal and meaningful, do not write test cases that are unnecessary.
+- Never commit on my behalf, I will stage, commit, and push myself
