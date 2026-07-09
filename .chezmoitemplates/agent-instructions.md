@@ -27,45 +27,36 @@
 
 ## Orchestration & context discipline
 
-Keep your context clean by default, from turn one — do not wait until it fills to
-clean it up. By the time the window is nearly full, degradation has already set in.
+Keep your context clean from turn one — do not wait until it fills; by the time the
+window is nearly full, degradation has already set in.
 
-- Protect your context continuously. Route disposable work — searches, whole-file
-  reads, log/dependency triage, independent research: anything whose intermediate
-  output you won't re-read — to a subagent (if your harness supports them; Claude,
-  Codex, and Cursor do) or out to files, so only distilled results ever enter your
-  context. Do this from the start, not when you near a limit.
-- The gate is cost, not fullness. Hand work off wherever it keeps your context
-  clean, UNLESS the handoff costs more than it saves: trivial tasks, sequential
-  work where each step needs the previous step's full output, or edits where you
-  must see the exact lines you change. Spawn-up costs tokens and latency — it must
-  pay for itself.
-- Backstop only: if you are still nearing your limit despite this, you have
-  under-delegated. Persist your plan, key decisions, and open threads to a durable
-  file (memory / plan file / scratchpad) so a fresh session resumes with zero loss.
-  Judge "near" as a fraction of your window, never a fixed token count, so it holds
-  whether that window is ~200k or ~1M.
-- Every delegation is a contract; state all four or the worker drifts:
-  (1) objective, (2) exact scope and boundaries, (3) which files/paths/tools to
-  use, (4) output format — a compressed summary, never a raw dump.
+- Route disposable work — searches, whole-file reads, log/dependency triage,
+  independent research: anything whose intermediate output you won't re-read — to a
+  subagent or out to files, so only distilled results enter your context.
+- The gate is cost, not fullness. Delegate wherever it keeps context clean, UNLESS
+  the handoff costs more than it saves: trivial tasks, sequential work where each step
+  needs the previous step's full output, or edits where you must see the exact lines
+  you change. Spawn-up costs tokens and latency — it must pay for itself.
+- Backstop: if you are still nearing your limit, persist your plan, decisions, and
+  open threads to a durable file (memory / plan file / scratchpad) so a fresh session
+  resumes with zero loss. Judge "near" as a fraction of your window, not a fixed token
+  count (holds at ~200k or ~1M).
+- Every delegation is a contract; state all four or the worker drifts: (1) objective,
+  (2) scope and boundaries, (3) which files/paths/tools, (4) output format — a
+  compressed summary, never a raw dump.
 - Scale fan-out to complexity: one worker for a simple lookup; 2–4 in parallel for
-  independent strands (spawn them together, not serially); more only for genuinely
-  broad research. Cap each worker's effort below your own; never hand a worker the
-  whole problem.
-- Match a worker's model tier to the task by total tokens-to-done including retries,
-  not per-token price: the cheapest tier that can one-shot it — smallest for
-  mechanical lookups, file discovery, and simple transforms; mid for routine
-  implementation and research; top for architectural reasoning, unfamiliar code,
-  ambiguous specs, or work that is expensive to get wrong. A stronger model that
-  one-shots often costs less overall than a weaker one that flails through retries;
-  escalate and downgrade both deliberately, and hand every worker a tight,
-  self-contained spec.
+  independent strands (spawn together, not serially); more only for broad research.
+  Cap each worker's effort below your own.
+- Match a worker's model tier by total tokens-to-done, not sticker price — the
+  cheapest tier that one-shots it: smallest for mechanical lookups and simple
+  transforms, mid for routine implementation and review, top only for architecture or
+  expensive-if-wrong work.
 
 ## Working agreements
 
-- Use context7 (or whatever MCP documentation server your harness has configured)
-  for code generation, setup or configuration steps, or library/API docs — resolve
-  the library id and fetch the docs without me having to ask.
+- Use the configured docs MCP (e.g. context7) for code generation, setup or
+  configuration steps, or library/API docs — resolve the library id and fetch the
+  docs without me having to ask.
 - Keep implementations simple; do not overengineer.
 - When writing code, match the surrounding code's style, design language, and
   colocation of similar patterns. If the project's own rules don't settle it,
