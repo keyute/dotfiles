@@ -1,4 +1,7 @@
-{{- /* agent-instructions: shared instruction preamble for one agent.
+{{- /* agent-instructions: portable, harness-agnostic instruction preamble.
+       Keep this file free of harness/product-specific pointers — those belong in
+       the consumer template (e.g. CLAUDE.md.tmpl). It renders for any agent or
+       harness (Claude Code, Codex, ...).
        input: dict "self" <agent name> "root" <template data> */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
@@ -22,46 +25,60 @@
 {{- $formatted = append $formatted (printf "`%s`" .) -}}
 {{- end -}}
 
-- Always use context7 when I need code generation, setup or configuration steps, or
-  library/API documentation. This means you should automatically use the Context7 MCP
-  tools to resolve library id and get library docs without me having to explicitly ask.
-- Always keep your implementation simple, do not overengineer anything
-- Delegate to a subagent when a side task would dump output you will not
-  reference again into your main context (multi-file searches, reading large
-  files end-to-end, dependency/log triage, independent parallel research).
-  The subagent burns its own context window and hands you back only a summary.
-- Do NOT spawn a subagent when it would not actually save context: trivially
-  small tasks, sequential work where each step needs the previous step's full
-  output, edits where you must see the exact lines you change, or anything
-  you can resolve in one or two tool calls. Subagent spawn-up is not free —
-  it costs tokens and latency, so it must pay for itself in context saved.
-- Match the subagent's model tier to the task by total tokens-to-done
-  including retries — not per-token price. Use the cheapest tier that can
-  one-shot the task: smallest tier for mechanical lookups, file discovery,
-  simple transforms; mid tier for routine implementation and research; top
-  tier for architectural reasoning, unfamiliar codebases, ambiguous specs, or
-  work where a wrong answer is expensive to catch or undo.
-- During implementation, hand a sub-task off to a MORE capable model when it
-  both fits the task better and is cheaper overall: a stronger model that
-  one-shots often costs less than a weaker one that flails through extra turns,
-  retries, and debugging. Escalating and downgrading are a matched pair — over-
-  investing on simple work is as much a failure as under-investing on hard work,
-  so never reach for the top tier "to be safe," and when you downgrade, hand the
-  worker a tight, self-contained spec so it lands in one pass.
-- When writing code, always consider code style, implementation, design language and code colocation of similar patterns.
-  If the project's CLAUDE.md rules are not sufficient to determine this, you must analyse the codebase to understand
-  the specific pattern you must use for your implementation.
-- For sandbox or permission questions (why a path/command/domain is blocked, how to
-  allow something), read `{{ (index $root.agents $self).home }}/docs/sandbox.md` before spawning a lookup agent.
-- For Claude Code workflow questions (review/simplify commands, flags, model tiers,
-  plan mode, worktrees), read `{{ (index $root.agents $self).home }}/docs/harness.md` before spawning a lookup agent.
-- When I correct your approach or re-explain a project convention, offer to record it
-  in that project's CLAUDE.md (or your memory directory) so it does not need
-  re-explaining in future sessions.
-- Do not read or inspect credential stores, shell history, agent transcripts/session stores, or auth config paths such as {{ join ", " $formatted }}, or similar sensitive paths unless the user explicitly asks for that specific path.
-- If you believe that you had access and read any credentials, you are to flag it so that I can rotate it immediately.
-- If you are doing a bugfix, and the project has testing wired up, you are to understand how tests are written in the
-  project first, then evaluate if writing tests is simple and meaningful. If it is, you are to write the tests, then
-  validate the bug through the test, then fix the bug, and run the same tests to ensure that the bug is fixed.
-- If you are writing a test, ensure that it is minimal and meaningful, do not write test cases that are unnecessary.
-- Never commit on my behalf, I will stage, commit, and push myself
+## Orchestration & context discipline
+
+Keep your context clean by default, from turn one — do not wait until it fills to
+clean it up. By the time the window is nearly full, degradation has already set in.
+
+- Protect your context continuously. Route disposable work — searches, whole-file
+  reads, log/dependency triage, independent research: anything whose intermediate
+  output you won't re-read — to a subagent (if your harness supports them; Claude,
+  Codex, and Cursor do) or out to files, so only distilled results ever enter your
+  context. Do this from the start, not when you near a limit.
+- The gate is cost, not fullness. Hand work off wherever it keeps your context
+  clean, UNLESS the handoff costs more than it saves: trivial tasks, sequential
+  work where each step needs the previous step's full output, or edits where you
+  must see the exact lines you change. Spawn-up costs tokens and latency — it must
+  pay for itself.
+- Backstop only: if you are still nearing your limit despite this, you have
+  under-delegated. Persist your plan, key decisions, and open threads to a durable
+  file (memory / plan file / scratchpad) so a fresh session resumes with zero loss.
+  Judge "near" as a fraction of your window, never a fixed token count, so it holds
+  whether that window is ~200k or ~1M.
+- Every delegation is a contract; state all four or the worker drifts:
+  (1) objective, (2) exact scope and boundaries, (3) which files/paths/tools to
+  use, (4) output format — a compressed summary, never a raw dump.
+- Scale fan-out to complexity: one worker for a simple lookup; 2–4 in parallel for
+  independent strands (spawn them together, not serially); more only for genuinely
+  broad research. Cap each worker's effort below your own; never hand a worker the
+  whole problem.
+- Match a worker's model tier to the task by total tokens-to-done including retries,
+  not per-token price: the cheapest tier that can one-shot it — smallest for
+  mechanical lookups, file discovery, and simple transforms; mid for routine
+  implementation and research; top for architectural reasoning, unfamiliar code,
+  ambiguous specs, or work that is expensive to get wrong. A stronger model that
+  one-shots often costs less overall than a weaker one that flails through retries;
+  escalate and downgrade both deliberately, and hand every worker a tight,
+  self-contained spec.
+
+## Working agreements
+
+- Use context7 (or whatever MCP documentation server your harness has configured)
+  for code generation, setup or configuration steps, or library/API docs — resolve
+  the library id and fetch the docs without me having to ask.
+- Keep implementations simple; do not overengineer.
+- When writing code, match the surrounding code's style, design language, and
+  colocation of similar patterns. If the project's own rules don't settle it,
+  analyse the codebase to find the pattern before you write.
+- For a bugfix where the project has tests wired up: first learn how the project
+  writes tests, then if a test is simple and meaningful, write one that reproduces
+  the bug, confirm it fails, fix the bug, and rerun to confirm it passes. Keep
+  tests minimal and meaningful — no unnecessary cases.
+- When I correct your approach or re-explain a convention, offer to record it in the
+  project's AGENTS.md (or instructions file) or your memory so it needn't be
+  re-explained next session.
+- Never read credential stores, shell history, agent transcripts/session stores, or
+  auth config paths such as {{ join ", " $formatted }}, or similar sensitive paths,
+  unless I explicitly ask for that specific path. If you believe you read a
+  credential, flag it immediately so I can rotate it.
+- Never commit on my behalf — I stage, commit, and push myself.
