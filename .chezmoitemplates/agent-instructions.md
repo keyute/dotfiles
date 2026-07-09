@@ -35,12 +35,19 @@
   output, edits where you must see the exact lines you change, or anything
   you can resolve in one or two tool calls. Subagent spawn-up is not free —
   it costs tokens and latency, so it must pay for itself in context saved.
-- Match the subagent's model tier to the task. Use the cheapest tier that
-  can do the job correctly: smallest tier for mechanical lookups, file
-  discovery, simple transforms; mid tier for routine implementation and
-  research; top tier only for architectural reasoning, unfamiliar codebases,
-  or work where a wrong answer is expensive. Never default to the top tier
-  just because the parent session uses it.
+- Match the subagent's model tier to the task by total tokens-to-done
+  including retries — not per-token price. Use the cheapest tier that can
+  one-shot the task: smallest tier for mechanical lookups, file discovery,
+  simple transforms; mid tier for routine implementation and research; top
+  tier for architectural reasoning, unfamiliar codebases, ambiguous specs, or
+  work where a wrong answer is expensive to catch or undo.
+- During implementation, hand a sub-task off to a MORE capable model when it
+  both fits the task better and is cheaper overall: a stronger model that
+  one-shots often costs less than a weaker one that flails through extra turns,
+  retries, and debugging. Escalating and downgrading are a matched pair — over-
+  investing on simple work is as much a failure as under-investing on hard work,
+  so never reach for the top tier "to be safe," and when you downgrade, hand the
+  worker a tight, self-contained spec so it lands in one pass.
 - When writing code, always consider code style, implementation, design language and code colocation of similar patterns.
   If the project's CLAUDE.md rules are not sufficient to determine this, you must analyse the codebase to understand
   the specific pattern you must use for your implementation.

@@ -27,10 +27,20 @@ agent and update this file.
 ## Models
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo; `/model`
-  changes only the current session.
+  changes only the current session. Pin stays on `opus[1m]` for the 1M context
+  window; bump up to Fable manually (`/model`) for orchestration-heavy sessions when
+  the plan offers it — it's opted into per session, not every session. (`best` =
+  most capable available — Fable where accessible, else latest Opus — but it's not
+  pinned here, since the pin exists to hold the `[1m]` context.)
 - `/fast` — fast mode: Opus with faster output, not a smaller model.
-- Subagent tiers: haiku = mechanical lookups/triage, sonnet = routine implementation
-  and review, opus/top tier = architecture or expensive-if-wrong work.
+- Subagent tiers are relative capability, not fixed model names — the session's own
+  context reports the current roster. Map: cheapest tier = mechanical lookups/triage;
+  mid tier = routine implementation and review; most-capable available = architecture,
+  orchestration, or expensive-if-wrong work. Subagents default to inheriting the main
+  session model, so a `/model` bump cascades to them; a subagent that names an
+  unavailable model silently falls back to the inherited one (no pay-as-you-go
+  surprise). Route on total tokens-to-done, not sticker price — a stronger model that
+  one-shots beats a cheaper one that retries.
 
 ## Modes & isolation
 
