@@ -2,6 +2,9 @@
 .Brewfile
 .omlx/settings.json
 {{- end }}
+{{- if eq .chezmoi.os "darwin" }}
+.config/containers/
+{{- end }}
 package.json
 package-lock.json
 .github/
