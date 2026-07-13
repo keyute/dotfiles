@@ -48,6 +48,16 @@ agent and update this file.
   plan is approved. `shift+tab` cycles modes.
 - Worktrees isolate parallel work; `worktree.baseRef` is set to `head` in settings.
 
+## Codex plugin (not installed — blocked)
+
+- OpenAI's official Claude Code plugin (`codex` from `openai/codex-plugin-cc`) is
+  deliberately NOT enabled: nested sandboxing is broken on macOS. Codex refuses to
+  start its own Seatbelt inside Claude Code's (openai/codex#30615), and even
+  `--sandbox danger-full-access` panics because CC's sandbox blocks the `configd`
+  lookup Codex's HTTP stack needs (anthropics/claude-code#42857). Revisit when
+  #30615 lands or Codex's `external-sandbox` policy becomes user-reachable; until
+  then the only workaround is sandbox-disabled Bash, which this setup rejects.
+
 ## Recurring maintenance
 
 - `/fewer-permission-prompts` — mine transcripts to grow the project allowlist.

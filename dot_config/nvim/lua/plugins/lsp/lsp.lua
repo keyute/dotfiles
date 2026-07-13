@@ -122,6 +122,14 @@ return {
 				"sqlfluff",
 				"eslint_d",
 				"golangci-lint",
+				-- go.nvim helper binaries — installed here (async, non-blocking) instead of
+				-- go.nvim's synchronous `build` hook, which blocks nvim on every :Lazy update.
+				"gofumpt",
+				"goimports",
+				"gomodifytags",
+				"gotests",
+				"iferr",
+				"delve",
 			},
 		})
 

@@ -29,6 +29,59 @@ agents:
       "pyright-lsp@claude-plugins-official": true
       "lua-lsp@claude-plugins-official": true
     marketplaces: {}
+  codex:
+    home: "~/.codex"
+    sensitive_subpaths:
+      - "auth.json"
+      - "history.jsonl"
+      - "sessions"
+      - "log"
+    extras:
+      allowed_domains:
+        - "*.openai.com"
+        - "*.chatgpt.com"
+# shared subagent definitions rendered for every harness; bodies live in
+# .chezmoitemplates/subagents/<name>.md, tier resolves via subagent_tiers
+subagents:
+  go-reviewer:
+    tier: mid
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Review Go code diffs for correctness and idiomatic style. Use when you want a focused review of Go changes before merging."
+  python-reviewer:
+    tier: mid
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Review Python diffs for correctness, type safety, and idiomatic style. Use when you want a focused review of Python changes before merging."
+  ts-reviewer:
+    tier: mid
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Review TypeScript/Node.js diffs for type safety, async correctness, and idiomatic patterns. Use when you want a focused review of TS/JS changes."
+  shell-reviewer:
+    tier: small
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Review shell scripts, zsh configs, and chezmoi templates for correctness and safety. Use for shell/dotfile diffs."
+  log-triager:
+    tier: small
+    readonly: true
+    tools: "Read, Grep, Bash"
+    description: "Summarize large log files or stderr dumps into a short diagnosis. Use to avoid pasting giant logs into the main context."
+  migration-planner:
+    tier: top
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Plan complex migrations — schema changes, breaking API changes, major dependency upgrades — with an ADR-style analysis. Use when a change needs a proper plan before any code is written."
+subagent_tiers:
+  claude:
+    small: haiku
+    mid: sonnet
+    top: opus
+  codex:
+    small: gpt-5.6-luna
+    mid: gpt-5.6-terra
+    top: gpt-5.6-sol
 agent_sandbox:
   filesystem:
     paths:

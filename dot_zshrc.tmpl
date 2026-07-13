@@ -16,6 +16,9 @@ if type brew &>/dev/null; then
     FPATH="$(brew --prefix)/share/zsh/site-functions:$(brew --prefix)/share/zsh-completions:$FPATH"
 fi
 
+# User completions (e.g. _docker generated from the docker CLI; see run_onchange_after_docker-completion)
+FPATH="$HOME/.local/share/zsh/site-functions:$FPATH"
+
 zmodload zsh/complist
 autoload -U compinit; compinit
 _comp_options+=(globdots)

@@ -1,0 +1,6 @@
+{{ template "agent-instructions.md" (dict "self" "codex" "root" .) }}
+- The sensitive-path rule above is behavioral only — this harness's sandbox cannot
+  block file reads, so treat the list as a hard rule, not a technicality.
+- Specialized subagents are installed ({{ keys .subagents | sortAlpha | join ", " }});
+  spawn them for focused reviews, log triage, or migration planning instead of doing
+  that work inline.

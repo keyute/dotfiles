@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Partial management of ~/.codex/config.toml: chezmoi owns the keys below; every
+# other root key and table (notably [projects] trust entries and [notice], which
+# codex writes surgically at runtime) passes through untouched.
+set -euo pipefail
+
+input=$(cat)
+
+managed_root=$(cat <<'CHEZMOI_TOML'
+model = "gpt-5.6-sol"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+CHEZMOI_TOML
+)
+
+managed_tables=$(cat <<'CHEZMOI_TOML'
+[features.network_proxy]
+allow_local_binding = {{ .agent_sandbox.network.allow_local_binding }}
+
+[features.network_proxy.domains]
+{{- range concat .agent_sandbox.network.allowed_domains .agents.codex.extras.allowed_domains | uniq }}
+"{{ . }}" = "allow"
+{{- end }}
+{{- range $name, $cfg := .agent_mcp_servers }}
+{{- $command := get $cfg "command" }}
+{{- if not $command }}
+{{- $command = printf "%s/node_modules/.bin/%s" $.chezmoi.sourceDir $cfg.package_bin }}
+{{- end }}
+{{- $args := list }}
+{{- range $cfg.args }}
+{{- if kindIs "map" . }}
+{{- $ref := .op }}
+{{- if not (hasPrefix "op://" $ref) }}{{ $ref = printf "op://%s" $ref }}{{ end }}
+{{- $args = append $args (onepasswordRead $ref) }}
+{{- else }}
+{{- $args = append $args . }}
+{{- end }}
+{{- end }}
+
+[mcp_servers.{{ $name }}]
+command = "{{ $command }}"
+args = [{{ range $i, $a := $args }}{{ if $i }}, {{ end }}"{{ $a }}"{{ end }}]
+{{- $env := default (dict) (get $cfg "env") }}
+{{- if $env }}
+
+[mcp_servers.{{ $name }}.env]
+{{- range $key, $value := $env }}
+{{- if kindIs "map" $value }}
+{{- $ref := $value.op }}
+{{- if not (hasPrefix "op://" $ref) }}{{ $ref = printf "op://%s" $ref }}{{ end }}
+{{ $key }} = "{{ onepasswordRead $ref }}"
+{{- else }}
+{{ $key }} = "{{ $value }}"
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+CHEZMOI_TOML
+)
+
+# root section (before the first [table]): keep everything except managed keys
+preserved_root=$(printf '%s\n' "$input" | awk '
+  /^\[/ { exit }
+  NF && $0 !~ /^(model|approval_policy|sandbox_mode)[[:space:]]*=/ { print }')
+
+# tables: keep everything except the managed [features*] and [mcp_servers*] tables
+preserved_rest=$(printf '%s\n' "$input" | awk '
+  /^\[/ { intables = 1; keep = ($0 ~ /^\[\[?(features|mcp_servers)[.\]]/) ? 0 : 1 }
+  intables && keep { print }')
+
+printf '%s\n' "$managed_root"
+if [ -n "$preserved_root" ]; then
+  printf '%s\n' "$preserved_root"
+fi
+printf '\n%s\n' "$managed_tables"
+if [ -n "$preserved_rest" ]; then
+  printf '\n%s\n' "$preserved_rest"
+fi

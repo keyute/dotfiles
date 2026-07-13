@@ -1,0 +1,17 @@
+{{- /* subagent-codex: render a shared subagent as a Codex agent TOML file.
+       metadata comes from .subagents/<name> in .chezmoidata/agents.yaml, the
+       body from .chezmoitemplates/subagents/<name>.md. Bodies must not contain
+       three consecutive single quotes (TOML multi-line literal delimiter).
+       input: dict "name" <subagent name> "root" <template data> */ -}}
+{{- $name := .name -}}
+{{- $root := .root -}}
+{{- $meta := index $root.subagents $name -}}
+name = "{{ $name }}"
+description = "{{ $meta.description }}"
+model = "{{ index $root.subagent_tiers.codex $meta.tier }}"
+{{- if $meta.readonly }}
+sandbox_mode = "read-only"
+{{- end }}
+developer_instructions = '''
+{{ includeTemplate (printf "subagents/%s.md" $name) (dict "instructions_file" "AGENTS.md") -}}
+'''

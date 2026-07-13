@@ -1,0 +1,10 @@
+#!/bin/bash
+{{ if lookPath "docker" -}}
+# Docker version: {{ output "docker" "--version" }}
+# Regenerate zsh completion from the docker CLI itself (native, cross-platform:
+# OrbStack on macOS, docker on Linux) instead of the deprecated docker-completion formula.
+set -euo pipefail
+comp_dir="$HOME/.local/share/zsh/site-functions"
+mkdir -p "$comp_dir"
+docker completion zsh > "$comp_dir/_docker"
+{{ end -}}

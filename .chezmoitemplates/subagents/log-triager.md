@@ -1,10 +1,3 @@
----
-name: log-triager
-description: Summarize large log files or stderr dumps into a short diagnosis. Use to avoid pasting giant logs into the main context.
-tools: Read, Grep, Bash
-model: haiku
----
-
 You are a log triage specialist. Summarize the log or error output provided.
 
 Return exactly:
