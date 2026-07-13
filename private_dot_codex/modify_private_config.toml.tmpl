@@ -34,8 +34,7 @@
 {{- end -}}
 #!/usr/bin/env bash
 # Partial management of ~/.codex/config.toml. Chezmoi replaces the settings it
-# owns, removes incompatible legacy profile state, and preserves unrelated user
-# settings, features, MCPs, and runtime state.
+# owns and preserves unrelated user settings, features, MCPs, and runtime state.
 set -euo pipefail
 
 input=$(cat)
@@ -43,6 +42,7 @@ input=$(cat)
 managed_root=$(cat <<'CHEZMOI_TOML'
 model = {{ $codex.defaults.model | toJson }}
 model_reasoning_effort = {{ $codex.defaults.model_reasoning_effort | toJson }}
+plan_mode_reasoning_effort = {{ $codex.defaults.plan_mode_reasoning_effort | toJson }}
 approval_policy = "on-request"
 default_permissions = "chezmoi-workspace"
 CHEZMOI_TOML
@@ -171,27 +171,6 @@ preserved=$(printf '%s\n' "$input" | awk \
     if (count % 2 == 1) multiline = multiline == "" ? delimiter : ""
   }
 
-  function normalize_owned_path(name, normalized) {
-    normalized = name
-    gsub(/\"features\"/, "features", normalized)
-    gsub(/\"permissions\"/, "permissions", normalized)
-    gsub(/\"mcp_servers\"/, "mcp_servers", normalized)
-    gsub(/\"network_proxy\"/, "network_proxy", normalized)
-    gsub(/\"workspace\"/, "workspace", normalized)
-    gsub(/\"chezmoi-workspace\"/, "chezmoi-workspace", normalized)
-    gsub(/\"sandbox_workspace_write\"/, "sandbox_workspace_write", normalized)
-    gsub(/\"profiles\"/, "profiles", normalized)
-    gsub(/\"model\"/, "model", normalized)
-    gsub(/\"model_reasoning_effort\"/, "model_reasoning_effort", normalized)
-    gsub(/\"plan_mode_reasoning_effort\"/, "plan_mode_reasoning_effort", normalized)
-    gsub(/\"approval_policy\"/, "approval_policy", normalized)
-    gsub(/\"default_permissions\"/, "default_permissions", normalized)
-    gsub(/\"sandbox_mode\"/, "sandbox_mode", normalized)
-    gsub(/\"permission_profile\"/, "permission_profile", normalized)
-    gsub(/\"profile\"/, "profile", normalized)
-    return normalized
-  }
-
   function is_same_or_child(name, parent) {
     return name == parent || index(name, parent ".") == 1
   }
@@ -205,36 +184,28 @@ preserved=$(printf '%s\n' "$input" | awk \
     return 0
   }
 
-  function is_owned_section(name, normalized) {
-    normalized = normalize_owned_path(name)
-    if (is_same_or_child(normalized, "sandbox_workspace_write")) return 1
-    if (is_same_or_child(normalized, "profiles")) return 1
-    if (is_same_or_child(normalized, "features.network_proxy")) return 1
-    if (is_same_or_child(normalized, "permissions.workspace")) return 1
-    if (is_same_or_child(normalized, "permissions.chezmoi-workspace")) return 1
-    if (is_managed_mcp_path(normalized)) return 1
+  function is_owned_section(name) {
+    if (is_same_or_child(name, "features.network_proxy")) return 1
+    if (is_same_or_child(name, "permissions.chezmoi-workspace")) return 1
+    if (is_managed_mcp_path(name)) return 1
     return 0
   }
 
-  function is_managed_assignment(name, line, key, normalized_name, normalized_key) {
+  function is_managed_assignment(name, line, key) {
     key = line
     sub(/^[[:space:]]*/, "", key)
     sub(/[[:space:]]*=.*/, "", key)
-    normalized_name = normalize_owned_path(name)
-    normalized_key = normalize_owned_path(key)
 
     if (name == "") {
-      if (normalized_key ~ /^(model|model_reasoning_effort|plan_mode_reasoning_effort|approval_policy|default_permissions|sandbox_mode|permission_profile|profile)$/) return 1
-      if (is_same_or_child(normalized_key, "sandbox_workspace_write")) return 1
-      if (is_same_or_child(normalized_key, "profiles")) return 1
-      if (is_same_or_child(normalized_key, "features.network_proxy")) return 1
-      if (is_same_or_child(normalized_key, "permissions.workspace")) return 1
-      if (is_same_or_child(normalized_key, "permissions.chezmoi-workspace")) return 1
-      if (is_managed_mcp_path(normalized_key)) return 1
+      if (key ~ /^(model|model_reasoning_effort|plan_mode_reasoning_effort|approval_policy|default_permissions)$/) return 1
+      if (is_same_or_child(key, "features.network_proxy")) return 1
+      if (is_same_or_child(key, "permissions.chezmoi-workspace")) return 1
+      if (is_managed_mcp_path(key)) return 1
     }
-    if (normalized_name == "features" && is_same_or_child(normalized_key, "network_proxy")) return 1
-    if (normalized_name == "permissions" && (is_same_or_child(normalized_key, "workspace") || is_same_or_child(normalized_key, "chezmoi-workspace"))) return 1
-    if (normalized_name == "mcp_servers" && is_managed_mcp_path("mcp_servers." normalized_key)) return 1
+    if (name == "features" && is_same_or_child(key, "network_proxy")) return 1
+    if (name == "permissions" && is_same_or_child(key, "chezmoi-workspace")) return 1
+    if (name == "mcp_servers" && is_managed_mcp_path("mcp_servers." key)) return 1
+    if (name == "tui" && key == "theme") return 1
     return 0
   }
 

@@ -47,7 +47,7 @@
           "absolute": "true",
           "weekday": "true",
           "compact": "true",
-          "timezone": "Australia/Sydney"
+          "timezone": "local"
         }
       },
       { "id": "sep-d", "type": "separator", "character": " · ", "color": "brightBlack" },
