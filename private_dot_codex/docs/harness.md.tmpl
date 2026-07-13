@@ -1,0 +1,19 @@
+# Codex workflow reference
+
+## Session defaults
+
+- Plain `codex` starts with `{{ .agents.codex.defaults.model }}` at {{ .agents.codex.defaults.model_reasoning_effort }} reasoning effort.
+- `/model` changes the model or reasoning effort for the current session only; a new
+  session returns to the managed defaults.
+- No launch profiles are configured. Start with plain `codex` and make any temporary
+  session changes in the TUI.
+- Plan mode is selected per session; this setup does not persist a default mode
+  override.
+- `/fast` is a separate speed toggle, not a model or reasoning-effort profile.
+
+## Subagents
+
+- Named specialists under `~/.codex/agents` stay pinned to their configured model tier,
+  even after `/model` changes the parent session.
+- Built-in or default child agents remain unpinned, allowing Codex to inherit the
+  session selection or choose a task-appropriate setup.

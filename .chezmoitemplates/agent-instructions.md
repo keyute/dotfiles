@@ -46,7 +46,7 @@ window is nearly full, degradation has already set in.
   compressed summary, never a raw dump.
 - Scale fan-out to complexity: one worker for a simple lookup; 2–4 in parallel for
   independent strands (spawn together, not serially); more only for broad research.
-  Cap each worker's effort below your own.
+  Keep each worker's scope smaller than the root task.
 - Match a worker's model tier by total tokens-to-done, not sticker price — the
   cheapest tier that one-shots it: smallest for mechanical lookups and simple
   transforms, mid for routine implementation and review, top only for architecture or
@@ -72,4 +72,6 @@ window is nearly full, degradation has already set in.
   auth config paths such as {{ join ", " $formatted }}, or similar sensitive paths,
   unless I explicitly ask for that specific path. If you believe you read a
   credential, flag it immediately so I can rotate it.
+- Chezmoi may resolve secret references into private target configs. Keep resolved
+  values out of the source repo and never inspect or print those target files.
 - Never commit on my behalf — I stage, commit, and push myself.

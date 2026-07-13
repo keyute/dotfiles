@@ -1,6 +1,8 @@
 agents:
   claude:
     home: "~/.claude"
+    defaults:
+      model: opus[1m]
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -31,45 +33,57 @@ agents:
     marketplaces: {}
   codex:
     home: "~/.codex"
+    defaults:
+      model: gpt-5.6-sol
+      model_reasoning_effort: medium
     sensitive_subpaths:
       - "auth.json"
+      - "config.toml"
       - "history.jsonl"
       - "sessions"
       - "log"
     extras:
       allowed_domains:
+        - "openai.com"
         - "*.openai.com"
+        - "chatgpt.com"
         - "*.chatgpt.com"
 # shared subagent definitions rendered for every harness; bodies live in
 # .chezmoitemplates/subagents/<name>.md, tier resolves via subagent_tiers
 subagents:
   go-reviewer:
     tier: mid
+    reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review Go code diffs for correctness and idiomatic style. Use when you want a focused review of Go changes before merging."
   python-reviewer:
     tier: mid
+    reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review Python diffs for correctness, type safety, and idiomatic style. Use when you want a focused review of Python changes before merging."
   ts-reviewer:
     tier: mid
+    reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review TypeScript/Node.js diffs for type safety, async correctness, and idiomatic patterns. Use when you want a focused review of TS/JS changes."
   shell-reviewer:
     tier: small
+    reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review shell scripts, zsh configs, and chezmoi templates for correctness and safety. Use for shell/dotfile diffs."
   log-triager:
     tier: small
+    reasoning_effort: low
     readonly: true
     tools: "Read, Grep, Bash"
     description: "Summarize large log files or stderr dumps into a short diagnosis. Use to avoid pasting giant logs into the main context."
   migration-planner:
     tier: top
+    reasoning_effort: max
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Plan complex migrations — schema changes, breaking API changes, major dependency upgrades — with an ADR-style analysis. Use when a change needs a proper plan before any code is written."
@@ -123,8 +137,10 @@ agent_sandbox:
     allowed_domains:
       - github.com
       - "*.github.com"
+      - githubusercontent.com
       - "*.githubusercontent.com"
       - registry.npmjs.org
+      - npmjs.org
       - "*.npmjs.org"
       - pypi.org
       - files.pythonhosted.org
@@ -133,6 +149,7 @@ agent_sandbox:
       - pkg.go.dev
       - developer.mozilla.org
       - stackoverflow.com
+      - stackexchange.com
       - "*.stackexchange.com"
       - nodejs.org
       - context7.com

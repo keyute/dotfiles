@@ -26,7 +26,7 @@
     "deny": {{ $permDeny | toPrettyJson | indent 4 | trim }},
     "defaultMode": "plan"
   },
-  "model": "opus[1m]",
+  "model": {{ .agents.claude.defaults.model | toJson }},
   "worktree": {
     "baseRef": "head"
   },

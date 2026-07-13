@@ -1,78 +1,272 @@
+{{- $codex := .agents.codex -}}
+{{- $sandbox := includeTemplate "agent-sandbox" (dict "self" "codex" "root" .) | fromJson -}}
+{{- $filesystem := dict -}}
+{{- $workspaceFilesystem := dict -}}
+{{- /* deny uses $sandbox.denyRead (not sandboxDenyRead) on purpose: this single
+       permission profile is Codex's only file-access gate, so it must carry the
+       UNION of what claude splits across its OS sandbox (sandboxDenyRead) and its
+       Read-tool deny (full denyRead) — i.e. Codex's own home-sensitive paths too.
+       Codex reads its own auth.json/config.toml outside the sandbox, so denying
+       them to tools is the intended guard. Do not switch this to sandboxDenyRead;
+       that would let Codex tools read their own credentials and weaken parity. */ -}}
+{{- $modeGroups := list
+      (dict "mode" "write" "paths" $sandbox.allowWrite)
+      (dict "mode" "read" "paths" $sandbox.allowRead)
+      (dict "mode" "deny" "paths" $sandbox.denyRead) -}}
+{{- range $group := $modeGroups -}}
+  {{- range $path := $group.paths -}}
+    {{- $expanded := $path -}}
+    {{- if hasPrefix "~/" $expanded -}}
+      {{- $expanded = printf "%s/%s" $.chezmoi.homeDir (trimPrefix "~/" $expanded) -}}
+    {{- end -}}
+    {{- if hasPrefix "/" $expanded -}}
+      {{- $_ := set $filesystem $expanded $group.mode -}}
+    {{- else -}}
+      {{- $_ := set $workspaceFilesystem $expanded $group.mode -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- $domains := concat .agent_sandbox.network.allowed_domains $codex.extras.allowed_domains | uniq | sortAlpha -}}
+{{- range $name := keys .agent_mcp_servers -}}
+  {{- if not (regexMatch "^[A-Za-z0-9_-]+$" $name) -}}
+    {{- fail (printf "Codex MCP server name %q must be a TOML bare key" $name) -}}
+  {{- end -}}
+{{- end -}}
 #!/usr/bin/env bash
-# Partial management of ~/.codex/config.toml: chezmoi owns the keys below; every
-# other root key and table (notably [projects] trust entries and [notice], which
-# codex writes surgically at runtime) passes through untouched.
+# Partial management of ~/.codex/config.toml. Chezmoi replaces the settings it
+# owns, removes incompatible legacy profile state, and preserves unrelated user
+# settings, features, MCPs, and runtime state.
 set -euo pipefail
 
 input=$(cat)
 
 managed_root=$(cat <<'CHEZMOI_TOML'
-model = "gpt-5.6-sol"
+model = {{ $codex.defaults.model | toJson }}
+model_reasoning_effort = {{ $codex.defaults.model_reasoning_effort | toJson }}
 approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+default_permissions = "chezmoi-workspace"
 CHEZMOI_TOML
 )
 
 managed_tables=$(cat <<'CHEZMOI_TOML'
 [features.network_proxy]
+enabled = true
+
+[permissions.chezmoi-workspace]
+description = "Workspace writes with shared sensitive-path and network controls"
+extends = ":workspace"
+
+[permissions.chezmoi-workspace.filesystem]
+{{- range $path := keys $filesystem | sortAlpha }}
+{{ $path | toJson }} = {{ index $filesystem $path | toJson }}
+{{- end }}
+{{- if $workspaceFilesystem }}
+
+[permissions.chezmoi-workspace.filesystem.":workspace_roots"]
+{{- range $path := keys $workspaceFilesystem | sortAlpha }}
+{{ $path | toJson }} = {{ index $workspaceFilesystem $path | toJson }}
+{{- end }}
+{{- end }}
+
+[permissions.chezmoi-workspace.network]
+enabled = true
+mode = "limited"
 allow_local_binding = {{ .agent_sandbox.network.allow_local_binding }}
 
-[features.network_proxy.domains]
-{{- range concat .agent_sandbox.network.allowed_domains .agents.codex.extras.allowed_domains | uniq }}
-"{{ . }}" = "allow"
+[permissions.chezmoi-workspace.network.domains]
+{{- range $domains }}
+{{ . | toJson }} = "allow"
 {{- end }}
 {{- range $name, $cfg := .agent_mcp_servers }}
-{{- $command := get $cfg "command" }}
-{{- if not $command }}
-{{- $command = printf "%s/node_modules/.bin/%s" $.chezmoi.sourceDir $cfg.package_bin }}
-{{- end }}
-{{- $args := list }}
-{{- range $cfg.args }}
-{{- if kindIs "map" . }}
-{{- $ref := .op }}
-{{- if not (hasPrefix "op://" $ref) }}{{ $ref = printf "op://%s" $ref }}{{ end }}
-{{- $args = append $args (onepasswordRead $ref) }}
-{{- else }}
-{{- $args = append $args . }}
-{{- end }}
-{{- end }}
+  {{- $command := get $cfg "command" -}}
+  {{- if not $command -}}
+    {{- $command = printf "%s/node_modules/.bin/%s" $.chezmoi.sourceDir $cfg.package_bin -}}
+  {{- end }}
+  {{- $args := list -}}
+  {{- range $cfg.args -}}
+    {{- if kindIs "map" . -}}
+      {{- $ref := .op -}}
+      {{- if not (hasPrefix "op://" $ref) -}}
+        {{- $ref = printf "op://%s" $ref -}}
+      {{- end -}}
+      {{- $args = append $args (onepasswordRead $ref) -}}
+    {{- else -}}
+      {{- $args = append $args . -}}
+    {{- end -}}
+  {{- end }}
+  {{- $env := dict -}}
+  {{- range $key, $value := default (dict) (get $cfg "env") -}}
+    {{- if kindIs "map" $value -}}
+      {{- $ref := $value.op -}}
+      {{- if not (hasPrefix "op://" $ref) -}}
+        {{- $ref = printf "op://%s" $ref -}}
+      {{- end -}}
+      {{- $_ := set $env $key (onepasswordRead $ref) -}}
+    {{- else -}}
+      {{- $_ := set $env $key $value -}}
+    {{- end -}}
+  {{- end }}
 
 [mcp_servers.{{ $name }}]
-command = "{{ $command }}"
-args = [{{ range $i, $a := $args }}{{ if $i }}, {{ end }}"{{ $a }}"{{ end }}]
-{{- $env := default (dict) (get $cfg "env") }}
-{{- if $env }}
+command = {{ $command | toJson }}
+args = {{ $args | toJson }}
+  {{- if $env }}
 
 [mcp_servers.{{ $name }}.env]
-{{- range $key, $value := $env }}
-{{- if kindIs "map" $value }}
-{{- $ref := $value.op }}
-{{- if not (hasPrefix "op://" $ref) }}{{ $ref = printf "op://%s" $ref }}{{ end }}
-{{ $key }} = "{{ onepasswordRead $ref }}"
-{{- else }}
-{{ $key }} = "{{ $value }}"
-{{- end }}
-{{- end }}
-{{- end }}
+    {{- range $key := keys $env | sortAlpha }}
+{{ $key | toJson }} = {{ index $env $key | toJson }}
+    {{- end }}
+  {{- end }}
 {{- end }}
 CHEZMOI_TOML
 )
 
-# root section (before the first [table]): keep everything except managed keys
-preserved_root=$(printf '%s\n' "$input" | awk '
-  /^\[/ { exit }
-  NF && $0 !~ /^(model|approval_policy|sandbox_mode)[[:space:]]*=/ { print }')
+managed_mcp_sections='{{- range $name := keys .agent_mcp_servers | sortAlpha -}}|mcp_servers.{{ $name }}|mcp_servers."{{ $name }}"{{- end -}}|'
 
-# tables: keep everything except the managed [features*] and [mcp_servers*] tables
-preserved_rest=$(printf '%s\n' "$input" | awk '
-  /^\[/ { intables = 1; keep = ($0 ~ /^\[\[?(features|mcp_servers)[.\]]/) ? 0 : 1 }
-  intables && keep { print }')
+preserved=$(printf '%s\n' "$input" | awk \
+  -v managed_mcp_sections="$managed_mcp_sections" '
+  BEGIN {
+    section = ""
+    keep = 1
+  }
+
+  function section_name(line, name) {
+    name = line
+    sub(/^[[:space:]]*\[\[?/, "", name)
+    sub(/\]\]?[[:space:]]*(#.*)?$/, "", name)
+    sub(/^[[:space:]]*/, "", name)
+    sub(/[[:space:]]*$/, "", name)
+    return name
+  }
+
+  function emit(line) {
+    if (!output_started && line ~ /^[[:space:]]*$/) return
+    print line
+    output_started = 1
+  }
+
+  function update_multiline(line, dq, sq, delimiter, candidate, rhs, rest, at, count) {
+    dq = "\"\"\""
+    sq = sprintf("%c%c%c", 39, 39, 39)
+    delimiter = multiline
+    if (delimiter == "") {
+      candidate = line
+      sub(/^[[:space:]]*/, "", candidate)
+      if (substr(candidate, 1, 1) == "#") return
+      if (index(line, "=") == 0) return
+      rhs = line
+      sub(/^[^=]*=[[:space:]]*/, "", rhs)
+      if (substr(rhs, 1, 3) == dq) delimiter = dq
+      else if (substr(rhs, 1, 3) == sq) delimiter = sq
+      else return
+      line = rhs
+    }
+
+    rest = line
+    count = 0
+    while ((at = index(rest, delimiter)) != 0) {
+      count++
+      rest = substr(rest, at + 3)
+    }
+    if (count % 2 == 1) multiline = multiline == "" ? delimiter : ""
+  }
+
+  function normalize_owned_path(name, normalized) {
+    normalized = name
+    gsub(/\"features\"/, "features", normalized)
+    gsub(/\"permissions\"/, "permissions", normalized)
+    gsub(/\"mcp_servers\"/, "mcp_servers", normalized)
+    gsub(/\"network_proxy\"/, "network_proxy", normalized)
+    gsub(/\"workspace\"/, "workspace", normalized)
+    gsub(/\"chezmoi-workspace\"/, "chezmoi-workspace", normalized)
+    gsub(/\"sandbox_workspace_write\"/, "sandbox_workspace_write", normalized)
+    gsub(/\"profiles\"/, "profiles", normalized)
+    gsub(/\"model\"/, "model", normalized)
+    gsub(/\"model_reasoning_effort\"/, "model_reasoning_effort", normalized)
+    gsub(/\"plan_mode_reasoning_effort\"/, "plan_mode_reasoning_effort", normalized)
+    gsub(/\"approval_policy\"/, "approval_policy", normalized)
+    gsub(/\"default_permissions\"/, "default_permissions", normalized)
+    gsub(/\"sandbox_mode\"/, "sandbox_mode", normalized)
+    gsub(/\"permission_profile\"/, "permission_profile", normalized)
+    gsub(/\"profile\"/, "profile", normalized)
+    return normalized
+  }
+
+  function is_same_or_child(name, parent) {
+    return name == parent || index(name, parent ".") == 1
+  }
+
+  function is_managed_mcp_path(name, parts, count, i, prefix) {
+    count = split(managed_mcp_sections, parts, "|")
+    for (i = 1; i <= count; i++) {
+      prefix = parts[i]
+      if (prefix != "" && (name == prefix || index(name, prefix ".") == 1)) return 1
+    }
+    return 0
+  }
+
+  function is_owned_section(name, normalized) {
+    normalized = normalize_owned_path(name)
+    if (is_same_or_child(normalized, "sandbox_workspace_write")) return 1
+    if (is_same_or_child(normalized, "profiles")) return 1
+    if (is_same_or_child(normalized, "features.network_proxy")) return 1
+    if (is_same_or_child(normalized, "permissions.workspace")) return 1
+    if (is_same_or_child(normalized, "permissions.chezmoi-workspace")) return 1
+    if (is_managed_mcp_path(normalized)) return 1
+    return 0
+  }
+
+  function is_managed_assignment(name, line, key, normalized_name, normalized_key) {
+    key = line
+    sub(/^[[:space:]]*/, "", key)
+    sub(/[[:space:]]*=.*/, "", key)
+    normalized_name = normalize_owned_path(name)
+    normalized_key = normalize_owned_path(key)
+
+    if (name == "") {
+      if (normalized_key ~ /^(model|model_reasoning_effort|plan_mode_reasoning_effort|approval_policy|default_permissions|sandbox_mode|permission_profile|profile)$/) return 1
+      if (is_same_or_child(normalized_key, "sandbox_workspace_write")) return 1
+      if (is_same_or_child(normalized_key, "profiles")) return 1
+      if (is_same_or_child(normalized_key, "features.network_proxy")) return 1
+      if (is_same_or_child(normalized_key, "permissions.workspace")) return 1
+      if (is_same_or_child(normalized_key, "permissions.chezmoi-workspace")) return 1
+      if (is_managed_mcp_path(normalized_key)) return 1
+    }
+    if (normalized_name == "features" && is_same_or_child(normalized_key, "network_proxy")) return 1
+    if (normalized_name == "permissions" && (is_same_or_child(normalized_key, "workspace") || is_same_or_child(normalized_key, "chezmoi-workspace"))) return 1
+    if (normalized_name == "mcp_servers" && is_managed_mcp_path("mcp_servers." normalized_key)) return 1
+    return 0
+  }
+
+  multiline != "" {
+    if (multiline_keep) emit($0)
+    update_multiline($0)
+    if (multiline == "") multiline_keep = 0
+    next
+  }
+
+  /^[[:space:]]*\[\[?[^]]+\]\]?[[:space:]]*(#.*)?$/ {
+    section = section_name($0)
+    keep = !is_owned_section(section)
+    if (keep) emit($0)
+    next
+  }
+
+  keep == 0 {
+    update_multiline($0)
+    if (multiline != "") multiline_keep = 0
+    next
+  }
+  {
+    managed = is_managed_assignment(section, $0)
+    if (!managed) emit($0)
+    update_multiline($0)
+    if (multiline != "") multiline_keep = !managed
+  }
+')
 
 printf '%s\n' "$managed_root"
-if [ -n "$preserved_root" ]; then
-  printf '%s\n' "$preserved_root"
+if [ -n "$preserved" ]; then
+  printf '\n%s\n' "$preserved"
 fi
 printf '\n%s\n' "$managed_tables"
-if [ -n "$preserved_rest" ]; then
-  printf '\n%s\n' "$preserved_rest"
-fi

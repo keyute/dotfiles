@@ -26,9 +26,10 @@ Align the current repo with contract changes made in a sibling repo.
    (clients, types, forms, guards, config). Build a gap table:
    `sibling change → affected files here → action (add/update/remove/none)`.
 
-4. **Report, then implement.** Show the gap table first. Implement each gap following
-   this repo's existing patterns (check CLAUDE.md and surrounding code); do not invent
-   new patterns during alignment. Remove consumers of contracts that no longer exist.
+4. **Report, then implement.** Show the gap table first. Discover and follow the
+   applicable project instruction files (`AGENTS.md` and/or `CLAUDE.md`), then implement
+   each gap using this repo's existing patterns. Do not invent new patterns during
+   alignment. Remove consumers of contracts that no longer exist.
 
 5. **Verify.** Run this repo's typecheck/tests/lint. Anything that cannot be verified
    mechanically (e.g. runtime behavior against the sibling), list explicitly as
