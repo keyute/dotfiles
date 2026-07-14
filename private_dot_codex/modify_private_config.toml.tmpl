@@ -122,9 +122,11 @@ CHEZMOI_TOML
 )
 
 managed_mcp_sections='{{- range $name := keys .agent_mcp_servers | sortAlpha -}}|mcp_servers.{{ $name }}|mcp_servers."{{ $name }}"{{- end -}}|'
+managed_status_line='status_line = ["model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "git-branch", "fast-mode"]'
 
 preserved=$(printf '%s\n' "$input" | awk \
-  -v managed_mcp_sections="$managed_mcp_sections" '
+  -v managed_mcp_sections="$managed_mcp_sections" \
+  -v managed_status_line="$managed_status_line" '
   BEGIN {
     section = ""
     keep = 1
@@ -201,11 +203,12 @@ preserved=$(printf '%s\n' "$input" | awk \
       if (is_same_or_child(key, "features.network_proxy")) return 1
       if (is_same_or_child(key, "permissions.chezmoi-workspace")) return 1
       if (is_managed_mcp_path(key)) return 1
+      if (key == "tui.status_line") return 1
     }
     if (name == "features" && is_same_or_child(key, "network_proxy")) return 1
     if (name == "permissions" && is_same_or_child(key, "chezmoi-workspace")) return 1
     if (name == "mcp_servers" && is_managed_mcp_path("mcp_servers." key)) return 1
-    if (name == "tui" && key == "theme") return 1
+    if (name == "tui" && key ~ /^(theme|status_line)$/) return 1
     return 0
   }
 
@@ -219,7 +222,13 @@ preserved=$(printf '%s\n' "$input" | awk \
   /^[[:space:]]*\[\[?[^]]+\]\]?[[:space:]]*(#.*)?$/ {
     section = section_name($0)
     keep = !is_owned_section(section)
-    if (keep) emit($0)
+    if (keep) {
+      emit($0)
+      if (section == "tui") {
+        emit(managed_status_line)
+        tui_seen = 1
+      }
+    }
     next
   }
 
@@ -233,6 +242,14 @@ preserved=$(printf '%s\n' "$input" | awk \
     if (!managed) emit($0)
     update_multiline($0)
     if (multiline != "") multiline_keep = !managed
+  }
+
+  END {
+    if (!tui_seen) {
+      emit("")
+      emit("[tui]")
+      emit(managed_status_line)
+    }
   }
 ')
 

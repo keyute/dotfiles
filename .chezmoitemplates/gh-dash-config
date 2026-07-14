@@ -1,0 +1,56 @@
+{{- /* Shared gh-dash config body. Param: .flavor = "latte" | "mocha".
+       Rendered into config.catppuccin-{latte,mocha}.yml; the active one is
+       selected at runtime via $GH_DASH_CONFIG in ~/.zshrc's _sync_appearance. */ -}}
+prSections:
+  - title: My Pull Requests
+    filters: is:open author:@me
+  - title: Needs My Review
+    filters: is:open review-requested:@me
+  - title: Involved
+    filters: is:open involves:@me -author:@me
+issuesSections:
+  - title: My Issues
+    filters: is:open author:@me
+  - title: Assigned
+    filters: is:open assignee:@me
+defaults:
+  preview:
+    open: true
+    width: 60
+  refetchIntervalMinutes: 30
+# Catppuccin {{ .flavor }} (mauve accent) — from github.com/catppuccin/gh-dash
+{{ if eq .flavor "latte" -}}
+theme:
+  colors:
+    text:
+      primary: "#4c4f69"
+      secondary: "#8839ef"
+      inverted: "#dce0e8"
+      faint: "#5c5f77"
+      warning: "#df8e1d"
+      success: "#40a02b"
+      error: "#d20f39"
+    background:
+      selected: "#ccd0da"
+    border:
+      primary: "#8839ef"
+      secondary: "#bcc0cc"
+      faint: "#ccd0da"
+{{- else -}}
+theme:
+  colors:
+    text:
+      primary: "#cdd6f4"
+      secondary: "#cba6f7"
+      inverted: "#11111b"
+      faint: "#bac2de"
+      warning: "#f9e2af"
+      success: "#a6e3a1"
+      error: "#f38ba8"
+    background:
+      selected: "#313244"
+    border:
+      primary: "#cba6f7"
+      secondary: "#45475a"
+      faint: "#313244"
+{{- end }}

@@ -1,0 +1,9 @@
+#!/bin/bash
+# Idempotent install of gh CLI extensions. Runs after run_onchange_after_brew
+# (which installs gh), and no-ops on hosts where gh is absent.
+set -euo pipefail
+
+command -v gh >/dev/null 2>&1 || exit 0
+
+# gh-dash: PR/issue dashboard. Install if absent (mirrors brew's --no-upgrade stance).
+gh extension list 2>/dev/null | grep -q 'dlvhdr/gh-dash' || gh extension install dlvhdr/gh-dash

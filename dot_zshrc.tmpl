@@ -39,11 +39,13 @@ _sync_appearance() {
         zstyle ':fzf-tab:*' fzf-flags --color=light
         export BAT_THEME="Catppuccin Latte"
         export K9S_SKIN="catppuccin-latte"
+        export GH_DASH_CONFIG="$HOME/.config/gh-dash/config.catppuccin-latte.yml"
     else
         zstyle -d ':fzf-tab:*' default-color
         zstyle -d ':fzf-tab:*' fzf-flags
         export BAT_THEME="Catppuccin Mocha"
         export K9S_SKIN="catppuccin-mocha"
+        export GH_DASH_CONFIG="$HOME/.config/gh-dash/config.catppuccin-mocha.yml"
     fi
 }
 autoload -Uz add-zsh-hook

@@ -39,6 +39,8 @@ brew "git"
 brew "git-delta"
 # Git extension for versioning large files
 brew "git-lfs"
+# GitHub command-line tool
+brew "gh"
 # Open source programming language to build simple/reliable/efficient software
 brew "go"
 # Task is a task runner/build tool that aims to be simpler and easier to use
@@ -75,6 +77,8 @@ brew "node"
 brew "opentofu"
 # API for decoding and seeking in .opus files
 brew "opusfile"
+# OCI Registry As Storage
+brew "oras"
 # Static type checker for Python
 brew "pyright"
 # Search tool like grep and The Silver Searcher
@@ -102,11 +106,14 @@ brew "siderolabs/tap/talosctl"
 # Meta Package for common Sidero Labs tools
 brew "siderolabs/tap/sidero-tools"
 # MLX inference server (Apple Silicon) for local code autocomplete — headless daemon
+# NOTE: `start_service: true` is hand-maintained — `brew bundle dump` does not emit it.
 brew "jundot/omlx/omlx", start_service: true
 # Command-line interface for 1Password
 cask "1password-cli"
 # Terminal-based AI coding assistant
 cask "claude-code"
+# OpenAI's coding agent that runs in your terminal
+cask "codex"
 # Set of tools to manage resources and applications hosted on Google Cloud
 cask "gcloud-cli"
 # Full TeX Live distribution without GUI applications
