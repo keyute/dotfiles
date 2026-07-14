@@ -7,5 +7,4 @@
 {{- end }}
 package.json
 package-lock.json
-.github/
 node_modules/

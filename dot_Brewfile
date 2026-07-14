@@ -65,6 +65,7 @@ brew "kubernetes-cli"
 brew "lazydocker"
 # Simple terminal UI for git commands
 brew "lazygit"
+brew "lazysql"
 # Language Server for the Lua language
 brew "lua-language-server"
 # Incremental parsing library

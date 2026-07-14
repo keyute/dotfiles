@@ -11,6 +11,12 @@ fi
 
 alias python='python3'
 alias lg='lazygit'
+alias lzd='lazydocker'
+alias lsql='lazysql'
+
+# `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the
+# GHES host for repo-independent commands and for gh-dash (`ghe dash`).
+ghe() { GH_HOST=git.kubecity.com gh "$@"; }
 
 if type brew &>/dev/null; then
     FPATH="$(brew --prefix)/share/zsh/site-functions:$(brew --prefix)/share/zsh-completions:$FPATH"
