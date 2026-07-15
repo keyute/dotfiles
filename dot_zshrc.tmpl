@@ -40,18 +40,25 @@ _sync_appearance() {
     [[ $mode == $_APPEARANCE ]] && return
     _APPEARANCE=$mode
     export LC_THEME_MODE=$mode
+
+    # One canonical flavor per mode; every Catppuccin-themed tool derives its var
+    # from it, so adding a tool below is a single line.
+    local flavor Flavor
+    if [[ $mode == light ]]; then flavor=latte; Flavor=Latte
+    else                          flavor=mocha; Flavor=Mocha
+    fi
+    export BAT_THEME="Catppuccin $Flavor"
+    export K9S_SKIN="catppuccin-$flavor"
+    export GH_DASH_CONFIG="$HOME/.config/gh-dash/config.catppuccin-$flavor.yml"
+    export ENHANCE_THEME="catppuccin_$flavor"
+
+    # fzf-tab isn't Catppuccin-named, so it stays an explicit mode toggle.
     if [[ $mode == light ]]; then
         zstyle ':fzf-tab:*' default-color $'\033[30m'
         zstyle ':fzf-tab:*' fzf-flags --color=light
-        export BAT_THEME="Catppuccin Latte"
-        export K9S_SKIN="catppuccin-latte"
-        export GH_DASH_CONFIG="$HOME/.config/gh-dash/config.catppuccin-latte.yml"
     else
         zstyle -d ':fzf-tab:*' default-color
         zstyle -d ':fzf-tab:*' fzf-flags
-        export BAT_THEME="Catppuccin Mocha"
-        export K9S_SKIN="catppuccin-mocha"
-        export GH_DASH_CONFIG="$HOME/.config/gh-dash/config.catppuccin-mocha.yml"
     fi
 }
 autoload -Uz add-zsh-hook

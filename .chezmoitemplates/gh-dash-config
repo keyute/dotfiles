@@ -26,7 +26,7 @@ keybindings:
     - key: T
       name: enhance
       command: |-
-        cmd="GH_HOST=$GH_HOST gh enhance {{ `{{.PrNumber}}` }} -R {{ `{{.RepoName}}` }}"
+        cmd="GH_HOST=$GH_HOST ENHANCE_THEME=$ENHANCE_THEME gh enhance {{ `{{.PrNumber}}` }} -R {{ `{{.RepoName}}` }}"
         if [ -n "$TMUX" ]; then tmux new-window "$cmd"; else eval "$cmd"; fi
 # Catppuccin {{ .flavor }} (mauve accent) — from github.com/catppuccin/gh-dash
 {{ if eq .flavor "latte" -}}
