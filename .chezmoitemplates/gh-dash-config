@@ -18,6 +18,16 @@ defaults:
     open: true
     width: 60
   refetchIntervalMinutes: 30
+keybindings:
+  # Open the selected PR in gh-enhance (GitHub Actions TUI). In tmux (SSH → Linux)
+  # it pops a new window; on bare terminals (macOS Ghostty) it runs inline. The
+  # {{ `{{...}}` }} placeholders are escaped so chezmoi passes them through to gh-dash.
+  prs:
+    - key: T
+      name: enhance
+      command: |-
+        cmd="GH_HOST=$GH_HOST gh enhance {{ `{{.PrNumber}}` }} -R {{ `{{.RepoName}}` }}"
+        if [ -n "$TMUX" ]; then tmux new-window "$cmd"; else eval "$cmd"; fi
 # Catppuccin {{ .flavor }} (mauve accent) — from github.com/catppuccin/gh-dash
 {{ if eq .flavor "latte" -}}
 theme:
