@@ -1,7 +1,7 @@
 return {
 	"wintermute-cell/gitignore.nvim",
 	dependencies = {
-		"nvim-telescope/telescope.nvim",
+		"folke/snacks.nvim",
 	},
 	config = function()
 		require("gitignore")

@@ -38,7 +38,6 @@ return {
 	"milanglacier/minuet-ai.nvim",
 	dependencies = {
 		"nvim-lua/plenary.nvim",
-		"saghen/blink.cmp",
 	},
 	main = "minuet",
 	event = "InsertEnter",
@@ -48,8 +47,20 @@ return {
 		-- Linux prefill (~900-1000 tok/s on the Arc iGPU) must fit the 3s budget
 		-- alongside generation; measured: 3000 chars → cold ~1.5s, warm ~1.5s.
 		context_window = is_macos and 8000 or 3000,
+		request_timeout = 3,
 		provider_options = {
 			openai_fim_compatible = fim,
+		},
+		virtualtext = {
+			auto_trigger_ft = { "*" },
+			keymap = {
+				accept = "<A-A>",
+				accept_line = "<A-a>",
+				accept_n_lines = "<A-z>",
+				prev = "<A-[>",
+				next = "<A-]>",
+				dismiss = "<A-e>",
+			},
 		},
 	},
 }

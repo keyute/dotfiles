@@ -1,7 +1,7 @@
 return {
 	"brianhuster/live-preview.nvim",
 	dependencies = {
-		"nvim-telescope/telescope.nvim",
+		"folke/snacks.nvim",
 	},
 	cmd = { "LivePreview" },
 	keys = {
@@ -16,7 +16,6 @@ return {
 	},
 	config = function()
 		require("livepreview.config").set({
-			picker = "telescope",
 			dynamic_root = true,
 		})
 	end,

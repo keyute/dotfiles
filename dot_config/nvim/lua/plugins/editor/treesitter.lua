@@ -15,11 +15,12 @@ return {
 		})
 	end,
 	config = function()
+		-- c, lua, markdown, markdown_inline, query, vim, and vimdoc are bundled
+		-- with nvim itself (version-matched parser+query pairs).
 		require("nvim-treesitter").install({
-			"bash", "c", "css", "diff", "dockerfile", "go", "gotmpl", "helm",
-			"html", "javascript", "jsdoc", "lua", "luadoc", "json", "markdown",
-			"markdown_inline", "python", "query", "vim", "vimdoc", "toml",
-			"tsx", "typescript", "yaml", "terraform", "hcl", "latex",
+			"bash", "css", "diff", "dockerfile", "go", "gotmpl", "helm",
+			"html", "javascript", "jsdoc", "luadoc", "json", "python",
+			"toml", "tsx", "typescript", "yaml", "terraform", "hcl", "latex",
 		})
 
 		vim.api.nvim_create_autocmd("FileType", {

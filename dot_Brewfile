@@ -70,6 +70,8 @@ brew "lazysql"
 brew "lua-language-server"
 # Incremental parsing library
 brew "tree-sitter"
+# Parser generator tool; nvim-treesitter (main) shells out to it to build parsers
+brew "tree-sitter-cli"
 # Ambitious Vim-fork focused on extensibility and agility
 brew "neovim"
 # Open-source, cross-platform JavaScript runtime environment

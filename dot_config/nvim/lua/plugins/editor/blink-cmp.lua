@@ -33,25 +33,14 @@ return {
 		},
 		appearance = {
 			nerd_font_variant = "mono",
-			kind_icons = {
-				Ollama = "󰳆",
-			},
 		},
 		completion = {
 			documentation = { auto_show = true, auto_show_delay_ms = 500 },
-			trigger = { prefetch_on_insert = false },
 		},
 		sources = {
-			default = { "lsp", "path", "snippets", "lazydev", "minuet" },
+			default = { "lsp", "path", "snippets", "lazydev" },
 			providers = {
 				lazydev = { module = "lazydev.integrations.blink", score_offset = 100 },
-				minuet = {
-					module = "minuet.blink",
-					name = "Minuet",
-					async = true,
-					timeout_ms = 3000,
-					score_offset = 50,
-				},
 			},
 		},
 		snippets = { preset = "luasnip" },
