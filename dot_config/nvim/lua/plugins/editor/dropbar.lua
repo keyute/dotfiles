@@ -1,9 +1,8 @@
 return {
 	"Bekaboo/dropbar.nvim",
-	event = { "BufReadPost", "BufNewFile" },
+	-- lazy-loading is unneeded, done upstream in plugin/dropbar.lua
 	dependencies = {
-		"nvim-telescope/telescope-fzf-native.nvim",
-		build = "make",
+		{ "nvim-telescope/telescope-fzf-native.nvim", build = "make" },
 	},
 	config = function()
 		local dropbar_api = require("dropbar.api")

@@ -1,6 +1,6 @@
 return {
 	"mason-org/mason-lspconfig.nvim",
-	event = { "BufReadPre", "BufNewFile" },
+	-- mason: "Lazy-loading the plugin, or somehow deferring the setup, is not recommended."
 	dependencies = {
 		{ "mason-org/mason.nvim", opts = {} },
 		"neovim/nvim-lspconfig",
@@ -140,7 +140,6 @@ return {
 		})
 
 		require("mason-lspconfig").setup({
-			automatic_enable = true,
 			ensure_installed = {
 				"lua_ls",
 				"bashls",

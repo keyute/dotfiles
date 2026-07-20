@@ -36,9 +36,6 @@ end
 
 return {
 	"milanglacier/minuet-ai.nvim",
-	dependencies = {
-		"nvim-lua/plenary.nvim",
-	},
 	main = "minuet",
 	event = "InsertEnter",
 	opts = {
