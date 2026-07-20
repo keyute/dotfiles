@@ -78,6 +78,12 @@ return {
 					})
 				end
 
+				-- Prefer LSP folds over the global treesitter foldexpr (set in init.lua)
+				if client and client:supports_method(vim.lsp.protocol.Methods.textDocument_foldingRange, event.buf) then
+					local win = vim.api.nvim_get_current_win()
+					vim.wo[win][0].foldexpr = "v:lua.vim.lsp.foldexpr()"
+				end
+
 				if client and client:supports_method(vim.lsp.protocol.Methods.textDocument_inlayHint, event.buf) then
 					vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
 
@@ -104,7 +110,8 @@ return {
 
 		vim.diagnostic.config({
 			severity_sort = true,
-			float = { border = "rounded", source = "if_many" },
+			-- border comes from 'winborder' in init.lua
+			float = { source = "if_many" },
 			underline = { severity = vim.diagnostic.severity.ERROR },
 			signs = vim.g.have_nerd_font and {
 				text = {

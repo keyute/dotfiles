@@ -30,6 +30,11 @@ return {
 			preset = {
 				header = header,
 			},
+			-- Default sections minus "startup" (the "loaded N/M plugins" line)
+			sections = {
+				{ section = "header" },
+				{ section = "keys", gap = 1, padding = 1 },
+			},
 		},
 		indent = {
 			indent = {
@@ -54,6 +59,7 @@ return {
 		{ "<leader>fr", function() Snacks.picker.recent() end, desc = "[F]ind [R]ecent Files" },
 		{ "<leader>fc", function() Snacks.picker.files({ cwd = vim.fn.stdpath("config") }) end, desc = "[F]ind [C]onfig File" },
 		{ "<leader>,", function() Snacks.picker.buffers() end, desc = "Buffers" },
+		{ "<leader>bd", function() Snacks.bufdelete() end, desc = "[B]uffer [D]elete" },
 		{ "<leader>sg", function() Snacks.picker.grep() end, desc = "[S]earch by [G]rep" },
 		{ "<leader>sw", function() Snacks.picker.grep_word() end, desc = "[S]earch current [W]ord", mode = { "n", "x" } },
 		{ "<leader>sb", function() Snacks.picker.lines() end, desc = "[S]earch [B]uffer Lines" },

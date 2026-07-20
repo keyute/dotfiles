@@ -11,9 +11,9 @@ return {
 		opts = {},
 	},
 	{
-		-- upstream idle since 2024; dlyongemallo/diffview-plus.nvim is the
-		-- active drop-in fork if this ever breaks
-		"sindrets/diffview.nvim",
+		-- actively maintained drop-in fork of sindrets/diffview.nvim, whose
+		-- upstream has been idle since 2024
+		"dlyongemallo/diffview-plus.nvim",
 		cmd = { "DiffviewOpen", "DiffviewFileHistory" },
 		keys = {
 			{ "<leader>do", "<cmd>DiffviewOpen<cr>", desc = "[D]iffview [O]pen" },

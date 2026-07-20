@@ -87,6 +87,24 @@ vim.o.scrolloff = 10
 -- See `:help 'confirm'`
 vim.o.confirm = true
 
+-- Folding via treesitter; LSP folds take over per-window when the server
+-- supports them (see the LspAttach autocmd in lua/plugins/lsp/lsp.lua)
+vim.o.foldmethod = "expr"
+vim.o.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+-- Empty foldtext renders the fold's first line with its normal syntax highlighting
+vim.o.foldtext = ""
+vim.o.foldcolumn = "1"
+vim.o.foldlevel = 99
+vim.o.foldlevelstart = 99
+vim.o.fillchars = [[eob: ,fold: ,foldopen:,foldsep: ,foldclose:]]
+
+-- Default border for all floating windows
+vim.o.winborder = "rounded"
+
+-- Experimental redesigned message/cmdline UI: no hit-enter prompts, highlighted
+-- cmdline, pager in a real window. Remove this line to restore the legacy UI.
+require("vim._core.ui2").enable({})
+
 -- [[ Basic Keymaps ]]
 --  See `:help vim.keymap.set()`
 
