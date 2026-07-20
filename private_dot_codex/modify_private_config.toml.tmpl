@@ -26,243 +26,73 @@
     {{- end -}}
   {{- end -}}
 {{- end -}}
-{{- $domains := concat .agent_sandbox.network.allowed_domains $codex.extras.allowed_domains | uniq | sortAlpha -}}
-{{- range $name := keys .agent_mcp_servers -}}
+{{- $fsTable := $filesystem -}}
+{{- if $workspaceFilesystem -}}
+  {{- $fsTable = set $fsTable ":workspace_roots" $workspaceFilesystem -}}
+{{- end -}}
+{{- $domainsTable := dict -}}
+{{- range concat .agent_sandbox.network.allowed_domains $codex.extras.allowed_domains | uniq | sortAlpha -}}
+  {{- $domainsTable = set $domainsTable . "allow" -}}
+{{- end -}}
+{{- $deletes := list
+      "model"
+      "model_reasoning_effort"
+      "plan_mode_reasoning_effort"
+      "approval_policy"
+      "default_permissions"
+      "features.network_proxy"
+      "permissions.chezmoi-workspace" -}}
+{{- $mcpServers := dict -}}
+{{- range $name, $entry := includeTemplate "mcp-servers" . | fromJson -}}
   {{- if not (regexMatch "^[A-Za-z0-9_-]+$" $name) -}}
-    {{- fail (printf "Codex MCP server name %q must be a TOML bare key" $name) -}}
+    {{- fail (printf "Codex MCP server name %q must be a bare TOML key (it is used in a dotted delete path)" $name) -}}
+  {{- end -}}
+  {{- $deletes = append $deletes (printf "mcp_servers.%s" $name) -}}
+  {{- if eq $entry.type "http" -}}
+    {{- $mcpServers = set $mcpServers $name (dict "url" $entry.url) -}}
+  {{- else -}}
+    {{- $server := dict "command" $entry.command "args" $entry.args -}}
+    {{- if $entry.env -}}
+      {{- $server = set $server "env" $entry.env -}}
+    {{- end -}}
+    {{- $mcpServers = set $mcpServers $name $server -}}
   {{- end -}}
 {{- end -}}
+{{- /* tui is fully managed for cross-machine TUI consistency: status_line and
+       status_line_use_colors are re-emitted via managed below, while tui.theme is
+       deleted and deliberately NOT re-emitted (managed-to-absence) so every
+       machine runs Codex's default theme detection and none can drift. */ -}}
+{{- $deletes = concat $deletes (list "tui.status_line" "tui.status_line_use_colors" "tui.theme") -}}
+{{- $managed := dict
+      "model" $codex.defaults.model
+      "model_reasoning_effort" $codex.defaults.model_reasoning_effort
+      "plan_mode_reasoning_effort" $codex.defaults.plan_mode_reasoning_effort
+      "approval_policy" "on-request"
+      "default_permissions" "chezmoi-workspace"
+      "features" (dict "network_proxy" (dict "enabled" true))
+      "permissions" (dict "chezmoi-workspace" (dict
+          "description" "Workspace writes with shared sensitive-path and network controls"
+          "extends" ":workspace"
+          "filesystem" $fsTable
+          "network" (dict
+              "enabled" true
+              "mode" "limited"
+              "allow_local_binding" .agent_sandbox.network.allow_local_binding
+              "domains" $domainsTable)))
+      "mcp_servers" $mcpServers
+      "tui" (dict
+          "status_line" (list "model-with-reasoning" "context-used" "five-hour-limit" "weekly-limit" "git-branch" "branch-changes")
+          "status_line_use_colors" true) -}}
+{{- $manifest := dict "delete" $deletes "managed" $managed -}}
 #!/usr/bin/env bash
-# Partial management of ~/.codex/config.toml. Chezmoi replaces the settings it
-# owns and preserves unrelated user settings, features, MCPs, and runtime state.
+# Partial management of ~/.codex/config.toml: the merge script replaces the keys
+# chezmoi owns (listed in the manifest's delete/managed entries) and preserves
+# everything else Codex writes at runtime (trusted projects, notices, ...).
 set -euo pipefail
 
-input=$(cat)
-
-managed_root=$(cat <<'CHEZMOI_TOML'
-model = {{ $codex.defaults.model | toJson }}
-model_reasoning_effort = {{ $codex.defaults.model_reasoning_effort | toJson }}
-plan_mode_reasoning_effort = {{ $codex.defaults.plan_mode_reasoning_effort | toJson }}
-approval_policy = "on-request"
-default_permissions = "chezmoi-workspace"
-CHEZMOI_TOML
-)
-
-managed_tables=$(cat <<'CHEZMOI_TOML'
-[features.network_proxy]
-enabled = true
-
-[permissions.chezmoi-workspace]
-description = "Workspace writes with shared sensitive-path and network controls"
-extends = ":workspace"
-
-[permissions.chezmoi-workspace.filesystem]
-{{- range $path := keys $filesystem | sortAlpha }}
-{{ $path | toJson }} = {{ index $filesystem $path | toJson }}
-{{- end }}
-{{- if $workspaceFilesystem }}
-
-[permissions.chezmoi-workspace.filesystem.":workspace_roots"]
-{{- range $path := keys $workspaceFilesystem | sortAlpha }}
-{{ $path | toJson }} = {{ index $workspaceFilesystem $path | toJson }}
-{{- end }}
-{{- end }}
-
-[permissions.chezmoi-workspace.network]
-enabled = true
-mode = "limited"
-allow_local_binding = {{ .agent_sandbox.network.allow_local_binding }}
-
-[permissions.chezmoi-workspace.network.domains]
-{{- range $domains }}
-{{ . | toJson }} = "allow"
-{{- end }}
-{{- range $name, $cfg := .agent_mcp_servers }}
-  {{- $url := get $cfg "url" -}}
-  {{- if $url }}
-
-[mcp_servers.{{ $name }}]
-url = {{ $url | toJson }}
-  {{- else }}
-  {{- $command := get $cfg "command" -}}
-  {{- if not $command -}}
-    {{- $command = printf "%s/node_modules/.bin/%s" $.chezmoi.sourceDir $cfg.package_bin -}}
-  {{- end }}
-  {{- $args := list -}}
-  {{- range $cfg.args -}}
-    {{- if kindIs "map" . -}}
-      {{- $ref := .op -}}
-      {{- if not (hasPrefix "op://" $ref) -}}
-        {{- $ref = printf "op://%s" $ref -}}
-      {{- end -}}
-      {{- $args = append $args (onepasswordRead $ref) -}}
-    {{- else -}}
-      {{- $args = append $args . -}}
-    {{- end -}}
-  {{- end }}
-  {{- $env := dict -}}
-  {{- range $key, $value := default (dict) (get $cfg "env") -}}
-    {{- if kindIs "map" $value -}}
-      {{- $ref := $value.op -}}
-      {{- if not (hasPrefix "op://" $ref) -}}
-        {{- $ref = printf "op://%s" $ref -}}
-      {{- end -}}
-      {{- $_ := set $env $key (onepasswordRead $ref) -}}
-    {{- else -}}
-      {{- $_ := set $env $key $value -}}
-    {{- end -}}
-  {{- end }}
-
-[mcp_servers.{{ $name }}]
-command = {{ $command | toJson }}
-args = {{ $args | toJson }}
-  {{- if $env }}
-
-[mcp_servers.{{ $name }}.env]
-    {{- range $key := keys $env | sortAlpha }}
-{{ $key | toJson }} = {{ index $env $key | toJson }}
-    {{- end }}
-  {{- end }}
-  {{- end }}
-{{- end }}
-CHEZMOI_TOML
-)
-
-managed_mcp_sections='{{- range $name := keys .agent_mcp_servers | sortAlpha -}}|mcp_servers.{{ $name }}|mcp_servers."{{ $name }}"{{- end -}}|'
-managed_status_line='status_line = ["model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "git-branch", "branch-changes"]\nstatus_line_use_colors = true'
-
-preserved=$(printf '%s\n' "$input" | awk \
-  -v managed_mcp_sections="$managed_mcp_sections" \
-  -v managed_status_line="$managed_status_line" '
-  BEGIN {
-    section = ""
-    keep = 1
-  }
-
-  function section_name(line, name) {
-    name = line
-    sub(/^[[:space:]]*\[\[?/, "", name)
-    sub(/\]\]?[[:space:]]*(#.*)?$/, "", name)
-    sub(/^[[:space:]]*/, "", name)
-    sub(/[[:space:]]*$/, "", name)
-    return name
-  }
-
-  function emit(line) {
-    if (!output_started && line ~ /^[[:space:]]*$/) return
-    print line
-    output_started = 1
-  }
-
-  function update_multiline(line, dq, sq, delimiter, candidate, rhs, rest, at, count) {
-    dq = "\"\"\""
-    sq = sprintf("%c%c%c", 39, 39, 39)
-    delimiter = multiline
-    if (delimiter == "") {
-      candidate = line
-      sub(/^[[:space:]]*/, "", candidate)
-      if (substr(candidate, 1, 1) == "#") return
-      if (index(line, "=") == 0) return
-      rhs = line
-      sub(/^[^=]*=[[:space:]]*/, "", rhs)
-      if (substr(rhs, 1, 3) == dq) delimiter = dq
-      else if (substr(rhs, 1, 3) == sq) delimiter = sq
-      else return
-      line = rhs
-    }
-
-    rest = line
-    count = 0
-    while ((at = index(rest, delimiter)) != 0) {
-      count++
-      rest = substr(rest, at + 3)
-    }
-    if (count % 2 == 1) multiline = multiline == "" ? delimiter : ""
-  }
-
-  function is_same_or_child(name, parent) {
-    return name == parent || index(name, parent ".") == 1
-  }
-
-  function is_managed_mcp_path(name, parts, count, i, prefix) {
-    count = split(managed_mcp_sections, parts, "|")
-    for (i = 1; i <= count; i++) {
-      prefix = parts[i]
-      if (prefix != "" && (name == prefix || index(name, prefix ".") == 1)) return 1
-    }
-    return 0
-  }
-
-  function is_owned_section(name) {
-    if (is_same_or_child(name, "features.network_proxy")) return 1
-    if (is_same_or_child(name, "permissions.chezmoi-workspace")) return 1
-    if (is_managed_mcp_path(name)) return 1
-    return 0
-  }
-
-  function is_managed_assignment(name, line, key) {
-    key = line
-    sub(/^[[:space:]]*/, "", key)
-    sub(/[[:space:]]*=.*/, "", key)
-
-    if (name == "") {
-      if (key ~ /^(model|model_reasoning_effort|plan_mode_reasoning_effort|approval_policy|default_permissions)$/) return 1
-      if (is_same_or_child(key, "features.network_proxy")) return 1
-      if (is_same_or_child(key, "permissions.chezmoi-workspace")) return 1
-      if (is_managed_mcp_path(key)) return 1
-      if (key == "tui.status_line") return 1
-      if (key == "tui.status_line_use_colors") return 1
-    }
-    if (name == "features" && is_same_or_child(key, "network_proxy")) return 1
-    if (name == "permissions" && is_same_or_child(key, "chezmoi-workspace")) return 1
-    if (name == "mcp_servers" && is_managed_mcp_path("mcp_servers." key)) return 1
-    if (name == "tui" && key ~ /^(theme|status_line|status_line_use_colors)$/) return 1
-    return 0
-  }
-
-  multiline != "" {
-    if (multiline_keep) emit($0)
-    update_multiline($0)
-    if (multiline == "") multiline_keep = 0
-    next
-  }
-
-  /^[[:space:]]*\[\[?[^]]+\]\]?[[:space:]]*(#.*)?$/ {
-    section = section_name($0)
-    keep = !is_owned_section(section)
-    if (keep) {
-      emit($0)
-      if (section == "tui") {
-        emit(managed_status_line)
-        tui_seen = 1
-      }
-    }
-    next
-  }
-
-  keep == 0 {
-    update_multiline($0)
-    if (multiline != "") multiline_keep = 0
-    next
-  }
-  {
-    managed = is_managed_assignment(section, $0)
-    if (!managed) emit($0)
-    update_multiline($0)
-    if (multiline != "") multiline_keep = !managed
-  }
-
-  END {
-    if (!tui_seen) {
-      emit("")
-      emit("[tui]")
-      emit(managed_status_line)
-    }
-  }
-')
-
-printf '%s\n' "$managed_root"
-if [ -n "$preserved" ]; then
-  printf '\n%s\n' "$preserved"
-fi
-printf '\n%s\n' "$managed_tables"
+{
+  cat <<'CHEZMOI_MANIFEST_JSON'
+{{ $manifest | toJson }}
+CHEZMOI_MANIFEST_JSON
+  cat
+} | node "{{ .chezmoi.sourceDir }}/scripts/merge-codex-config.mjs"

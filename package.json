@@ -3,6 +3,7 @@
   "dependencies": {
     "@playwright/mcp": "0.0.78",
     "@upstash/context7-mcp": "3.2.2",
-    "ccstatusline": "2.2.22"
+    "ccstatusline": "2.2.22",
+    "smol-toml": "1.7.0"
   }
 }

@@ -8,3 +8,5 @@
 package.json
 package-lock.json
 node_modules/
+scripts/
+README.md

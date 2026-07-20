@@ -127,7 +127,6 @@ agent_sandbox:
     os_paths:
       darwin:
         "/opt/homebrew": read
-      linux: {}
     resolved_paths:
       # path resolved at chezmoi render time; skipped if `requires` binary absent
       - mode: write

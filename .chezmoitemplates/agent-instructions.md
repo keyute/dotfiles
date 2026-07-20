@@ -5,23 +5,11 @@
        input: dict "self" <agent name> "root" <template data> */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
-{{- $sensitivePaths := list -}}
-{{- range $path, $mode := $root.agent_sandbox.filesystem.paths -}}
-{{- if eq $mode "none" -}}
-{{- $sensitivePaths = append $sensitivePaths $path -}}
-{{- end -}}
-{{- end -}}
-{{- range $name, $agent := $root.agents -}}
-{{- if ne $name $self -}}
-{{- $sensitivePaths = append $sensitivePaths $agent.home -}}
-{{- else -}}
-{{- range $agent.sensitive_subpaths -}}
-{{- $sensitivePaths = append $sensitivePaths (printf "%s/%s" $agent.home .) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
+{{- /* the sensitive-path prose reuses agent-sandbox's denyRead so it can never
+       drift from the sandbox policy actually enforced for this agent */ -}}
+{{- $sb := includeTemplate "agent-sandbox" (dict "self" $self "root" $root) | fromJson -}}
 {{- $formatted := list -}}
-{{- range $sensitivePaths | sortAlpha -}}
+{{- range $sb.denyRead | sortAlpha -}}
 {{- $formatted = append $formatted (printf "`%s`" .) -}}
 {{- end -}}
 
