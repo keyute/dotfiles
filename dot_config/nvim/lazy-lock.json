@@ -1,5 +1,5 @@
 {
-  "auto-dark-mode.nvim": { "branch": "master", "commit": "54058b4fe414bd64bd2904a6f8a63f1f14e3d8df" },
+  "auto-dark-mode.nvim": { "branch": "master", "commit": "e300259ec777a40b4b9e3c8e6ade203e78d15881" },
   "blink.cmp": { "branch": "main", "commit": "78336bc89ee5365633bcf754d93df01678b5c08f" },
   "blink.lib": { "branch": "main", "commit": "5876dd95deeb70aadbe9f1c0b7117a135061cdac" },
   "blink.pairs": { "branch": "main", "commit": "aad9046bc4670dc91301cd62a6948feb36c55f4a" },
@@ -37,5 +37,5 @@
   "todo-comments.nvim": { "branch": "main", "commit": "31e3c38ce9b29781e4422fc0322eb0a21f4e8668" },
   "vimtex": { "branch": "master", "commit": "6368e31fdaf766ff908a2c06e9ee14fc66dec409" },
   "which-key.nvim": { "branch": "main", "commit": "3aab2147e74890957785941f0c1ad87d0a44c15a" },
-  "yazi.nvim": { "branch": "main", "commit": "8a26074568790bb5c73e56eb871a74709a13dd43" }
+  "yazi.nvim": { "branch": "main", "commit": "8d6c25cb4e7c5702d6cd5a263cb36129fa78aa4c" }
 }
