@@ -37,7 +37,7 @@ end
 return {
 	"milanglacier/minuet-ai.nvim",
 	main = "minuet",
-	event = "InsertEnter",
+	event = { "BufReadPre", "BufNewFile" },
 	opts = {
 		provider = "openai_fim_compatible",
 		n_completions = 1,
@@ -50,6 +50,10 @@ return {
 		},
 		virtualtext = {
 			auto_trigger_ft = { "*" },
+			-- Show inline suggestions even while blink's menu is visible; with the
+			-- super-tab preset that menu is up on nearly every keystroke, and minuet
+			-- otherwise suppresses ghost text whenever a completion menu shows.
+			show_on_completion_menu = true,
 			keymap = {
 				accept = "<A-A>",
 				accept_line = "<A-a>",
