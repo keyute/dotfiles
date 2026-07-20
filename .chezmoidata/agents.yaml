@@ -162,3 +162,12 @@ agent_mcp_servers:
     env:
       CONTEXT7_API_KEY:
         op: Personal/Context7/api key
+  parallel-search:
+    url: https://search.parallel.ai/mcp
+  playwright:
+    package_bin: playwright-mcp
+    args:
+      - --browser
+      - chromium
+      - --headless
+      - --isolated

@@ -7,6 +7,11 @@ input=$(cat)
 servers=$(cat <<'CHEZMOI_MCP_JSON'
 {{ $out := dict -}}
 {{- range $name, $cfg := .agent_mcp_servers }}
+  {{- $url := get $cfg "url" -}}
+  {{- if $url -}}
+    {{- $entry := dict "type" "http" "url" $url -}}
+    {{- $out = set $out $name $entry -}}
+  {{- else -}}
   {{- $args := list -}}
   {{- range $cfg.args }}
     {{- if kindIs "map" . -}}
@@ -37,6 +42,7 @@ servers=$(cat <<'CHEZMOI_MCP_JSON'
   {{- end -}}
   {{- $entry := dict "type" "stdio" "command" $command "args" $args "env" $env -}}
   {{- $out = set $out $name $entry -}}
+  {{- end -}}
 {{- end -}}
 {{ $out | toJson }}
 CHEZMOI_MCP_JSON

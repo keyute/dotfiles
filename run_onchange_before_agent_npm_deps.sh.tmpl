@@ -5,3 +5,10 @@ set -euo pipefail
 # package-lock.json: {{ include "package-lock.json" | sha256sum }}
 
 npm ci --ignore-scripts --omit=dev --prefix "{{ .chezmoi.sourceDir }}"
+
+browser_args=(install-browser chromium --no-shell)
+{{- if eq .chezmoi.os "linux" }}
+browser_args+=(--with-deps)
+{{- end }}
+
+"{{ .chezmoi.sourceDir }}/node_modules/.bin/playwright-mcp" "${browser_args[@]}"

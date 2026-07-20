@@ -78,6 +78,12 @@ allow_local_binding = {{ .agent_sandbox.network.allow_local_binding }}
 {{ . | toJson }} = "allow"
 {{- end }}
 {{- range $name, $cfg := .agent_mcp_servers }}
+  {{- $url := get $cfg "url" -}}
+  {{- if $url }}
+
+[mcp_servers.{{ $name }}]
+url = {{ $url | toJson }}
+  {{- else }}
   {{- $command := get $cfg "command" -}}
   {{- if not $command -}}
     {{- $command = printf "%s/node_modules/.bin/%s" $.chezmoi.sourceDir $cfg.package_bin -}}
@@ -116,6 +122,7 @@ args = {{ $args | toJson }}
     {{- range $key := keys $env | sortAlpha }}
 {{ $key | toJson }} = {{ index $env $key | toJson }}
     {{- end }}
+  {{- end }}
   {{- end }}
 {{- end }}
 CHEZMOI_TOML

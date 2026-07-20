@@ -57,6 +57,8 @@ window is nearly full, degradation has already set in.
 - Use the configured docs MCP (e.g. context7) for code generation, setup or
   configuration steps, or library/API docs — resolve the library id and fetch the
   docs without me having to ask.
+- Use Playwright for frontend interaction, inspection, and screenshots, not as a
+  web-search substitute.
 - Keep implementations simple; do not overengineer.
 - When writing code, match the surrounding code's style, design language, and
   colocation of similar patterns. If the project's own rules don't settle it,
