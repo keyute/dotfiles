@@ -4,11 +4,10 @@ set -euo pipefail
 # package.json: {{ include "package.json" | sha256sum }}
 # package-lock.json: {{ include "package-lock.json" | sha256sum }}
 
+# npmrc sets prefix=~/.local; create its module dir so `npm ls -g` (metapac's npm
+# backend) doesn't ENOENT on a machine that has no global packages yet.
+mkdir -p "{{ .chezmoi.homeDir }}/.local/lib/node_modules"
+
 npm ci --ignore-scripts --omit=dev --prefix "{{ .chezmoi.sourceDir }}"
 
-browser_args=(install-browser chromium --no-shell)
-{{- if eq .chezmoi.os "linux" }}
-browser_args+=(--with-deps)
-{{- end }}
-
-"{{ .chezmoi.sourceDir }}/node_modules/.bin/playwright-mcp" "${browser_args[@]}"
+"{{ .chezmoi.sourceDir }}/node_modules/.bin/playwright-mcp" install-browser chromium --no-shell
