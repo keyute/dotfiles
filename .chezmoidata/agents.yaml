@@ -15,9 +15,7 @@ agents:
     extras:
       readable_paths:
         - "~/.claude/plugins"
-      allowed_read_patterns:
-        - "/private/tmp/claude-{uid}/**"
-        - "/tmp/claude-{uid}/**"
+      allowed_read_patterns: []
       writable_paths:
         - "~/.claude/plugins/data"
         - "~/.claude/projects"
