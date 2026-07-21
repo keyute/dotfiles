@@ -1,0 +1,10 @@
+#!/bin/bash
+{{ if eq .chezmoi.os "linux" -}}
+set -euo pipefail
+
+# metapac config hash: {{ include "dot_config/metapac/config.toml" | sha256sum }}
+# cli.toml hash: {{ include "dot_config/metapac/groups/cli.toml" | sha256sum }}
+# gui.toml hash: {{ include "dot_config/metapac/groups/gui.toml" | sha256sum }}
+# system.toml hash: {{ include "dot_config/metapac/groups/system.toml" | sha256sum }}
+metapac sync --no-confirm
+{{ end -}}

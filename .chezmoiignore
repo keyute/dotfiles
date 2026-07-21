@@ -4,6 +4,8 @@
 {{- end }}
 {{- if eq .chezmoi.os "darwin" }}
 .config/containers/
+.config/metapac/
+.npmrc
 {{- end }}
 package.json
 package-lock.json

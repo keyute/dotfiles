@@ -1,0 +1,10 @@
+[dnf]
+repos = [
+	"copr.fedorainfracloud.org/scottames/ghostty",
+	"copr.fedorainfracloud.org/sneexy/zen-browser",
+]
+packages = [
+	"1password",
+	"ghostty",
+	"zen-browser",
+]

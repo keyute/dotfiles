@@ -1,0 +1,63 @@
+[dnf]
+repos = [
+	"copr.fedorainfracloud.org/dejan/lazygit",
+	"copr.fedorainfracloud.org/lihaohong/chezmoi",
+	"copr.fedorainfracloud.org/lihaohong/yazi",
+	"copr.fedorainfracloud.org/atim/lazydocker",
+	"copr.fedorainfracloud.org/rustyclanker/lua-language-server",
+]
+packages = [
+	# shell
+	"zsh",
+	"zoxide",
+	"fzf",
+	"bat",
+	"ripgrep",
+	"fd-find",
+	"jq",
+	"yq",
+	"mosh",
+	# editor & vcs
+	"neovim",
+	"git",
+	"git-delta",
+	"git-lfs",
+	"lazygit",
+	"yazi",
+	"chezmoi",
+	# languages & tooling
+	"golang",
+	"golang-x-tools-gopls",
+	"nodejs",
+	"uv",
+	"lua-language-server",
+	# containers
+	"docker-ce",
+	"docker-buildx-plugin",
+	"docker-compose-plugin",
+	"lazydocker",
+	# kubernetes
+	"kubectl",
+	"k9s",
+	"helm",
+	# infra
+	"opentofu",
+	"vault",
+	"google-cloud-cli",
+	"cloudflared",
+	"task",
+	# ai
+	"claude-code",
+	"ramalama",
+	# misc
+	"1password-cli",
+]
+
+[npm]
+packages = [
+	"@openai/codex",
+	"npm-check-updates",
+	# language servers used by Claude Code
+	"pyright",
+	"typescript-language-server",
+]

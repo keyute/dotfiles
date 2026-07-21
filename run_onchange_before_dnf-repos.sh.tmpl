@@ -1,0 +1,105 @@
+#!/bin/bash
+{{ if eq .chezmoi.os "linux" -}}
+set -euo pipefail
+
+# Write a vendor repo definition unless one already exists.
+add_repo() {
+	[ -f "/etc/yum.repos.d/$1.repo" ] || sudo tee "/etc/yum.repos.d/$1.repo" >/dev/null
+}
+
+add_repo docker-ce <<'EOF'
+[docker-ce-stable]
+name=Docker CE Stable - $basearch
+baseurl=https://download.docker.com/linux/fedora/$releasever/$basearch/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://download.docker.com/linux/fedora/gpg
+EOF
+
+add_repo 1password <<'EOF'
+[1password]
+name="1Password Stable Channel"
+baseurl=https://downloads.1password.com/linux/rpm/stable/$basearch
+enabled=1
+gpgcheck=1
+gpgkey="https://downloads.1password.com/linux/keys/1password.asc"
+EOF
+
+add_repo claude-code <<'EOF'
+[claude-code]
+name=Claude Code
+baseurl=https://downloads.claude.ai/claude-code/rpm/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://downloads.claude.ai/keys/claude-code.asc
+EOF
+
+add_repo cloudflared <<'EOF'
+[cloudflared-stable]
+name=cloudflared-stable
+baseurl=https://pkg.cloudflare.com/cloudflared/rpm
+enabled=1
+type=rpm
+gpgcheck=1
+gpgkey=https://pkg.cloudflare.com/cloudflare-ascii-pubkey.gpg
+EOF
+
+# Pinned to the v1.35 stream; bump the version in both URLs to upgrade.
+add_repo kubernetes <<'EOF'
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.35/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.35/rpm/repodata/repomd.xml.key
+EOF
+
+add_repo task-task <<'EOF'
+[task-task]
+name=task-task
+baseurl=https://dl.cloudsmith.io/public/task/task/rpm/fedora/$releasever/$basearch
+repo_gpgcheck=1
+enabled=1
+skip_if_unavailable=1
+gpgkey=https://dl.cloudsmith.io/public/task/task/gpg.046FD1186CA342F0.key
+gpgcheck=1
+type=rpm-md
+
+[task-task-noarch]
+name=task-task-noarch
+baseurl=https://dl.cloudsmith.io/public/task/task/rpm/fedora/$releasever/noarch
+repo_gpgcheck=1
+enabled=1
+skip_if_unavailable=1
+gpgkey=https://dl.cloudsmith.io/public/task/task/gpg.046FD1186CA342F0.key
+gpgcheck=1
+type=rpm-md
+EOF
+
+add_repo hashicorp <<'EOF'
+[hashicorp]
+name=HashiCorp Stable - $basearch
+baseurl=https://rpm.releases.hashicorp.com/fedora/$releasever/$basearch/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://rpm.releases.hashicorp.com/gpg
+EOF
+
+add_repo google-cloud-cli <<'EOF'
+[google-cloud-cli]
+name=Google Cloud CLI
+baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el9-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+EOF
+
+if ! command -v metapac >/dev/null; then
+	sudo dnf copr enable -y komapro/metapac
+	sudo dnf install -y metapac
+fi
+
+# dnf groups are outside metapac's model
+sudo dnf group install -y development-tools
+{{ end -}}

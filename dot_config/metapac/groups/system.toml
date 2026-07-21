@@ -1,0 +1,25 @@
+[dnf]
+packages = [
+	# kernel & build
+	"dkms",
+	# gpu & compute
+	"clinfo",
+	"intel-compute-runtime",
+	"mesa-vulkan-drivers",
+	"vulkan-tools",
+	# claude code sandbox
+	"bubblewrap",
+	"socat",
+	# codec libraries
+	"opusfile-devel",
+	# yazi previewers
+	"ffmpeg-free",
+	"p7zip",
+	"p7zip-plugins",
+	"resvg",
+	"poppler-utils",
+	"ImageMagick",
+	# latex (vimtex)
+	"texlive-scheme-medium",
+	"zathura-pdf-poppler",
+]
