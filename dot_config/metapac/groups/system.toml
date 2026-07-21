@@ -22,4 +22,6 @@ packages = [
 	# latex (vimtex)
 	"texlive-scheme-medium",
 	"zathura-pdf-poppler",
+	# wayland clipboard (nvim)
+	"wl-clipboard",
 ]

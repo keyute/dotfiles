@@ -19,9 +19,11 @@ packages = [
 	"mosh",
 	# editor & vcs
 	"neovim",
+	"tree-sitter-cli",
 	"git",
 	"git-delta",
 	"git-lfs",
+	"gh",
 	"lazygit",
 	"yazi",
 	"chezmoi",

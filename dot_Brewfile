@@ -3,122 +3,55 @@ tap "buo/cask-upgrade", trusted: true
 tap "hashicorp/tap", trusted: true
 tap "jundot/omlx", "https://github.com/jundot/omlx", trusted: true
 tap "siderolabs/tap", trusted: true
-# Clone of cat(1) with syntax highlighting and Git integration
 brew "bat"
-# Software library to render fonts
-brew "freetype"
-# GNU internationalization (i18n) and localization (l10n) library
-brew "gettext"
-# Core application library for C
-brew "glib"
-# Vector graphics library with cross-device output support
-brew "cairo"
-# Manage your dotfiles across multiple diverse machines, securely
 brew "chezmoi"
-# Cloudflare Tunnel client (formerly Argo Tunnel)
 brew "cloudflared"
-# Cross-platform make
-brew "cmake"
-# Secure runtime for JavaScript and TypeScript
 brew "deno"
-# Simple, fast and user-friendly alternative to find
 brew "fd"
-# Audio codec
-brew "opus"
-# Play, record, convert, and stream select audio and video codecs
 brew "ffmpeg"
-# Command-line fuzzy finder written in Go
 brew "fzf"
-# OpenType text shaping engine
-brew "harfbuzz"
-# Interpreter for PostScript and PDF
 brew "ghostscript"
-# Distributed revision control system
 brew "git"
-# Syntax-highlighting pager for git and diff output
 brew "git-delta"
-# Git extension for versioning large files
 brew "git-lfs"
-# GitHub command-line tool
 brew "gh"
-# Open source programming language to build simple/reliable/efficient software
 brew "go"
-# Task is a task runner/build tool that aims to be simpler and easier to use
 brew "go-task"
-# Go Language's command-line interface for database migrations
 brew "goose"
-# Language server for the Go language
 brew "gopls"
-# Package compiler and linker metadata toolkit
-brew "pkgconf"
-# Kubernetes package manager
 brew "helm"
-# Kubernetes CLI To Manage Your Clusters In Style!
 brew "k9s"
-# KubeConfig Manager
 brew "kubecm"
-# OpenID Connect authentication plugin for kubectl
 brew "kubelogin"
-# Kubernetes command-line interface
 brew "kubernetes-cli"
-# Lazier way to manage everything docker
 brew "lazydocker"
-# Simple terminal UI for git commands
 brew "lazygit"
 brew "lazysql"
-# Language Server for the Lua language
 brew "lua-language-server"
-# Incremental parsing library
 brew "tree-sitter"
-# Parser generator tool; nvim-treesitter (main) shells out to it to build parsers
 brew "tree-sitter-cli"
-# Ambitious Vim-fork focused on extensibility and agility
 brew "neovim"
-# Open-source, cross-platform JavaScript runtime environment
 brew "node"
-# Drop-in replacement for Terraform. Infrastructure as Code Tool
+brew "npm-check-updates"
 brew "opentofu"
-# API for decoding and seeking in .opus files
 brew "opusfile"
-# OCI Registry As Storage
 brew "oras"
-# Static type checker for Python
 brew "pyright"
-# Search tool like grep and The Silver Searcher
 brew "ripgrep"
-# Language Server Protocol implementation for TypeScript wrapping tsserver
 brew "typescript-language-server"
-# Extremely fast Python package installer and resolver, written in Rust
 brew "uv"
-# Image processing library
 brew "vips"
-# Blazing fast terminal file manager written in Rust, based on async I/O
 brew "yazi"
-# Process YAML, JSON, XML, CSV and properties documents from the CLI
 brew "yq"
-# Feature-rich command-line audio/video downloader
 brew "yt-dlp"
-# Shell extension to navigate your filesystem faster
 brew "zoxide"
-# Permanent TouchID support for sudo
 brew "artginzburg/tap/sudo-touchid"
-# Vault
 brew "hashicorp/tap/vault"
-# CLI for out-of-band management of Kubernetes nodes created by Talos
 brew "siderolabs/tap/talosctl"
-# Meta Package for common Sidero Labs tools
 brew "siderolabs/tap/sidero-tools"
-# MLX inference server (Apple Silicon) for local code autocomplete — headless daemon
-# NOTE: `start_service: true` is hand-maintained — `brew bundle dump` does not emit it.
 brew "jundot/omlx/omlx", start_service: true
-# Command-line interface for 1Password
 cask "1password-cli"
-# Terminal-based AI coding assistant
 cask "claude-code"
-# OpenAI's coding agent that runs in your terminal
 cask "codex"
-# Set of tools to manage resources and applications hosted on Google Cloud
 cask "gcloud-cli"
-# Full TeX Live distribution without GUI applications
 cask "mactex-no-gui"
-npm "npm-check-updates"
