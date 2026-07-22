@@ -55,37 +55,37 @@ subagents:
     reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Review Go code diffs for correctness and idiomatic style. Use when you want a focused review of Go changes before merging."
+    description: "Review Go code diffs for correctness and idiomatic style before merging."
   python-reviewer:
     tier: mid
     reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Review Python diffs for correctness, type safety, and idiomatic style. Use when you want a focused review of Python changes before merging."
+    description: "Review Python diffs for correctness, type safety, and idiomatic style before merging."
   ts-reviewer:
     tier: mid
     reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Review TypeScript/Node.js diffs for type safety, async correctness, and idiomatic patterns. Use when you want a focused review of TS/JS changes."
+    description: "Review TS/JS (TypeScript/Node.js) diffs for type safety, async correctness, and idiomatic patterns."
   shell-reviewer:
     tier: small
     reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Review shell scripts, zsh configs, and chezmoi templates for correctness and safety. Use for shell/dotfile diffs."
+    description: "Review shell/dotfile diffs — shell scripts, zsh configs, chezmoi templates — for correctness and safety."
   log-triager:
     tier: small
     reasoning_effort: low
     readonly: true
     tools: "Read, Grep, Bash"
-    description: "Summarize large log files or stderr dumps into a short diagnosis. Use to avoid pasting giant logs into the main context."
+    description: "Summarize large log files or stderr dumps into a short diagnosis instead of pasting them into the main context."
   migration-planner:
     tier: top
     reasoning_effort: max
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Plan complex migrations — schema changes, breaking API changes, major dependency upgrades — with an ADR-style analysis. Use when a change needs a proper plan before any code is written."
+    description: "Plan complex migrations — schema changes, breaking API changes, major dependency upgrades — with an ADR-style analysis before any code is written."
 subagent_tiers:
   claude:
     small: haiku

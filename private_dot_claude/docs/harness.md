@@ -1,23 +1,22 @@
 # Claude Code workflow reference
 
-Answers the recurring "which command / which flag / which model" questions without a
-lookup agent. If behavior seems to have changed, verify with the claude-code-guide
-agent and update this file.
+Answers the recurring "which command / which flag / which model" questions. If
+behavior seems changed, verify with the claude-code-guide agent and update this file.
 
 ## Review & cleanup commands
 
 - `/code-review [effort] [instructions]` — reviews the **current working diff**.
-  Effort levels: `low`/`medium` (fewer, high-confidence findings), `high`/`max`
-  (broader coverage, may include uncertain findings), `ultra` (multi-agent cloud
-  review of the branch, billed, user-triggered only; `/ultrareview` is a deprecated
-  alias). Flags: `--comment` posts findings as inline PR comments, `--fix` applies
-  findings to the working tree. Custom instructions go inline after the effort level.
+  Effort: `low`/`medium` (fewer, high-confidence findings), `high`/`max` (broader,
+  may include uncertain findings), `ultra` (multi-agent cloud review of the branch,
+  billed, user-triggered only; `/ultrareview` is a deprecated alias). Flags:
+  `--comment` posts inline PR comments, `--fix` applies findings to the working
+  tree. Custom instructions go inline after the effort level.
 - `/review <PR#>` — reviews a **GitHub pull request** (not the local diff).
-- `/simplify` — reuse/simplification/efficiency cleanups on changed code, then applies
-  them. Quality only; it does not hunt bugs — that's `/code-review`.
+- `/simplify` — reuse/simplification/efficiency cleanups on changed code, then
+  applies them. Quality only; bug-hunting is `/code-review`'s job.
 - `/security-review` — security review of the branch's pending changes.
-- There is no separate `/review-branch`; `/code-review` on the branch covers it.
-  Extra directories come in via `/add-dir` before invoking.
+- No `/review-branch` exists; `/code-review` on the branch covers it. Extra
+  directories come in via `/add-dir` first.
 
 ## Verification & running
 
@@ -28,37 +27,33 @@ agent and update this file.
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo; `/model`
   changes only the current session. Pin stays on `opus[1m]` for the 1M context
-  window; bump up to Fable manually (`/model`) for orchestration-heavy sessions when
-  the plan offers it — it's opted into per session, not every session. (`best` =
-  most capable available — Fable where accessible, else latest Opus — but it's not
-  pinned here, since the pin exists to hold the `[1m]` context.)
-- `/fast` — fast mode: Opus with faster output, not a smaller model.
-- Subagent tiers are relative capability, not fixed model names — the session's own
-  context reports the current roster. Map: cheapest tier = mechanical lookups/triage;
-  mid tier = routine implementation and review; most-capable available = architecture,
-  orchestration, or expensive-if-wrong work. Subagents default to inheriting the main
-  session model, so a `/model` bump cascades to them; a subagent that names an
-  unavailable model silently falls back to the inherited one (no pay-as-you-go
-  surprise). Route on total tokens-to-done, not sticker price — a stronger model that
-  one-shots beats a cheaper one that retries.
+  window; bump to Fable per session (`/model`) for orchestration-heavy work.
+  (`best` = most capable available — Fable where accessible, else latest Opus —
+  but the pin exists to hold `[1m]`.)
+- `/fast` — Opus with faster output, not a smaller model.
+- Subagent tiers are relative capability, not fixed model names; the session's own
+  context reports the current roster. Subagents inherit the main session model by
+  default, so a `/model` bump cascades; a subagent naming an unavailable model
+  silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
+  (tokens-to-done, not sticker price).
 
 ## Modes & isolation
 
-- Plan mode is the default (`permissions.defaultMode: "plan"`): read-only until the
-  plan is approved. `shift+tab` cycles modes.
-- Worktrees isolate parallel work; `worktree.baseRef` is set to `head` in settings.
+- Plan mode is the default (`permissions.defaultMode: "plan"`): read-only until
+  the plan is approved. `shift+tab` cycles modes.
+- Worktrees isolate parallel work; `worktree.baseRef` is `head` in settings.
 
 ## Codex plugin (not installed — blocked)
 
-- OpenAI's official Claude Code plugin (`codex` from `openai/codex-plugin-cc`) is
-  deliberately NOT enabled: nested sandboxing is broken on macOS. Codex refuses to
-  start its own Seatbelt inside Claude Code's (openai/codex#30615), and even
-  `--sandbox danger-full-access` panics because CC's sandbox blocks the `configd`
-  lookup Codex's HTTP stack needs (anthropics/claude-code#42857). Revisit when
-  #30615 lands or Codex's `external-sandbox` policy becomes user-reachable; until
-  then the only workaround is sandbox-disabled Bash, which this setup rejects.
+- OpenAI's official plugin (`codex` from `openai/codex-plugin-cc`) is deliberately
+  NOT enabled: nested sandboxing is broken on macOS. Codex refuses to start its
+  own Seatbelt inside Claude Code's (openai/codex#30615), and `--sandbox
+  danger-full-access` panics because CC's sandbox blocks the `configd` lookup its
+  HTTP stack needs (anthropics/claude-code#42857). Revisit when #30615 lands or
+  `external-sandbox` becomes user-reachable; until then the only workaround is
+  sandbox-disabled Bash, which this setup rejects.
 
 ## Recurring maintenance
 
 - `/fewer-permission-prompts` — mine transcripts to grow the project allowlist.
-- Sandbox/permission questions: see `~/.claude/docs/sandbox.md`.
+- Sandbox/permission questions: `~/.claude/docs/sandbox.md`.

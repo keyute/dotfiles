@@ -1,23 +1,23 @@
 {{- $agent := .agents.claude -}}
 # Sandbox & permission reference
 
-Generated from `.chezmoidata/agents.yaml` in the chezmoi repo. To change anything
-here: edit that file, then `chezmoi apply`. Do not hand-edit `~/.claude/settings.json`.
+Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file and
+`chezmoi apply`; do not hand-edit `~/.claude/settings.json`.
 
 ## The two enforcement layers
 
-1. **Bash sandbox** (`settings.json → sandbox`) governs shell commands. Reads are
-   allowed everywhere except `denyRead`; writes only inside `allowWrite`; outbound
+1. **Bash sandbox** (`settings.json → sandbox`) governs shell commands: reads
+   allowed everywhere except `denyRead`, writes only inside `allowWrite`, outbound
    network only to `allowedDomains`. The harness additionally always denies bash
    access to the agent's own home (`{{ $agent.home }}`), with carve-outs for the
-   `readable_paths` listed below.
+   `readable_paths` below.
 2. **Permission rules** (`settings.json → permissions`) govern harness tools (Read,
-   Edit, WebFetch, MCP). Deny rules beat allow rules: a denied path can never be
-   carved back in with an allow — the deny itself must be narrowed in agents.yaml.
+   Edit, WebFetch, MCP). Deny beats allow: a denied path can only be re-opened by
+   narrowing the deny in agents.yaml, never by an allow rule.
 
 ## Path semantics
 
-- A relative pattern like `.env` matches at any depth (`terraform/.env` is blocked too).
+- A relative pattern like `.env` matches at any depth (`terraform/.env` too).
 - A directory entry covers everything beneath it.
 - Modes: `none` = deny read+write, `read` = allow read, `write` = allow write.
 

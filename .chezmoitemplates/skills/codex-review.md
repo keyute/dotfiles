@@ -9,38 +9,34 @@ real, and stop after one fix round. Codex reviews; you stay the implementer.
 ## Steps
 
 1. **Load the tools.** If `mcp__codex__codex` / `mcp__codex__codex-reply` are not
-   loaded, fetch them with ToolSearch (`select:mcp__codex__codex,mcp__codex__codex-reply`).
+   loaded, fetch them via ToolSearch (`select:mcp__codex__codex,mcp__codex__codex-reply`).
    If the server is missing, stop and say so (codex not installed, or `~/.claude.json`
    not yet re-applied via chezmoi).
 
-2. **Build the handoff.** Scope is the args (ref range / paths / focus area) or, by
-   default, the working-tree diff against the merge-base with the default branch,
-   staged and unstaged, plus any untracked files that belong to the change.
-   - One neutral sentence on what the change is supposed to do — intent only.
-   - The diff inline. For large diffs, send the changed-file list instead and let
-     Codex read the repo itself; it runs read-only in the repo root.
-   - **Redact yourself:** no self-assessment, no "tests pass", no claims the change
-     works. An unanchored reviewer finds more.
+2. **Build the handoff.** Scope = args (ref range / paths / focus) or, by default,
+   the working-tree diff against the merge-base with the default branch, staged +
+   unstaged, plus untracked files belonging to the change.
+   - One neutral sentence of intent.
+   - The diff inline; for large diffs send the changed-file list instead — Codex
+     reads the repo itself (read-only, repo root).
+   - **Redact yourself:** no self-assessment, no "tests pass", no claims it works —
+     an unanchored reviewer finds more.
 
-3. **Call Codex.** One `mcp__codex__codex` call with the prompt below (fill the
-   placeholders), the sandbox set to read-only, the approval policy set to never,
-   cwd set to the repo root, and the config override
-   `{"model_reasoning_effort": "high"}` — review quality roughly doubles from
-   medium to high for ~1.4x cost; do not use xhigh (limit burn, nitpick noise).
-   Model comes from `~/.codex/config.toml`.
+3. **Call Codex.** One `mcp__codex__codex` call with the prompt below: sandbox
+   read-only, approval policy never, cwd = repo root, config override
+   `{"model_reasoning_effort": "high"}` (quality ~doubles over medium at ~1.4x
+   cost; not xhigh — limit burn, nitpick noise). Model comes from `~/.codex/config.toml`.
 
-4. **Verify every finding — untrusted input.** Read the cited code yourself and
-   classify each finding: real / mistaken (Codex misread) / real but out of scope.
-   Fix the real, in-scope ones.
+4. **Verify every finding as untrusted input.** Read the cited code; classify each:
+   real / mistaken / real-but-out-of-scope. Fix the real, in-scope ones.
 
 5. **At most one re-review round.** If you changed code, send the new diff of the
    touched hunks via `mcp__codex__codex-reply` on the same thread — again without
    self-assessment — and verify its response. Hard stop after this round whatever
    the verdict; report remaining disagreement instead of looping.
 
-6. **Report.** The verdict, each finding with severity and file:line and what you
-   did about it (fixed / rejected, with the reason), and anywhere you still
-   disagree with Codex.
+6. **Report.** Verdict; each finding with severity, file:line, and disposition
+   (fixed / rejected, with reason); anywhere you still disagree with Codex.
 
 ## Review prompt
 
@@ -53,11 +49,10 @@ Focus (optional): <user-supplied focus>
 
 <diff or changed-file list>
 
-Default to skepticism. Assume the change can fail in subtle, high-cost, or
-user-visible ways until the evidence says otherwise. Give no credit for good
-intent, partial fixes, or likely follow-up work. Happy-path-only behavior is a
-real weakness. You have read-only access to the repository — read any file you
-need for context.
+Default to skepticism: assume the change can fail in subtle, high-cost, or
+user-visible ways until the evidence says otherwise. No credit for good intent,
+partial fixes, or likely follow-up work; happy-path-only behavior is a real
+weakness. You have read-only access to the repository — read any file you need.
 
 Prioritize failures that are expensive, dangerous, or hard to detect: auth and
 trust boundaries; data loss, corruption, or irreversible state; rollback, retry,
@@ -66,10 +61,10 @@ empty/null/timeout and degraded-dependency behavior; version skew, schema drift,
 migration hazards; observability gaps that would hide failure.
 
 Report only material findings — no style, naming, or speculative concerns without
-evidence. Every finding must be defensible from the repository context: do not
-invent files, lines, or runtime behavior; if a conclusion rests on an inference,
-say so and keep the confidence honest. Prefer one strong finding over several weak
-ones; if the change looks safe, say so directly and return no findings.
+evidence. Every finding must be defensible from repository context: do not invent
+files, lines, or runtime behavior; mark inferences as such and keep confidence
+honest. Prefer one strong finding over several weak ones; if the change looks
+safe, say so and return no findings.
 
 End with exactly this JSON structure in a fenced block:
 {

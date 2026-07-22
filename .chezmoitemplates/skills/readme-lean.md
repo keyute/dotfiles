@@ -7,25 +7,24 @@ Produce a README that is lean, verified, and reads like a human maintainer wrote
 
 ## Steps
 
-1. **Verify before writing.** Read the current README, then check every claim against
-   the repo: commands must exist (package.json scripts, Makefile targets, compose
-   services, CI workflows), config vars must be real (grep for where they are read),
-   setup steps must work from a cold clone. Fix or drop anything you cannot verify;
-   never document aspirational behavior.
+1. **Verify before writing.** Read the current README, then check every claim:
+   commands must exist (package.json scripts, Makefile targets, compose services,
+   CI workflows), config vars must be read somewhere (grep), setup must work from
+   a cold clone. Fix or drop what you cannot verify; never document aspirational
+   behavior.
 
 2. **Keep only what a new contributor needs.**
-   - What this is — 1–2 sentences, no marketing prose
+   - What this is — 1–2 sentences, no marketing
    - Quickstart — the shortest verified path to running it
-   - Configuration — only vars that exist, with defaults, as a table if >3
+   - Configuration — only vars that exist, with defaults; table if >3
    - Development — how to test/lint/build, verified
-   - Keep any project-specific sections the maintainer added deliberately
-     (architecture notes, deployment runbooks); trim, don't delete.
+   - Keep deliberate maintainer sections (architecture notes, runbooks); trim,
+     don't delete.
 
-3. **Remove AI telltales.** No emoji in headings, no "Features 🚀" lists restating the
-   code, no "This project provides a robust/comprehensive…" openers, no badge walls,
-   no boilerplate Contributing/License sections unless the repo actually has those
-   policies, no exhaustive tables of every file. Prefer short paragraphs over nested
-   bullet pyramids.
+3. **Remove AI telltales.** No emoji in headings, "Features 🚀" lists restating
+   the code, "robust/comprehensive" openers, badge walls, boilerplate
+   Contributing/License sections without real policies, or exhaustive file
+   tables. Short paragraphs over nested bullet pyramids.
 
-4. **Report.** Note any commands or claims you could not verify and left flagged,
-   rather than silently keeping them.
+4. **Report.** Note any commands or claims left flagged as unverified rather than
+   silently kept.

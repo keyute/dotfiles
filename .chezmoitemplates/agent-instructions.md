@@ -15,55 +15,46 @@
 
 ## Orchestration & context discipline
 
-Keep your context clean from turn one — do not wait until it fills; by the time the
-window is nearly full, degradation has already set in.
+Keep context clean from turn one — don't wait for the window to fill.
 
-- Route disposable work — searches, whole-file reads, log/dependency triage,
-  independent research: anything whose intermediate output you won't re-read — to a
-  subagent or out to files, so only distilled results enter your context.
-- The gate is cost, not fullness. Delegate wherever it keeps context clean, UNLESS
-  the handoff costs more than it saves: trivial tasks, sequential work where each step
-  needs the previous step's full output, or edits where you must see the exact lines
-  you change. Spawn-up costs tokens and latency — it must pay for itself.
-- Backstop: if you are still nearing your limit, persist your plan, decisions, and
-  open threads to a durable file (memory / plan file / scratchpad) so a fresh session
-  resumes with zero loss. Judge "near" as a fraction of your window, not a fixed token
-  count (holds at ~200k or ~1M).
-- Every delegation is a contract; state all four or the worker drifts: (1) objective,
-  (2) scope and boundaries, (3) which files/paths/tools, (4) output format — a
-  compressed summary, never a raw dump.
-- Scale fan-out to complexity: one worker for a simple lookup; 2–4 in parallel for
-  independent strands (spawn together, not serially); more only for broad research.
-  Keep each worker's scope smaller than the root task.
-- Match a worker's model tier by total tokens-to-done, not sticker price — the
-  cheapest tier that one-shots it: smallest for mechanical lookups and simple
-  transforms, mid for routine implementation and review, top only for architecture or
-  expensive-if-wrong work.
+- Route disposable work (searches, whole-file reads, log/dependency triage,
+  independent research — any output you won't re-read) to a subagent or out to
+  files; only distilled results enter your context.
+- The gate is cost: delegation must pay for its spawn-up. Keep inline trivial
+  tasks, sequential steps needing the prior step's full output, and edits where
+  you must see the exact lines you change.
+- Backstop: if nearing the limit anyway, persist plan, decisions, and open
+  threads to a durable file (memory / plan file / scratchpad). Judge "near" as a
+  fraction of the window, not a token count.
+- Every delegation states objective, scope/boundaries, files/paths/tools, and
+  output format — a compressed summary, never a raw dump.
+- Scale fan-out to complexity: one worker for a simple lookup; 2–4 in parallel
+  (spawned together) for independent strands; more only for broad research. Each
+  worker's scope stays smaller than the root task.
+- Pick a worker's model tier by total tokens-to-done — the cheapest that
+  one-shots it: smallest for mechanical lookups/transforms, mid for routine
+  implementation and review, top only for architecture or expensive-if-wrong work.
 
 ## Working agreements
 
-- Use the configured docs MCP (e.g. context7) for code generation, setup or
-  configuration steps, or library/API docs — resolve the library id and fetch the
-  docs without me having to ask.
-- Use Playwright for frontend interaction, inspection, and screenshots, not as a
+- Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
+  library/API docs — resolve the library id and fetch unprompted.
+- Use Playwright for frontend interaction, inspection, and screenshots — not as a
   web-search substitute.
-- Web search: default to the built-in one to save cost; escalate to the Parallel MCP
-  for Reddit / forum / anecdotal research, where built-in search reliably comes up empty.
+- Web search: built-in by default (cost); Parallel MCP for Reddit / forum /
+  anecdotal research, where built-in search comes up empty.
 - Keep implementations simple; do not overengineer.
-- When writing code, match the surrounding code's style, design language, and
-  colocation of similar patterns. If the project's own rules don't settle it,
-  analyse the codebase to find the pattern before you write.
-- For a bugfix where the project has tests wired up: first learn how the project
-  writes tests, then if a test is simple and meaningful, write one that reproduces
-  the bug, confirm it fails, fix the bug, and rerun to confirm it passes. Keep
-  tests minimal and meaningful — no unnecessary cases.
-- When I correct your approach or re-explain a convention, offer to record it in the
-  project's AGENTS.md (or instructions file) or your memory so it needn't be
-  re-explained next session.
-- Never read credential stores, shell history, agent transcripts/session stores, or
-  auth config paths such as {{ join ", " $formatted }}, or similar sensitive paths,
-  unless I explicitly ask for that specific path. If you believe you read a
+- Match the surrounding code's style, design language, and colocation; if the
+  project's rules don't settle it, find the codebase's pattern before writing.
+- Bugfix where tests are wired up: learn the project's test style; if a repro
+  test is simple and meaningful, write it, see it fail, fix, see it pass. No
+  unnecessary cases.
+- When I correct your approach or re-explain a convention, offer to record it in
+  the project's AGENTS.md (or instructions file) or your memory.
+- Never read credential stores, shell history, agent transcripts/session stores,
+  or auth config paths such as {{ join ", " $formatted }}, or similar sensitive
+  paths, unless I explicitly ask for that specific path. If you believe you read a
   credential, flag it immediately so I can rotate it.
-- Chezmoi may resolve secret references into private target configs. Keep resolved
-  values out of the source repo and never inspect or print those target files.
+- Chezmoi may resolve secret references into private target configs: keep
+  resolved values out of the source repo; never inspect or print those targets.
 - Never commit on my behalf — I stage, commit, and push myself.
