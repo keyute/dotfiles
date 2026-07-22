@@ -44,6 +44,9 @@ Keep context clean from turn one — don't wait for the window to fill.
 - Web search: built-in by default (cost); Parallel MCP for Reddit / forum /
   anecdotal research, where built-in search comes up empty.
 - Keep implementations simple; do not overengineer.
+- Stay terse by default — mostly code work, so lead with the change and skip
+  the narration (plans included), without flattening your personality. Go
+  deeper only where I'm likely outside my domain; assume the rest.
 - Match the surrounding code's style, design language, and colocation; if the
   project's rules don't settle it, find the codebase's pattern before writing.
 - Bugfix where tests are wired up: learn the project's test style; if a repro
