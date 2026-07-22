@@ -1,17 +1,29 @@
-{{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries.
-       Resolves op: secret references via onepasswordRead and defaults command
-       to the repo-local node_modules/.bin/<package_bin>.
-       input:  the root template data (`.`)
+{{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries for one
+       harness. Skips entries scoped to other harnesses (`harnesses` list) and
+       entries whose `requires` binary is absent from PATH. Resolves op: secret
+       references via onepasswordRead and defaults command to the repo-local
+       node_modules/.bin/<package_bin>.
+       input:  dict "root" (the root template data) "harness" ("claude"|"codex")
        output: JSON {name: {type: "http", url} | {type: "stdio", command, args, env}} */ -}}
+{{- $root := .root -}}
+{{- $harness := .harness -}}
 {{- $out := dict -}}
-{{- range $name, $cfg := .agent_mcp_servers -}}
+{{- range $name, $cfg := $root.agent_mcp_servers -}}
+  {{- $harnesses := get $cfg "harnesses" -}}
+  {{- if and $harnesses (not (has $harness $harnesses)) -}}
+    {{- continue -}}
+  {{- end -}}
+  {{- $requires := get $cfg "requires" -}}
+  {{- if and $requires (not (lookPath $requires)) -}}
+    {{- continue -}}
+  {{- end -}}
   {{- $url := get $cfg "url" -}}
   {{- if $url -}}
     {{- $out = set $out $name (dict "type" "http" "url" $url) -}}
   {{- else -}}
     {{- $command := get $cfg "command" -}}
     {{- if not $command -}}
-      {{- $command = printf "%s/node_modules/.bin/%s" $.chezmoi.sourceDir $cfg.package_bin -}}
+      {{- $command = printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
     {{- end -}}
     {{- $args := list -}}
     {{- range $cfg.args -}}

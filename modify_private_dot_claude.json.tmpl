@@ -5,7 +5,7 @@ input=$(cat)
 [ -z "$input" ] && input='{}'
 
 servers=$(cat <<'CHEZMOI_MCP_JSON'
-{{ includeTemplate "mcp-servers" . }}
+{{ includeTemplate "mcp-servers" (dict "root" . "harness" "claude") }}
 CHEZMOI_MCP_JSON
 )
 

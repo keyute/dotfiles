@@ -43,7 +43,7 @@
       "features.network_proxy"
       "permissions.chezmoi-workspace" -}}
 {{- $mcpServers := dict -}}
-{{- range $name, $entry := includeTemplate "mcp-servers" . | fromJson -}}
+{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "harness" "codex") | fromJson -}}
   {{- if not (regexMatch "^[A-Za-z0-9_-]+$" $name) -}}
     {{- fail (printf "Codex MCP server name %q must be a bare TOML key (it is used in a dotted delete path)" $name) -}}
   {{- end -}}

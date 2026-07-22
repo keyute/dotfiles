@@ -153,6 +153,15 @@ agent_sandbox:
       - context7.com
       - "*.context7.com"
 agent_mcp_servers:
+  # scoped to claude: codex must not be handed itself as an MCP server; skipped
+  # entirely on machines without the codex binary
+  codex:
+    command: codex
+    args:
+      - mcp-server
+    requires: codex
+    harnesses:
+      - claude
   context7:
     package_bin: context7-mcp
     args: []
