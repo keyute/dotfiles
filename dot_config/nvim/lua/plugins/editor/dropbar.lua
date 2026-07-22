@@ -1,9 +1,9 @@
 return {
 	"Bekaboo/dropbar.nvim",
 	-- lazy-loading is unneeded, done upstream in plugin/dropbar.lua
-	dependencies = {
-		{ "nvim-telescope/telescope-fzf-native.nvim", build = "make" },
-	},
+	-- dropbar has its own built-in menu fuzzy finder; telescope-fzf-native is
+	-- optional and only swaps in fzf-native's sort algorithm, so we skip it and
+	-- avoid the compiled C dependency.
 	config = function()
 		local dropbar_api = require("dropbar.api")
 		vim.keymap.set("n", "<Leader>;", dropbar_api.pick, { desc = "Pick symbols in winbar" })
