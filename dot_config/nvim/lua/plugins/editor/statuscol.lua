@@ -13,8 +13,19 @@ return {
 					condition = { true, builtin.not_empty },
 					click = "v:lua.ScLa",
 				},
+				-- Catch-all sign column: diagnostics, todo-comments, markdown, etc.
+				-- name matches legacy signs, namespace matches extmark signs; the
+				-- dedicated gitsigns segment below is auto-excluded from here.
+				{
+					sign = { name = { ".*" }, namespace = { ".*" }, maxwidth = 1, colwidth = 1, auto = false },
+					click = "v:lua.ScSa",
+				},
 				{ text = { builtin.foldfunc, " " }, click = "v:lua.ScFa" },
-				{ text = { "%s" }, click = "v:lua.ScSa" },
+				-- Gitsigns change markers, closest to the code
+				{
+					sign = { namespace = { "gitsigns" }, maxwidth = 1, colwidth = 1, auto = false },
+					click = "v:lua.ScSa",
+				},
 			},
 			clickhandlers = {
 				FoldOther = false,
