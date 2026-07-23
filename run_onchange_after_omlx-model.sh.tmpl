@@ -1,0 +1,29 @@
+#!/bin/bash
+{{ if eq .chezmoi.os "darwin" -}}
+set -euo pipefail
+
+# keep in sync with minuet-ai.lua:10
+repo="mlx-community/Mellum2-12B-A2.5B-Base-4bit"
+
+hf="/opt/homebrew/opt/omlx/libexec/bin/hf"
+models_dir="$HOME/.omlx/models"
+target="$models_dir/$repo"
+
+# Drop any model that isn't the current one (frees ~6.4GB on a model swap).
+if [ -d "$models_dir" ]; then
+	find "$models_dir" -type f -name config.json -print0 | while IFS= read -r -d '' cfg; do
+		dir="$(dirname "$cfg")"
+		if [ "$dir" != "$target" ]; then
+			echo "Removing stale omlx model: ${dir#"$models_dir"/}"
+			rm -rf "$dir"
+		fi
+	done
+	find "$models_dir" -mindepth 1 -type d -empty -delete
+fi
+
+echo "Downloading omlx model: $repo"
+"$hf" download "$repo" --local-dir "$target"
+
+# omlx discovers models only at startup — restart so the model registers.
+brew services restart omlx
+{{ end -}}
