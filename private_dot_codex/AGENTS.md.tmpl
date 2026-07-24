@@ -1,6 +1,8 @@
 {{ template "agent-instructions.md" (dict "self" "codex" "root" .) }}
 - The named permission profile also blocks these paths for sandboxed tools; treat
   the rule as a hard boundary even if the session's permission mode changes.
+- Auto-compaction here is unreliable in long sessions: before nearing the
+  context window, persist plan, decisions, and open threads to a durable file.
 - Use a matching named specialist for focused reviews, log triage, or migration
   planning when its preset fits; otherwise use a built-in agent.
 - Codex workflow questions (models, `/model`, `/fast`, subagents): read

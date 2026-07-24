@@ -13,30 +13,16 @@
 {{- $formatted = append $formatted (printf "`%s`" .) -}}
 {{- end -}}
 
-## Orchestration & context discipline
-
-- Route disposable work (searches, whole-file reads, log/dependency triage,
-  independent research — any output you won't re-read) to a subagent or out to
-  files; only distilled results enter your context.
-- The gate is cost: delegation must pay for its spawn-up. Keep inline trivial
-  tasks, sequential steps needing the prior step's full output, and edits where
-  you must see the exact lines you change.
-- Backstop: if nearing the limit anyway, persist plan, decisions, and open
-  threads to a durable file (memory / plan file / scratchpad). Judge "near" as a
-  fraction of the window, not a token count.
-- Every delegation states objective, scope/boundaries, files/paths/tools, and
-  output format — a compressed summary, never a raw dump.
-- Scale fan-out to complexity: one worker for a simple lookup; 2–4 in parallel
-  (spawned together) for independent strands; more only for broad research. Each
-  worker's scope stays smaller than the root task.
-- Pick a worker's tier by total usage, counting the context a handoff re-derives:
-  the lowest tier likely to one-shot it — small for bounded mechanical/read-heavy
-  tasks, mid for routine implementation and review, top for architecture, hard
-  synthesis, or expensive-to-reverse calls. Escalate on risk or observed failure,
-  not by default.
-
 ## Working agreements
 
+- Delegate bounded, independent work that repays the handoff — disposable
+  searches, log triage, research; state objective, scope, and output format,
+  and take back a distilled summary, never a raw dump. Keep inline trivial
+  tasks, tightly sequential steps, and edits where you must see the exact lines.
+- For unpinned subagents, pick the lowest tier likely to one-shot the task —
+  small for bounded mechanical/read-heavy work, mid for routine implementation
+  and review, top for hard synthesis or expensive-to-reverse calls; escalate on
+  observed failure, not by default.
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
   library/API docs — resolve the library id and fetch unprompted.
 - Use Playwright for frontend interaction, inspection, and screenshots — not as a
@@ -44,8 +30,6 @@
 - Web search: built-in by default (cost); Parallel MCP for Reddit / forum /
   anecdotal research, where built-in search comes up empty.
 - Keep implementations simple; do not overengineer.
-- Match depth to the audience — go deeper only where I'm likely outside my
-  domain; assume the rest, without flattening your personality.
 - Match the surrounding code's style, design language, and colocation; if the
   project's rules don't settle it, find the codebase's pattern before writing.
 - Bugfix where tests are wired up: learn the project's test style; if a repro

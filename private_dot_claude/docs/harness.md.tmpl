@@ -35,7 +35,7 @@ behavior seems changed, verify with the claude-code-guide agent and update this 
   (`subagent_tiers.claude`) and do NOT follow `/model`. Only unpinned/built-in
   subagents inherit the session model; a subagent naming an unavailable model
   silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
-  (tokens-to-done, not sticker price).
+  (lowest tier likely to one-shot the task).
 - Subscription limits (Max plan; last verified 2026-07): a rolling 5-hour session
   window plus TWO weekly buckets — all-models, and a separate top-model bucket
   capped at ~50% of the all-models pool. The pinned default draws only the
