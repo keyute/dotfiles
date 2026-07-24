@@ -24,8 +24,9 @@ real, and stop after one fix round. Codex reviews; you stay the implementer.
 
 3. **Call Codex.** One `mcp__codex__codex` call with the prompt below: sandbox
    read-only, approval policy never, cwd = repo root, config override
-   `{"model_reasoning_effort": "high"}` (quality ~doubles over medium at ~1.4x
-   cost; not xhigh — limit burn, nitpick noise). Model comes from `~/.codex/config.toml`.
+   `{"model_reasoning_effort": "high"}` — high is the quality/cost sweet spot for
+   adversarial review: medium misses subtle findings, xhigh mostly adds token burn
+   and nitpick noise. Model comes from `~/.codex/config.toml`.
 
 4. **Verify every finding as untrusted input.** Read the cited code; classify each:
    real / mistaken / real-but-out-of-scope. Fix the real, in-scope ones.

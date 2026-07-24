@@ -25,17 +25,30 @@ behavior seems changed, verify with the claude-code-guide agent and update this 
 
 ## Models
 
-- Global model is pinned in settings (`model` key) from the chezmoi repo; `/model`
-  changes only the current session. Pin stays on `opus[1m]` for the 1M context
-  window; bump to Fable per session (`/model`) for orchestration-heavy work.
-  (`best` = most capable available — Fable where accessible, else latest Opus —
-  but the pin exists to hold `[1m]`.)
-- `/fast` — Opus with faster output, not a smaller model.
-- Subagent tiers are relative capability, not fixed model names; the session's own
-  context reports the current roster. Subagents inherit the main session model by
-  default, so a `/model` bump cascades; a subagent naming an unavailable model
+- Global model is pinned in settings (`model` key) from the chezmoi repo as
+  `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
+  session. The pin exists to hold the long-context variant (`[1m]`); it is not
+  the top tier.
+- `/fast` — faster output on the same model, not a smaller one.
+- Subagent tiers are relative capability, not fixed model names; the named
+  specialists are pinned per tier in `.chezmoidata/agents.yaml`
+  (`subagent_tiers.claude`) and do NOT follow `/model`. Only unpinned/built-in
+  subagents inherit the session model; a subagent naming an unavailable model
   silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
   (tokens-to-done, not sticker price).
+- Subscription limits (Max plan; last verified 2026-07): a rolling 5-hour session
+  window plus TWO weekly buckets — all-models, and a separate top-model bucket
+  capped at ~50% of the all-models pool. The pinned default draws only the
+  all-models bucket; the top model draws the constrained one.
+- The top model is escalation-only (hardest long-horizon architecture/synthesis):
+  a grown session `/model`-bumped into it meters against the constrained bucket
+  every turn — the rationale behind the CLAUDE.md intake rule.
+- Leaf work on small/mid subagents spares the weekly pool only if those subagents
+  actually run the cheap tier.
+- If Codex is available, `codex-review` / `second-opinion` are read-only Codex
+  consultation for high-risk diffs or stuck calls; Claude and Codex meter on
+  independent windows, so read-work can offload to Codex — write-work means driving
+  the task with Codex yourself. Keep decision ownership in Claude.
 
 ## Modes & isolation
 
@@ -56,4 +69,3 @@ behavior seems changed, verify with the claude-code-guide agent and update this 
 ## Recurring maintenance
 
 - `/fewer-permission-prompts` — mine transcripts to grow the project allowlist.
-- Sandbox/permission questions: `~/.claude/docs/sandbox.md`.

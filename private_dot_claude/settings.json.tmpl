@@ -12,7 +12,13 @@
 {{- $allowedDomains := concat .agent_sandbox.network.allowed_domains $extras.allowed_domains -}}
 {{- $uid := output "id" "-u" | trim -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
+{{- /* mirror mcp-servers' harnesses/requires filter (not the template itself:
+       it resolves op secrets, which settings must not depend on) */ -}}
 {{- range $name, $cfg := .agent_mcp_servers -}}
+  {{- $harnesses := get $cfg "harnesses" -}}
+  {{- if and $harnesses (not (has "claude" $harnesses)) -}}{{- continue -}}{{- end -}}
+  {{- $requires := get $cfg "requires" -}}
+  {{- if and $requires (not (lookPath $requires)) -}}{{- continue -}}{{- end -}}
   {{- $allowedPerms = append $allowedPerms (printf "mcp__%s" $name) -}}
 {{- end -}}
 {{- range $extras.allowed_read_patterns -}}

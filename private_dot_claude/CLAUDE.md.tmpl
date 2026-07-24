@@ -2,4 +2,9 @@
 - Sandbox/permission questions (why a path/command/domain is blocked, how to allow
   it): read `~/.claude/docs/sandbox.md` before spawning a lookup agent.
 - Claude Code workflow questions (/review & /simplify, flags, plan mode,
-  worktrees): read `~/.claude/docs/harness.md` before spawning a lookup agent.
+  worktrees, model/tier & cross-model routing): read `~/.claude/docs/harness.md`
+  before spawning a lookup agent.
+- At task intake, if the work already looks top-model-grade (hardest long-horizon
+  architecture/synthesis), say so before building up context so I can restart it
+  in a fresh top-model session; never suggest `/model`-bumping a grown session —
+  its whole context would then meter against the constrained top-model bucket.

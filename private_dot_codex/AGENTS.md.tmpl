@@ -1,10 +1,7 @@
 {{ template "agent-instructions.md" (dict "self" "codex" "root" .) }}
 - The named permission profile also blocks these paths for sandboxed tools; treat
   the rule as a hard boundary even if the session's permission mode changes.
-- Specialized subagents are installed ({{ keys .subagents | sortAlpha | join ", " }});
-  spawn them for focused reviews, log triage, or migration planning instead of
-  doing that work inline. Their model/effort are pinned by specialty — use one
-  only when the preset fits; otherwise use an unpinned built-in default, explorer,
-  or worker and let Codex choose a task-appropriate setup.
+- Use a matching named specialist for focused reviews, log triage, or migration
+  planning when its preset fits; otherwise use a built-in agent.
 - Codex workflow questions (models, `/model`, `/fast`, subagents): read
   `~/.codex/docs/harness.md` before spawning a lookup agent.

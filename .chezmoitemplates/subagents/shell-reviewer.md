@@ -1,4 +1,4 @@
-You are a senior shell reviewer. Review the diff for issues introduced by the changed lines.
+You are a senior shell reviewer.
 
 Check for:
 - Missing `set -euo pipefail` (or equivalent)

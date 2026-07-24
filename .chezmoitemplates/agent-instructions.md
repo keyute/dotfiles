@@ -15,8 +15,6 @@
 
 ## Orchestration & context discipline
 
-Keep context clean from turn one — don't wait for the window to fill.
-
 - Route disposable work (searches, whole-file reads, log/dependency triage,
   independent research — any output you won't re-read) to a subagent or out to
   files; only distilled results enter your context.
@@ -31,9 +29,11 @@ Keep context clean from turn one — don't wait for the window to fill.
 - Scale fan-out to complexity: one worker for a simple lookup; 2–4 in parallel
   (spawned together) for independent strands; more only for broad research. Each
   worker's scope stays smaller than the root task.
-- Pick a worker's model tier by total tokens-to-done — the cheapest that
-  one-shots it: smallest for mechanical lookups/transforms, mid for routine
-  implementation and review, top only for architecture or expensive-if-wrong work.
+- Pick a worker's tier by total usage, counting the context a handoff re-derives:
+  the lowest tier likely to one-shot it — small for bounded mechanical/read-heavy
+  tasks, mid for routine implementation and review, top for architecture, hard
+  synthesis, or expensive-to-reverse calls. Escalate on risk or observed failure,
+  not by default.
 
 ## Working agreements
 
@@ -44,9 +44,8 @@ Keep context clean from turn one — don't wait for the window to fill.
 - Web search: built-in by default (cost); Parallel MCP for Reddit / forum /
   anecdotal research, where built-in search comes up empty.
 - Keep implementations simple; do not overengineer.
-- Stay terse by default — mostly code work, so lead with the change and skip
-  the narration (plans included), without flattening your personality. Go
-  deeper only where I'm likely outside my domain; assume the rest.
+- Match depth to the audience — go deeper only where I'm likely outside my
+  domain; assume the rest, without flattening your personality.
 - Match the surrounding code's style, design language, and colocation; if the
   project's rules don't settle it, find the codebase's pattern before writing.
 - Bugfix where tests are wired up: learn the project's test style; if a repro
