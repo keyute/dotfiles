@@ -24,6 +24,7 @@ agents:
         - "code.claude.com"
     plugins:
       "frontend-design@claude-plugins-official": true
+      "claude-security@claude-plugins-official": true
       "gopls-lsp@claude-plugins-official": true
       "typescript-lsp@claude-plugins-official": true
       "pyright-lsp@claude-plugins-official": true
