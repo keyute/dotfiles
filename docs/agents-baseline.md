@@ -1,0 +1,87 @@
+# Agent instructions — baseline intent
+
+Canonical, harness-agnostic record of what I want from coding agents. The live
+files (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`) are lean projections
+rendered from `.chezmoitemplates/agent-instructions.md`: a principle is
+projected only while the harness's own system prompt does not already cover
+it, and returns to the projection if that coverage disappears. This file
+carries no projection state — nothing here says what is currently projected
+or covered. Run the `agent-instructions-audit` skill to compute coverage and
+drift fresh against the models actually in use.
+
+Each principle is one imperative intent line plus a why. Edit this file only
+when my actual intent changes, never to track harness churn.
+
+## Context & delegation
+
+- **Context hygiene**: keep the main context clean from turn one; route
+  disposable work — searches, whole-file reads, log triage, independent
+  research — to subagents or files so only distilled results enter context.
+  *Why: degradation sets in well before the window is full.*
+- **Delegation contract**: every handoff states objective, exact scope and
+  boundaries, files/tools to use, and output format; take back a compressed
+  summary, never a raw dump. *Why: underspecified workers drift.*
+- **Delegation economics**: delegate only when the handoff repays its cost;
+  keep inline trivial tasks, tightly sequential steps, and edits where the
+  exact lines must be seen. *Why: spawn-up costs tokens and latency.*
+- **Tier selection**: pick the lowest tier likely to one-shot, judged by total
+  tokens-to-done including retries; escalate on observed failure, not by
+  default. *Why: a stronger model that one-shots often beats a weaker one
+  that flails.*
+- **Fan-out**: spawn independent strands together, scaled to task breadth;
+  never hand a worker the whole problem. *Why: serial spawning wastes
+  wall-clock; unbounded scope wastes workers.*
+- **State persistence** *(conditional)*: where the harness lacks reliable
+  auto-compaction, persist plan, decisions, and open threads to a durable
+  file before nearing the window. *Why: a fresh session should resume with
+  zero loss.*
+
+## Tool routing
+
+- **Docs MCP (context7)**: use for code generation, setup/config steps, and
+  library/API docs — resolve the library id and fetch unprompted.
+  *Why: training data goes stale.*
+- **Playwright**: use for frontend interaction, inspection, and screenshots —
+  not as a web-search substitute. *Why: real rendering beats guessing.*
+- **Web search**: built-in search by default (cost); Parallel MCP for
+  forum/anecdotal research or when built-in comes up empty.
+  *Why: route by strength, meter by price.*
+
+## Engineering discipline
+
+- **Simplicity**: keep implementations simple; do not overengineer.
+  *Why: unrequested abstraction is debt.*
+- **Style matching**: match the surrounding code's style, design language,
+  and colocation; when project rules don't settle it, derive the pattern
+  from the codebase before writing. *Why: consistency outlives preference.*
+- **Test discipline**: where tests are wired up, write a simple meaningful
+  repro test — see it fail, fix, see it pass; no unnecessary cases.
+  *Why: a failing repro proves both bug and fix.*
+- **Convention recording**: when corrected or re-taught a convention, offer
+  to record it in the project's instructions file or memory.
+  *Why: re-explaining is waste.*
+
+## Safety & etiquette
+
+- **Credential hygiene**: never read credential stores, shell history, agent
+  transcripts/session stores, or auth configs unless I explicitly ask for
+  that specific path; flag any suspected credential read immediately so I
+  can rotate it. *Why: exposure is irreversible.* (The enforced path list is
+  generated from `.chezmoidata/agents.yaml` via the `agent-sandbox` template
+  — never hand-edit the projected prose.)
+- **Secret containment**: chezmoi may resolve secret references into private
+  targets; resolved values never enter the source repo; never inspect or
+  print those targets. *Why: the repo is the shareable surface.*
+- **Commit etiquette**: never commit or push on my behalf — I stage, commit,
+  and push myself. *Why: authorship and review stay mine.*
+
+## Subagents & skills
+
+- **Specialist pinning**: named specialists stay pinned to the lowest
+  tier/effort that one-shots their preset, independent of session model.
+  *Why: presets are tuned once, not per session.*
+- **Reviewer contract**: reviewers are read-only and share one
+  severity/reporting contract. *Why: comparable findings across languages.*
+- **Skill bodies**: imperative, minimal numbered steps; never duplicate what
+  the harness already provides natively. *Why: duplication drifts and burns
+  instruction budget.*
