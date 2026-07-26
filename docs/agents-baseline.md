@@ -58,10 +58,10 @@ when my actual intent changes, never to track harness churn.
   repro test — see it fail, fix, see it pass; no unnecessary cases.
   *Why: a failing repro proves both bug and fix.*
 - **Review focus**: when asked to review, gate ship/no-ship on what makes
-  the change unshippable now; edge cases not worth handling until a real
-  user hits them get a note, not a fix — tackled only when that bug report
-  is itself the task. *Why: speculative edge-case work crowds out the
-  blocking signal and stalls shipping.*
+  the change unshippable now; an edge case worth fixing only once a real
+  user hits it gets a mention in the review — no code comment, no fix until
+  that bug report is itself the task. *Why: speculative edge-case work
+  crowds out the blocking signal and stalls shipping.*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*

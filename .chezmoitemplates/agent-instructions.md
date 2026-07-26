@@ -35,9 +35,9 @@
 - Bugfix where tests are wired up: learn the project's test style; if a repro
   test is simple and meaningful, write it, see it fail, fix, see it pass. No
   unnecessary cases.
-- When asked to review code, gate only on issues that make the change
-  unshippable now; edge cases not worth handling until a real user hits
-  them get a note, not a fix — take one on only when that bug report is
+- When asked to review code, gate only on what makes the change unshippable
+  now; an edge case worth fixing only once a real user hits it gets a
+  mention in the review — no code comment, no fix until that bug report is
   the task at hand.
 - When I correct your approach or re-explain a convention, offer to record it in
   the project's AGENTS.md (or instructions file) or your memory.
