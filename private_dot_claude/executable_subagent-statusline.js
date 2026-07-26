@@ -1,15 +1,34 @@
 #!/usr/bin/env node
-// subagentStatusLine: reproduce the stock subagent panel row and append the
-// model as a suffix. Complements the main ccstatusline status line (which only
-// ever sees the parent session's model). Contract (Claude Code >= 2.1.212):
-// stdin is JSON { columns, tasks: [{ id, name, description, tokenCount, model,
-// ... }] }; stdout is one JSON line per task, schema { id, content }, which
-// REPLACES that task's row — there is no append mode, so the stock row
-// ("name · description · tokenCount") is rebuilt here from its components.
-// Tasks we omit keep their default rendering.
+// subagentStatusLine: rebuild the subagent panel row in Claude Code's own
+// workflow/agent-panel style and append the model as a suffix. Complements the
+// main ccstatusline status line (which only ever sees the parent session's
+// model). Contract (Claude Code >= 2.1.212): stdin is JSON { columns, tasks:
+// [{ id, name, description, tokenCount, model, ... }] }; stdout is one JSON line
+// per task, schema { id, content }, which REPLACES that task's row — there is no
+// append mode, so the row is composed here from its components:
+//   "name › description · <compact> tokens · model"
+// mirroring the stock workflow row (name › description · <compact> tokens · N
+// tools) but with the model in place of the tool count, which the stock row
+// never surfaces. Tasks we omit keep their default rendering.
 
 const FAMILIES = ["opus", "sonnet", "haiku", "fable", "instant"];
-const SEP = " · "; // stock row separator
+const SEP = " · "; // segment separator
+const NAME_SEP = " › "; // name↔description divider, matching the workflow row
+
+// Humanize a token count the way Claude Code does (its Na()): compact notation,
+// lowercased, with a trailing ".0" stripped (1000 -> "1k", 22079 -> "22.1k",
+// 1234567 -> "1.2m"). Returns null for absent/zero counts so the segment is
+// omitted entirely, as the stock row does (it renders tokens only when > 0).
+const TOK_FMT = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+  minimumFractionDigits: 1,
+});
+function formatTokens(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  return `${TOK_FMT.format(v).toLowerCase().replace(".0", "")} tokens`;
+}
 
 // Derive a friendly label from a model id generically, so it doesn't rot as
 // models change (e.g. claude-opus-4-8 -> "Opus 4.8", claude-opus-4-8[1m] ->
@@ -48,16 +67,20 @@ function main(raw) {
     const model = prettyModel(t && t.model);
     if (!model) continue; // no model (e.g. bash tasks): leave true stock row
     const desc = t.description ? String(t.description) : "";
-    // Stock row order (name · description · tokenCount) with model appended.
-    const build = (d) =>
-      [t.name, d, t.tokenCount, model]
+    // Workflow row order (name › description · tokens) with model appended. The
+    // › divider only joins name↔description; with no description the head is
+    // just the name and the · separators carry the rest.
+    const build = (d) => {
+      const head = d ? `${t.name}${NAME_SEP}${d}` : String(t.name);
+      return [head, formatTokens(t.tokenCount), model]
         .filter((p) => p != null && p !== "")
-        .map(String)
         .join(SEP);
+    };
     let row = build(desc);
     if (columns > 0 && row.length > columns && desc) {
       // Trim the description, not the tail — the model suffix is the point.
-      const room = columns - (build("").length + SEP.length);
+      // build("") drops the divider, so add it back into the width budget.
+      const room = columns - (build("").length + NAME_SEP.length);
       row = build(room > 1 ? desc.slice(0, room - 1) + "…" : "");
     }
     out.push(JSON.stringify({ id: t.id, content: row }));
