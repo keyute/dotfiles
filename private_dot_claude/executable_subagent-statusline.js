@@ -10,6 +10,9 @@
 // mirroring the stock workflow row (name › description · <compact> tokens · N
 // tools) but with the model in place of the tool count, which the stock row
 // never surfaces. Tasks we omit keep their default rendering.
+// `name` is present for workflow tasks but may be absent for tasks launched via
+// the Agent tool; when it is, the head falls back to an agent-type field, then to
+// the description alone (never the literal string "undefined").
 
 const FAMILIES = ["opus", "sonnet", "haiku", "fable", "instant"];
 const SEP = " · "; // segment separator
@@ -66,12 +69,25 @@ function main(raw) {
   for (const t of tasks) {
     const model = prettyModel(t && t.model);
     if (!model) continue; // no model (e.g. bash tasks): leave true stock row
+    // A workflow task carries `name`; an Agent-tool task may not, so fall back to
+    // an agent-type field, then to description-only. Reject null/""/"undefined" so
+    // an absent field never leaks the literal string into the row.
+    const clean = (v) =>
+      v != null && String(v) !== "" && String(v) !== "undefined"
+        ? String(v)
+        : "";
+    const name =
+      clean(t.name) ||
+      clean(t.agentType) ||
+      clean(t.subagentType) ||
+      clean(t.subagent_type) ||
+      clean(t.type);
     const desc = t.description ? String(t.description) : "";
     // Workflow row order (name › description · tokens) with model appended. The
-    // › divider only joins name↔description; with no description the head is
-    // just the name and the · separators carry the rest.
+    // › divider only joins name↔description; with no name the head is just the
+    // description, with no description just the name.
     const build = (d) => {
-      const head = d ? `${t.name}${NAME_SEP}${d}` : String(t.name);
+      const head = name && d ? `${name}${NAME_SEP}${d}` : name || d || "";
       return [head, formatTokens(t.tokenCount), model]
         .filter((p) => p != null && p !== "")
         .join(SEP);
@@ -79,8 +95,8 @@ function main(raw) {
     let row = build(desc);
     if (columns > 0 && row.length > columns && desc) {
       // Trim the description, not the tail — the model suffix is the point.
-      // build("") drops the divider, so add it back into the width budget.
-      const room = columns - (build("").length + NAME_SEP.length);
+      // build("") drops the divider; reserve its width only when a name precedes.
+      const room = columns - (build("").length + (name ? NAME_SEP.length : 0));
       row = build(room > 1 ? desc.slice(0, room - 1) + "…" : "");
     }
     out.push(JSON.stringify({ id: t.id, content: row }));
