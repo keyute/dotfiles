@@ -47,9 +47,7 @@
     "command": "{{ .chezmoi.homeDir }}/.claude/subagent-statusline.js"
   },
   "enabledPlugins": {{ .agents.claude.plugins | toPrettyJson | indent 2 | trim }},
-  {{- if .agents.claude.marketplaces }}
   "extraKnownMarketplaces": {{ .agents.claude.marketplaces | toPrettyJson | indent 2 | trim }},
-  {{- end }}
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,
