@@ -62,7 +62,8 @@ just the new one.*
   markers for almost nothing — both work only while scarce.
 - Point to a canonical file instead of paraphrasing it; inlined snippets,
   model names, and version facts rot.
-- Reuse the baseline's exact terminology; a synonym reads as a new rule.
+- Reuse the baseline's exact terminology; synonyms obscure equivalence and
+  make drift harder to detect.
 
 ### Maintenance
 

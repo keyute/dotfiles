@@ -37,6 +37,7 @@ verify with that agent and update this file.
   NOT enabled: nested sandboxing is broken on macOS. Codex refuses to start its
   own Seatbelt inside Claude Code's (openai/codex#30615), and `--sandbox
   danger-full-access` panics because CC's sandbox blocks the `configd` lookup its
-  HTTP stack needs (anthropics/claude-code#42857). Revisit when #30615 lands or
+  HTTP stack needs (anthropics/claude-code#42857 — closed 2026-05 as not-planned,
+  crash unverified since). Revisit when #30615 lands or
   `external-sandbox` becomes user-reachable; until then the only workaround is
   sandbox-disabled Bash, which this setup rejects.

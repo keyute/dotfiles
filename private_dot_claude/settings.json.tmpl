@@ -42,6 +42,10 @@
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
     "padding": 0
   },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "{{ .chezmoi.homeDir }}/.claude/subagent-statusline.js"
+  },
   "enabledPlugins": {{ .agents.claude.plugins | toPrettyJson | indent 2 | trim }},
   "extraKnownMarketplaces": {{ .agents.claude.marketplaces | toPrettyJson | indent 2 | trim }},
   "sandbox": {
