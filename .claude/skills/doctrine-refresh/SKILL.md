@@ -42,7 +42,20 @@ list.
    the principle — flag it as an intent decision for me, with the
    evidence; the baseline changes only when my intent does.
 
-4. **Report, then edit only on confirmation.** Emit the classification and
+4. **Codex second opinion.** The doctrine steers Codex as much as Claude,
+   and a same-model reviewer shares the classifier's blind spots. Load the
+   codex MCP if needed (ToolSearch
+   `select:mcp__codex__codex,mcp__codex__codex-reply`); one call — sandbox
+   read-only, approval policy never, cwd = repo root, config override
+   `{"model_reasoning_effort": "high"}` — carrying the claim list, each
+   classification with its evidence summary, and the draft rewordings.
+   Ask it to dispute any classification or wording that misreads how
+   models actually follow instructions. Verify disputes against the
+   gathered evidence, adjust what holds, and report remaining
+   disagreement instead of looping. If the codex MCP is unavailable, mark
+   the second opinion skipped and continue.
+
+5. **Report, then edit only on confirmation.** Emit the classification and
    a minimal diff for each contested or obsolete why — wording held to the
    doctrine's own gates and style. On confirmation, apply and stop; if a
    baseline why changed, note that the `agent-instructions-audit` skill
