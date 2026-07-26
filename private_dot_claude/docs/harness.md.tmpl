@@ -5,7 +5,7 @@ flags, modes) is injected into every session or answerable live via the
 claude-code-guide agent — it does not belong here. If behavior seems changed,
 verify with that agent and update this file.
 
-## Models
+## Models (last verified 2026-07)
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo as
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
@@ -17,7 +17,7 @@ verify with that agent and update this file.
   subagents inherit the session model; a subagent naming an unavailable model
   silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
   (lowest tier likely to one-shot the task).
-- Subscription limits (Max plan; last verified 2026-07): a rolling 5-hour session
+- Subscription limits (Max plan): a rolling 5-hour session
   window plus TWO weekly buckets — all-models, and a separate top-model bucket
   capped at ~50% of the all-models pool. The pinned default draws only the
   all-models bucket; the top model draws the constrained one.

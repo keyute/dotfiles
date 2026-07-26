@@ -70,7 +70,14 @@ just the new one.*
   it computes coverage fresh. Hand-run "lean passes" restart the churn.
 - Before rewording an existing line, check its `git log -p` history: if it
   has oscillated, delete it or change the intent — never re-word.
-- Before a novel rule enters the baseline, sanity-check it against current
-  practitioner consensus, not just vendor docs.
+- On-demand docs expire by their own annotations: give every fact there a
+  last-verified date or a revisit trigger (a section-level date covers its
+  bullets); the audit's doc sweep flags the ones that have fired.
+  Generated content (`sandbox.md`) is exempt.
+- Before a novel rule enters the baseline, and whenever a why here or in
+  the baseline feels stale, run the `doctrine-refresh` skill — it re-checks
+  every empirical claim in both against current practitioner consensus.
+- Both maintenance skills are Claude-side; from a Codex session, flag the
+  need for a run instead of attempting one.
 - Expect projections to steer, not bind: guarantees belong in the
   environment (sandbox, hooks, tests); prose only biases behavior.

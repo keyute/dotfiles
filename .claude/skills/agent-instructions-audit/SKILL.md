@@ -19,9 +19,11 @@ covers it natively — the same projection must serve them all.
    `.chezmoitemplates/agent-instructions.md`,
    `private_dot_claude/CLAUDE.md.tmpl`, `private_dot_codex/AGENTS.md.tmpl`,
    the rendered outputs via `chezmoi cat ~/.claude/CLAUDE.md` and
-   `chezmoi cat ~/.codex/AGENTS.md`, plus `.chezmoitemplates/subagents/*.md`
-   and `.chezmoitemplates/skills/*.md`. Extract the principle list from the
-   baseline — it drives every later step; never hardcode topics.
+   `chezmoi cat ~/.codex/AGENTS.md`, plus `.chezmoitemplates/subagents/*.md`,
+   `.chezmoitemplates/skills/*.md`, and the repo-local
+   `.claude/skills/*/SKILL.md` bodies (this skill included). Extract the
+   principle list from the baseline — it drives every later step; never
+   hardcode topics.
 
 2. **Self-probe (session model — always runs).** For each principle, judge
    from your own system prompt only — mentally excluding anything sourced
@@ -61,10 +63,29 @@ covers it natively — the same projection must serve them all.
      lacks coverage
    - projection contradicts baseline intent or observed harness behavior →
      **CONFLICT**
-   Then sweep the subagent and skill bodies: flag contradictions with
-   baseline principles and content the harness now provides natively.
-   Out of scope: doc-pointer bullets (environment facts, not intent) and the
-   generated sensitive-path prose (computed from `agent-sandbox`).
+   Then sweep the subagent and skill bodies, shared and repo-local alike:
+   flag contradictions with baseline principles, content the harness now
+   provides natively, and — in the repo-local skill bodies — mechanics
+   that no longer match the live harness (commands, data paths, MCP tool
+   names).
+   Also validate the model pins in `.chezmoidata/agents.yaml`: for each
+   Claude tier, spawn one minimal subagent with that model override and
+   have it report the model it actually runs — a mismatch means the pin
+   silently fell back. Probe each `defaults.model` with its exact
+   configured string, decorations included, never stripped: a one-shot
+   `claude --model '<pin>' -p 'reply OK'` for Claude, accepting the pin
+   only on a successful response; one minimal read-only codex call with
+   the model overridden for Codex, and the same per Codex tier ID. Flag
+   dead pins.
+   Also sweep the on-demand docs (`private_dot_claude/docs/*.tmpl`,
+   `private_dot_codex/docs/*.tmpl`) for expired facts: a last-verified
+   date older than the current model/harness generation, or a recorded
+   revisit trigger that has fired (e.g. a linked issue closed — check with
+   `gh`); verify live only where cheap, and flag facts carrying neither
+   annotation. Generated content (`sandbox.md`) is exempt.
+   Out of scope for the coverage matrix: doc-pointer bullets (environment
+   facts, not intent) and the generated sensitive-path prose (computed
+   from `agent-sandbox`).
 
 6. **Report, then edit only on confirmation.** Emit the matrix and, for each
    proposal, a concrete diff — shaped per the authoring doctrine in the
