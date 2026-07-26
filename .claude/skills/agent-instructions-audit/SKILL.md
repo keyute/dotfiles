@@ -67,7 +67,8 @@ covers it natively — the same projection must serve them all.
    generated sensitive-path prose (computed from `agent-sandbox`).
 
 6. **Report, then edit only on confirmation.** Emit the matrix and, for each
-   proposal, a concrete diff against the source templates
+   proposal, a concrete diff — shaped per the authoring doctrine in the
+   repo-root `AGENTS.md` — against the source templates
    (`.chezmoitemplates/agent-instructions.md`, the two consumer `.tmpl`
    files, or the subagent/skill bodies — never the rendered targets, never
    the generated sensitive-path prose). On confirmation, apply to the

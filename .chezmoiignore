@@ -13,3 +13,5 @@ node_modules/
 scripts/
 docs/
 README.md
+AGENTS.md
+CLAUDE.md
