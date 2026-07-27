@@ -10,9 +10,10 @@
 // mirroring the stock workflow row (name › description · <compact> tokens · N
 // tools) but with the model in place of the tool count, which the stock row
 // never surfaces. Tasks we omit keep their default rendering.
-// `name` is present for workflow tasks but may be absent for tasks launched via
-// the Agent tool; when it is, the head falls back to an agent-type field, then to
-// the description alone (never the literal string "undefined").
+// `name` is present for workflow tasks but absent for Agent-tool subagents (which
+// carry only a generic `type` of "local_agent" plus the description — Claude Code
+// exposes no agent-type field here), so with no name the head is the description
+// alone (never the literal string "undefined").
 
 const FAMILIES = ["opus", "sonnet", "haiku", "fable", "instant"];
 const SEP = " · "; // segment separator
@@ -69,19 +70,18 @@ function main(raw) {
   for (const t of tasks) {
     const model = prettyModel(t && t.model);
     if (!model) continue; // no model (e.g. bash tasks): leave true stock row
-    // A workflow task carries `name`; an Agent-tool task may not, so fall back to
-    // an agent-type field, then to description-only. Reject null/""/"undefined" so
-    // an absent field never leaks the literal string into the row.
+    // A workflow task carries a meaningful `name`; an Agent-tool subagent does
+    // not — its `name` is absent and its `type` is the generic execution kind
+    // "local_agent" (identical for every local subagent, not the agent's type),
+    // so `type` is deliberately not used as a label. Claude Code exposes no
+    // agent-type/persona field to this hook, so Agent-tool rows lead with the
+    // description. clean() rejects null/""/"undefined" so an absent field never
+    // leaks a literal into the row.
     const clean = (v) =>
       v != null && String(v) !== "" && String(v) !== "undefined"
         ? String(v)
         : "";
-    const name =
-      clean(t.name) ||
-      clean(t.agentType) ||
-      clean(t.subagentType) ||
-      clean(t.subagent_type) ||
-      clean(t.type);
+    const name = clean(t.name);
     const desc = t.description ? String(t.description) : "";
     // Workflow row order (name › description · tokens) with model appended. The
     // › divider only joins name↔description; with no name the head is just the
