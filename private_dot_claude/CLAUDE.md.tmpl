@@ -4,6 +4,10 @@
 - Model/tier & subscription-limit questions (pins, subagent tiers, cross-model
   routing to Codex, why the codex plugin is off): read `~/.claude/docs/harness.md`
   before spawning a lookup agent.
+- For the highest-stakes of those changes, add a cross-model pass on top of the
+  fresh-context subagent — the `codex-review` skill for a diff, `second-opinion`
+  for a judgment call; a different model catches blind spots your own shares with
+  the code it wrote.
 - At task intake, if the work already looks top-model-grade (hardest long-horizon
   architecture/synthesis), say so before building up context so I can restart it
   in a fresh top-model session; never suggest `/model`-bumping a grown session —

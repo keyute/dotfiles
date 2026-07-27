@@ -62,6 +62,12 @@ when my actual intent changes, never to track harness churn.
   user hits it gets a mention in the review — no code comment, no fix until
   that bug report is itself the task. *Why: speculative edge-case work
   crowds out the blocking signal and stalls shipping.*
+- **Self-review**: after a high-stakes or expensive-to-reverse change — auth,
+  security, data, concurrency, migrations — validate it with a fresh set of
+  eyes before calling it done: hand a subagent the artifact and requirements,
+  not your own reasoning trace; skip trivial, easily-reverted changes.
+  *Why: the authoring context rationalizes its own output — a fresh context
+  catches the defect class the author is too close to see.*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*
