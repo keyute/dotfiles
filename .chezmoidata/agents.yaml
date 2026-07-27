@@ -51,6 +51,29 @@ agents:
 # shared subagent definitions rendered for every harness; bodies live in
 # .chezmoitemplates/subagents/<name>.md, tier resolves via subagent_tiers
 subagents:
+  # Explore (Claude) / explorer (Codex) override each harness's built-in explore
+  # role — which since Claude Code v2.1.198 (and by default on Codex) inherits the
+  # session model — to keep routine read-heavy exploration on the small tier.
+  # explore-deep is the escalation for large/complex sweeps. Names differ because
+  # the built-ins do: Claude's is `Explore`, Codex's is `explorer`.
+  Explore:
+    tier: small
+    reasoning_effort: low
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Read-only code exploration: locate files, trace how a flow is wired, find callers of a symbol, map an unfamiliar area. Returns distilled findings (paths, file:line), not raw file dumps."
+  explorer:
+    tier: small
+    reasoning_effort: low
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Read-only code exploration: locate files, trace how a flow is wired, find callers of a symbol, map an unfamiliar area. Returns distilled findings (paths, file:line), not raw file dumps."
+  explore-deep:
+    tier: mid
+    reasoning_effort: medium
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Deeper read-only exploration for large or complex sweeps where the default explorer would overflow, needs cross-file reasoning, or a shallow summary would force re-reading files."
   go-reviewer:
     tier: mid
     reasoning_effort: high

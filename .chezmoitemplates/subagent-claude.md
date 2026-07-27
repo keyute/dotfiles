@@ -10,6 +10,7 @@ name: {{ $name }}
 description: {{ $meta.description }}
 tools: {{ $meta.tools }}
 model: {{ index $root.subagent_tiers.claude $meta.tier }}
+effort: {{ $meta.reasoning_effort }}
 ---
 
 {{ includeTemplate (printf "subagents/%s.md" $name) (dict "instructions_file" "CLAUDE.md") -}}
