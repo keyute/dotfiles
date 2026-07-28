@@ -28,7 +28,7 @@ list.
    degradation, and whatever else the current text asserts).
 
 2. **Research.** For each claim, gather current practitioner evidence:
-   Parallel MCP for Reddit/HN/forum threads, plus engineering blogs of
+   Exa MCP for Reddit/HN/forum threads, plus engineering blogs of
    people running agents in production. Filter hard for credibility —
    specific failure stories, measured before/after observations, sustained
    production use; discard listicles, template dumps, and engagement bait.

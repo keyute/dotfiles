@@ -27,11 +27,16 @@
   library/API docs — resolve the library id and fetch unprompted.
 - Use Playwright for frontend interaction, inspection, and screenshots — not as a
   web-search substitute.
-- Web search: built-in by default (cost); Parallel MCP for Reddit / forum /
-  anecdotal research, where built-in search comes up empty.
+- Web search: built-in by default (cost); escalate to the Exa MCP when built-in
+  results are sparse, stale, or can't reach the source.
 - Keep implementations simple; do not overengineer.
 - Match the surrounding code's style, design language, and colocation; if the
   project's rules don't settle it, find the codebase's pattern before writing.
+- Deliver code whose comments carry only what a reader can't reconstruct from
+  it — non-obvious rationale, constraints, invariants, units, protocol/API
+  contracts, hazards; strip narration of what the code does, and reason in
+  scratch, not the source. Leave unrelated existing comments alone; drop a
+  pre-existing one only when your change made it wrong or redundant.
 - Bugfix where tests are wired up: learn the project's test style; if a repro
   test is simple and meaningful, write it, see it fail, fix, see it pass. No
   unnecessary cases.

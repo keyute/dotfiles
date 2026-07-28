@@ -25,8 +25,8 @@ future session, so hold edits to the gates below.
 ### Gates — a rule earns its place only if all four hold
 
 *Why: instruction-following is a finite budget shared with the harness's
-own system prompt; overspending degrades compliance with every rule, not
-just the new one.*
+own system prompt; overspending erodes compliance across the whole set, not
+just the new rule's.*
 
 1. **Observed failure**: it fixes a diagnosed, recurring mistake — never an
    anticipated one. Diagnose first: a mechanical mistake wants enforcement,

@@ -43,8 +43,8 @@ when my actual intent changes, never to track harness churn.
   *Why: training data goes stale.*
 - **Playwright**: use for frontend interaction, inspection, and screenshots —
   not as a web-search substitute. *Why: real rendering beats guessing.*
-- **Web search**: built-in search by default (cost); Parallel MCP for
-  forum/anecdotal research or when built-in comes up empty.
+- **Web search**: built-in search by default (cost); escalate to the Exa MCP
+  when built-in results are sparse, stale, or can't reach the source.
   *Why: route by strength, meter by price.*
 
 ## Engineering discipline
@@ -54,6 +54,16 @@ when my actual intent changes, never to track harness churn.
 - **Style matching**: match the surrounding code's style, design language,
   and colocation; when project rules don't settle it, derive the pattern
   from the codebase before writing. *Why: consistency outlives preference.*
+- **Comment discipline**: do your reasoning in scratch space, not the source;
+  deliver code whose comments carry only what a reader can't reconstruct from
+  it — non-obvious rationale, constraints, invariants, units, protocol/format
+  contracts, hazards, public-API docs, required tool directives. Strip
+  narration of what the code does. Leave unrelated existing comments alone;
+  drop a pre-existing one only when your change made it wrong or redundant and
+  removing it doesn't enlarge the diff. *Why: models over-narrate by default,
+  and a comment that restates the code rots into noise while the load-bearing
+  ones are exactly what a fresh reader can't recover — opportunistic comment
+  churn just buries the real diff.*
 - **Test discipline**: where tests are wired up, write a simple meaningful
   repro test — see it fail, fix, see it pass; no unnecessary cases.
   *Why: a failing repro proves both bug and fix.*

@@ -4,6 +4,7 @@
     "@playwright/mcp": "0.0.78",
     "@upstash/context7-mcp": "3.2.2",
     "ccstatusline": "2.2.22",
+    "exa-mcp-server": "3.2.1",
     "smol-toml": "1.7.0"
   }
 }
