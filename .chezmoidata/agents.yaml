@@ -54,26 +54,26 @@ subagents:
   # Explore (Claude) / explorer (Codex) override each harness's built-in explore
   # role — which since Claude Code v2.1.198 (and by default on Codex) inherits the
   # session model — to keep routine read-heavy exploration on the small tier.
-  # explore-deep is the escalation for large/complex sweeps. Names differ because
+  # explore-deep handles broad/cross-subsystem sweeps. Names differ because
   # the built-ins do: Claude's is `Explore`, Codex's is `explorer`.
   Explore:
     tier: small
     reasoning_effort: low
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Read-only code exploration: locate files, trace how a flow is wired, find callers of a symbol, map an unfamiliar area. Returns distilled findings (paths, file:line), not raw file dumps."
+    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Returns distilled findings (paths, file:line), not raw file dumps. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those."
   explorer:
     tier: small
     reasoning_effort: low
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Read-only code exploration: locate files, trace how a flow is wired, find callers of a symbol, map an unfamiliar area. Returns distilled findings (paths, file:line), not raw file dumps."
+    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Returns distilled findings (paths, file:line), not raw file dumps. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those."
   explore-deep:
     tier: mid
     reasoning_effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Deeper read-only exploration for large or complex sweeps where the default explorer would overflow, needs cross-file reasoning, or a shallow summary would force re-reading files."
+    description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself. Returns distilled findings (paths, file:line), not raw file dumps. Prefer over Explore whenever scope is broad or unknown."
   go-reviewer:
     tier: mid
     reasoning_effort: high
