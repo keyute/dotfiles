@@ -2,12 +2,19 @@
 {{ if eq .chezmoi.os "darwin" -}}
 set -euo pipefail
 
-# keep in sync with minuet-ai.lua:10
-repo="mlx-community/Mellum2-12B-A2.5B-Base-4bit"
+# No public 4bit MLX build of Mellum2-Base exists, so we self-quantize from the
+# JetBrains bf16 weights with omlx's bundled mlx-lm (stock pip mlx-lm lacks the
+# mellum arch). The mellum arch's built-in quant_predicate bumps the MoE router
+# gates to 8bit, so a plain 4bit/group-64 quant reproduces the model exactly.
+src="JetBrains/Mellum2-12B-A2.5B-Base"
+# Served model id = target leaf; keep in sync with minuet-ai.lua:10.
+model="Mellum2-12B-A2.5B-Base-4bit"
 
-hf="/opt/homebrew/opt/omlx/libexec/bin/hf"
+py="/opt/homebrew/opt/omlx/libexec/bin/python3"
 models_dir="$HOME/.omlx/models"
-target="$models_dir/$repo"
+# The mlx-community/ segment is a historical artifact (not a real repo); omlx
+# serves by the leaf dir name, so the path is left as-is to avoid re-registering.
+target="$models_dir/mlx-community/$model"
 
 # Drop any model that isn't the current one (frees ~6.4GB on a model swap).
 if [ -d "$models_dir" ]; then
@@ -21,9 +28,19 @@ if [ -d "$models_dir" ]; then
 	find "$models_dir" -mindepth 1 -type d -empty -delete
 fi
 
-echo "Downloading omlx model: $repo"
-"$hf" download "$repo" --local-dir "$target"
+if [ -f "$target/config.json" ]; then
+	echo "omlx model already present: $model — skipping conversion"
+else
+	echo "Converting omlx model from $src (downloads ~24GB, writes ~6.4GB)…"
+	rm -rf "$target" # clear any partial/interrupted output
+	"$py" -m mlx_lm convert --hf-path "$src" \
+		-q --q-bits 4 --q-group-size 64 \
+		--mlx-path "$target"
 
-# omlx discovers models only at startup — restart so the model registers.
-brew services restart omlx
+	# Reclaim the bf16 source pulled into the HF cache during conversion.
+	rm -rf "$HOME/.cache/huggingface/hub/models--JetBrains--Mellum2-12B-A2.5B-Base" || true
+
+	# omlx discovers models only at startup — restart so the model registers.
+	brew services restart omlx
+fi
 {{ end -}}
