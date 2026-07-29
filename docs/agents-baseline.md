@@ -1,13 +1,18 @@
 # Agent instructions — baseline intent
 
-Canonical, harness-agnostic record of what I want from coding agents. The live
-files (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`) are lean projections
-rendered from `.chezmoitemplates/agent-instructions.md`: a principle is
-projected only while the harness's own system prompt does not already cover
-it, and returns to the projection if that coverage disappears. This file
-carries no projection state — nothing here says what is currently projected
-or covered. Run the `agent-instructions-audit` skill to compute coverage and
-drift fresh against the models actually in use.
+Canonical record of what I want from coding agents. Most principles are
+harness-agnostic and render through `.chezmoitemplates/agent-instructions.md`;
+the exceptions are marked. A `(claude)` / `(codex)` tag means a principle is
+intrinsic to that harness and projects only to it, via its consumer template
+(`CLAUDE.md.tmpl` / `AGENTS.md.tmpl`); a `*(conditional)*` marker means it
+projects wherever its stated condition holds (e.g. `state_persistence`, where a
+harness lacks reliable auto-compaction). The live files (`~/.claude/CLAUDE.md`,
+`~/.codex/AGENTS.md`) are lean projections: a principle is projected only while
+the harness's own system prompt does not already cover it, and returns to the
+projection if that coverage disappears. This file carries no projection state —
+nothing here says what is currently projected or covered. Run the
+`agent-instructions-audit` skill to compute coverage and drift fresh against the
+models actually in use.
 
 Each principle is one imperative intent line plus a why. Edit this file only
 when my actual intent changes, never to track harness churn.
@@ -106,3 +111,31 @@ when my actual intent changes, never to track harness churn.
 - **Skill bodies**: imperative, minimal numbered steps; never duplicate what
   the harness already provides natively. *Why: duplication drifts and burns
   instruction budget.*
+
+## Harness-specific intent
+
+Intent intrinsic to one harness; the tag names it, and it projects only there.
+Same one-imperative-line-plus-why shape as the agnostic principles.
+
+- **Cross-model pass** *(claude)*: for the highest-stakes changes, add a
+  cross-model review on top of the fresh-context self-review — the `codex-review`
+  skill for a diff, `codex-advisor` for a judgment call. *Why: a different model
+  catches the blind spots a same-model reviewer shares with the code it wrote —
+  extends `self_review`.*
+- **Top-model intake** *(claude)*: when work already looks top-model-grade (the
+  hardest long-horizon architecture/synthesis), say so at intake so I can start it
+  in a fresh top-model session; never `/model`-bump a grown session. *Why: a bumped
+  session meters its whole context against the constrained top-model bucket every
+  turn.*
+- **Community search** *(claude)*: the built-in web search omits some
+  public/community sources; reach for the Exa MCP for that research rather than
+  treating the gap as the web's. *Why: the miss is the tool's, not the web's —
+  extends `web_search`.*
+- **Specialist routing** *(codex)*: use a matching named specialist for focused
+  reviews, log triage, or migration planning when its preset fits; otherwise a
+  built-in agent. *Why: the presets are tuned for exactly those jobs — extends
+  the delegation principles.*
+- **Profile boundary** *(codex)*: the named permission profile also blocks the
+  sensitive paths for sandboxed tools; treat that as a hard boundary even if the
+  session's permission mode changes. *Why: a mode change must not reopen an
+  irreversible exposure — extends `credential_hygiene`.*

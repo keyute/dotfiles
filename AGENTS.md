@@ -44,8 +44,11 @@ just the new rule's.*
 
 - Intent change → `docs/agents-baseline.md`, then reproject.
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`.
-- Harness-specific bullet → the consumer template
-  (`private_dot_claude/CLAUDE.md.tmpl`, `private_dot_codex/AGENTS.md.tmpl`).
+- Harness-specific *intent* → `docs/agents-baseline.md`, tagged `(claude)` /
+  `(codex)`; its projection prose stays in the consumer template
+  (`private_dot_claude/CLAUDE.md.tmpl`, `private_dot_codex/AGENTS.md.tmpl`) so the
+  audit adjudicates it like any baseline principle. Only non-intent harness
+  mechanics (doc pointers) live solely in the consumer template.
 - Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
   from it, never hand-write what it already encodes.
 - Environment facts and decision records → on-demand docs; give every doc

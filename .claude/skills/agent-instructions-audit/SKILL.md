@@ -23,10 +23,11 @@ covers it natively — the same projection must serve them all.
    `.chezmoitemplates/skills/*.md`, and the repo-local
    `.claude/skills/*/SKILL.md` bodies (this skill included). Extract the
    principle list from the baseline — it drives every later step; never
-   hardcode topics.
+   hardcode topics. A principle may carry a `(claude)`/`(codex)` tag; a tagged
+   principle is probed and reconciled only against that harness.
 
-2. **Self-probe (session model — always runs).** For each principle, judge
-   from your own system prompt only — mentally excluding anything sourced
+2. **Self-probe (session model — always runs).** For each principle applicable
+   to Claude (agnostic + `(claude)`-tagged), judge from your own system prompt only — mentally excluding anything sourced
    from CLAUDE.md, memory, or this repo — whether the harness already covers
    it: covered / partial / absent, with the covering passage paraphrased in
    one line as evidence.
@@ -49,12 +50,13 @@ covers it natively — the same projection must serve them all.
 4. **Codex probe.** If `mcp__codex__codex` is not loaded, fetch it via
    ToolSearch (`select:mcp__codex__codex,mcp__codex__codex-reply`). One call:
    sandbox read-only, approval policy never, cwd = repo root, medium
-   reasoning effort. Same probe shape over the same principle list plus the
-   Codex-specific bullets in `AGENTS.md.tmpl`, instructing it to judge only
-   its built-in harness instructions and exclude AGENTS.md-sourced content.
+   reasoning effort. Same probe shape over the agnostic + `(codex)`-tagged
+   principles, instructing it to judge only its built-in harness instructions
+   and exclude AGENTS.md-sourced content.
 
 5. **Compute the audit matrix.** Per principle × harness, reconciling all
-   probed classes (session + pin for CLAUDE.md; Codex for AGENTS.md):
+   probed classes (session + pin for CLAUDE.md; Codex for AGENTS.md), a tagged
+   principle only across its own harness's classes:
    - baseline intent absent from the projection AND coverage absent or
      partial in any probed class → propose **ADD**
    - projection rule covered natively by every probed class (unanimity
