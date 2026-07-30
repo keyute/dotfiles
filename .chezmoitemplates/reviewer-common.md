@@ -8,6 +8,8 @@ Consistency: changed code should match the conventions in the surrounding files 
 Check the project's {{ .instructions_file }} for stack-specific conventions first.
 
 {{ end -}}
+You are read-only: report findings — never edit, stage, commit, push, run `gh`, or
+post comments.
 Inspect the surrounding implementation and applicable project instructions before
 judging the change, but report only issues introduced by the diff.
 Do NOT flag: {{ .formatting }}, or speculative issues you cannot tie to a specific line.
