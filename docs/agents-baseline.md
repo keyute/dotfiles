@@ -124,9 +124,9 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
   extends `self_review`.*
 - **Top-model intake** *(claude)*: when work already looks top-model-grade (the
   hardest long-horizon architecture/synthesis), say so at intake so I can start it
-  in a fresh top-model session; never `/model`-bump a grown session. *Why: a bumped
-  session meters its whole context against the constrained top-model bucket every
-  turn.*
+  in a fresh top-model session; never `/model`-bump a grown session. *Why: the top
+  model draws the shared weekly pool at a heavy weight under a 50% ceiling, so a
+  bumped session re-meters its whole grown context against it every turn.*
 - **Community search** *(claude)*: the built-in web search omits some
   public/community sources; reach for the Exa MCP for that research rather than
   treating the gap as the web's. *Why: the miss is the tool's, not the web's —

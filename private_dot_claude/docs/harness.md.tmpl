@@ -5,25 +5,35 @@ flags, modes) is injected into every session or answerable live via the
 claude-code-guide agent — it does not belong here. If behavior seems changed,
 verify with that agent and update this file.
 
-## Models (last verified 2026-07)
+## Models (last verified 2026-07-31)
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo as
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
-  session. The pin exists to hold the long-context variant (`[1m]`); it is not
-  the top tier.
+  session. The pin exists to hold the current Opus in its long-context variant
+  (`[1m]`); it is not the top tier — Fable 5 sits above it, explicit-selection
+  only (`/model fable`).
+- Pins use explicit model IDs, never bare aliases: aliases re-resolve across
+  CLI releases (`opus`/`sonnet` float to the newest generation at v2.1.219+,
+  and `haiku` was observed resolving to sonnet-5), so an alias pin can silently
+  change tier. The agent-instructions-audit skill live-probes every pin.
 - Subagent tiers are relative capability, not fixed model names; the named
   specialists are pinned per tier in `.chezmoidata/agents.yaml`
   (`subagent_tiers.claude`) and do NOT follow `/model`. Only unpinned/built-in
   subagents inherit the session model; a subagent naming an unavailable model
   silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
   (lowest tier likely to one-shot the task).
-- Subscription limits (Max plan): a rolling 5-hour session
-  window plus TWO weekly buckets — all-models, and a separate top-model bucket
-  capped at ~50% of the all-models pool. The pinned default draws only the
-  all-models bucket; the top model draws the constrained one.
-- The top model is escalation-only (hardest long-horizon architecture/synthesis):
-  a grown session `/model`-bumped into it meters against the constrained bucket
-  every turn — the rationale behind the CLAUDE.md intake rule.
+- Subscription limits (Max plan): a rolling 5-hour session window plus a shared
+  weekly pool with per-model sub-limits under it (Sonnet and Opus each have
+  their own; exhausting one sub-limit still leaves the others usable until the
+  shared pool runs out). Fable 5 has no separate bucket: it draws the shared
+  pool at a heavy weight under a 50% ceiling. The pinned Opus default meters
+  normally; leaf work on Sonnet-tier subagents drains the otherwise-idle
+  Sonnet sub-limit instead of the Opus one.
+- Fable 5 is escalation-only (hardest long-horizon architecture/synthesis —
+  current Opus is near-parity on ordinary coding at normal metering): a grown
+  session `/model`-bumped into Fable re-meters its whole context against the
+  shared pool at Fable's weight every turn — the rationale behind the CLAUDE.md
+  intake rule.
 - Leaf work on small/mid subagents spares the weekly pool only if those subagents
   actually run the cheap tier.
 - If Codex is available, `codex-review` / `codex-advisor` are read-only Codex
@@ -31,7 +41,7 @@ verify with that agent and update this file.
   independent windows, so read-work can offload to Codex — write-work means driving
   the task with Codex yourself. Keep decision ownership in Claude.
 
-## Codex plugin (not installed — blocked)
+## Codex plugin (not installed — blocked; last verified 2026-07-31)
 
 - OpenAI's official plugin (`codex` from `openai/codex-plugin-cc`) is deliberately
   NOT enabled: nested sandboxing is broken on macOS. Codex refuses to start its

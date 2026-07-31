@@ -2,7 +2,9 @@ agents:
   claude:
     home: "~/.claude"
     defaults:
-      model: opus[1m]
+      # explicit ID: bare aliases float across CLI releases (observed: `haiku`
+      # resolving to sonnet-5); [1m] forces the 1M-context variant
+      model: claude-opus-5[1m]
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -93,7 +95,9 @@ subagents:
     tools: "Read, Grep, Glob, Bash"
     description: "Review TS/JS (TypeScript/Node.js) diffs for type safety, async correctness, and idiomatic patterns."
   shell-reviewer:
-    tier: small
+    # mid, not small: shell/template review is judgment work, where the small
+    # tier's documented failure mode (flailing, fabrication) lives
+    tier: mid
     reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
@@ -111,16 +115,21 @@ subagents:
     tools: "Read, Grep, Bash"
     description: "Summarize large log files or stderr dumps into a short diagnosis instead of pasting them into the main context."
   migration-planner:
+    # xhigh, not max: both vendors report diminishing returns/overthinking at
+    # max; escalate back only with demonstrated headroom on a real migration
     tier: top
-    reasoning_effort: max
+    reasoning_effort: xhigh
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Plan complex migrations — schema changes, breaking API changes, major dependency upgrades — with an ADR-style analysis before any code is written."
+# explicit model IDs, not aliases: aliases re-resolve across CLI releases and can
+# silently land on another tier; the agent-instructions-audit skill live-probes
+# these pins, so drift fails loudly there instead
 subagent_tiers:
   claude:
-    small: haiku
-    mid: sonnet
-    top: opus
+    small: claude-haiku-4-5
+    mid: claude-sonnet-5
+    top: claude-opus-5
   codex:
     small: gpt-5.6-luna
     mid: gpt-5.6-terra
