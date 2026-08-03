@@ -39,15 +39,19 @@ only on verification and synthesis.
 4. **Dedup, then verify.** Collapse candidates by root cause + changed hunk before you
    reopen any code. Treat findings as untrusted: adversarially confirm each survivor
    with evidence (surrounding code, tests, contracts) — not literal reproduction every
-   time — and drop anything you can't substantiate or tie to a changed line. If a large
-   set survives, pre-validate with a pinned `diff-reviewer` rather than reopening it all
-   yourself. For the highest-stakes diffs, optionally add a `codex-review` cross-model
-   pass (per the self-review bar).
+   time — and drop anything you can't substantiate or tie to a changed line. Drop, too,
+   whatever asks for capability rather than fixing behavior the branch already has: a
+   future-proofing, rotation, or extensibility idea is correct and still out of scope,
+   and does not reach the checklist. If a large set survives, pre-validate with a pinned
+   `diff-reviewer` rather than reopening it all yourself. For the highest-stakes diffs,
+   optionally add a `codex-review` cross-model pass (per the self-review bar).
 
 5. **Present for approval.** Rank survivors by severity and present an actionable
    checklist — `severity | file:line | issue | proposed fix` — plus a one-line
-   ship/no-ship gate that blocks only on what makes the branch unshippable now. This
-   is the approval point: let me pick what to act on.
+   ship/no-ship gate that blocks only on what makes the branch unshippable now. The
+   checklist is the whole output — no appendix of improvements, ideas, or future work.
+   This is the approval point: let me pick what to act on.
 
-6. **Fix on approval.** Apply fixes only to the findings I approve; correction is a
+6. **Fix on approval.** Apply fixes only to the findings I approve, and keep each fix
+   inside the defect it names — no adjacent cleanup, no new capability. Correction is a
    separate step from finding. Never stage, commit, or push — I do that myself.
