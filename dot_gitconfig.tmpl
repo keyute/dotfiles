@@ -41,10 +41,13 @@
 	navigate = true
 	line-numbers = true
 [merge]
-	tool = diffview
 	conflictstyle = zdiff3
-[mergetool "diffview"]
-	cmd = nvim -c "DiffviewOpen"
+[rerere]
+	enabled = true
+[alias]
+	# DiffviewOpen is repo-wide, so it can't be a merge.tool: git mergetool
+	# invokes per-file with $MERGED and would relaunch it once per conflict
+	diffview = "!nvim -c DiffviewOpen"
 [includeIf "gitdir:~/Projects/work/**"]
 	path = ~/Projects/work/.gitconfig
 [includeIf "gitdir:~/Projects/github/**"]

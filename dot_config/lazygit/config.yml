@@ -4,3 +4,14 @@ git:
     - colorArg: always
       pager: delta --paging=never --features $([ "$(theme-mode 2>/dev/null || echo dark)" = light ] && echo catppuccin-latte || echo catppuccin-mocha)
 promptToReturnFromSubprocess: false
+customCommands:
+  # simple conflicts resolve in-panel (<enter>) or via the merge menu (M);
+  # this is the escalation path for the rest. No pathspec: during a merge
+  # DiffviewOpen already groups every conflicted file on its own.
+  - key: 'X'
+    context: 'files'
+    description: 'Resolve conflicts in diffview'
+    command: 'nvim -c DiffviewOpen'
+    # not `subprocess: true` — legacy, and lazygit rewrites the target file to
+    # migrate it, which would permanently diverge from chezmoi's source state
+    output: terminal
