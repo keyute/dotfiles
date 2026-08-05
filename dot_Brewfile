@@ -51,7 +51,7 @@ brew "siderolabs/tap/talosctl"
 brew "siderolabs/tap/sidero-tools"
 brew "jundot/omlx/omlx", start_service: true
 cask "1password-cli"
-cask "claude-code@latest"
+cask "claude-code"
 cask "codex"
 cask "gcloud-cli"
 cask "mactex-no-gui"
