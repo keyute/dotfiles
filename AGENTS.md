@@ -14,6 +14,8 @@ file are chezmoi-ignored (repo-local only).
 - Leave `chezmoi apply` and 1Password signin to me; when a change touches a
   template using `onepasswordRead`, verify renders with the call stubbed,
   never by triggering a signin prompt.
+- Keep 1Password-resolved values out of source state: they belong only in the
+  applied private targets, never in a source file, a commit, or terminal output.
 
 ## Authoring agent instructions
 

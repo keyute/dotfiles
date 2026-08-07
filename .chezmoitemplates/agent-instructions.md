@@ -54,6 +54,4 @@
   or auth config paths such as {{ join ", " $formatted }}, or similar sensitive
   paths, unless I explicitly ask for that specific path. If you believe you read a
   credential, flag it immediately so I can rotate it.
-- Chezmoi may resolve secret references into private target configs: keep
-  resolved values out of the source repo; never inspect or print those targets.
 - Never commit on my behalf — I stage, commit, and push myself.

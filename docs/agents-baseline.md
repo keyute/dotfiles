@@ -95,9 +95,6 @@ when my actual intent changes, never to track harness churn.
   can rotate it. *Why: exposure is irreversible.* (The enforced path list is
   generated from `.chezmoidata/agents.yaml` via the `agent-sandbox` template
   — never hand-edit the projected prose.)
-- **Secret containment**: chezmoi may resolve secret references into private
-  targets; resolved values never enter the source repo; never inspect or
-  print those targets. *Why: the repo is the shareable surface.*
 - **Commit etiquette**: never commit or push on my behalf — I stage, commit,
   and push myself. *Why: authorship and review stay mine.*
 
