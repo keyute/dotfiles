@@ -1,8 +1,8 @@
 git:
   autoFetch: false
-  pagers:
+  diffRenderers:
     - colorArg: always
-      pager: delta --paging=never --features $([ "$(theme-mode 2>/dev/null || echo dark)" = light ] && echo catppuccin-latte || echo catppuccin-mocha)
+      command: delta --paging=never --features $([ "$(theme-mode 2>/dev/null || echo dark)" = light ] && echo catppuccin-latte || echo catppuccin-mocha)
 promptToReturnFromSubprocess: false
 customCommands:
   # simple conflicts resolve in-panel (<enter>) or via the merge menu (M);
