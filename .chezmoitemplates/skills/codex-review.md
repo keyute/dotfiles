@@ -26,8 +26,10 @@ real, and stop after one fix round. Codex reviews; you stay the implementer.
    read-only, approval policy never, cwd = repo root, config override
    `{"model_reasoning_effort": "high"}`. Model comes from `~/.codex/config.toml`.
 
-4. **Verify every finding as untrusted input.** Read the cited code; classify each:
-   real / mistaken / real-but-out-of-scope. Fix the real, in-scope ones.
+4. **Verify every finding as untrusted input.** Substantiate each independently
+   against the contracts, surrounding flows, or tests it implicates — reading the
+   cited lines alone is not verification. Classify each: real / mistaken /
+   real-but-out-of-scope. Fix the real, in-scope ones.
 
 5. **At most one re-review round.** If you changed code, send the new diff of the
    touched hunks via `mcp__codex__codex-reply` on the same thread — again without

@@ -119,9 +119,10 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
 
 - **Cross-model pass** *(claude)*: for the highest-stakes changes, add a
   cross-model review on top of the fresh-context self-review — the `codex-review`
-  skill for a diff, `codex-advisor` for a judgment call. *Why: a different model
-  catches the blind spots a same-model reviewer shares with the code it wrote —
-  extends `self_review`.*
+  skill for a diff, `codex-advisor` for a judgment call. *Why: different models
+  expose distinct blind spots, but a weaker reviewer can degrade stronger work —
+  independently substantiate every finding as untrusted input; extends
+  `self_review`.*
 - **Top-model intake** *(claude)*: when work already looks top-model-grade (the
   hardest long-horizon architecture/synthesis), say so at intake so I can start it
   in a fresh top-model session; never `/model`-bump a grown session. *Why: the top
@@ -132,8 +133,8 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
   treating the gap as the web's. *Why: the miss is the tool's, not the web's —
   extends `web_search`.*
 - **Specialist routing** *(codex)*: use a matching named specialist for focused
-  reviews, log triage, or migration planning when its preset fits; otherwise a
-  built-in agent. *Why: the presets are tuned for exactly those jobs — extends
+  reviews, log triage, or dependency-bump research when its preset fits;
+  otherwise a built-in agent. *Why: the presets are tuned for exactly those jobs — extends
   the delegation principles.*
 - **Profile boundary** *(codex)*: the named permission profile also blocks the
   sensitive paths for sandboxed tools; treat that as a hard boundary even if the
