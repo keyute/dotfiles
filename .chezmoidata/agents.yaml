@@ -63,13 +63,13 @@ subagents:
     reasoning_effort: low
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Returns distilled findings (paths, file:line), not raw file dumps. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those."
+    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Returns distilled findings (paths, file:line), not raw file dumps. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those. Reads local code only — it has no web access, so upstream changelogs and release notes go to dep-researcher."
   explorer:
     tier: small
     reasoning_effort: low
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Returns distilled findings (paths, file:line), not raw file dumps. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those."
+    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Returns distilled findings (paths, file:line), not raw file dumps. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those. Reads local code only — it has no web access, so upstream changelogs and release notes go to dep-researcher."
   explore-deep:
     tier: mid
     reasoning_effort: medium
@@ -102,6 +102,15 @@ subagents:
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review shell/dotfile diffs — shell scripts, zsh configs, chezmoi templates — for correctness and safety."
+  infra-reviewer:
+    # the third high-volume stack after go and ts, and the one diff-reviewer's
+    # "no language preset" cannot cover: chart/CRD/GitOps hazards are not
+    # inferable from surrounding manifests
+    tier: mid
+    reasoning_effort: high
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Review Kubernetes/Helm/ArgoCD manifest diffs — chart values, CRDs, GitOps app definitions — for correctness and upgrade safety before merging."
   diff-reviewer:
     tier: mid
     reasoning_effort: high
@@ -114,14 +123,15 @@ subagents:
     readonly: true
     tools: "Read, Grep, Bash"
     description: "Summarize large log files or stderr dumps into a short diagnosis instead of pasting them into the main context."
-  migration-planner:
-    # xhigh, not max: both vendors report diminishing returns/overthinking at
-    # max; escalate back only with demonstrated headroom on a real migration
-    tier: top
-    reasoning_effort: xhigh
+  dep-researcher:
+    # no Bash: agent_sandbox.network allowlists 16 hosts, and upstream release
+    # notes are not among them — WebFetch/WebSearch are harness tools and reach
+    # them, a curl would fail confusingly. Codex ignores `tools` entirely.
+    tier: small
+    reasoning_effort: low
     readonly: true
-    tools: "Read, Grep, Glob, Bash"
-    description: "Plan complex migrations — schema changes, breaking API changes, major dependency upgrades — with an ADR-style analysis before any code is written."
+    tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
+    description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
 # explicit model IDs, not aliases: aliases re-resolve across CLI releases and can
 # silently land on another tier; the agent-instructions-audit skill live-probes
 # these pins, so drift fails loudly there instead

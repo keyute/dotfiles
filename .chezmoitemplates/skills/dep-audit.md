@@ -13,10 +13,10 @@ Audit dependency version bumps for breaking changes and produce a risk matrix.
    crosses a major.
 
 2. **Research each bump.** Patch bumps of well-behaved deps get a changelog skim;
-   majors and infrastructure charts get full treatment. If more than ~3 bumps need
-   research, fan out one cheap-tier subagent per dependency, each returning only:
-   breaking changes, migration steps, changed defaults. Sources: upstream
-   CHANGELOG/release notes, upgrade guides, context7.
+   majors and infrastructure charts get full treatment. Fan out one pinned
+   `dep-researcher` per dependency — never an unpinned or built-in worker, which
+   would inherit the session model and defeat the cost split. Give each one
+   dependency and its from → to; it owns the sources and the return format.
 
 3. **Check against this repo's usage.** A breaking change matters only if the repo
    touches that surface — grep for usage of removed/renamed APIs, values keys, or

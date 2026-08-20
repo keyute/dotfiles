@@ -31,8 +31,11 @@ when my actual intent changes, never to track harness churn.
   exact lines must be seen. *Why: spawn-up costs tokens and latency.*
 - **Tier selection**: pick the lowest tier likely to one-shot, judged by total
   tokens-to-done including retries; escalate on observed failure, not by
-  default. *Why: a stronger model that one-shots often beats a weaker one
-  that flails.*
+  default. Subagents that ship with their own tier are already pinned —
+  override their model only to escalate one after an observed failure.
+  *Why: a stronger model that one-shots often beats a weaker one
+  that flails; and the dispatch-time agent list hides the pin, so a reflexive
+  override silently undoes it.*
 - **Fan-out**: spawn independent strands together, scaled to task breadth;
   never hand a worker the whole problem. *Why: serial spawning wastes
   wall-clock; unbounded scope wastes workers.*

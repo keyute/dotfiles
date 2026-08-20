@@ -22,7 +22,9 @@
 - For unpinned subagents, pick the lowest tier likely to one-shot the task —
   small for bounded mechanical/read-heavy work, mid for routine implementation
   and review, top for hard synthesis or expensive-to-reverse calls; escalate on
-  observed failure, not by default.
+  observed failure, not by default. The subagents in `{{ (index $root.agents $self).home }}/agents` are
+  already pinned and the dispatch-time list does not show it — pass a model
+  override to one only to escalate it after an observed failure.
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
   library/API docs — resolve the library id and fetch unprompted.
 - Use Playwright for frontend interaction, inspection, and screenshots — not as a

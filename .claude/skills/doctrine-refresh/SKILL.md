@@ -33,7 +33,8 @@ list.
    specific failure stories, measured before/after observations, sustained
    production use; discard listicles, template dumps, and engagement bait.
    Use vendor docs and published evals only to corroborate. Delegate the
-   sweep to subagents so only distilled findings enter context.
+   sweep to mid-tier subagents, one claim cluster each, so only distilled
+   findings enter context.
 
 3. **Classify.** Per claim: supported / contested / obsolete, each with a
    one-line evidence summary and source. Where a claim weakened but its
