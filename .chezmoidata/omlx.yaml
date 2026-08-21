@@ -1,0 +1,33 @@
+# oMLX has no declarative model management of its own — no download subcommand,
+# no preload list in settings.json, only an authenticated admin route — so
+# run_onchange_after_omlx-models.sh reconciles ~/.omlx/models against this file:
+# it fetches what is missing, removes what is not listed, and merges `pinned`
+# into ~/.omlx/model_settings.json without disturbing the per-model keys the
+# server writes at runtime.
+#
+# `dir` defaults to the repo owner; a `convert` block means self-quantize from
+# the source weights instead of downloading a prebuilt MLX build.
+omlx:
+  models:
+    # `id` is the served model id: omlx registers a model under its leaf
+    # directory name, not its repo name. Renaming it means editing
+    # dot_config/nvim/lua/plugins/editor/minuet-ai.lua, which requests it by name.
+    - id: Mellum2-12B-A2.5B-Base-4bit
+      repo: JetBrains/Mellum2-12B-A2.5B-Base
+      # Held at the historical mlx-community segment (not a real repo) because
+      # moving this model would re-convert 24GB for nothing.
+      dir: mlx-community
+      # No public 4bit MLX build of Mellum2-Base exists, so it is self-quantized
+      # from the bf16 weights with omlx's bundled mlx-lm (stock pip mlx-lm lacks
+      # the mellum arch). The arch's built-in quant_predicate bumps the MoE router
+      # gates to 8bit, so plain 4bit/group-64 reproduces the model exactly.
+      convert:
+        bits: 4
+        group_size: 64
+      # preloaded at startup: minuet fires on nearly every keystroke
+      pinned: true
+
+    # Agentic workflows (tool calling over MCP) driven from Open WebUI. Left
+    # unpinned so it loads on demand rather than holding 16GB resident.
+    - id: Qwen3.8-27B-4bit
+      repo: mlx-community/Qwen3.8-27B-4bit

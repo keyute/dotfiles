@@ -1,0 +1,174 @@
+#!/bin/bash
+{{ if eq .chezmoi.os "darwin" -}}
+set -euo pipefail
+
+hf="/opt/homebrew/opt/omlx/libexec/bin/hf"
+py="/opt/homebrew/opt/omlx/libexec/bin/python3"
+models_dir="$HOME/.omlx/models"
+# Sibling of models/, never inside it: fetches land here and are moved into place
+# only once whole, so a half-finished model is never visible to omlx or to prune.
+staging="$HOME/.omlx/.staging"
+settings="$HOME/.omlx/model_settings.json"
+# Provenance of a finished model dir, so a repo or quant-flag change re-fetches
+# instead of silently keeping the old weights under the same served id.
+stamp=".chezmoi-source"
+
+# Inlined rather than read from .chezmoidata at runtime: chezmoi re-runs this
+# script when its rendered content changes, so inlining is what makes a manifest
+# edit the trigger.
+manifest="$(
+	cat <<'MANIFEST'
+{{- $entries := list -}}
+{{- range .omlx.models -}}
+{{-   $dir := index . "dir" | default (splitList "/" .repo | first) -}}
+{{-   $entries = append $entries (dict
+        "id" .id
+        "path" (printf "%s/%s" $dir .id)
+        "repo" .repo
+        "convert" (index . "convert" | default dict)
+        "pinned" (index . "pinned" | default false)) -}}
+{{- end }}
+{{ $entries | toPrettyJson }}
+MANIFEST
+)"
+
+# Validated before anything is fetched or pruned: a bad file must not abort the
+# run half-reconciled, and both merge_pins and the baseline would otherwise fail
+# alike on it, compare equal on their empty output, and skip the merge silently.
+if [ ! -f "$settings" ]; then
+	echo '{}' >"$settings"
+elif ! jq -e . "$settings" >/dev/null 2>&1; then
+	echo "$settings is not valid JSON — refusing to merge pins into it" >&2
+	exit 1
+fi
+
+# A sharded model lists every weight file in its index; an interrupted fetch can
+# leave config.json, a tokenizer and *some* shards, which the file tests alone
+# would accept.
+shards_present() {
+	idx="$1/model.safetensors.index.json"
+	[ -f "$idx" ] || return 0
+	jq -r '.weight_map | values[]' "$idx" | sort -u | while IFS= read -r f; do
+		[ -f "$1/$f" ] || exit 1
+	done
+}
+
+changed=0
+
+# '|'-joined, not tab-joined: tab is IFS whitespace, so read would collapse a
+# download-only entry's empty quant fields into the wrong variables.
+while IFS='|' read -r id path repo bits group; do
+	target="$models_dir/$path"
+	if [ -n "$bits" ]; then
+		want="convert $repo q$bits g$group"
+	else
+		want="download $repo"
+	fi
+
+	# mlx_lm writes weights, then config.json, then the tokenizer, so config.json
+	# alone would bless a conversion that died halfway. Dirs predating the stamp
+	# are adopted only if they also carry what gets written last.
+	if [ -f "$target/config.json" ]; then
+		if [ -f "$target/$stamp" ]; then
+			[ "$(cat "$target/$stamp")" = "$want" ] && continue
+		elif [ -f "$target/tokenizer_config.json" ] && ls "$target"/*.safetensors >/dev/null 2>&1 &&
+			shards_present "$target"; then
+			printf '%s\n' "$want" >"$target/$stamp"
+			continue
+		fi
+	fi
+
+	tmp="$staging/$id"
+	mkdir -p "$staging"
+	if [ -n "$bits" ]; then
+		echo "Converting omlx model $id from ${repo}…"
+		rm -rf "$tmp" # mlx_lm refuses an existing path, and keeps no resume state
+		"$py" -m mlx_lm convert --hf-path "$repo" \
+			-q --q-bits "$bits" --q-group-size "$group" \
+			--mlx-path "$tmp"
+		printf '%s\n' "$want" >"$tmp/$stamp"
+		# reclaim the source weights pulled into the shared HF cache during conversion
+		rm -rf "$HOME/.cache/huggingface/hub/models--${repo//\//--}"
+	else
+		echo "Downloading omlx model $id from ${repo}…"
+		# hf leaves in place any file a previous fetch put here, so only a staged dir
+		# of matching provenance may be resumed into; anything else is discarded.
+		[ "$(cat "$tmp/$stamp" 2>/dev/null || true)" = "$want" ] || rm -rf "$tmp"
+		mkdir -p "$tmp"
+		printf '%s\n' "$want" >"$tmp/$stamp"
+		"$hf" download "$repo" --local-dir "$tmp" # no pre-clean: hf resumes from .cache
+		rm -rf "$tmp/.cache"
+	fi
+	# Swap only once the fetch is whole: a failure above leaves the previous model
+	# serving, and the partial work in staging for the next run to resume.
+	mkdir -p "$(dirname "$target")"
+	[ -d "$target" ] && mv "$target" "$tmp.rollback"
+	mv "$tmp" "$target"
+	rm -rf "$tmp.rollback"
+	changed=1
+done < <(jq -r '.[] | [.id, .path, .repo, (.convert.bits // "" | tostring), (.convert.group_size // "" | tostring)] | join("|")' <<<"$manifest")
+
+keep="$(jq -r '.[].path' <<<"$manifest")"
+if [ -z "$keep" ]; then
+	echo "omlx manifest is empty — refusing to prune every model" >&2
+	exit 1
+fi
+
+if [ -d "$models_dir" ]; then
+	# Depth bounds mirror omlx's own scan (<models_dir>/<leaf> or
+	# <models_dir>/<owner>/<leaf>); unbounded, a config.json nested inside a kept
+	# model would nominate that subdirectory for rm -rf.
+	# NUL-delimited: a newline in a directory name would otherwise split across
+	# two reads and hand a truncated path to rm -rf.
+	while IFS= read -r -d '' cfg; do
+		dir="$(dirname "$cfg")"
+		rel="${dir#"$models_dir"/}"
+		# herestring, not a pipe: grep -q's early exit SIGPIPEs the writer, which
+		# under pipefail makes the pipeline exit 141 and the match look like a miss.
+		grep -qxF "$rel" <<<"$keep" && continue
+		echo "Removing omlx model not in the manifest: $rel"
+		rm -rf "$dir"
+		changed=1
+	done < <(find "$models_dir" -mindepth 2 -maxdepth 3 -type f -name config.json -print0)
+	find "$models_dir" -mindepth 1 -type d -empty -delete
+fi
+
+if [ -d "$staging" ]; then
+	ids="$(jq -r '.[].id' <<<"$manifest")"
+	for d in "$staging"/*; do
+		[ -d "$d" ] || continue
+		grep -qxF "${d##*/}" <<<"$ids" && continue
+		echo "Discarding abandoned omlx fetch: ${d##*/}"
+		rm -rf "$d"
+	done
+	rmdir "$staging" 2>/dev/null || true
+fi
+
+pins="$(jq -c 'map({(.id): .pinned}) | add' <<<"$manifest")"
+
+# Merge is_pinned into the server-owned file, leaving every other key it wrote
+# (is_default, max_context_window, temperature, …) — including whole entries for
+# models no longer listed — untouched.
+merge_pins() {
+	jq --argjson want "$pins" '
+		.version = (.version // 1)
+		| .models = (reduce ($want | to_entries[]) as $e ((.models // {});
+			.[$e.key] = ((.[$e.key] // {}) + {is_pinned: $e.value})))
+	' "$settings"
+}
+
+[ "$(merge_pins)" = "$(jq . "$settings")" ] || changed=1
+
+[ "$changed" -eq 1 ] || exit 0
+
+# omlx registers models only at startup and rewrites model_settings.json from the
+# copy it loaded then, so the pins are merged with the service down. Fetching
+# above ran with it up: a multi-gigabyte download shouldn't take autocomplete
+# offline for the duration.
+brew services stop omlx
+trap 'brew services start omlx' EXIT # a merge failure must not leave autocomplete offline
+# Same-directory temp then rename: a truncating write that died partway would
+# hand the restarting server an empty settings file.
+merge_pins >"$settings.new"
+mv "$settings.new" "$settings"
+{{ end -}}
