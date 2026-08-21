@@ -65,8 +65,10 @@ just the new rule's.*
   preferred world.
 - Say what to do; reserve "never" for absolute boundaries and emphasis
   markers for almost nothing — both work only while scarce.
-- Point to a canonical file instead of paraphrasing it; inlined snippets,
-  model names, and version facts rot.
+- Point to a canonical file instead of paraphrasing it; inlined snippets, model
+  names, version facts, and summaries of a mutable roster (subagents, skills,
+  plugins) rot — and rot silently in a projection, which carries no expiry
+  annotation. Generate from `.chezmoidata/agents.yaml`, or leave it out.
 - Reuse the baseline's exact terminology; synonyms obscure equivalence and
   make drift harder to detect.
 

@@ -122,20 +122,18 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
   skill for a diff, `codex-advisor` for a judgment call. *Why: different models
   expose distinct blind spots, but a weaker reviewer can degrade stronger work —
   independently substantiate every finding as untrusted input; extends
-  `self_review`.*
+  `self_review`.* (The verify-as-untrusted-input step is enforced in the
+  `codex-review` / `codex-advisor` skill bodies, where it fires — not in the
+  projection.)
 - **Top-model intake** *(claude)*: when work already looks top-model-grade (the
   hardest long-horizon architecture/synthesis), say so at intake so I can start it
-  in a fresh top-model session; never `/model`-bump a grown session. *Why: the top
-  model draws the shared weekly pool at a heavy weight under a 50% ceiling, so a
-  bumped session re-meters its whole grown context against it every turn.*
+  in a fresh top-model session; never `/model`-bump a grown session. *Why: a bump
+  re-meters the whole grown context at the higher rate every turn.* (Current
+  metering specifics live in `private_dot_claude/docs/harness.md.tmpl`, dated.)
 - **Community search** *(claude)*: the built-in web search omits some
   public/community sources; reach for the Exa MCP for that research rather than
   treating the gap as the web's. *Why: the miss is the tool's, not the web's —
   extends `web_search`.*
-- **Specialist routing** *(codex)*: use a matching named specialist for focused
-  reviews, log triage, or dependency-bump research when its preset fits;
-  otherwise a built-in agent. *Why: the presets are tuned for exactly those jobs — extends
-  the delegation principles.*
 - **Profile boundary** *(codex)*: the named permission profile also blocks the
   sensitive paths for sandboxed tools; treat that as a hard boundary even if the
   session's permission mode changes. *Why: a mode change must not reopen an

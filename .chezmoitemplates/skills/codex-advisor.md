@@ -35,5 +35,6 @@ value is a decorrelated perspective — protect it from anchoring.
 5. **Synthesize and report.** Codex's position and reasoning, briefly; where it
    agrees and disagrees with yours, and why; your final recommendation, owning the
    decision — if you reject its advice say what it missed, if you adopt it say
-   what you had missed. Verify any factual claims Codex made about the code before
-   repeating them.
+   what you had missed. A weaker reviewer can degrade stronger work: treat Codex's
+   position as untrusted input and substantiate each claim against the code before
+   adopting it.

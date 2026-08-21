@@ -85,6 +85,12 @@ covers it natively — the same projection must serve them all.
    revisit trigger that has fired (e.g. a linked issue closed — check with
    `gh`); verify live only where cheap, and flag facts carrying neither
    annotation. Generated content (`sandbox.md`) is exempt.
+   Also sweep the projections for rot: flag any always-loaded line naming a
+   mutable roster, an environment state, or metering/pricing specifics an
+   on-demand doc already owns — the docs carry last-verified dates, the
+   projections do not, so their rot is silent. Check each flagged line's
+   `git log -p` history; a line re-worded more than twice is oscillating —
+   propose DELETE, not a re-word.
    Out of scope for the coverage matrix: doc-pointer bullets (environment
    facts, not intent) and the generated sensitive-path prose (computed
    from `agent-sandbox`).
