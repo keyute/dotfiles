@@ -39,6 +39,7 @@
       "model_reasoning_effort"
       "plan_mode_reasoning_effort"
       "approval_policy"
+      "approvals_reviewer"
       "default_permissions"
       "features.network_proxy"
       "permissions.chezmoi-workspace" -}}
@@ -68,6 +69,7 @@
       "model_reasoning_effort" $codex.defaults.model_reasoning_effort
       "plan_mode_reasoning_effort" $codex.defaults.plan_mode_reasoning_effort
       "approval_policy" "on-request"
+      "approvals_reviewer" "auto_review"
       "default_permissions" "chezmoi-workspace"
       "features" (dict "network_proxy" (dict "enabled" true))
       "permissions" (dict "chezmoi-workspace" (dict
