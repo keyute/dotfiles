@@ -50,6 +50,10 @@ agents:
         - "*.openai.com"
         - "chatgpt.com"
         - "*.chatgpt.com"
+    skills:
+      # off so browser driving stays on one path, the playwright MCP server
+      # (see agent_mcp_servers.playwright)
+      "browser:control-in-app-browser": false
 # shared subagent definitions rendered for every harness; bodies live in
 # .chezmoitemplates/subagents/<name>.md, tier resolves via subagent_tiers
 subagents:
@@ -202,29 +206,53 @@ agent_sandbox:
       - context7.com
       - "*.context7.com"
 agent_mcp_servers:
+  # Explicit shared trust: Claude emits an allow rule and Codex emits
+  # default_tools_approval_mode = "approve"; omission keeps normal review.
+
   # scoped to claude: codex must not be handed itself as an MCP server; skipped
   # entirely on machines without the codex binary
   codex:
     command: codex
     args:
       - mcp-server
+    auto_approve_tools: true
     requires: codex
     harnesses:
       - claude
   context7:
     package_bin: context7-mcp
     args: []
+    auto_approve_tools: true
     env:
       CONTEXT7_API_KEY:
         op: Personal/Context7/api key
   exa:
     package_bin: exa-mcp-server
     args: []
+    auto_approve_tools: true
     env:
       EXA_API_KEY:
         op: Personal/Exa/api key
   playwright:
     package_bin: playwright-mcp
+    # deliberately NOT auto_approve_tools: its tools that take a caller-chosen
+    # filename (snapshot, take_screenshot, evaluate, console_messages,
+    # network_request/s) write through a workspace check that is purely lexical
+    # (path.resolve + prefix, no realpath), so a workspace symlink reaches any
+    # path the user can write. Upstream calls that check "not a secure boundary
+    # ... always rely on client-level permissions", and the approval prompt is
+    # that boundary — the MCP server runs outside the bash sandbox, so nothing
+    # else constrains its writes. No browser flag helps: --isolated only keeps
+    # the profile off disk, --headless only drops the UI.
+    denied_tools:
+      # denied outright rather than left to the prompt: never legitimate here.
+      # Executes arbitrary JS in the Playwright *server* process
+      # (RCE-equivalent, per its own tool description).
+      - browser_run_code_unsafe
+      # both take `paths` and hand file contents to a page — the same lexical
+      # check, so the same symlink walk, in the exfiltration direction
+      - browser_file_upload
+      - browser_drop
     args:
       - --browser
       - chromium

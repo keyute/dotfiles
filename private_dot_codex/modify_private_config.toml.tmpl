@@ -49,15 +49,37 @@
     {{- fail (printf "Codex MCP server name %q must be a bare TOML key (it is used in a dotted delete path)" $name) -}}
   {{- end -}}
   {{- $deletes = append $deletes (printf "mcp_servers.%s" $name) -}}
-  {{- if eq $entry.type "http" -}}
-    {{- $mcpServers = set $mcpServers $name (dict "url" $entry.url) -}}
+  {{- $conn := $entry.connection -}}
+  {{- $server := dict -}}
+  {{- if eq $conn.type "http" -}}
+    {{- $server = dict "url" $conn.url -}}
   {{- else -}}
-    {{- $server := dict "command" $entry.command "args" $entry.args -}}
-    {{- if $entry.env -}}
-      {{- $server = set $server "env" $entry.env -}}
+    {{- $server = dict "command" $conn.command "args" $conn.args -}}
+    {{- if $conn.env -}}
+      {{- $server = set $server "env" $conn.env -}}
     {{- end -}}
-    {{- $mcpServers = set $mcpServers $name $server -}}
   {{- end -}}
+  {{- /* translate the contract's shared policy section into Codex's dialect:
+         omitting default_tools_approval_mode leaves Codex's normal review in
+         place, and disabled_tools subtracts individual tools from a server that
+         is otherwise auto-approved. */ -}}
+  {{- if $entry.policy.auto_approve_tools -}}
+    {{- $server = set $server "default_tools_approval_mode" "approve" -}}
+  {{- end -}}
+  {{- if $entry.policy.denied_tools -}}
+    {{- $server = set $server "disabled_tools" $entry.policy.denied_tools -}}
+  {{- end -}}
+  {{- $mcpServers = set $mcpServers $name $server -}}
+{{- end -}}
+{{- /* The Codex desktop app writes its own skills.config entries (that is where
+       browser:control-in-app-browser comes from), so chezmoi cannot own the array
+       via delete+managed — it overrides individual entries by name and leaves the
+       rest alone. Consequence: an override has no delete counterpart, so dropping a
+       skill here leaves its last value in ~/.codex/config.toml; flip it back in
+       the Codex GUI, which owns the entry anyway. */ -}}
+{{- $skillConfig := list -}}
+{{- range $skill, $enabled := default (dict) (get $codex "skills") -}}
+  {{- $skillConfig = append $skillConfig (dict "name" $skill "enabled" $enabled) -}}
 {{- end -}}
 {{- /* tui is fully managed for cross-machine TUI consistency: status_line and
        status_line_use_colors are re-emitted via managed below, while tui.theme is
@@ -85,7 +107,7 @@
       "tui" (dict
           "status_line" (list "model-with-reasoning" "context-used" "five-hour-limit" "weekly-limit" "git-branch" "branch-changes")
           "status_line_use_colors" true) -}}
-{{- $manifest := dict "delete" $deletes "managed" $managed -}}
+{{- $manifest := dict "delete" $deletes "managed" $managed "skill_config" $skillConfig -}}
 #!/usr/bin/env bash
 # Partial management of ~/.codex/config.toml: the merge script replaces the keys
 # chezmoi owns (listed in the manifest's delete/managed entries) and preserves

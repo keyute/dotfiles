@@ -1,12 +1,24 @@
 {{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries for one
        harness. Skips entries scoped to other harnesses (`harnesses` list) and
-       entries whose `requires` binary is absent from PATH. Resolves op: secret
-       references via onepasswordRead and defaults command to the repo-local
-       node_modules/.bin/<package_bin>.
+       entries whose `requires` binary is absent from PATH.
        input:  dict "root" (the root template data) "harness" ("claude"|"codex")
-       output: JSON {name: {type: "http", url} | {type: "stdio", command, args, env}} */ -}}
+               ["policyOnly" true]
+       output: JSON {name: {connection: {...}, policy: {...}}}
+                 connection: {type: "http", url} | {type: "stdio", command, args, env}
+                             — op: refs resolved via onepasswordRead, command
+                             defaulting to node_modules/.bin/<package_bin>
+                 policy:     {auto_approve_tools, denied_tools} — always both keys,
+                             normalized to false/[] so consumers can index them
+                             unguarded
+       policyOnly omits `connection` entirely (and resolves no secrets), so a
+       caller that must not depend on 1Password can still reuse this filter. It
+       omits rather than emitting connection with unresolved refs on purpose: a
+       credential-stripped server object looks usable and would be written as a
+       broken config, whereas a missing one fails loudly. */ -}}
 {{- $root := .root -}}
 {{- $harness := .harness -}}
+{{- /* get, not .policyOnly: chezmoi renders with missingkey=error */ -}}
+{{- $policyOnly := get . "policyOnly" -}}
 {{- $out := dict -}}
 {{- range $name, $cfg := $root.agent_mcp_servers -}}
   {{- $harnesses := get $cfg "harnesses" -}}
@@ -17,39 +29,47 @@
   {{- if and $requires (not (lookPath $requires)) -}}
     {{- continue -}}
   {{- end -}}
-  {{- $url := get $cfg "url" -}}
-  {{- if $url -}}
-    {{- $out = set $out $name (dict "type" "http" "url" $url) -}}
-  {{- else -}}
-    {{- $command := get $cfg "command" -}}
-    {{- if not $command -}}
-      {{- $command = printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
-    {{- end -}}
-    {{- $args := list -}}
-    {{- range $cfg.args -}}
-      {{- if kindIs "map" . -}}
-        {{- $ref := .op -}}
-        {{- if not (hasPrefix "op://" $ref) -}}
-          {{- $ref = printf "op://%s" $ref -}}
-        {{- end -}}
-        {{- $args = append $args (onepasswordRead $ref) -}}
-      {{- else -}}
-        {{- $args = append $args . -}}
+  {{- $entry := dict "policy" (dict
+        "auto_approve_tools" (default false (get $cfg "auto_approve_tools"))
+        "denied_tools" (default (list) (get $cfg "denied_tools"))) -}}
+  {{- if not $policyOnly -}}
+    {{- $connection := dict -}}
+    {{- $url := get $cfg "url" -}}
+    {{- if $url -}}
+      {{- $connection = dict "type" "http" "url" $url -}}
+    {{- else -}}
+      {{- $command := get $cfg "command" -}}
+      {{- if not $command -}}
+        {{- $command = printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
       {{- end -}}
-    {{- end -}}
-    {{- $env := dict -}}
-    {{- range $key, $value := default (dict) (get $cfg "env") -}}
-      {{- if kindIs "map" $value -}}
-        {{- $ref := $value.op -}}
-        {{- if not (hasPrefix "op://" $ref) -}}
-          {{- $ref = printf "op://%s" $ref -}}
+      {{- $args := list -}}
+      {{- range $cfg.args -}}
+        {{- if kindIs "map" . -}}
+          {{- $ref := .op -}}
+          {{- if not (hasPrefix "op://" $ref) -}}
+            {{- $ref = printf "op://%s" $ref -}}
+          {{- end -}}
+          {{- $args = append $args (onepasswordRead $ref) -}}
+        {{- else -}}
+          {{- $args = append $args . -}}
         {{- end -}}
-        {{- $env = set $env $key (onepasswordRead $ref) -}}
-      {{- else -}}
-        {{- $env = set $env $key $value -}}
       {{- end -}}
+      {{- $env := dict -}}
+      {{- range $key, $value := default (dict) (get $cfg "env") -}}
+        {{- if kindIs "map" $value -}}
+          {{- $ref := $value.op -}}
+          {{- if not (hasPrefix "op://" $ref) -}}
+            {{- $ref = printf "op://%s" $ref -}}
+          {{- end -}}
+          {{- $env = set $env $key (onepasswordRead $ref) -}}
+        {{- else -}}
+          {{- $env = set $env $key $value -}}
+        {{- end -}}
+      {{- end -}}
+      {{- $connection = dict "type" "stdio" "command" $command "args" $args "env" $env -}}
     {{- end -}}
-    {{- $out = set $out $name (dict "type" "stdio" "command" $command "args" $args "env" $env) -}}
+    {{- $entry = set $entry "connection" $connection -}}
   {{- end -}}
+  {{- $out = set $out $name $entry -}}
 {{- end -}}
 {{- $out | toJson -}}

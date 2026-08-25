@@ -12,20 +12,23 @@
 {{- $allowedDomains := concat .agent_sandbox.network.allowed_domains $extras.allowed_domains -}}
 {{- $uid := output "id" "-u" | trim -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
-{{- /* mirror mcp-servers' harnesses/requires filter (not the template itself:
-       it resolves op secrets, which settings must not depend on) */ -}}
-{{- range $name, $cfg := .agent_mcp_servers -}}
-  {{- $harnesses := get $cfg "harnesses" -}}
-  {{- if and $harnesses (not (has "claude" $harnesses)) -}}{{- continue -}}{{- end -}}
-  {{- $requires := get $cfg "requires" -}}
-  {{- if and $requires (not (lookPath $requires)) -}}{{- continue -}}{{- end -}}
-  {{- $allowedPerms = append $allowedPerms (printf "mcp__%s" $name) -}}
+{{- $permDeny := list -}}
+{{- range $sb.denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
+{{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
+       resolving their op secrets here would make settings.json depend on
+       1Password. deny wins over the blanket mcp__<server> allow, so denied_tools
+       subtracts individual tools from an otherwise auto-approved server. */ -}}
+{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "harness" "claude" "policyOnly" true) | fromJson -}}
+  {{- range $entry.policy.denied_tools -}}
+    {{- $permDeny = append $permDeny (printf "mcp__%s__%s" $name .) -}}
+  {{- end -}}
+  {{- if $entry.policy.auto_approve_tools -}}
+    {{- $allowedPerms = append $allowedPerms (printf "mcp__%s" $name) -}}
+  {{- end -}}
 {{- end -}}
 {{- range $extras.allowed_read_patterns -}}
   {{- $allowedPerms = append $allowedPerms (printf "Read(%s)" (replace "{uid}" $uid .)) -}}
 {{- end -}}
-{{- $permDeny := list -}}
-{{- range $sb.denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {
   "permissions": {
     "allow": {{ $allowedPerms | toPrettyJson | indent 4 | trim }},

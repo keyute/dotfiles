@@ -9,4 +9,7 @@ servers=$(cat <<'CHEZMOI_MCP_JSON'
 CHEZMOI_MCP_JSON
 )
 
-printf '%s\n' "$input" | jq -j --argjson servers "$servers" '.mcpServers = $servers'
+# .connection only: the shared template also carries a `policy` section, which is
+# projected into permissions by settings.json.tmpl and must not reach this file
+printf '%s\n' "$input" | jq -j --argjson servers "$servers" \
+  '.mcpServers = ($servers | map_values(.connection))'

@@ -1,10 +1,10 @@
 // Merge chezmoi-managed settings into Codex's config.toml while preserving the
 // runtime state Codex writes into the same file (trusted projects, notices, ...).
 //
-// stdin: one JSON manifest line {delete: ["dotted.key.path", ...], managed: {...}},
-// followed by the current config.toml. stdout: the merged TOML. Any parse or
-// serialize error exits non-zero, which makes chezmoi abort without touching the
-// target file.
+// stdin: one JSON manifest line with delete paths, managed values, and optional
+// skills.config overrides, followed by the current config.toml. stdout: the merged
+// TOML. Any parse or serialize error exits non-zero, which makes chezmoi abort
+// without touching the target file.
 import { readFileSync } from "node:fs";
 import { parse, stringify } from "smol-toml";
 
@@ -37,6 +37,23 @@ const deepMerge = (dst, src) => {
   }
 };
 deepMerge(config, manifest.managed);
+
+// Override skills.config entries by name, leaving Codex's own entries alone: the
+// desktop app writes into that same array, so chezmoi cannot claim it wholesale
+// via delete+managed. The guards check the existing config, which Codex owns at
+// runtime; the manifest itself is repo-generated and trusted, as in the loops above.
+const skillConfig = manifest.skill_config ?? [];
+if (skillConfig.length) {
+  config.skills ??= {};
+  if (!isTable(config.skills)) throw new TypeError("skills must be a table");
+  const entries = config.skills.config ?? [];
+  if (!Array.isArray(entries)) throw new TypeError("skills.config must be an array");
+  const managed = new Set(skillConfig.map((s) => s.name));
+  config.skills.config = [
+    ...entries.filter((e) => !(isTable(e) && managed.has(e.name))),
+    ...skillConfig,
+  ];
+}
 
 let out = stringify(config);
 if (!out.endsWith("\n")) out += "\n";
