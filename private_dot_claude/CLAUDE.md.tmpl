@@ -6,10 +6,16 @@
 - Model/tier & subscription-limit questions (pins, subagent tiers, cross-model
   routing to Codex, the codex plugin): read `~/.claude/docs/harness.md`
   before spawning a lookup agent.
-- For the highest-stakes of those changes, add a cross-model pass on top of the
-  fresh-context subagent — the `codex-review` skill for a diff, `codex-advisor`
-  for a judgment call; different models expose distinct blind spots you share with
-  the code you wrote.
+- Before reporting substantive work done, run the `codex-review` skill
+  unprompted: Codex proposes, you stay the implementer and adjudicate —
+  substantiate each finding independently, fix only what survives, and say which
+  you dropped and why. Skip typos, renames, formatting, one-line config, and
+  trivially reverted edits; a cross-model reviewer's raw yield is low, so its
+  findings are hypotheses, never a verdict to apply.
+- Before committing to an architecture or approach decision, or when a bug
+  resists a second diagnosis, get a decorrelated read via `codex-advisor` —
+  unprompted, and before presenting a plan for approval, not after; reversal cost
+  is highest before implementation.
 - At task intake, if the work already looks top-model-grade (hardest long-horizon
   architecture/synthesis), say so before building up context so I can restart it
   in a fresh top-model session; never suggest `/model`-bumping a grown session —

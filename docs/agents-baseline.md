@@ -81,11 +81,12 @@ when my actual intent changes, never to track harness churn.
   that bug report is itself the task. *Why: speculative edge-case work
   crowds out the blocking signal and stalls shipping.*
 - **Self-review**: after a high-stakes or expensive-to-reverse change — auth,
-  security, data, concurrency, migrations — validate it with a fresh set of
-  eyes before calling it done: hand a subagent the artifact and requirements,
-  not your own reasoning trace; skip trivial, easily-reverted changes.
-  *Why: the authoring context rationalizes its own output — a fresh context
-  catches the defect class the author is too close to see.*
+  security, data, concurrency, migrations — check the artifact against the
+  requirements with a fresh set of eyes before calling it done: hand a subagent
+  both, not your own reasoning trace; skip trivial, easily-reverted changes.
+  *Why: a producing context silently endorses a measurable share of its own
+  behaviour-changing output, and that blind spot does not shrink as the model
+  gets stronger.*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*
@@ -117,14 +118,22 @@ when my actual intent changes, never to track harness churn.
 Intent intrinsic to one harness; the tag names it, and it projects only there.
 Same one-imperative-line-plus-why shape as the agnostic principles.
 
-- **Cross-model pass** *(claude)*: for the highest-stakes changes, add a
-  cross-model review on top of the fresh-context self-review — the `codex-review`
-  skill for a diff, `codex-advisor` for a judgment call. *Why: different models
-  expose distinct blind spots, but a weaker reviewer can degrade stronger work —
-  independently substantiate every finding as untrusted input; extends
-  `self_review`.* (The verify-as-untrusted-input step is enforced in the
-  `codex-review` / `codex-advisor` skill bodies, where it fires — not in the
-  projection.)
+- **Cross-model review** *(claude)*: before reporting substantive work done, run
+  the `codex-review` skill unprompted — Codex proposes, you stay the implementer
+  and adjudicate: substantiate each finding independently, fix only what
+  survives, and say which you dropped and why. Skip typos, renames, formatting,
+  one-line config, and trivially reverted edits. *Why: correlated blind spots
+  survive a same-model reread, but a cross-model reviewer's raw yield on my work
+  is low — its findings are hypotheses to adjudicate, never a verdict to apply;
+  extends `self_review`.* (The one-clause adjudication guard projects with this
+  rule and `cross_model_advice` — it has to be present when the model decides
+  whether to fire; the full classification procedure stays in the `codex-review`
+  / `codex-advisor` skill bodies, where it runs.)
+- **Cross-model advice** *(claude)*: before committing to an architecture or
+  approach decision, or when a bug resists a second diagnosis, get a decorrelated
+  read via `codex-advisor` — unprompted, and before presenting a plan for
+  approval, not after. *Why: reversal cost is highest before implementation, and
+  a cross-model reviewer cannot discard working code when none exists yet.*
 - **Top-model intake** *(claude)*: when work already looks top-model-grade (the
   hardest long-horizon architecture/synthesis), say so at intake so I can start it
   in a fresh top-model session; never `/model`-bump a grown session. *Why: a bump

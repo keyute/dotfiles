@@ -47,8 +47,8 @@
   mention in the review — no code comment, no fix until that bug report is
   the task at hand.
 - After a high-stakes or expensive-to-reverse change — auth, security, data,
-  concurrency, migrations — validate your work with a fresh set of eyes before
-  calling it done: hand a subagent the artifact and requirements, not your
+  concurrency, migrations — check the artifact against the requirements with a
+  fresh set of eyes before calling it done: hand a subagent both, not your
   reasoning trace. Skip trivial, easily-reverted changes.
 - When I correct your approach or re-explain a convention, offer to record it in
   the project's AGENTS.md (or instructions file) or your memory.
