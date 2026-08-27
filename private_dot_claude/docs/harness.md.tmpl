@@ -41,13 +41,21 @@ verify with that agent and update this file.
   independent windows, so read-work can offload to Codex — write-work means driving
   the task with Codex yourself. Keep decision ownership in Claude.
 
-## Codex plugin (not installed — blocked; last verified 2026-07-31)
+## Codex plugin (not installed — closed decision; last verified 2026-08-27)
 
-- OpenAI's official plugin (`codex` from `openai/codex-plugin-cc`) is deliberately
-  NOT enabled: nested sandboxing is broken on macOS. Codex refuses to start its
-  own Seatbelt inside Claude Code's (openai/codex#30615), and `--sandbox
-  danger-full-access` panics because CC's sandbox blocks the `configd` lookup its
-  HTTP stack needs (anthropics/claude-code#42857 — closed 2026-05 as not-planned,
-  crash unverified since). Revisit when #30615 lands or
-  `external-sandbox` becomes user-reachable; until then the only workaround is
-  sandbox-disabled Bash, which this setup rejects.
+- OpenAI's official plugin (`codex` from `openai/codex-plugin-cc`, dissected
+  first-hand at v1.0.6) stays uninstalled: the MCP workflow covers the whole
+  desired endstate. Review and second opinion are `codex-review` /
+  `codex-advisor` (exercised live 2026-08-27 against codex-cli 0.149.1); the
+  plugin's extras are excluded by doctrine (write-capable rescue, stop-review
+  gate, session transfer, background job manager) or mechanism-only (its
+  native `review/start` reviewer harness — unreachable via `codex mcp-server`,
+  whose tool surface is exactly `codex` + `codex-reply`).
+- The operative blocker is local policy, not the upstream nested-sandbox bugs
+  previously cited here: every plugin command path spawns `codex app-server`
+  through sandboxed Bash, and the sandbox denies `~/.codex` (tested: exit 1,
+  `Operation not permitted` loading config), while the MCP server is
+  harness-spawned outside that sandbox. Upstream fixes change nothing, so no
+  upstream revisit trigger. Reconsider only if the `~/.codex` deny is itself
+  reconsidered AND either the native reviewer demonstrably out-yields
+  `codex-review` or foreground reviews on large diffs become disruptive.
