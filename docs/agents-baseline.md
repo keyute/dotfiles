@@ -118,14 +118,16 @@ when my actual intent changes, never to track harness churn.
 Intent intrinsic to one harness; the tag names it, and it projects only there.
 Same one-imperative-line-plus-why shape as the agnostic principles.
 
-- **Cross-model review** *(claude)*: before reporting substantive work done, run
-  the `codex-review` skill unprompted — Codex proposes, you stay the implementer
-  and adjudicate: substantiate each finding independently, fix only what
-  survives, and say which you dropped and why. Skip typos, renames, formatting,
-  one-line config, and trivially reverted edits. *Why: correlated blind spots
-  survive a same-model reread, but a cross-model reviewer's raw yield on my work
-  is low — its findings are hypotheses to adjudicate, never a verdict to apply;
-  extends `self_review`.* (The one-clause adjudication guard projects with this
+- **Cross-model review** *(claude)*: when a body of work is ready to hand back
+  and spans three or more files, run the `codex-review` skill once, unprompted:
+  Codex proposes, you stay the implementer and adjudicate — substantiate each
+  finding independently, fix only what survives, and say which you dropped and
+  why. Once per body of work, not per edit within it, and not for one- or
+  two-file changes at any risk level — those belong to `self_review`. *Why: a
+  cross-model reviewer's raw yield on my work is low and most of its reviews
+  surface at least one finding that does not survive adjudication, so it only
+  pays once a change is broad enough to hide a defect — treat findings as
+  hypotheses, never a verdict to apply; extends `self_review`.* (The one-clause adjudication guard projects with this
   rule and `cross_model_advice` — it has to be present when the model decides
   whether to fire; the full classification procedure stays in the `codex-review`
   / `codex-advisor` skill bodies, where it runs.)

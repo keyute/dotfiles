@@ -6,12 +6,13 @@
 - Model/tier & subscription-limit questions (pins, subagent tiers, cross-model
   routing to Codex, the codex plugin): read `~/.claude/docs/harness.md`
   before spawning a lookup agent.
-- Before reporting substantive work done, run the `codex-review` skill
-  unprompted: Codex proposes, you stay the implementer and adjudicate —
-  substantiate each finding independently, fix only what survives, and say which
-  you dropped and why. Skip typos, renames, formatting, one-line config, and
-  trivially reverted edits; a cross-model reviewer's raw yield is low, so its
-  findings are hypotheses, never a verdict to apply.
+- When a body of work is ready to hand back and spans three or more files, run
+  the `codex-review` skill once, unprompted: Codex proposes, you stay the
+  implementer and adjudicate — substantiate each finding independently, fix only
+  what survives, and say which you dropped and why. Once per body of work, not
+  per edit within it, and not for one- or two-file changes whatever they touch;
+  most reviews surface at least one finding that does not survive adjudication,
+  so treat them as hypotheses, never a verdict to apply.
 - Before committing to an architecture or approach decision, or when a bug
   resists a second diagnosis, get a decorrelated read via `codex-advisor` —
   unprompted, and before presenting a plan for approval, not after; reversal cost
