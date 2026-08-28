@@ -8,8 +8,9 @@ Chezmoi source repo: `private_dot_claude/` → `~/.claude`, `private_dot_codex/`
 file are chezmoi-ignored (repo-local only).
 
 - Edit source state only; verify renders with `chezmoi diff` plus
-  `chezmoi cat <target>` — `chezmoi cat` surfaces template errors that
-  `chezmoi diff` silently hides.
+  `chezmoi cat <target>` for every harness the file renders to — `chezmoi cat`
+  surfaces template errors that `chezmoi diff` silently hides, and a shared
+  template is only half-checked from one harness's target.
 - Nested shared templates need `includeTemplate`, not `{{ template }}`.
 - Leave `chezmoi apply` and 1Password signin to me; when a change touches a
   template using `onepasswordRead`, verify renders with the call stubbed,
@@ -46,6 +47,11 @@ just the new rule's.*
 
 - Intent change → `docs/agents-baseline.md`, then reproject.
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`.
+- Subagent and skill bodies render for every harness: keep harness-specific
+  nouns — tool names, agent names, instruction filenames — out of them, and take
+  what varies as a parameter, as `reviewer-common.md` does with
+  `instructions_file`. A name that exists on only one harness is dead text on
+  the other.
 - Harness-specific *intent* → `docs/agents-baseline.md`, tagged `(claude)` /
   `(codex)`; its projection prose stays in the consumer template
   (`private_dot_claude/CLAUDE.md.tmpl`, `private_dot_codex/AGENTS.md.tmpl`) so the
@@ -68,7 +74,9 @@ just the new rule's.*
 - Point to a canonical file instead of paraphrasing it; inlined snippets, model
   names, version facts, and summaries of a mutable roster (subagents, skills,
   plugins) rot — and rot silently in a projection, which carries no expiry
-  annotation. Generate from `.chezmoidata/agents.yaml`, or leave it out.
+  annotation. In a shared body a roster name is also wrong on the other harness,
+  where it is spelled differently or absent. Generate from
+  `.chezmoidata/agents.yaml`, or leave it out.
 - Reuse the baseline's exact terminology; synonyms obscure equivalence and
   make drift harder to detect.
 

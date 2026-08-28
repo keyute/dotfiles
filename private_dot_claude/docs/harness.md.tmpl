@@ -22,20 +22,27 @@ verify with that agent and update this file.
   subagents inherit the session model; a subagent naming an unavailable model
   silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
   (lowest tier likely to one-shot the task).
-- Subscription limits (Max plan): a rolling 5-hour session window plus a shared
-  weekly pool with per-model sub-limits under it (Sonnet and Opus each have
-  their own; exhausting one sub-limit still leaves the others usable until the
-  shared pool runs out). Fable 5 has no separate bucket: it draws the shared
-  pool at a heavy weight under a 50% ceiling. The pinned Opus default meters
-  normally; leaf work on Sonnet-tier subagents drains the otherwise-idle
-  Sonnet sub-limit instead of the Opus one.
+- Subscription limits (Max plan; re-verified 2026-08-28 against official docs):
+  a rolling 5-hour session window plus a shared weekly pool. Docs still list
+  Sonnet and Opus per-model sub-limits under it ("You've hit your Sonnet/Opus
+  limit", code.claude.com errors doc); Fable 5 has no bucket of its own — it
+  draws the shared pool under a 50% ceiling. The account UI has been observed
+  disagreeing on the Sonnet sub-limit's existence — reconcile against `/usage`
+  next time a limit binds. Cheaper models burn the pool more slowly ("Opus 5
+  consumes the budget fastest; Haiku barely dents it", costs doc), so leaf
+  work on small/mid subagents spares the pool — provided the pin actually ran
+  the cheap tier.
 - Fable 5 is escalation-only (hardest long-horizon architecture/synthesis —
   current Opus is near-parity on ordinary coding at normal metering): a grown
   session `/model`-bumped into Fable re-meters its whole context against the
   shared pool at Fable's weight every turn — the rationale behind the CLAUDE.md
   intake rule.
-- Leaf work on small/mid subagents spares the weekly pool only if those subagents
-  actually run the cheap tier.
+- `implementer` subagent (added 2026-08-28): mid-tier executor for
+  spec-complete mechanical write work. Rationale is weighted metering plus
+  grown-context re-metering — a bounded edit delegated out of a grown `[1m]`
+  session avoids re-sending the whole context at Opus rates, independent of
+  sub-limit structure. Revisit trigger: next `agent-instructions-audit`
+  transcript sweep checks implementer uptake and rework/redo signals.
 - If Codex is available, `codex-review` / `codex-advisor` are read-only Codex
   consultation for high-risk diffs or stuck calls; Claude and Codex meter on
   independent windows, so read-work can offload to Codex — write-work means driving

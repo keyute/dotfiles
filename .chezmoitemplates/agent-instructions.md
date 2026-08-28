@@ -16,9 +16,12 @@
 ## Working agreements
 
 - Delegate bounded, independent work that repays the handoff — disposable
-  searches, log triage, research; state objective, scope, and output format,
-  and take back a distilled summary, never a raw dump. Keep inline trivial
-  tasks, tightly sequential steps, and edits where you must see the exact lines.
+  searches, log triage, research, and spec-complete leaf implementation with an
+  objective correctness gate; state objective, scope, and output format, and
+  take back a distilled summary, never a raw dump. Verify delegated writes by
+  reading the actual diff, never the worker's summary. Keep inline trivial
+  tasks, tightly sequential steps, and changes whose details must stay in your
+  context.
 - For unpinned subagents, pick the lowest tier likely to one-shot the task —
   small for bounded mechanical/read-heavy work, mid for routine implementation
   and review, top for hard synthesis or expensive-to-reverse calls; escalate on
@@ -51,7 +54,7 @@
   fresh set of eyes before calling it done: hand a subagent both, not your
   reasoning trace. Skip trivial, easily-reverted changes.
 - When I correct your approach or re-explain a convention, offer to record it in
-  the project's AGENTS.md (or instructions file) or your memory.
+  the project's instruction file (AGENTS.md/CLAUDE.md) or your memory.
 - Never read credential stores, shell history, agent transcripts/session stores,
   or auth config paths such as {{ join ", " $formatted }}, or similar sensitive
   paths, unless I explicitly ask for that specific path. If you believe you read a

@@ -8,4 +8,4 @@ Check for:
 - Missing error handling for external command failures
 - Chezmoi template issues: unresolved variables, incorrect `{{ "{{-" }}` whitespace trimming
 
-{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting") }}
+{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting" "conventions" "quoting and error-handling style, helper/function layout, chezmoi source-state conventions" "instructions_file" .instructions_file) }}

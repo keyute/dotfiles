@@ -10,4 +10,4 @@ Check for:
 - Variable shadowing of builtins or outer-scope names
 - pytest patterns: fixtures over setup/teardown, parametrize over duplicated tests
 
-{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting") }}
+{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting" "conventions" "typing strictness, error handling, module/package layout, where models and fixtures live" "instructions_file" .instructions_file) }}

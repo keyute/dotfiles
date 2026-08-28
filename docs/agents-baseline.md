@@ -26,9 +26,15 @@ when my actual intent changes, never to track harness churn.
 - **Delegation contract**: every handoff states objective, exact scope and
   boundaries, files/tools to use, and output format; take back a compressed
   summary, never a raw dump. *Why: underspecified workers drift.*
-- **Delegation economics**: delegate only when the handoff repays its cost;
-  keep inline trivial tasks, tightly sequential steps, and edits where the
-  exact lines must be seen. *Why: spawn-up costs tokens and latency.*
+- **Delegation economics**: delegate only when the handoff repays its cost —
+  including bounded leaf implementation once its design is settled, its
+  ownership overlaps nothing else in flight, and correctness has an objective
+  gate; accept delegated writes only after a fresh-context read of the actual
+  diff, never the worker's summary. Keep inline trivial tasks, tightly
+  sequential steps, and changes whose details the main context must retain.
+  *Why: spawn-up costs tokens and latency, and implementation delegation pays
+  only while specifying and verifying the boundary costs less than doing — or
+  repairing — the work in the grown main context.*
 - **Tier selection**: pick the lowest tier likely to one-shot, judged by total
   tokens-to-done including retries; escalate on observed failure, not by
   default. Subagents that ship with their own tier are already pinned —

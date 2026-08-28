@@ -43,8 +43,9 @@ only on verification and synthesis.
    whatever asks for capability rather than fixing behavior the branch already has: a
    future-proofing, rotation, or extensibility idea is correct and still out of scope,
    and does not reach the checklist. If a large set survives, pre-validate with a pinned
-   `diff-reviewer` rather than reopening it all yourself. Add a `codex-review`
-   cross-model pass before presenting, per the standing cross-model review rule.
+   `diff-reviewer` rather than reopening it all yourself. Add a cross-model review
+   pass before presenting, per your standing cross-model review rule; skip it if no
+   decorrelated model is available.
 
 5. **Present for approval.** Rank survivors by severity and present an actionable
    checklist — `severity | file:line | issue | proposed fix` — plus a one-line
