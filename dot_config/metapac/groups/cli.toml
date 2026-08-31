@@ -5,6 +5,7 @@ repos = [
 	"copr.fedorainfracloud.org/lihaohong/yazi",
 	"copr.fedorainfracloud.org/atim/lazydocker",
 	"copr.fedorainfracloud.org/rustyclanker/lua-language-server",
+	"copr.fedorainfracloud.org/rossetnocpes/herdr",
 ]
 packages = [
 	# shell
@@ -50,6 +51,7 @@ packages = [
 	"task",
 	# ai
 	"claude-code",
+	"herdr",
 	"ramalama",
 	# misc
 	"1password-cli",
