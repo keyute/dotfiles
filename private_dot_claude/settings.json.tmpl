@@ -36,6 +36,23 @@
     "defaultMode": "plan"
   },
   "model": {{ .agents.claude.defaults.model | toJson }},
+  {{- /* Mirrors herdr's canonical SessionStart entry (structural JSON equality)
+         so `herdr integration install claude` leaves this file untouched; the
+         script itself is herdr-generated and chezmoi-unmanaged. */}}
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/herdr-agent-state.sh' session",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
   "disableRemoteControl": true,
   "statusLine": {
     "type": "command",

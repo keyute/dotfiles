@@ -86,6 +86,8 @@
        deleted and deliberately NOT re-emitted (managed-to-absence) so every
        machine runs Codex's default theme detection and none can drift. */ -}}
 {{- $deletes = concat $deletes (list "tui.status_line" "tui.status_line_use_colors" "tui.theme") -}}
+{{- /* features.hooks: herdr's codex integration sets it; owning it here keeps
+       apply from wiping it. ~/.codex/hooks.json stays herdr-managed. */ -}}
 {{- $managed := dict
       "model" $codex.defaults.model
       "model_reasoning_effort" $codex.defaults.model_reasoning_effort
@@ -93,7 +95,7 @@
       "approval_policy" "on-request"
       "approvals_reviewer" "auto_review"
       "default_permissions" "chezmoi-workspace"
-      "features" (dict "network_proxy" (dict "enabled" true))
+      "features" (dict "network_proxy" (dict "enabled" true) "hooks" true)
       "permissions" (dict "chezmoi-workspace" (dict
           "description" "Workspace writes with shared sensitive-path and network controls"
           "extends" ":workspace"

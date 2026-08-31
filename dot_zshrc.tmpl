@@ -29,6 +29,13 @@ zmodload zsh/complist
 autoload -U compinit; compinit
 _comp_options+=(globdots)
 
+# Panes/multiplexers (herdr) can inherit VIRTUAL_ENV without the activate
+# script's functions; scrub it so autoswitch re-activates cleanly.
+if [[ -n "$VIRTUAL_ENV" ]] && ! typeset -f deactivate > /dev/null; then
+  path=(${path:#$VIRTUAL_ENV/bin})
+  unset VIRTUAL_ENV VIRTUAL_ENV_PROMPT
+fi
+
 source $HOME/.local/share/antidote/antidote.zsh
 antidote load
 
