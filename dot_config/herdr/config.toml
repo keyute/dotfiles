@@ -23,8 +23,13 @@ new_tab = ""
 split_vertical = ""
 split_horizontal = ""
 
-# HERDR_ACTIVE_PANE_CWD and HERDR_BIN_PATH are only set "when available", so
-# both carry a fallback; a bare $VAR would pass an empty --cwd when unset.
+# HERDR_ACTIVE_PANE_ID, HERDR_ACTIVE_PANE_CWD, and HERDR_BIN_PATH are the only
+# pane context herdr injects into custom commands, and only "when available", so
+# each carries a fallback; a bare $VAR would pass an empty --cwd or --pane.
+# Not --current: it resolves HERDR_PANE_ID, which a server-spawned keybinding
+# command has no calling pane to inherit, and fails with "--current requires
+# HERDR_PANE_ID". Omitting --pane falls back to the focused pane, which is the
+# right one for a keypress anyway.
 [[keys.command]]
 key = "prefix+c"
 type = "shell"
@@ -34,11 +39,11 @@ description = "new tab in current directory"
 [[keys.command]]
 key = "prefix+v"
 type = "shell"
-command = "\"${HERDR_BIN_PATH:-herdr}\" pane split --current --direction right --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
+command = "\"${HERDR_BIN_PATH:-herdr}\" pane split ${HERDR_ACTIVE_PANE_ID:+--pane \"$HERDR_ACTIVE_PANE_ID\"} --direction right --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
 description = "split right in current directory"
 
 [[keys.command]]
 key = "prefix+minus"
 type = "shell"
-command = "\"${HERDR_BIN_PATH:-herdr}\" pane split --current --direction down --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
+command = "\"${HERDR_BIN_PATH:-herdr}\" pane split ${HERDR_ACTIVE_PANE_ID:+--pane \"$HERDR_ACTIVE_PANE_ID\"} --direction down --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
 description = "split down in current directory"
