@@ -10,3 +10,35 @@ dark_name = "catppuccin"
 
 [ui]
 agent_panel_sort = "spaces"
+
+# One policy covers new panes, tabs, and workspaces, so it is set for the
+# workspace case: the sidebar "+" button resolves cwd here and no keybinding
+# can reach it. Panes and tabs get follow-the-cwd back via the explicit --cwd
+# in the [[keys.command]] bindings below, which outranks this policy.
+[terminal]
+new_cwd = "home"
+
+[keys]
+new_tab = ""
+split_vertical = ""
+split_horizontal = ""
+
+# HERDR_ACTIVE_PANE_CWD and HERDR_BIN_PATH are only set "when available", so
+# both carry a fallback; a bare $VAR would pass an empty --cwd when unset.
+[[keys.command]]
+key = "prefix+c"
+type = "shell"
+command = "\"${HERDR_BIN_PATH:-herdr}\" tab create --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
+description = "new tab in current directory"
+
+[[keys.command]]
+key = "prefix+v"
+type = "shell"
+command = "\"${HERDR_BIN_PATH:-herdr}\" pane split --current --direction right --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
+description = "split right in current directory"
+
+[[keys.command]]
+key = "prefix+minus"
+type = "shell"
+command = "\"${HERDR_BIN_PATH:-herdr}\" pane split --current --direction down --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
+description = "split down in current directory"
