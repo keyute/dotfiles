@@ -3,5 +3,4 @@ zsh-users/zsh-completions
 zsh-users/zsh-autosuggestions
 zdharma-continuum/fast-syntax-highlighting
 zsh-users/zsh-history-substring-search
-MichaelAquilina/zsh-autoswitch-virtualenv
 romkatv/powerlevel10k

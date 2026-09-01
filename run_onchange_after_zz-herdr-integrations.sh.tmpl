@@ -1,8 +1,9 @@
 #!/bin/bash
 set -eu
 # herdr integration assets are version-marked and go stale on herdr upgrades;
-# embedding the version re-fires this script on the first apply after an
-# upgrade (or after herdr first appears, e.g. Fedora's metapac runs later).
+# embedding the version re-fires this script on the first apply after an upgrade.
+# The zz- prefix orders this after the package-install scripts (run_after_ scripts
+# run alphabetically), so a fresh machine installs herdr before this runs.
 # herdr version: {{ if lookPath "herdr" }}{{ output "herdr" "--version" | trim }}{{ else }}absent{{ end }}
 if command -v herdr > /dev/null; then
   herdr integration install claude

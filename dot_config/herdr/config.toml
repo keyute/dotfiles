@@ -1,1 +1,12 @@
 onboarding = false
+
+# Follow the host terminal's light/dark appearance, matching the Catppuccin
+# flavors _sync_appearance picks for every other tool in ~/.zshrc.
+[theme]
+name = "catppuccin"
+auto_switch = true
+light_name = "catppuccin-latte"
+dark_name = "catppuccin"
+
+[ui]
+agent_panel_sort = "spaces"

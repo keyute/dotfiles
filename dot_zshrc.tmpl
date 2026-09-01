@@ -29,12 +29,39 @@ zmodload zsh/complist
 autoload -U compinit; compinit
 _comp_options+=(globdots)
 
-# Panes/multiplexers (herdr) can inherit VIRTUAL_ENV without the activate
-# script's functions; scrub it so autoswitch re-activates cleanly.
-if [[ -n "$VIRTUAL_ENV" ]] && ! typeset -f deactivate > /dev/null; then
-  path=(${path:#$VIRTUAL_ENV/bin})
-  unset VIRTUAL_ENV VIRTUAL_ENV_PROMPT
-fi
+# uv keeps each project's venv in-tree at .venv. Activate the nearest one on cd and
+# drop it on the way out. The walk stops at the nearest project root, not the nearest
+# .venv: a nested project without an env yet must not inherit its parent's Python.
+# Panes/multiplexers (herdr) can inherit VIRTUAL_ENV without the activate script's
+# functions, so tear down by hand when `deactivate` is missing.
+_venv_autoswitch() {
+  emulate -L zsh
+  local dir=${PWD:A} venv=""
+  while true; do
+    if [[ -f $dir/.venv/bin/activate ]]; then venv=$dir/.venv; break; fi
+    [[ -f $dir/pyproject.toml || $dir == ($HOME|/) ]] && break
+    dir=$dir:h
+  done
+
+  # An inherited env carries no deactivate function; fall through to re-source it.
+  [[ ${VIRTUAL_ENV:A} == $venv ]] && (( $+functions[deactivate] )) && return
+
+  if [[ -n $VIRTUAL_ENV ]]; then
+    if (( $+functions[deactivate] )); then
+      deactivate
+    else
+      path=("${(@)path:#${VIRTUAL_ENV}/bin}")
+      unset VIRTUAL_ENV VIRTUAL_ENV_PROMPT
+    fi
+  fi
+
+  # p10k owns the prompt; keep activate from prepending "(project) " to PS1.
+  local VIRTUAL_ENV_DISABLE_PROMPT=1
+  [[ -n $venv ]] && source $venv/bin/activate
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook chpwd _venv_autoswitch
+_venv_autoswitch
 
 source $HOME/.local/share/antidote/antidote.zsh
 antidote load
