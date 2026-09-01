@@ -1,10 +1,10 @@
 {
   "private": true,
   "dependencies": {
-    "@playwright/mcp": "0.0.78",
+    "@playwright/mcp": "0.0.79",
     "@upstash/context7-mcp": "3.2.4",
-    "ccstatusline": "2.2.25",
-    "exa-mcp-server": "3.2.1",
-    "smol-toml": "1.7.0"
+    "ccstatusline": "2.2.27",
+    "exa-mcp-server": "3.4.1",
+    "smol-toml": "1.8.0"
   }
 }
