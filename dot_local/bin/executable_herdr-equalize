@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+# Equal-area pane tiling for the active herdr tab. Herdr has no native
+# equalize action (upstream: herdrdev/herdr discussion #1181), so this talks
+# newline-delimited JSON to the server socket directly: layout.export for the
+# BSP tree, then layout.set_split_ratio per divider. Ratios are adjusted in
+# place — never layout.apply — so PTYs, processes, and scrollback survive.
+import json
+import os
+import socket
+import sys
+
+
+def leaves(node):
+    if node["type"] == "pane":
+        return 1
+    return leaves(node["first"]) + leaves(node["second"])
+
+
+def targets(node, path=()):
+    if node["type"] != "split":
+        return
+    # Each split's ratio = its first child's share of descendant panes — the
+    # same weighting Ghostty's equalize_splits uses (SplitTree.equalize), so
+    # every pane ends up with equal area regardless of split directions.
+    w1 = leaves(node["first"])
+    w2 = leaves(node["second"])
+    yield list(path), w1 / (w1 + w2), node.get("ratio")
+    # path booleans address the tree from the root: False=first, True=second
+    yield from targets(node["first"], path + (False,))
+    yield from targets(node["second"], path + (True,))
+
+
+def main():
+    sock_path = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser(
+        os.path.join(
+            os.environ.get("XDG_CONFIG_HOME", "~/.config"), "herdr", "herdr.sock"
+        )
+    )
+    def rpc(method, params):
+        # One connection per request: the server closes the socket after
+        # answering anything that is not an event subscription.
+        conn = socket.socket(socket.AF_UNIX)
+        conn.settimeout(5)
+        conn.connect(sock_path)
+        with conn, conn.makefile("rw", encoding="utf-8") as stream:
+            req_id = f"equalize:{method}"
+            stream.write(
+                json.dumps({"id": req_id, "method": method, "params": params})
+            )
+            stream.write("\n")
+            stream.flush()
+            resp = json.loads(stream.readline())
+        if "error" in resp or resp.get("id") != req_id:
+            sys.exit(f"herdr-equalize: {method} failed: {resp}")
+        return resp["result"]
+
+    # Optional argv tab id; default is the active tab (the keybinding case).
+    export = rpc("layout.export", {"tab_id": sys.argv[1]} if len(sys.argv) > 1 else {})
+    layout = export["layout"]
+    tab_id = layout["tab_id"]
+    for path, ratio, current in targets(layout["root"]):
+        if current is None or abs(current - ratio) > 1e-3:
+            rpc(
+                "layout.set_split_ratio",
+                {"tab_id": tab_id, "path": path, "ratio": ratio},
+            )
+
+
+if __name__ == "__main__":
+    main()
