@@ -23,27 +23,31 @@ new_tab = ""
 split_vertical = ""
 split_horizontal = ""
 
-# HERDR_ACTIVE_PANE_ID, HERDR_ACTIVE_PANE_CWD, and HERDR_BIN_PATH are the only
-# pane context herdr injects into custom commands, and only "when available", so
-# each carries a fallback; a bare $VAR would pass an empty --cwd or --pane.
-# Not --current: it resolves HERDR_PANE_ID, which a server-spawned keybinding
-# command has no calling pane to inherit, and fails with "--current requires
-# HERDR_PANE_ID". Omitting --pane falls back to the focused pane, which is the
-# right one for a keypress anyway.
+# HERDR_ACTIVE_PANE_CWD can't carry "follow the cwd": it resolves the pane's
+# OSC 7-reported cwd (zsh emits none) or the root shell's process cwd, which
+# stays frozen at the workspace's spawn dir — $HOME here, per new_cwd. So each
+# binding queries the socket API instead: `pane get` documents foreground_cwd
+# as the cwd of the process controlling the PTY (agent or innermost shell),
+# matching the built-in follow policy; plain `cwd` then $HOME are fallbacks.
+# HERDR_BIN_PATH and HERDR_ACTIVE_PANE_ID are injected only "when available",
+# hence their own fallbacks; an unset pane id degrades to a $HOME tab.
+# Splits pass --pane rather than --current: --current needs HERDR_PANE_ID,
+# which a server-spawned keybinding command has no calling pane to inherit.
+# Omitting --pane falls back to the focused pane, right for a keypress anyway.
 [[keys.command]]
 key = "prefix+c"
 type = "shell"
-command = "\"${HERDR_BIN_PATH:-herdr}\" tab create --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
+command = "cwd=$(\"${HERDR_BIN_PATH:-herdr}\" pane get \"${HERDR_ACTIVE_PANE_ID:-}\" 2>/dev/null | jq -r '.result.pane.foreground_cwd // .result.pane.cwd // empty'); \"${HERDR_BIN_PATH:-herdr}\" tab create --cwd \"${cwd:-$HOME}\" --focus"
 description = "new tab in current directory"
 
 [[keys.command]]
 key = "prefix+v"
 type = "shell"
-command = "\"${HERDR_BIN_PATH:-herdr}\" pane split ${HERDR_ACTIVE_PANE_ID:+--pane \"$HERDR_ACTIVE_PANE_ID\"} --direction right --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
+command = "cwd=$(\"${HERDR_BIN_PATH:-herdr}\" pane get \"${HERDR_ACTIVE_PANE_ID:-}\" 2>/dev/null | jq -r '.result.pane.foreground_cwd // .result.pane.cwd // empty'); \"${HERDR_BIN_PATH:-herdr}\" pane split ${HERDR_ACTIVE_PANE_ID:+--pane \"$HERDR_ACTIVE_PANE_ID\"} --direction right --cwd \"${cwd:-$HOME}\" --focus"
 description = "split right in current directory"
 
 [[keys.command]]
 key = "prefix+minus"
 type = "shell"
-command = "\"${HERDR_BIN_PATH:-herdr}\" pane split ${HERDR_ACTIVE_PANE_ID:+--pane \"$HERDR_ACTIVE_PANE_ID\"} --direction down --cwd \"${HERDR_ACTIVE_PANE_CWD:-$HOME}\" --focus"
+command = "cwd=$(\"${HERDR_BIN_PATH:-herdr}\" pane get \"${HERDR_ACTIVE_PANE_ID:-}\" 2>/dev/null | jq -r '.result.pane.foreground_cwd // .result.pane.cwd // empty'); \"${HERDR_BIN_PATH:-herdr}\" pane split ${HERDR_ACTIVE_PANE_ID:+--pane \"$HERDR_ACTIVE_PANE_ID\"} --direction down --cwd \"${cwd:-$HOME}\" --focus"
 description = "split down in current directory"
