@@ -236,6 +236,15 @@ agent_mcp_servers:
     package_bin: exa-mcp-server
     args: []
     auto_approve_tools: true
+    # 3.4.1 added Exa-side agent orchestration: these dispatch and bill remote
+    # agentic runs, a wider grant than the search/fetch tools blanket approval
+    # was given for.
+    denied_tools:
+      - agent_run
+      - agent_create_run
+      - agent_get_run
+      - agent_wait_for_run
+      - agent_cancel_run
     env:
       EXA_API_KEY:
         op: Personal/Exa/api key
