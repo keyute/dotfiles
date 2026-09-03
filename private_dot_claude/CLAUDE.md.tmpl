@@ -6,17 +6,21 @@
 - Model/tier & subscription-limit questions (pins, subagent tiers, cross-model
   routing to Codex, the codex plugin): read `~/.claude/docs/harness.md`
   before spawning a lookup agent.
-- When a body of work is ready to hand back and spans three or more files, run
-  the `codex-review` skill once, unprompted: Codex proposes, you stay the
-  implementer and adjudicate — substantiate each finding independently, fix only
-  what survives, and say which you dropped and why. Once per body of work, not
-  per edit within it, and not for one- or two-file changes whatever they touch;
-  most reviews surface at least one finding that does not survive adjudication,
-  so treat them as hypotheses, never a verdict to apply.
-- Before committing to an architecture or approach decision, or when a bug
-  resists a second diagnosis, get a decorrelated read via `codex-advisor` —
-  unprompted, and before presenting a plan for approval, not after; reversal cost
-  is highest before implementation.
+- When a body of work is ready to hand back and it touches a high-stakes
+  surface (auth or security boundaries, data loss or migration, concurrency, an
+  external contract) or is broad enough to hide a defect (a cross-cutting
+  change spanning roughly five or more files), run the `codex-review` skill
+  once, unprompted: Codex proposes, you stay the implementer and adjudicate —
+  substantiate each finding independently, fix only what survives, and say
+  which you dropped and why. Once per body of work even when it spans
+  sessions — not per session, not per edit; everything else belongs to
+  self-review. Review yield tracks risk and breadth, not change count, and an
+  unadjudicated cross-model reviewer can degrade stronger work — treat findings
+  as hypotheses, never a verdict to apply.
+- Before committing to an architecture or approach decision that is expensive
+  to reverse, or when a bug resists a second diagnosis, get a decorrelated read
+  via `codex-advisor` — unprompted, and before presenting a plan for approval,
+  not after; reversal cost is highest before implementation.
 - At task intake, if the work already looks top-model-grade (hardest long-horizon
   architecture/synthesis), say so before building up context so I can restart it
   in a fresh top-model session; never suggest `/model`-bumping a grown session —

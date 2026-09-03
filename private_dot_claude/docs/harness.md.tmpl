@@ -47,6 +47,18 @@ verify with that agent and update this file.
   consultation for high-risk diffs or stuck calls; Claude and Codex meter on
   independent windows, so read-work can offload to Codex — write-work means driving
   the task with Codex yourself. Keep decision ownership in Claude.
+- Codex trigger recalibrated to risk-or-breadth (decision 2026-09-03, from a
+  full transcript sweep): the 2026-08-27 size-based trigger ("3+ files,
+  unprompted") drove `codex-review` from ~3–4 to ~90 firings/week while the
+  needs-attention rate fell from ~4% (11/282 verdict mentions) to ~0.8%
+  (2/265), with ~2/3 of reviews returning zero-finding "approve"; every
+  surviving catch sat in a high-stakes category (auth, data loss, migration
+  safety). External practitioner consensus and Anthropic's yield-by-size data
+  agree: gate on risk first, breadth second, never blanket. Revisit trigger:
+  next `agent-instructions-audit` transcript sweep re-measures firing rate and
+  needs-attention rate — expect single-digit weekly firings and a hit rate
+  back above ~3%; if volume stays high or the rate stays under ~2%, tighten
+  further or drop the unprompted clause.
 
 ## Codex plugin (not installed — closed decision; last verified 2026-08-27)
 

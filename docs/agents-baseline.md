@@ -125,23 +125,28 @@ Intent intrinsic to one harness; the tag names it, and it projects only there.
 Same one-imperative-line-plus-why shape as the agnostic principles.
 
 - **Cross-model review** *(claude)*: when a body of work is ready to hand back
-  and spans three or more files, run the `codex-review` skill once, unprompted:
-  Codex proposes, you stay the implementer and adjudicate — substantiate each
-  finding independently, fix only what survives, and say which you dropped and
-  why. Once per body of work, not per edit within it, and not for one- or
-  two-file changes at any risk level — those belong to `self_review`. *Why: a
-  cross-model reviewer's raw yield on my work is low and most of its reviews
-  surface at least one finding that does not survive adjudication, so it only
-  pays once a change is broad enough to hide a defect — treat findings as
-  hypotheses, never a verdict to apply; extends `self_review`.* (The one-clause adjudication guard projects with this
-  rule and `cross_model_advice` — it has to be present when the model decides
-  whether to fire; the full classification procedure stays in the `codex-review`
-  / `codex-advisor` skill bodies, where it runs.)
+  and it touches a high-stakes surface (auth or security boundaries, data loss
+  or migration, concurrency, an external contract) or is broad enough to hide a
+  defect (a cross-cutting change spanning roughly five or more files), run the
+  `codex-review` skill once, unprompted: Codex proposes, you stay the
+  implementer and adjudicate — substantiate each finding independently, fix
+  only what survives, and say which you dropped and why. Once per body of work
+  even when it spans sessions — not per session, not per edit; everything else
+  belongs to `self_review`. *Why: review yield tracks risk and breadth, not
+  change count — a size-only trigger measured over my transcripts fired ~20x
+  more often while its hit rate fell from ~4% to under 1%, and every surviving
+  catch sat in a high-stakes category; an unadjudicated cross-model reviewer
+  can degrade stronger work, so findings stay hypotheses, never a verdict to
+  apply; extends `self_review`.* (The trigger and adjudication guard project
+  with this rule and `cross_model_advice` — both must be present when the
+  model decides whether to fire; the skill bodies hold only the execution
+  procedure, which loads after that decision.)
 - **Cross-model advice** *(claude)*: before committing to an architecture or
-  approach decision, or when a bug resists a second diagnosis, get a decorrelated
-  read via `codex-advisor` — unprompted, and before presenting a plan for
-  approval, not after. *Why: reversal cost is highest before implementation, and
-  a cross-model reviewer cannot discard working code when none exists yet.*
+  approach decision that is expensive to reverse, or when a bug resists a
+  second diagnosis, get a decorrelated read via `codex-advisor` — unprompted,
+  and before presenting a plan for approval, not after. *Why: reversal cost is
+  highest before implementation, and a cross-model reviewer cannot discard
+  working code when none exists yet.*
 - **Top-model intake** *(claude)*: when work already looks top-model-grade (the
   hardest long-horizon architecture/synthesis), say so at intake so I can start it
   in a fresh top-model session; never `/model`-bump a grown session. *Why: a bump
