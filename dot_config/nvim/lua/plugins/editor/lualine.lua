@@ -11,6 +11,9 @@ return {
 		},
 		sections = {
 			lualine_x = {
+				-- vim.ui.progress_status() doesn't cover LSP ($/progress only fires
+				-- LspProgress, which this component subscribes to)
+				"lsp_status",
 				function()
 					if vim.o.expandtab then
 						return tostring(vim.o.shiftwidth) .. " spaces"
