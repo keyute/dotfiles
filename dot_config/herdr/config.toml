@@ -11,15 +11,19 @@ dark_name = "catppuccin"
 [ui]
 agent_panel_sort = "spaces"
 
-# Default rows plus a dim $org tag: repo basenames repeat across orgs, so bare
-# auto-labels are ambiguous. $org is custom metadata reported by the
-# _herdr_report_org hook in ~/.zshrc — workspace metadata for Space rows, pane
-# metadata for Agent rows (separate namespaces; unreported tokens render empty).
+# Default rows plus dim $org/$repo tags: repo basenames repeat across orgs and
+# worktree names across repos, so bare auto-labels are ambiguous. Both tokens
+# are custom metadata reported by the _herdr_report_org hook in ~/.zshrc —
+# workspace metadata for Space rows (org on top-level repos only; worktree
+# children read it from their parent row), pane metadata for Agent rows (org
+# always, repo only in worktrees, whose entry title is the worktree name).
+# Unreported tokens render empty, which is what makes those conditions work —
+# rows themselves cannot vary per entry kind.
 [ui.sidebar.spaces]
 rows = [["state_icon", "workspace"], [{ token = "$org", dim = true }, "branch", "git_status"]]
 
 [ui.sidebar.agents]
-rows = [["state_icon", "workspace", "tab"], [{ token = "$org", dim = true }, "agent"]]
+rows = [["state_icon", "workspace", "tab"], [{ token = "$org", dim = true }, { token = "$repo", dim = true }, "agent"]]
 
 # One policy covers new panes, tabs, and workspaces, so it is set for the
 # workspace case: the sidebar "+" button resolves cwd here and no keybinding

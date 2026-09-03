@@ -98,14 +98,17 @@ _sync_appearance() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _sync_appearance
 
-# Repo basenames repeat across orgs (backend, infrastructure, ...), so herdr's
-# auto-labels collide in the sidebar. Feed the org to the $org tokens in
-# ui.sidebar.spaces/agents.rows (config.toml); a shell hook is herdr's documented
-# reporter for cwd-derived tokens — no server-side event fires on cd. Space rows
-# read workspace metadata, Agent rows read pane metadata: separate namespaces,
-# hence both calls. The workspace token is never cleared — sibling panes visiting
-# $HOME must not wipe workspace identity — while the pane token has a single
-# writer (this shell) and can mirror honestly. No cache/--seq/--ttl: identical
+# Repo basenames repeat across orgs (backend, infrastructure, ...) and worktree
+# names across repos, so herdr's auto-labels collide in the sidebar. Feed the
+# $org/$repo tokens in ui.sidebar.spaces/agents.rows (config.toml); a shell hook
+# is herdr's documented reporter for cwd-derived tokens — no server-side event
+# fires on cd. Space rows read workspace metadata, Agent rows read pane
+# metadata: separate namespaces. Workspace org is reported for top-level repos
+# but cleared for worktree workspaces (the parent Space row already carries it)
+# and left untouched outside ~/Projects — sibling panes visiting $HOME must not
+# wipe workspace identity. Pane tokens have a single writer (this shell) and
+# mirror honestly: org wherever derivable, repo only in worktrees — elsewhere
+# the entry title is already the repo. No cache/--seq/--ttl: identical
 # re-reports are harmless patches and let a restarted server self-heal on the
 # next cd. Backgrounded so cd never blocks on the socket.
 _herdr_report_org() {
@@ -113,23 +116,34 @@ _herdr_report_org() {
   # bg_nice's setpriority can fail loudly (and pointlessly) in restricted envs.
   setopt local_options no_bg_nice
   [[ ${HERDR_ENV:-} == 1 && -n ${HERDR_WORKSPACE_ID:-} && -n ${HERDR_PANE_ID:-} ]] || return 0
-  local root=${PWD:A} org=""
+  local root=${PWD:A} org="" repo="" wt=0
   # Linked worktrees live under ~/.herdr; resolve to the main repo. Ordinary
   # cds stay pure-zsh — no git spawn.
   if [[ $root == $HOME/.herdr/worktrees/* ]]; then
+    wt=1
     root=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
     root=${root%/.git}
+    repo=${root:t}
   fi
   case $root in
     $HOME/Projects/work/*) org=${${root#$HOME/Projects/work/}%%/*} ;;
     $HOME/Projects/*)      org=${${root#$HOME/Projects/}%%/*} ;;
   esac
   {
-    if [[ -n $org ]]; then
+    if (( wt )); then
+      herdr workspace report-metadata "$HERDR_WORKSPACE_ID" --source zsh-org --clear-token org
+    elif [[ -n $org ]]; then
       herdr workspace report-metadata "$HERDR_WORKSPACE_ID" --source zsh-org --token org="$org"
+    fi
+    if [[ -n $org ]]; then
       herdr pane report-metadata "$HERDR_PANE_ID" --source zsh-org --token org="$org"
     else
       herdr pane report-metadata "$HERDR_PANE_ID" --source zsh-org --clear-token org
+    fi
+    if [[ -n $repo ]]; then
+      herdr pane report-metadata "$HERDR_PANE_ID" --source zsh-org --token repo="$repo"
+    else
+      herdr pane report-metadata "$HERDR_PANE_ID" --source zsh-org --clear-token repo
     fi
   } &>/dev/null &!
 }
