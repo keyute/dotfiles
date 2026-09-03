@@ -138,6 +138,15 @@ _herdr_report_org
 
 eval "$(zoxide init zsh --cmd cd)"
 
+# Pin the emacs keymap: zsh picks viins whenever EDITOR/VISUAL contains "vi"
+# at zle init, so shells that inherit EDITOR=nvim from a parent env (herdr/tmux
+# server panes) silently lose ^A/^E. Must precede the bindkey calls below —
+# switching keymaps resets main.
+bindkey -e
+bindkey '^[[H' beginning-of-line
+bindkey '^[[F' end-of-line
+bindkey '^[[1~' beginning-of-line
+bindkey '^[[4~' end-of-line
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 

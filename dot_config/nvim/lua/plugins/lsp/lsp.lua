@@ -4,7 +4,6 @@ return {
 	dependencies = {
 		{ "mason-org/mason.nvim", opts = {} },
 		"neovim/nvim-lspconfig",
-		"WhoIsSethDaniel/mason-tool-installer.nvim",
 		"saghen/blink.cmp",
 		"b0o/schemastore.nvim",
 	},
@@ -123,21 +122,40 @@ return {
 			virtual_text = { source = "if_many", spacing = 2 },
 		})
 
-		require("mason-tool-installer").setup({
-			ensure_installed = {
-				"stylua",
-				"prettier",
-				"prettierd",
-				"ruff",
-				"rumdl",
-				"yamlfmt",
-				"sqlfluff",
-				"eslint_d",
-				"golangci-lint",
-				"gofumpt",
-				"goimports",
-			},
-		})
+		-- Formatter/linter binaries (conform/nvim-lint); LSP servers are covered by
+		-- mason-lspconfig below. Installed via mason-registry directly —
+		-- mason-tool-installer was dropped (unmaintained, mason-v2 compat issue #78).
+		local ensure_installed_tools = {
+			"stylua",
+			"prettier",
+			"prettierd",
+			"ruff",
+			"rumdl",
+			"yamlfmt",
+			"sqlfluff",
+			"eslint_d",
+			"golangci-lint",
+			"gofumpt",
+			"goimports",
+		}
+		local mason_registry = require("mason-registry")
+		-- Installs are async and mason only logs failures; without this a broken
+		-- install leaves formatters/linters silently missing (conform runs with
+		-- notify_on_error = false).
+		mason_registry:on(
+			"package:install:failed",
+			vim.schedule_wrap(function(pkg)
+				vim.notify("mason: failed to install " .. pkg.name, vim.log.levels.ERROR)
+			end)
+		)
+		mason_registry.refresh(function()
+			for _, tool in ipairs(ensure_installed_tools) do
+				local pkg = mason_registry.get_package(tool)
+				if not pkg:is_installed() then
+					pkg:install()
+				end
+			end
+		end)
 
 		require("mason-lspconfig").setup({
 			ensure_installed = {
