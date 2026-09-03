@@ -142,6 +142,7 @@ return {
 				"gomodifytags",
 				"gotests",
 				"iferr",
+				"impl",
 				"delve",
 			},
 		})
