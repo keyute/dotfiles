@@ -11,6 +11,10 @@ dark_name = "catppuccin"
 [ui]
 agent_panel_sort = "spaces"
 
+# A workspace opens with one tab, and a one-entry tab bar costs a row while
+# telling us nothing; the strip returns as soon as a second tab exists.
+hide_tab_bar_when_single_tab = true
+
 # Default rows plus dim $org/$repo tags: repo basenames repeat across orgs and
 # worktree names across repos, so bare auto-labels are ambiguous. Both tokens
 # are custom metadata reported by the _herdr_report_org hook in ~/.zshrc —
