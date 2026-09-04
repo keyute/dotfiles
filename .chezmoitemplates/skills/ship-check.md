@@ -1,6 +1,6 @@
 ---
 name: ship-check
-description: One converging pre-ship review of the branch's full state — committed and uncommitted — against its merge-base with main. Correctness and quality (reuse, simplification, efficiency, altitude) in a single pass; fans finding out to pinned read-only reviewers, verifies to cut false positives, and presents an actionable checklist for approval before fixing. Holds a churn bar so a clean branch gets "ship it", not one more thing — replaces looping /review-branch and /simplify. Not a whole-repo audit; no GitHub/PR integration. Args: optional base ref (default main) or a single lens to focus.
+description: One converging pre-ship review of the branch's full state — committed and uncommitted — against its merge-base with main: correctness and quality (reuse, simplification, efficiency, altitude) in a single verified pass, holding a churn bar so a clean branch gets "ship it" rather than one more thing. Not a whole-repo audit; no GitHub/PR integration. Args: optional base ref (default main) or a single lens to focus.
 ---
 
 Review everything this branch would ship — committed and uncommitted alike — and
@@ -32,12 +32,7 @@ synthesis.
    - one primary correctness reviewer per group — the matching language specialist
      where one exists, else `diff-reviewer`;
    - one `diff-reviewer` simplify pass on any nontrivial diff — quality coverage is
-     this skill's job, not a separate command's. Brief it on all four angles: reuse
-     (name the existing helper the code re-implements), simplification (redundant or
-     derivable state, copy-paste variation, dead code), efficiency (redundant
-     computation or I/O, independent operations run sequentially, work added to hot
-     paths), altitude (special cases layered on shared infrastructure instead of
-     fixing the mechanism);
+     this skill's job, not a separate command's;
    - one `diff-reviewer` test-coverage pass only where behavior changed or regression
      risk is real.
    Give each worker the exact base…worktree scope, its file group, and its lens; take
