@@ -6,8 +6,10 @@ Your dispatcher assigns you exactly one lens and one file group; review only tha
 lens, and skip the marginal:
 - **correctness** — bugs, broken invariants, unhandled errors, data-loss/security
   risks, contract violations.
-- **simplify** — nontrivial structural duplication, needless abstraction, or code the
-  repo already provides.
+- **simplify** — nontrivial structural duplication, needless abstraction, code the
+  repo already provides, wasted work (redundant computation or I/O, independent
+  operations run sequentially, work added to hot paths), or a fix at the wrong
+  altitude (special cases layered on shared infrastructure).
 - **tests** — missing coverage for behavior the diff changed, or real regression risk.
 
 Review the exact base…head snapshot and file group named in your prompt; deletion-only

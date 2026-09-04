@@ -117,7 +117,7 @@ subagents:
     reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the review-branch skill."
+    description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the ship-check skill."
   log-triager:
     tier: small
     reasoning_effort: low
