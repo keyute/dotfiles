@@ -1,0 +1,180 @@
+name: verify
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Fast gate on every push: headless apply into a scratch home with run
+  # scripts and externals excluded. modify_ scripts are not in the `scripts`
+  # exclude class, so both harnesses' MCP/merge paths still execute — with
+  # 1Password stubbed so no real secret ever reaches a runner.
+  render:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install chezmoi
+        run: |
+          sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Stub 1Password CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/opstub"
+          cat > "$RUNNER_TEMP/opstub/op" <<'EOF'
+          #!/bin/sh
+          # chezmoi probes `op --version` to pick CLI syntax; every read gets a
+          # fixed placeholder so no real secret exists on the runner.
+          case "$1" in
+            --version) echo "2.30.0" ;;
+            signin) echo "ci-stub-session" ;;
+            account) echo "[]" ;;
+            *) printf 'ci-op-stub' ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/opstub/op"
+          echo "$RUNNER_TEMP/opstub" >> "$GITHUB_PATH"
+
+      - name: Install repo npm dependencies
+        run: npm ci --ignore-scripts --omit=dev --prefix "$GITHUB_WORKSPACE"
+
+      - name: Apply into scratch home
+        run: |
+          mkdir -p "$RUNNER_TEMP/home"
+          chezmoi -S "$GITHUB_WORKSPACE" -D "$RUNNER_TEMP/home" apply \
+            --exclude scripts,externals --no-tty
+
+      - name: Render run scripts
+        run: |
+          for f in run_*.sh.tmpl; do
+            chezmoi -S "$GITHUB_WORKSPACE" execute-template < "$f" > /dev/null
+            echo "render ok: $f"
+          done
+
+      - name: Assert rendered targets
+        run: |
+          home="$RUNNER_TEMP/home"
+          jq empty "$home/.claude/settings.json"
+          jq empty "$home/.claude.json"
+          python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' \
+            "$home/.codex/config.toml"
+          # Rendered configs point MCP/statusline commands into the source
+          # dir's node_modules/.bin; a missing binary renders fine but breaks
+          # silently at runtime, so assert existence here.
+          missing=0
+          while IFS= read -r bin; do
+            [ -x "$bin" ] || { echo "missing binary: $bin"; missing=1; }
+          done < <(jq -r '.. | objects | ((.command? // empty), (.args[]? // empty))
+                          | strings | select(test("node_modules/\\.bin"))' \
+                   "$home/.claude.json" "$home/.claude/settings.json" | sort -u)
+          [ "$missing" -eq 0 ]
+
+  # Weekly + on-demand only (no path filters by design): a full fresh-machine
+  # apply with scripts and externals included. The point is ordering — a
+  # script invoking a binary that no earlier step installed must fail the
+  # apply. Manual baseline is git + chezmoi (+ Homebrew on macOS) only:
+  # node/npm/jq come from the repo's own run_once bootstrap script, so the
+  # apply is validated from bare.
+  fresh-macos:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install chezmoi
+        run: |
+          sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Stub 1Password CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/opstub"
+          cat > "$RUNNER_TEMP/opstub/op" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            --version) echo "2.30.0" ;;
+            signin) echo "ci-stub-session" ;;
+            account) echo "[]" ;;
+            *) printf 'ci-op-stub' ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/opstub/op"
+          echo "$RUNNER_TEMP/opstub" >> "$GITHUB_PATH"
+
+      - name: Disk before
+        run: df -h /
+
+      # Real home, everything included: npm deps + Playwright Chromium, full
+      # `brew bundle --global` (formulae, casks incl. mactex, omlx service),
+      # nvim Lazy restore, omlx model downloads/conversions.
+      # `brew bundle cleanup --force` will uninstall runner-preinstalled
+      # formulae not in the Brewfile — harmless on an ephemeral VM, just slow.
+      - name: Full apply
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: chezmoi -S "$GITHUB_WORKSPACE" apply --no-tty
+
+      - name: Disk after
+        if: always()
+        run: df -h /
+
+  fresh-linux:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    timeout-minutes: 90
+    steps:
+      # Container-only artifacts, present on a real Fedora install: sudo, git,
+      # tar/gzip (actions/checkout fallback), dnf5-plugins (`dnf copr` in the
+      # dnf-repos script). node/npm/jq are deliberately NOT here — the repo's
+      # run_once bootstrap script must provide them.
+      - name: Bootstrap
+        run: dnf install -y sudo git tar gzip dnf5-plugins
+
+      - uses: actions/checkout@v4
+
+      - name: Install chezmoi
+        run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b /usr/local/bin
+
+      - name: Stub 1Password CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/opstub"
+          cat > "$RUNNER_TEMP/opstub/op" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            --version) echo "2.30.0" ;;
+            signin) echo "ci-stub-session" ;;
+            account) echo "[]" ;;
+            *) printf 'ci-op-stub' ;;
+          esac
+          EOF
+          chmod +x "$RUNNER_TEMP/opstub/op"
+          echo "$RUNNER_TEMP/opstub" >> "$GITHUB_PATH"
+
+      # Real home, everything included: dnf vendor repos + metapac copr +
+      # development-tools (before), npm deps, then metapac sync and nvim Lazy
+      # restore (after).
+      - name: Full apply
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: chezmoi -S "$GITHUB_WORKSPACE" apply --no-tty
