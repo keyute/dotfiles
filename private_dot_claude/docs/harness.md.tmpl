@@ -60,21 +60,49 @@ verify with that agent and update this file.
   back above ~3%; if volume stays high or the rate stays under ~2%, tighten
   further or drop the unprompted clause.
 
-## Codex plugin (not installed — closed decision; last verified 2026-08-27)
+## Codex transport: owned MCP bridge (decision 2026-09-05)
 
-- OpenAI's official plugin (`codex` from `openai/codex-plugin-cc`, dissected
-  first-hand at v1.0.6) stays uninstalled: the MCP workflow covers the whole
-  desired endstate. Review and second opinion are `codex-review` /
-  `codex-advisor` (exercised live 2026-08-27 against codex-cli 0.149.1); the
-  plugin's extras are excluded by doctrine (write-capable rescue, stop-review
-  gate, session transfer, background job manager) or mechanism-only (its
-  native `review/start` reviewer harness — unreachable via `codex mcp-server`,
-  whose tool surface is exactly `codex` + `codex-reply`).
-- The operative blocker is local policy, not the upstream nested-sandbox bugs
-  previously cited here: every plugin command path spawns `codex app-server`
-  through sandboxed Bash, and the sandbox denies `~/.codex` (tested: exit 1,
-  `Operation not permitted` loading config), while the MCP server is
-  harness-spawned outside that sandbox. Upstream fixes change nothing, so no
-  upstream revisit trigger. Reconsider only if the `~/.codex` deny is itself
-  reconsidered AND either the native reviewer demonstrably out-yields
-  `codex-review` or foreground reviews on large diffs become disruptive.
+- `codex mcp-server` (the previous transport) was deprecated in codex-cli
+  0.149.1 with removal announced, so the `codex` MCP entry now spawns
+  `scripts/codex-bridge.mjs` from the chezmoi source repo, wrapping the stable
+  `codex exec` / `codex exec review` CLI (verified present at 0.153.1). Tools:
+  `review`, `advise`, `reply`; invocation fixed to read-only sandbox, never
+  approvals, high reasoning — callers pick scope only, never sandbox flags.
+- MCP transport kept deliberately: the bridge is harness-spawned outside the
+  Bash sandbox (the `~/.codex` deny stays fully intact), and its rendered
+  allow rule (`mcp__codex`, from `auto_approve_tools`) makes the tools
+  prompt-free in plan mode — verified live 2026-09-05. Plan mode blocks MCP
+  tools as a class unless allow-listed (`readOnlyHint` is ignored; upstream
+  issue #12368 closed "not planned"), and Bash has no plan-mode allowlist
+  exemption at all, which rules out every Bash-based transport (plain
+  `codex exec` calls and the plugin alike).
+
+## Codex plugin (not installed — reaffirmed 2026-09-05)
+
+- OpenAI's official plugin (`openai/codex-plugin-cc`, first dissected at
+  v1.0.6) stays uninstalled, on updated grounds: its command paths spawn the
+  experimental `codex app-server` through sandboxed Bash — still blocked by
+  the `~/.codex` deny, never prompt-free in plan mode (see above), and riding
+  a protocol OpenAI documents as changeable without notice. The bridge covers
+  review + advice on the stable `exec` interface with no sandbox carve-out.
+  The extras remain excluded by doctrine (write-capable rescue, stop-review
+  gate, session transfer, background job manager). Reconsider only if the
+  `codex exec` interface itself breaks AND the sandbox/plan-mode constraints
+  change.
+
+## pi (side-by-side trial vs codex, started 2026-09-05)
+
+- pi (`earendil-works/pi`, adopted at v0.85.0) runs interactive GPT sessions
+  alongside codex until one wins the trial; ChatGPT-subscription OAuth in
+  third-party OSS harnesses is OpenAI-sanctioned (Codex for OSS program names
+  pi; last verified 2026-09-05) and draws the same plan quota as codex.
+- pi ships no permission system: the `pi` zsh alias wraps it in srt
+  (`@anthropic-ai/sandbox-runtime`) with settings rendered to
+  `~/.pi/srt-settings.json` from `.chezmoidata/agents.yaml`; the vendored
+  plan-mode extension (pinned from v0.85.0) supplies read-only planning.
+  `~/.pi/agent/settings.json` is deliberately unmanaged — pi rewrites it
+  itself; wholesale ownership would revert `/settings` and Ctrl+S saves on
+  every apply (revisit with a `modify_` merge script if pi wins).
+- Trial decision trigger: revisit at the next `agent-instructions-audit`, or
+  sooner once one harness clearly owns all interactive GPT sessions — then
+  demote or drop the loser (codex keeps the review-backend role regardless).

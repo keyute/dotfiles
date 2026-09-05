@@ -46,10 +46,10 @@ list.
 4. **Codex second opinion.** The doctrine steers Codex as much as Claude,
    and a same-model reviewer shares the classifier's blind spots. Load the
    codex MCP if needed (ToolSearch
-   `select:mcp__codex__codex,mcp__codex__codex-reply`); one call — sandbox
-   read-only, approval policy never, cwd = repo root, config override
-   `{"model_reasoning_effort": "high"}` — carrying the claim list, each
-   classification with its evidence summary, and the draft rewordings.
+   `select:mcp__codex__advise,mcp__codex__reply`); one `mcp__codex__advise`
+   call — `cwd` = repo root, `brief` carrying the claim list, each
+   classification with its evidence summary, and the draft rewordings (the
+   bridge fixes read-only sandbox, approvals, and high reasoning effort).
    Ask it to dispute any classification or wording that misreads how
    models actually follow instructions. Verify disputes against the
    gathered evidence, adjust what holds, and report remaining

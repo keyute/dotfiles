@@ -2,9 +2,9 @@
 
 Canonical record of what I want from coding agents. Most principles are
 harness-agnostic and render through `.chezmoitemplates/agent-instructions.md`;
-the exceptions are marked. A `(claude)` / `(codex)` tag means a principle is
-intrinsic to that harness and projects only to it, via its consumer template
-(`CLAUDE.md.tmpl` / `AGENTS.md.tmpl`); a `*(conditional)*` marker means it
+the exceptions are marked. A `(claude)` / `(codex)` / `(pi)` tag means a principle
+is intrinsic to that harness and projects only to it, via its consumer template
+(`CLAUDE.md.tmpl` / `AGENTS.md.tmpl` / pi's `AGENTS.md.tmpl`); a `*(conditional)*` marker means it
 projects wherever its stated condition holds (e.g. `state_persistence`, where a
 harness lacks reliable auto-compaction). The live files (`~/.claude/CLAUDE.md`,
 `~/.codex/AGENTS.md`) are lean projections: a principle is projected only while
@@ -160,3 +160,7 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
   sensitive paths for sandboxed tools; treat that as a hard boundary even if the
   session's permission mode changes. *Why: a mode change must not reopen an
   irreversible exposure — extends `credential_hygiene`.*
+- **Wrapper boundary** *(pi)*: sessions run only inside the srt wrapper (the
+  `pi` alias); a denied path is a hard boundary — never relaunch bare to get
+  past it. *Why: the harness ships no permission system, so the wrapper is the
+  only enforced guarantee — extends `credential_hygiene`.*

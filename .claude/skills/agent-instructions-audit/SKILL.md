@@ -47,12 +47,13 @@ covers it natively — the same projection must serve them all.
    approximate. If the probe fails, mark pinned-model coverage unverified
    and continue.
 
-4. **Codex probe.** If `mcp__codex__codex` is not loaded, fetch it via
-   ToolSearch (`select:mcp__codex__codex,mcp__codex__codex-reply`). One call:
-   sandbox read-only, approval policy never, cwd = repo root, medium
-   reasoning effort. Same probe shape over the agnostic + `(codex)`-tagged
-   principles, instructing it to judge only its built-in harness instructions
-   and exclude AGENTS.md-sourced content.
+4. **Codex probe.** If `mcp__codex__advise` is not loaded, fetch it via
+   ToolSearch (`select:mcp__codex__advise,mcp__codex__reply`). One call:
+   `cwd` = repo root, `brief` = the probe (the bridge fixes the read-only
+   sandbox and approval policy). Same probe shape over the agnostic +
+   `(codex)`-tagged principles, instructing it to judge only its built-in
+   harness instructions and exclude AGENTS.md-sourced content. Keep the
+   returned `threadId` for step 6.
 
 5. **Compute the audit matrix.** Per principle × harness, reconciling all
    probed classes (session + pin for CLAUDE.md; Codex for AGENTS.md), a tagged
@@ -76,9 +77,9 @@ covers it natively — the same projection must serve them all.
    silently fell back. Probe each `defaults.model` with its exact
    configured string, decorations included, never stripped: a one-shot
    `claude --model '<pin>' -p 'reply OK'` for Claude, accepting the pin
-   only on a successful response; one minimal read-only codex call with
-   the model overridden for Codex, and the same per Codex tier ID. Flag
-   dead pins.
+   only on a successful response; one minimal `mcp__codex__advise` call
+   with its `model` override for Codex, and the same per Codex tier ID.
+   Flag dead pins.
    Also sweep the on-demand docs (`private_dot_claude/docs/*.tmpl`,
    `private_dot_codex/docs/*.tmpl`) for expired facts: a last-verified
    date older than the current model/harness generation, or a recorded
@@ -97,8 +98,8 @@ covers it natively — the same projection must serve them all.
 
 6. **Codex cross-check.** Before reporting, send the proposed ADDs, SHAVEs,
    and CONFLICTs — verdict, one-line rationale, draft diff — to Codex for a
-   second opinion: `mcp__codex__codex-reply` on the step-4 thread, or a
-   fresh call with step 4's settings if that thread is gone. Codex consumes
+   second opinion: `mcp__codex__reply` on the step-4 `threadId`, or a
+   fresh `mcp__codex__advise` call if that thread is gone. Codex consumes
    the AGENTS.md projection, so have it judge each proposal from its own
    harness's perspective: does it dispute any coverage verdict, and would
    the post-edit projection still steer it correctly. Treat the response as

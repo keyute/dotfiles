@@ -1,0 +1,30 @@
+{{- /* srt (@anthropic-ai/sandbox-runtime) settings for wrapping interactive pi
+       sessions — pi ships no permission system, so this wrapper is its only
+       boundary (launched via the `pi` alias in .zshrc). Unlike the per-tool
+       sandboxes of the other harnesses, srt wraps the whole pi process, so
+       pi's own sensitive subpaths (auth.json, sessions) must stay readable
+       here — the process needs them to run; exfiltration is bounded by the
+       network allowlist instead. This file itself is denyWrite (which beats
+       allowWrite in srt): home is writable, so a session could otherwise
+       rewrite its own policy for the next launch. */ -}}
+{{- $sb := fromJson (includeTemplate "agent-sandbox" (dict "self" "pi" "root" .)) -}}
+{{- $home := .agents.pi.home -}}
+{{- $denyRead := list -}}
+{{- range $sb.denyRead -}}
+  {{- if not (hasPrefix $home .) -}}{{- $denyRead = append $denyRead . -}}{{- end -}}
+{{- end -}}
+{{- $allowWrite := concat (list "." "/tmp" "/private/tmp" $home) $sb.allowWrite -}}
+{{- $domains := concat .agent_sandbox.network.allowed_domains .agents.pi.extras.allowed_domains -}}
+{
+  "filesystem": {
+    "denyRead": {{ $denyRead | toPrettyJson | indent 4 | trim }},
+    "allowWrite": {{ $allowWrite | toPrettyJson | indent 4 | trim }},
+    "denyWrite": [
+      "{{ $home }}/srt-settings.json"
+    ]
+  },
+  "network": {
+    "allowedDomains": {{ $domains | uniq | toPrettyJson | indent 4 | trim }},
+    "deniedDomains": []
+  }
+}

@@ -8,13 +8,13 @@ value is a decorrelated perspective — protect it from anchoring.
 
 ## Steps
 
-1. **Load the tools.** If `mcp__codex__codex` / `mcp__codex__codex-reply` are not
-   loaded, fetch them via ToolSearch (`select:mcp__codex__codex,mcp__codex__codex-reply`).
-   If the server is missing, stop and say so (codex not installed, or `~/.claude.json`
-   not yet re-applied via chezmoi).
+1. **Load the tools.** If `mcp__codex__advise` / `mcp__codex__reply` are not
+   loaded, fetch them via ToolSearch (`select:mcp__codex__advise,mcp__codex__reply`).
+   If the server is missing, stop and say so (codex not installed, or the bridge
+   not yet re-applied via chezmoi into `~/.claude.json`).
 
 2. **Form your own position first — silently.** You need it for the comparison; it
-   must not leak into the prompt.
+   must not leak into the brief.
 
 3. **Compose a neutral, self-contained brief.** Question = args, else the open
    question in the conversation. Include:
@@ -26,11 +26,12 @@ value is a decorrelated perspective — protect it from anchoring.
    - an explicit ask: recommendation with reasoning plus the strongest argument
      against it
 
-4. **Call Codex.** One `mcp__codex__codex` call with the brief: sandbox read-only,
-   approval policy never, cwd = repo root, config override
-   `{"model_reasoning_effort": "high"}`. Probe weak points or follow up with
-   `mcp__codex__codex-reply` on the same thread — challenge reasoning that
-   conflicts with yours rather than accepting or dismissing it.
+4. **Call Codex.** One `mcp__codex__advise` call: `cwd` = repo root, `brief` =
+   the brief. Sandbox (read-only), approvals (never), and reasoning effort
+   (high) are fixed by the bridge; the model comes from `~/.codex/config.toml`.
+   The response opens with a `threadId:` line — probe weak points or follow up
+   via `mcp__codex__reply` on it, challenging reasoning that conflicts with
+   yours rather than accepting or dismissing it.
 
 5. **Synthesize and report.** Codex's position and reasoning, briefly; where it
    agrees and disagrees with yours, and why; your final recommendation, owning the
