@@ -1,14 +1,21 @@
 name: verify
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
+    branches:
+      - main
+  merge_group:
   workflow_dispatch:
   schedule:
     - cron: "17 2 * * 1"
 
-permissions:
-  contents: read
+permissions: {}
 
+# Keyed on event_name as well as ref so a push cannot cancel the weekly
+# full-apply run — they share neither duration nor purpose.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -18,60 +25,109 @@ defaults:
     shell: bash
 
 jobs:
-  # Fast gate on every push: headless apply into a scratch home with run
-  # scripts and externals excluded. modify_ scripts are not in the `scripts`
-  # exclude class, so both harnesses' MCP/merge paths still execute — with
-  # 1Password stubbed so no real secret ever reaches a runner.
+  # docs/, README.md, AGENTS.md, CLAUDE.md and .claude/ are chezmoi-ignored —
+  # repo-local only — so a commit touching nothing else cannot change a
+  # rendered target. Everything else, this workflow included, runs render.
+  changes:
+    # schedule and workflow_dispatch have no diff base to resolve.
+    if: >-
+      github.event_name == 'pull_request' || github.event_name == 'push'
+      || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      chezmoi: ${{ steps.filter.outputs.chezmoi }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          # Negated patterns are ignored under the default `some` quantifier,
+          # which would leave this filter matching every commit. Added in
+          # v4.0.3 — v4.0.2 does not accept it.
+          predicate-quantifier: some-with-excludes
+          filters: |
+            chezmoi:
+              - '**'
+              - '!docs/**'
+              - '!README.md'
+              - '!AGENTS.md'
+              - '!CLAUDE.md'
+              - '!.claude/**'
+
+  # Fast gate on every PR and push to main: headless apply into a scratch home
+  # with run scripts and externals excluded. modify_ scripts are not in the
+  # `scripts` exclude class, so both harnesses' MCP/merge paths still execute —
+  # with 1Password stubbed so no real secret ever reaches a runner.
   render:
+    needs: changes
+    # Fail open: a skipped (schedule/dispatch) or failed `changes` must still
+    # run the render rather than silently pass by skipping it.
+    if: always() && needs.changes.outputs.chezmoi != 'false'
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install chezmoi
-        run: |
-          sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-verify-env
 
-      - name: Stub 1Password CLI
-        run: |
-          mkdir -p "$RUNNER_TEMP/opstub"
-          cat > "$RUNNER_TEMP/opstub/op" <<'EOF'
-          #!/bin/sh
-          # chezmoi probes `op --version` to pick CLI syntax; every read gets a
-          # fixed placeholder so no real secret exists on the runner.
-          case "$1" in
-            --version) echo "2.30.0" ;;
-            signin) echo "ci-stub-session" ;;
-            account) echo "[]" ;;
-            *) printf 'ci-op-stub' ;;
-          esac
-          EOF
-          chmod +x "$RUNNER_TEMP/opstub/op"
-          echo "$RUNNER_TEMP/opstub" >> "$GITHUB_PATH"
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
 
       - name: Install repo npm dependencies
         run: npm ci --ignore-scripts --omit=dev --prefix "$GITHUB_WORKSPACE"
 
       - name: Apply into scratch home
         run: |
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/home"
           chezmoi -S "$GITHUB_WORKSPACE" -D "$RUNNER_TEMP/home" apply \
             --exclude scripts,externals --no-tty
 
-      - name: Render run scripts
+      # shellcheck ships on the Ubuntu runner image but not the macOS one, and
+      # the macOS-only branches (brew, omlx) are the largest scripts here.
+      - name: Install shellcheck
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install shellcheck
+
+      # execute-template renders for the host OS, so each matrix leg checks its
+      # own branch of the templates. The fresh-* jobs actually run these, but
+      # only weekly and only down the paths they happen to take.
+      - name: Render and check run scripts
         run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/rendered"
+          mkdir -p "$out"
           for f in run_*.sh.tmpl; do
-            chezmoi -S "$GITHUB_WORKSPACE" execute-template < "$f" > /dev/null
+            chezmoi -S "$GITHUB_WORKSPACE" execute-template < "$f" > "$out/${f%.tmpl}"
             echo "render ok: $f"
           done
+          shellcheck --shell=bash --format=gcc "$out"/run_*.sh
 
       - name: Assert rendered targets
         run: |
+          set -euo pipefail
           home="$RUNNER_TEMP/home"
           jq empty "$home/.claude/settings.json"
           jq empty "$home/.claude.json"
@@ -80,12 +136,21 @@ jobs:
           # Rendered configs point MCP/statusline commands into the source
           # dir's node_modules/.bin; a missing binary renders fine but breaks
           # silently at runtime, so assert existence here.
+          #
+          # Collect into a checked assignment rather than reading a process
+          # substitution: `< <(jq ... | sort)` discards the pipeline's exit
+          # status even under pipefail, so a jq failure would leave the loop
+          # with nothing to read and the step passing green.
           missing=0
+          bins=$(jq -r '.. | objects | ((.command? // empty), (.args[]? // empty))
+                        | strings | select(test("node_modules/\\.bin"))' \
+                 "$home/.claude.json" "$home/.claude/settings.json" | sort -u)
           while IFS= read -r bin; do
-            [ -x "$bin" ] || { echo "missing binary: $bin"; missing=1; }
-          done < <(jq -r '.. | objects | ((.command? // empty), (.args[]? // empty))
-                          | strings | select(test("node_modules/\\.bin"))' \
-                   "$home/.claude.json" "$home/.claude/settings.json" | sort -u)
+            if [ -n "$bin" ] && [ ! -x "$bin" ]; then
+              echo "missing binary: $bin"
+              missing=1
+            fi
+          done <<< "$bins"
           [ "$missing" -eq 0 ]
 
   # Weekly + on-demand only (no path filters by design): a full fresh-machine
@@ -97,29 +162,16 @@ jobs:
   fresh-macos:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
+    permissions:
+      contents: read
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install chezmoi
-        run: |
-          sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Stub 1Password CLI
-        run: |
-          mkdir -p "$RUNNER_TEMP/opstub"
-          cat > "$RUNNER_TEMP/opstub/op" <<'EOF'
-          #!/bin/sh
-          case "$1" in
-            --version) echo "2.30.0" ;;
-            signin) echo "ci-stub-session" ;;
-            account) echo "[]" ;;
-            *) printf 'ci-op-stub' ;;
-          esac
-          EOF
-          chmod +x "$RUNNER_TEMP/opstub/op"
-          echo "$RUNNER_TEMP/opstub" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-verify-env
 
       - name: Disk before
         run: df -h /
@@ -141,7 +193,13 @@ jobs:
   fresh-linux:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    container: fedora:latest
+    permissions:
+      contents: read
+    # Deliberately unpinned: this job exists to prove a fresh apply still works
+    # on whatever Fedora is current. Pinning a release would defeat its purpose
+    # and turn a real regression into a silently stale pass. The suppression has
+    # to sit on the offending line, not above it.
+    container: fedora:latest # zizmor: ignore[unpinned-images]
     timeout-minutes: 90
     steps:
       # Container-only artifacts, present on a real Fedora install: sudo, git,
@@ -151,25 +209,15 @@ jobs:
       - name: Bootstrap
         run: dnf install -y sudo git tar gzip dnf5-plugins
 
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install chezmoi
-        run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b /usr/local/bin
-
-      - name: Stub 1Password CLI
-        run: |
-          mkdir -p "$RUNNER_TEMP/opstub"
-          cat > "$RUNNER_TEMP/opstub/op" <<'EOF'
-          #!/bin/sh
-          case "$1" in
-            --version) echo "2.30.0" ;;
-            signin) echo "ci-stub-session" ;;
-            account) echo "[]" ;;
-            *) printf 'ci-op-stub' ;;
-          esac
-          EOF
-          chmod +x "$RUNNER_TEMP/opstub/op"
-          echo "$RUNNER_TEMP/opstub" >> "$GITHUB_PATH"
+      # After checkout: a local action has to exist on disk to be resolved.
+      - uses: ./.github/actions/setup-verify-env
+        with:
+          bin_dir: /usr/local/bin
 
       # Real home, everything included: dnf vendor repos + metapac copr +
       # development-tools (before), npm deps, then metapac sync and nvim Lazy
@@ -178,3 +226,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: chezmoi -S "$GITHUB_WORKSPACE" apply --no-tty
+
+  # One stable check name for branch protection, so the required-checks list
+  # does not have to track matrix legs or the conditional fresh-* jobs. It
+  # cannot speak for lint.yml — that is a separate workflow, and has to be
+  # required alongside this one.
+  ci:
+    if: always()
+    needs: [changes, render, fresh-macos, fresh-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

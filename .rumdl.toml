@@ -1,0 +1,7 @@
+# Consumed by CI (MegaLinter's MARKDOWN_RUMDL) and by conform.nvim locally.
+[global]
+# MD013 line-length: prose here wraps by hand at varying widths and the repo
+# has never enforced a column.
+# MD041 first-line-heading: skill and subagent bodies lead with frontmatter,
+# and CLAUDE.md is a one-line `@AGENTS.md` include.
+disable = ["MD013", "MD041"]

@@ -1,0 +1,92 @@
+name: lint
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    # Dependabot's npm bumps only move version literals in package.json and
+    # package-lock.json — nothing here would fire, and the MegaLinter image pull
+    # is not free; verify.yml's render job is what validates those. Its
+    # github-actions bumps are the opposite case:
+    # they rewrite the action pins in these workflows, including MegaLinter's
+    # own, so actionlint and zizmor have to see them.
+    if: >-
+      github.actor != 'dependabot[bot]'
+      || startsWith(github.head_ref, 'dependabot/github_actions/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run MegaLinter
+        # The documentation flavor carries every linter in ENABLE_LINTERS
+        # (verified against the image) at roughly a third the size of the full
+        # flavor, which is 11.6GB.
+        uses: oxsecurity/megalinter/flavors/documentation@15e5b45552097e318c93de385779ce3b1084052c # v10.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Allowlist individual linters rather than ENABLE whole descriptors:
+          # descriptors gain linters across MegaLinter majors and those
+          # auto-enable. A full-flavor run over this repo activated 31 linters;
+          # the ones left out are noise here, not gaps —
+          #   devskim        35 findings, all git commit SHAs in
+          #                  dot_config/nvim/lazy-lock.json matched as "tokens";
+          #                  betterleaks, secretlint, trufflehog and kingfisher
+          #                  all found zero.
+          #   osv-scanner,   the same 2 transitive npm CVEs Dependabot already
+          #   trivy          tracks; trivy re-downloads a 110MB DB every run.
+          #   cspell         605 findings: nvim, chezmoi, catppuccin, and the
+          #                  "[S]earch"-style keymap descriptions.
+          #   standard       demands single quotes and no semicolons.
+          #   prettier       reflow requests against deliberately formatted
+          #                  configs; never blocks, only nags.
+          #   luacheck       53 "mutating non-standard global variable vim" on
+          #   stylua         init.lua alone; Lua is formatted on save by
+          #                  conform.nvim already.
+          #   lychee         gates CI on third-party uptime.
+          # Must stay on one line with no spaces after the commas: MegaLinter
+          # splits on "," without stripping, so " YAML_YAMLLINT" matches no
+          # linter and is silently dropped.
+          ENABLE_LINTERS: ACTION_ACTIONLINT,ACTION_ZIZMOR,YAML_YAMLLINT,YAML_V8R,JSON_JSONLINT,MARKDOWN_RUMDL,REPOSITORY_BETTERLEAKS
+          # Without this, MegaLinter deactivates MARKDOWN_RUMDL in favour of
+          # markdownlint even when it is the only MARKDOWN linter enabled.
+          MARKDOWN_DEFAULT_STYLE: rumdl
+          # MegaLinter classes rumdl as a formatter and defaults its findings to
+          # non-blocking ("non blocking error(s)", job stays green); this makes
+          # them fail the gate.
+          MARKDOWN_RUMDL_DISABLE_ERRORS: false
+          # zizmor's online audits resolve action refs against github.com, and
+          # one failed online audit aborts the whole run ("no audit was
+          # performed"). --offline forces offline despite GITHUB_TOKEN being
+          # set, keeping the static audits.
+          ACTION_ZIZMOR_ARGUMENTS: --offline
+          # Diff mode resolves the base as origin/$DEFAULT_BRANCH, which only
+          # exists on a pull request; push and merge_group sweep everything.
+          VALIDATE_ALL_CODEBASE: ${{ github.event_name != 'pull_request' }}
+          DEFAULT_BRANCH: ${{ github.base_ref }}
+          # .chezmoitemplates/*.md are Go templates that render into markdown,
+          # not markdown documents: rumdl reads `{{- /* ... */ -}}` comments as
+          # inline HTML and the frontmatter `---` as a setext heading. Every one
+          # of the 13 findings there was that mis-parse or a nit inside a
+          # template comment. What renders out of them is markdown, and
+          # verify.yml already renders it.
+          MARKDOWN_FILTER_REGEX_EXCLUDE: \.chezmoitemplates/.*
