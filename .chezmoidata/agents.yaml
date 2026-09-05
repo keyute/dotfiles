@@ -54,6 +54,25 @@ agents:
       # off so browser driving stays on one path, the playwright MCP server
       # (see agent_mcp_servers.playwright)
       "browser:control-in-app-browser": false
+  # side-by-side trial vs codex for interactive GPT sessions (2026-09-05).
+  # pi has no permission system, so the srt wrapper (private_dot_pi/
+  # srt-settings.json.tmpl + zsh alias) is its only boundary — launch pi
+  # through it, never bare. settings.json is deliberately unmanaged: pi
+  # rewrites it itself (/settings, Ctrl+S saves); wholesale ownership would
+  # revert those on every apply. Revisit with a modify_ merge if pi wins.
+  pi:
+    home: "~/.pi"
+    sensitive_subpaths:
+      - "agent/auth.json"
+      - "agent/sessions"
+    extras:
+      allowed_domains:
+        - "openai.com"
+        - "*.openai.com"
+        - "chatgpt.com"
+        - "*.chatgpt.com"
+        # version/update checks and install ping
+        - "pi.dev"
 # shared subagent definitions rendered for every harness; bodies live in
 # .chezmoitemplates/subagents/<name>.md, tier resolves via subagent_tiers.
 # `tools` binds only the Claude render — subagent-codex.toml emits no tool
@@ -216,11 +235,14 @@ agent_mcp_servers:
   # default_tools_approval_mode = "approve"; omission keeps normal review.
 
   # scoped to claude: codex must not be handed itself as an MCP server; skipped
-  # entirely on machines without the codex binary
+  # entirely on machines without the codex binary. The bridge wraps the stable
+  # `codex exec` CLI (fixed read-only invocation) because `codex mcp-server`
+  # is deprecated (v0.149.1) — keeping MCP transport preserves what a Bash
+  # call can't: harness-spawned outside the sandbox (~/.codex deny intact)
+  # and prompt-free in plan mode via the rendered allow rule.
   codex:
-    command: codex
-    args:
-      - mcp-server
+    script: codex-bridge.mjs
+    args: []
     auto_approve_tools: true
     requires: codex
     harnesses:

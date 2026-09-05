@@ -1,0 +1,9 @@
+#!/bin/bash
+{{ if eq .chezmoi.os "darwin" -}}
+set -euo pipefail
+
+# darwin counterpart of the metapac npm group entries (metapac is linux-only
+# here and .config/metapac is chezmoi-ignored on darwin); neither package has
+# a brew cask/formula, so npm-global (prefix ~/.local) it is
+npm install -g @earendil-works/pi-coding-agent @anthropic-ai/sandbox-runtime
+{{ end -}}

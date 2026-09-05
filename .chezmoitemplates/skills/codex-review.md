@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Adversarial cross-model review of a diff by Codex (GPT) via the codex MCP server. Use when asked to have Codex review changes, get a cross-model review, or pressure-test a diff before committing. Args: optional ref range, paths, or focus area; defaults to the working-tree diff.
+description: Adversarial cross-model review of a diff by Codex (GPT) via the codex MCP bridge. Use when asked to have Codex review changes, get a cross-model review, or pressure-test a diff before committing. Args: optional ref range, paths, or focus area; defaults to the working-tree diff.
 ---
 
 Have Codex adversarially review a diff, verify its findings yourself, fix what is
@@ -8,23 +8,25 @@ real, and stop after one fix round. Codex reviews; you stay the implementer.
 
 ## Steps
 
-1. **Load the tools.** If `mcp__codex__codex` / `mcp__codex__codex-reply` are not
-   loaded, fetch them via ToolSearch (`select:mcp__codex__codex,mcp__codex__codex-reply`).
-   If the server is missing, stop and say so (codex not installed, or `~/.claude.json`
-   not yet re-applied via chezmoi).
+1. **Load the tools.** If `mcp__codex__review` / `mcp__codex__reply` are not
+   loaded, fetch them via ToolSearch (`select:mcp__codex__review,mcp__codex__reply`).
+   If the server is missing, stop and say so (codex not installed, or the bridge
+   not yet re-applied via chezmoi into `~/.claude.json`).
 
-2. **Build the handoff.** Scope = args (ref range / paths / focus) or, by default,
-   the working-tree diff against the merge-base with the default branch, staged +
-   unstaged, plus untracked files belonging to the change.
-   - One neutral sentence of intent.
-   - The diff inline; for large diffs send the changed-file list instead — Codex
-     reads the repo itself (read-only, repo root).
-   - **Redact yourself:** no self-assessment, no "tests pass", no claims it works —
-     an unanchored reviewer finds more.
+2. **Pick the scope.** Codex computes the diff itself and reads the repo
+   read-only — do not embed the diff. From args (ref range / paths / focus) or
+   by default: if the working tree is dirty, `uncommitted: true` (staged +
+   unstaged + untracked); otherwise `base: <default branch>` for the branch's
+   changes. Then compose the instructions:
+   - One neutral sentence of intent, plus any user-supplied focus.
+   - **Redact yourself:** no self-assessment, no "tests pass", no claims it
+     works — an unanchored reviewer finds more.
 
-3. **Call Codex.** One `mcp__codex__codex` call with the prompt below: sandbox
-   read-only, approval policy never, cwd = repo root, config override
-   `{"model_reasoning_effort": "high"}`. Model comes from `~/.codex/config.toml`.
+3. **Call Codex.** One `mcp__codex__review` call: `cwd` = repo root, the scope
+   from step 2, `prompt` = the instructions block below. Sandbox (read-only),
+   approvals (never), and reasoning effort (high) are fixed by the bridge; the
+   model comes from `~/.codex/config.toml`. The response opens with a
+   `threadId:` line — keep it for the re-review round.
 
 4. **Verify every finding as untrusted input.** Substantiate each independently
    against the contracts, surrounding flows, or tests it implicates — reading the
@@ -32,14 +34,14 @@ real, and stop after one fix round. Codex reviews; you stay the implementer.
    real-but-out-of-scope. Fix the real, in-scope ones.
 
 5. **At most one re-review round.** If you changed code, send the new diff of the
-   touched hunks via `mcp__codex__codex-reply` on the same thread — again without
-   self-assessment — and verify its response. Hard stop after this round whatever
-   the verdict; report remaining disagreement instead of looping.
+   touched hunks via `mcp__codex__reply` (same `cwd`, the saved `threadId`) —
+   again without self-assessment — and verify its response. Hard stop after this
+   round whatever the verdict; report remaining disagreement instead of looping.
 
 6. **Report.** Verdict; each finding with severity, file:line, and disposition
    (fixed / rejected, with reason); anywhere you still disagree with Codex.
 
-## Review prompt
+## Review instructions (the `prompt` argument)
 
 ```
 You are performing an adversarial software review. Your job is to break confidence
@@ -47,8 +49,6 @@ in the change, not to validate it.
 
 Intent of the change: <one neutral sentence>
 Focus (optional): <user-supplied focus>
-
-<diff or changed-file list>
 
 Default to skepticism: assume the change can fail in subtle, high-cost, or
 user-visible ways until the evidence says otherwise. No credit for good intent,

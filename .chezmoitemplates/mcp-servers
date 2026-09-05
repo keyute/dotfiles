@@ -6,7 +6,8 @@
        output: JSON {name: {connection: {...}, policy: {...}}}
                  connection: {type: "http", url} | {type: "stdio", command, args, env}
                              — op: refs resolved via onepasswordRead, command
-                             defaulting to node_modules/.bin/<package_bin>
+                             defaulting to node_modules/.bin/<package_bin>, or
+                             `node scripts/<script>` for repo-local bridges
                  policy:     {auto_approve_tools, denied_tools} — always both keys,
                              normalized to false/[] so consumers can index them
                              unguarded
@@ -39,10 +40,15 @@
       {{- $connection = dict "type" "http" "url" $url -}}
     {{- else -}}
       {{- $command := get $cfg "command" -}}
-      {{- if not $command -}}
+      {{- $args := list -}}
+      {{- $script := get $cfg "script" -}}
+      {{- if $command -}}
+      {{- else if $script -}}
+        {{- $command = "node" -}}
+        {{- $args = append $args (printf "%s/scripts/%s" $root.chezmoi.sourceDir $script) -}}
+      {{- else -}}
         {{- $command = printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
       {{- end -}}
-      {{- $args := list -}}
       {{- range $cfg.args -}}
         {{- if kindIs "map" . -}}
           {{- $ref := .op -}}

@@ -13,6 +13,9 @@ alias python='python3'
 alias lg='lazygit'
 alias lzd='lazydocker'
 alias lsql='lazysql'
+# pi ships no permission system; the srt wrapper is its only boundary — never
+# launch the bare binary (settings rendered from .chezmoidata/agents.yaml)
+alias pi='srt --settings ~/.pi/srt-settings.json pi'
 
 # `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the
 # GHES host for repo-independent commands and for gh-dash (`ghe dash`).

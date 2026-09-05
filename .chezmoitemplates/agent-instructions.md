@@ -15,6 +15,10 @@
 
 ## Working agreements
 
+{{/* capability gate: harnesses without an entry in subagent_tiers (pi) have
+     no subagent fleet and no MCP/web tools, so the bullets that direct work
+     to those capabilities would be dead or false text there */ -}}
+{{ if hasKey $root.subagent_tiers $self -}}
 - Delegate bounded, independent work that repays the handoff — disposable
   searches, log triage, research, and spec-complete leaf implementation with an
   objective correctness gate; state objective, scope, and output format, and
@@ -34,6 +38,7 @@
   web-search substitute.
 - Web search: built-in by default (cost); escalate to the Exa MCP when built-in
   results are sparse, stale, or can't reach the source.
+{{ end -}}
 - Keep implementations simple; do not overengineer.
 - Match the surrounding code's style, design language, and colocation; if the
   project's rules don't settle it, find the codebase's pattern before writing.
@@ -49,10 +54,12 @@
   now; an edge case worth fixing only once a real user hits it gets a
   mention in the review — no code comment, no fix until that bug report is
   the task at hand.
+{{ if hasKey $root.subagent_tiers $self -}}
 - After a high-stakes or expensive-to-reverse change — auth, security, data,
   concurrency, migrations — check the artifact against the requirements with a
   fresh set of eyes before calling it done: hand a subagent both, not your
   reasoning trace. Skip trivial, easily-reverted changes.
+{{ end -}}
 - When I correct your approach or re-explain a convention, offer to record it in
   the project's instruction file (AGENTS.md/CLAUDE.md) or your memory.
 - Never read credential stores, shell history, agent transcripts/session stores,

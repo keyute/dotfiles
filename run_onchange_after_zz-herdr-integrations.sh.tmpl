@@ -8,4 +8,8 @@ set -eu
 if command -v herdr > /dev/null; then
   herdr integration install claude
   herdr integration install codex
+  # guarded: pi lands via a different package path per OS and may lag an apply
+  if command -v pi > /dev/null; then
+    herdr integration install pi
+  fi
 fi

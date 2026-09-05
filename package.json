@@ -1,10 +1,12 @@
 {
   "private": true,
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@playwright/mcp": "0.0.79",
     "@upstash/context7-mcp": "3.2.4",
     "ccstatusline": "2.2.27",
     "exa-mcp-server": "3.4.1",
-    "smol-toml": "1.8.0"
+    "smol-toml": "1.8.0",
+    "zod": "3.25.76"
   }
 }

@@ -1,0 +1,6 @@
+{{ template "agent-instructions.md" (dict "self" "pi" "root" .) }}
+- Sessions run inside an OS sandbox (the `pi` shell alias wraps the binary in
+  srt); a denied path fails with "operation not permitted" — treat it as
+  off-limits, never relaunch outside the wrapper to get past it.
+- There are no subagents or MCP tools here: do bounded searches and research
+  yourself, and say so when a task needs a capability this harness lacks.

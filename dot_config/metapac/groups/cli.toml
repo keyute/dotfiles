@@ -59,6 +59,8 @@ packages = [
 
 [npm]
 packages = [
+	"@anthropic-ai/sandbox-runtime",
+	"@earendil-works/pi-coding-agent",
 	"@openai/codex",
 	"npm-check-updates",
 	# language servers used by Claude Code
