@@ -36,7 +36,7 @@ agents:
     home: "~/.codex"
     defaults:
       model: gpt-5.6-sol
-      model_reasoning_effort: high
+      model_reasoning_effort: &codex_reasoning_effort high
       plan_mode_reasoning_effort: high
     sensitive_subpaths:
       - "auth.json"
@@ -219,6 +219,8 @@ agent_sandbox:
     os_paths:
       darwin:
         "/opt/homebrew": read
+        # uv's cache lives under Library/Caches on macOS, not ~/.cache/uv
+        "~/Library/Caches/uv": write
     resolved_paths:
       # path resolved at chezmoi render time; skipped if `requires` binary absent
       - mode: write
@@ -258,7 +260,8 @@ agent_mcp_servers:
   # and prompt-free in plan mode via the rendered allow rule.
   codex:
     script: codex-bridge.mjs
-    args: []
+    # Anchored to defaults.model_reasoning_effort so the bridge cannot drift.
+    args: ["--reasoning-effort", *codex_reasoning_effort]
     auto_approve_tools: true
     requires: codex
     harnesses:

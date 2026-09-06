@@ -3,9 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { startBroker } from "./broker.mjs";
+import { startBroker, requestBroker } from "./broker.mjs";
+import { startToolWorker, workerOperations } from "./operations.mjs";
 
 test("live SRT rejects source writes and sensitive symlinks, then permits approved writes", { skip: process.env.PI_WORKFLOW_LIVE_TESTS !== "1" && "Set PI_WORKFLOW_LIVE_TESTS=1 on a host that permits Unix sockets and SRT" }, async t => {
   const root = mkdtempSync(join(tmpdir(), "pi-live-test-"));
@@ -18,19 +17,30 @@ test("live SRT rejects source writes and sensitive symlinks, then permits approv
   const config = { version: 1, agentDir: work, models: {}, filesystem: { denyRead: [secret], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: {}, mcp: {} };
   const broker = await startBroker(config, work, async () => true);
   t.after(() => broker.close());
-  const run = (tool, args) => new Promise(resolve => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url)), "tool", tool], { env: { ...process.env, ...broker.env }, stdio: ["pipe", "pipe", "pipe"] });
-    let output = "";
-    child.stdout.on("data", chunk => { output += chunk; });
-    child.stderr.resume();
-    child.stdin.on("error", () => {});
-    child.on("close", code => resolve({ code, output }));
-    child.stdin.end(JSON.stringify(args));
-  });
-  assert.notEqual((await run("write", { path: "file", content: "blocked" })).code, 0);
-  assert.notEqual((await run("read", { path: "link" })).code, 0);
-  assert.notEqual((await run("bash", { command: "printf blocked > file" })).code, 0);
+  const call = async (tool, args, op, params, handlers) => {
+    const { ticket } = await requestBroker(broker.env, "root", { action: "authorize", tool, args });
+    const client = startToolWorker(tool, { cwd: work, env: { ...broker.env, PI_WORKFLOW_ROLE: "root" }, ticket });
+    try { return await client.call(op, params, handlers); } finally { await client.close(); }
+  };
+  // Policy layer: plan mode rejects writes and symlinked secrets before any
+  // lease (the broker reports every policy rejection with one generic denial).
+  await assert.rejects(call("write", { path: "file" }, "writeFile", { path: join(work, "file"), data: "blocked" }), /denied/);
+  await assert.rejects(call("read", { path: "link" }, "readFile", { path: join(work, "link") }), /denied/);
+  // SRT layer: an approved bash lease still cannot write the workspace in plan mode.
+  const planBash = await call("bash", { command: "printf blocked > file" }, "exec", { command: "printf blocked > file", cwd: work });
+  assert.notEqual(planBash.exitCode, 0);
   await broker.setMode("execute");
-  assert.equal((await run("write", { path: "file", content: "approved" })).code, 0);
+  await call("write", { path: "file" }, "writeFile", { path: join(work, "file"), data: "approved" });
   assert.equal(readFileSync(join(work, "file"), "utf8"), "approved");
+  let streamed = "";
+  const bash = await call("bash", { command: "printf approved-bash" }, "exec", { command: "printf approved-bash", cwd: work }, { onChunk: chunk => { streamed += chunk; } });
+  assert.equal(bash.exitCode, 0);
+  assert.ok(streamed.includes("approved-bash"));
+  // SRT layer: even in execute mode the leased profile denies reading the secret.
+  const secretRead = await call("bash", { command: `cat ${JSON.stringify(secret)}` }, "exec", { command: `cat ${JSON.stringify(secret)}`, cwd: work });
+  assert.notEqual(secretRead.exitCode, 0);
+  // A lease without a live ticket is refused outright.
+  const bare = startToolWorker("bash", { cwd: work, env: { ...broker.env, PI_WORKFLOW_ROLE: "root" } });
+  await assert.rejects(bare.call("exec", { command: "true" }));
+  await bare.close();
 });

@@ -2,9 +2,17 @@ import { canonical } from "./policy.mjs";
 
 const launchKeys = new Set(["agent", "task", "async", "model", "context", "agentScope"]);
 const controlKeys = new Set(["action", "id", "runId", "index", "message", "mode", "view", "steeringRecovery"]);
+const listKeys = new Set(["action", "agentScope", "capabilities"]);
 
 export async function checkChildLaunch(args, config, role, ctx, resolveContract) {
   if (args.action) {
+    // Discovery is part of the launch contract: the model lists agents before
+    // any named launch, so "list" must pass with its documented fields.
+    if (args.action === "list") {
+      if (Object.keys(args).some(key => !listKeys.has(key))) throw new Error("This child management operation is not enabled");
+      args.agentScope = "user";
+      return;
+    }
     if (!["status", "interrupt", "stop", "steer"].includes(args.action)
       || Object.keys(args).some(key => !controlKeys.has(key))
       || (args.view && args.view !== "fleet")) throw new Error("This child management operation is not enabled");

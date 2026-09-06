@@ -61,7 +61,6 @@ packages = [
 
 [npm]
 packages = [
-	"@earendil-works/pi-coding-agent",
 	"@openai/codex",
 	"npm-check-updates",
 	# language servers used by Claude Code

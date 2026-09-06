@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +5,7 @@ import { createJiti } from "jiti";
 import { Type } from "typebox";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, acquireChild } from "./broker.mjs";
+import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
 import { workerTools, canonical, publicToolName } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
 import { checkChildLaunch } from "./children.mjs";
@@ -13,6 +13,22 @@ import { installFooter } from "./footer.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
+
+// Claude-Code-style input caret. Rendered lines carry their cursor marker
+// inline, so prefixing the first content line (identified by its leading
+// padding) shifts the cursor correctly; when the shape ever changes, the
+// caret silently disappears instead of corrupting the editor.
+class CaretEditor extends sdk.CustomEditor {
+  constructor(tui, theme, keybindings) {
+    super(tui, theme, keybindings, { paddingX: 2 });
+  }
+  render(width) {
+    const lines = super.render(width);
+    const index = lines.findIndex(line => line.startsWith("  "));
+    if (index !== -1) lines[index] = this.borderColor("❯ ") + lines[index].slice(2);
+    return lines;
+  }
+}
 
 export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "workflow.json"), role = "root", runtime = {}) {
   const startBroker = runtime.startBroker ?? createPolicyBroker;
@@ -28,18 +44,20 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let childRevoked = false;
   let broker;
   let env;
-  let foreground = 0;
-  const controllers = new Set();
   const jiti = createJiti(import.meta.url);
   const { registerSubagentCapabilityCeiling } = await jiti.import("pi-subagents/capability-ceiling");
   const { resolveSubagentLaunchContract } = await jiti.import("pi-subagents/preflight");
 
+  // Children carry the epoch they were launched under; the broker refuses a
+  // child arriving after a later epoch, so root must refresh this on every bump.
+  const publishEpoch = () => { process.env.PI_WORKFLOW_EPOCH = String(broker.policy.epoch); };
   if (role === "root") {
     broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request));
     env = broker.env;
     Object.assign(process.env, env);
+    publishEpoch();
   } else {
-    env = { PI_WORKFLOW_SOCKET: process.env.PI_WORKFLOW_SOCKET, PI_WORKFLOW_TOKEN: process.env.PI_WORKFLOW_TOKEN };
+    env = { PI_WORKFLOW_SOCKET: process.env.PI_WORKFLOW_SOCKET, PI_WORKFLOW_TOKEN: process.env.PI_WORKFLOW_TOKEN, PI_WORKFLOW_EPOCH: process.env.PI_WORKFLOW_EPOCH };
     await requestBroker(env, role, { action: "state" });
   }
   const permittedTools = role === "root" ? [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user", "submit_plan"] : config.agents[role].tools;
@@ -49,46 +67,27 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     return requestBroker(env, role, { action: "authorize", tool, args });
   }
 
-  function runTool(name, args, signal) {
-    return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [runnerPath, "tool", name], {
-        cwd: currentContext.cwd,
-        env: { ...process.env, ...env, PI_WORKFLOW_ROLE: role },
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      let output = "";
-      let errorOutput = "";
-      const abort = () => child.kill("SIGTERM");
-      signal?.addEventListener("abort", abort, { once: true });
-      if (signal?.aborted) abort();
-      child.stdout.on("data", chunk => {
-        output += chunk;
-        if (output.length > 16 * 1024 * 1024) abort();
-      });
-      child.stderr.on("data", chunk => { errorOutput = (errorOutput + chunk).slice(-4096); });
-      child.stdin.on("error", () => {});
-      child.on("error", reject);
-      child.on("close", code => {
-        signal?.removeEventListener("abort", abort);
-        if (code !== 0 || signal?.aborted) return reject(new Error(`Sandboxed ${name} failed${errorOutput ? `: ${errorOutput}` : ""}`));
-        try { resolve(JSON.parse(output)); } catch { reject(new Error("Invalid sandbox tool result")); }
-      });
-      child.stdin.end(JSON.stringify(args));
-    });
-  }
+  const toolFactory = name => sdk[`create${name[0].toUpperCase()}${name.slice(1)}ToolDefinition`];
+  // Session env exposure is disabled: exec runs in a worker whose environment
+  // is the broker-leased safe set, so session variables would never arrive.
+  const bashOptions = { exposeSessionEnvironment: false };
+  const workerEnv = { ...env, PI_WORKFLOW_ROLE: role };
 
-  function sandboxTool(tool) {
-    if (!permittedTools.includes(publicToolName(tool.name))) return;
-    pi.registerTool({ ...tool, name: publicToolName(tool.name), promptGuidelines: tool.promptGuidelines?.map(text => text.replace(/\b(read|write|edit|grep|find|ls|bash|lsp_diagnostics|lsp_fix)\b/g, publicToolName)), async execute(id, args, signal) {
-      await authorize(tool.name, args);
-      return runTool(tool.name, { ...args, ...(tool.name.startsWith("lsp_") ? { root: currentContext.cwd } : {}) }, signal);
+  function sandboxTool(name) {
+    if (!permittedTools.includes(publicToolName(name))) return;
+    const template = toolFactory(name)(process.cwd(), name === "bash" ? bashOptions : undefined);
+    pi.registerTool({ ...template, name: publicToolName(name), promptGuidelines: template.promptGuidelines?.map(text => text.replace(/\b(read|write|edit|grep|find|ls|bash)\b/g, publicToolName)), async execute(id, args, signal, onUpdate, ctx) {
+      const { ticket } = await authorize(name, args);
+      const client = startToolWorker(name, { cwd: currentContext.cwd, env: workerEnv, ticket, signal });
+      try {
+        if (name === "grep") return await executeSandboxGrep(client, args, signal);
+        const operations = workerOperations(client)[name];
+        const tool = toolFactory(name)(currentContext.cwd, name === "bash" ? { ...bashOptions, operations } : { operations });
+        return await tool.execute(id, args, signal, onUpdate, ctx);
+      } finally { await client.close(); }
     } });
   }
-  for (const name of ["read", "write", "edit", "bash", "grep", "find", "ls"]) {
-    sandboxTool(sdk[`create${name[0].toUpperCase()}${name.slice(1)}ToolDefinition`](process.cwd()));
-  }
-  const lsp = await jiti.import("@narumitw/pi-lsp/dist/index.ts", { default: true });
-  lsp({ registerTool: sandboxTool, registerCommand() {}, on() {} });
+  for (const name of ["read", "write", "edit", "bash", "grep", "find", "ls"]) sandboxTool(name);
 
   pi.on("tool_call", async (event, ctx) => {
     try {
@@ -99,13 +98,16 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     } catch (error) { return { block: true, reason: error.message }; }
   });
   pi.on("user_bash", async event => {
+    let client;
     try {
-      await authorize("bash", { command: event.command });
-      const result = await runTool("bash", { command: event.command }, undefined);
-      return { result: { output: result.content.filter(c => c.type === "text").map(c => c.text).join("\n"), exitCode: result.isError ? 1 : 0, cancelled: false, truncated: false } };
+      const { ticket } = await authorize("bash", { command: event.command });
+      client = startToolWorker("bash", { cwd: currentContext.cwd, env: workerEnv, ticket });
+      let output = "";
+      const { exitCode } = await client.call("exec", { command: event.command, cwd: currentContext.cwd }, { onChunk: chunk => { output += chunk; } });
+      return { result: { output, exitCode: exitCode ?? 1, cancelled: false, truncated: false } };
     } catch (error) {
       return { result: { output: error.message, exitCode: 1, cancelled: false, truncated: false } };
-    }
+    } finally { await client?.close(); }
   });
 
   pi.events.on("pi-mcp-adapter:tool-approval-request", request => {
@@ -121,8 +123,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   async function setMode(mode, ctx) {
     if (!broker) throw new Error("Only the parent can change workflow mode");
     ready = false;
-    for (const controller of controllers) controller.abort();
     await broker.setMode(mode);
+    publishEpoch();
     ready = true;
     pi.setThinkingLevel(mode === "plan" ? config.models.planEffort : config.models.defaultEffort);
     ctx.ui.setStatus("workflow", `${mode} · ${broker.policy.approval} approvals · sandboxed tools`);
@@ -148,6 +150,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (broker && ctx.hasUI && !footerInstalled) {
       footerInstalled = true;
       installFooter(pi, ctx);
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings));
     }
     pi.setActiveTools(permittedTools.filter(name => pi.getAllTools().some(tool => tool.name === name)));
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
@@ -172,7 +175,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     } });
     pi.registerCommand("approvals", { description: "Choose auto-reviewed or individually prompted approvals", handler: async (_args, ctx) => {
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
-      if (value) { broker.policy.approval = value; broker.policy.epoch++; ctx.ui.setStatus("workflow", `${broker.policy.mode} · ${value} approvals · sandboxed tools`); }
+      if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); ctx.ui.setStatus("workflow", `${broker.policy.mode} · ${value} approvals · sandboxed tools`); }
     } });
     pi.registerTool({ name: "ask_user", label: "Question", description: "Ask the user for a missing decision.", parameters: Type.Object({ question: Type.String(), options: Type.Optional(Type.Array(Type.String())) }), async execute(_id, args) {
       if (!currentContext.hasUI) return resultText("User input unavailable; stop and report the missing decision.");
@@ -188,21 +191,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       await setMode("execute", ctx);
       return resultText("Plan approved; scoped execution enabled.");
     } });
+    // Registered as documented; model-originated launches are validated (and
+    // their args patched) by the blocking tool_call hook, the capability
+    // ceiling bounds every launch path, and the broker's child leases enforce
+    // capacity and runtime role.
     const subagents = await jiti.import("pi-subagents", { default: true });
-    await subagents(new Proxy(pi, { get(target, key) {
-      if (key !== "registerTool") return target[key];
-      return tool => pi.registerTool({ ...tool, async execute(id, args, signal, onUpdate, ctx) {
-        if (tool.name !== "subagent") return tool.execute(id, args, signal, onUpdate, ctx);
-        await checkChildLaunch(args, config, role, ctx, resolveSubagentLaunchContract);
-        if (args.action) return tool.execute(id, args, signal, onUpdate, ctx);
-        if (foreground >= 3) throw new Error("Three child launches are already active");
-        const controller = new AbortController();
-        controllers.add(controller);
-        foreground++;
-        try { return await tool.execute(id, args, signal ? AbortSignal.any([signal, controller.signal]) : controller.signal, onUpdate, ctx); }
-        finally { controllers.delete(controller); foreground--; }
-      } });
-    } }));
+    await subagents(pi);
   }
 
   if (permittedTools.includes("mcp")) {
@@ -219,6 +213,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     ceiling?.dispose();
     if (broker) {
       await broker.close();
+      delete process.env.PI_WORKFLOW_EPOCH;
       for (const [key, value] of Object.entries(env)) if (process.env[key] === value) delete process.env[key];
     }
   });

@@ -23,8 +23,6 @@
       {{- end -}}
     {{- end -}}
     {{- if $needsMcp -}}{{- $tools = append $tools "mcp" -}}{{- end -}}
-    {{- if has "workspace_read" $tools -}}{{- $tools = append $tools "workspace_lsp_diagnostics" -}}{{- end -}}
-    {{- if not $meta.readonly -}}{{- $tools = append $tools "workspace_lsp_fix" -}}{{- end -}}
     {{- if and (ne $name "dep-researcher") (ne $name "log-triager") -}}
       {{- $tools = append $tools "subagent" -}}
     {{- end -}}

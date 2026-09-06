@@ -53,7 +53,6 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   const { run, target } = fixture(t);
   const workflow = JSON.parse(run("cat", target(".pi/agent/workflow.json")));
   const piSettings = JSON.parse(run("cat", target(".pi/agent/settings.json")));
-  const lsp = JSON.parse(run("cat", target(".pi/agent/pi-lsp.json")));
 
   assert.equal(workflow.version, 1);
   assert.equal(workflow.models.default, "gpt-5.6-sol");
@@ -63,7 +62,6 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.equal(workflow.agents.explorer.tools.includes("read"), false);
   assert.equal(piSettings.defaultProvider, "openai-codex");
   assert.equal(piSettings.enabledModels.length, 4);
-  assert.deepEqual(Object.keys(lsp).sort(), ["go", "lua", "python", "typescript"]);
 
   for (const role of Object.keys(workflow.agents)) {
     const agent = run("cat", target(`.pi/agent/agents/${role}.md`));

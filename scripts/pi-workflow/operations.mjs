@@ -1,0 +1,119 @@
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
+// Counted in wire bytes (base64 ≈ 1.37× content). File contents transfer
+// whole — the SDK truncates only after reading — and native pi imposes no
+// size bound at all, so this stays a runaway-worker backstop (~190MiB files),
+// never an ordinary-file limit.
+const OUTPUT_LIMIT = 256 * 1024 * 1024;
+
+// One sandboxed worker per tool invocation: the SDK tool runs in-process with
+// the real harness context; only its primitive operations cross into SRT.
+export function startToolWorker(name, { cwd, env, ticket, signal, spawnProcess }) {
+  const child = spawnProcess ? spawnProcess() : spawn(process.execPath, [runnerPath, "tool", name], {
+    cwd,
+    env: { ...process.env, ...env, ...(ticket ? { PI_WORKFLOW_TICKET: ticket } : {}) },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const pending = new Map();
+  let nextId = 0;
+  let received = 0;
+  let buffer = "";
+  let errorOutput = "";
+  let closed = false;
+  const kill = () => child.kill("SIGTERM");
+  const failAll = message => {
+    for (const entry of pending.values()) entry.reject(new Error(message));
+    pending.clear();
+  };
+  signal?.addEventListener("abort", kill, { once: true });
+  if (signal?.aborted) kill();
+  child.stderr.on("data", chunk => { errorOutput = (errorOutput + chunk).slice(-4096); });
+  child.stdin.on("error", () => {});
+  child.on("error", error => { closed = true; failAll(error.message); });
+  child.on("close", () => {
+    closed = true;
+    signal?.removeEventListener("abort", kill);
+    failAll(`Sandboxed ${name} failed${errorOutput ? `: ${errorOutput}` : ""}`);
+  });
+  child.stdout.on("data", chunk => {
+    received += chunk.length;
+    if (received > OUTPUT_LIMIT) return kill();
+    buffer += chunk;
+    let newline;
+    while ((newline = buffer.indexOf("\n")) !== -1) {
+      const raw = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      let message;
+      try { message = JSON.parse(raw); } catch { return kill(); }
+      const entry = pending.get(message.id);
+      if (!entry) continue;
+      if (typeof message.chunk === "string") entry.onChunk?.(Buffer.from(message.chunk, "base64"));
+      else {
+        pending.delete(message.id);
+        if (message.ok) entry.resolve(message.value);
+        else entry.reject(Object.assign(new Error(message.error?.message || "Sandbox operation failed"), message.error?.code ? { code: message.error.code } : {}));
+      }
+    }
+  });
+  return {
+    call(op, params, { signal: opSignal, onChunk } = {}) {
+      return new Promise((resolve, reject) => {
+        if (closed) return reject(new Error(`Sandboxed ${name} unavailable`));
+        const id = `op${nextId++}`;
+        const abort = () => child.stdin.write(`${JSON.stringify({ op: "abort", target: id })}\n`);
+        pending.set(id, {
+          onChunk,
+          resolve: value => { opSignal?.removeEventListener("abort", abort); resolve(value); },
+          reject: error => { opSignal?.removeEventListener("abort", abort); reject(error); },
+        });
+        opSignal?.addEventListener("abort", abort, { once: true });
+        child.stdin.write(`${JSON.stringify({ id, op, params })}\n`);
+        if (opSignal?.aborted) abort();
+      });
+    },
+    close() {
+      return new Promise(resolve => {
+        if (closed) return resolve();
+        child.once("close", resolve);
+        child.stdin.end();
+        setTimeout(kill, 3000).unref();
+      });
+    },
+  };
+}
+
+export function workerOperations(client) {
+  const readFile = async path => {
+    const parts = [];
+    await client.call("readFile", { path }, { onChunk: part => parts.push(part) });
+    return Buffer.concat(parts);
+  };
+  const writeFile = (path, content) => client.call("writeFile", { path, data: content });
+  const exists = path => client.call("exists", { path });
+  return {
+    bash: { exec: (command, cwd, { onData, signal, timeout }) => client.call("exec", { command, cwd, timeout }, { signal, onChunk: onData }) },
+    read: {
+      readFile,
+      access: path => client.call("access", { path, mode: "r" }).then(() => {}),
+      detectImageMimeType: path => client.call("detectImage", { path }),
+    },
+    edit: { readFile, writeFile, access: path => client.call("access", { path, mode: "rw" }).then(() => {}) },
+    write: { writeFile, mkdir: path => client.call("mkdir", { path }) },
+    find: { exists, glob: (pattern, cwd, { ignore, limit }) => client.call("findGlob", { pattern, cwd, ignore, limit }) },
+    ls: {
+      exists,
+      stat: async path => { const value = await client.call("stat", { path }); return { isDirectory: () => value.isDirectory }; },
+      readdir: path => client.call("readdir", { path }),
+    },
+  };
+}
+
+// The SDK's GrepOperations seam does not cover its host-side ripgrep spawn, so
+// grep search runs entirely inside the worker (same approach as the official
+// Gondolin tool-routing example).
+export async function executeSandboxGrep(client, params, signal) {
+  const { text, details } = await client.call("grep", params, { signal });
+  return { content: [{ type: "text", text }], details };
+}

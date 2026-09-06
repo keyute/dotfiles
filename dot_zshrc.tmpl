@@ -14,12 +14,15 @@ alias lg='lazygit'
 alias lzd='lazydocker'
 alias lsql='lazysql'
 # Disable native tools even if the mandatory workflow extension fails to load.
+# The CLI is the repo's lockfile-pinned copy: pi breaks extension APIs across
+# 0.x point releases, and the workflow extension must match it exactly.
 unalias pi 2>/dev/null
 pi() {
   local -a pi_extensions=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts")
   [[ ! -f "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts" ]] ||
     pi_extensions+=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts")
-  command pi --no-builtin-tools --no-extensions "${pi_extensions[@]}" "$@"
+  # Fullscreen TUI enables mouse input (click-to-expand tool rows).
+  "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions --tui-mode fullscreen "${pi_extensions[@]}" "$@"
 }
 
 # `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the

@@ -1,0 +1,6 @@
+# Package lists with no native manifest mechanism; their run_onchange scripts
+# template these values, so an edit here re-triggers the install.
+gh:
+  extensions:
+    "dlvhdr/gh-dash": "PR/issue dashboard"
+    "dlvhdr/gh-enhance": "GitHub Actions TUI, launched from gh-dash's PR view (T)"

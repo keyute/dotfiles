@@ -45,9 +45,9 @@ test("MCP hard denial and plan scope precede approvals", t => {
   assert.throws(() => p.inspectMcp("reviewer", "docs", "search"), /unavailable/);
 });
 
-test("LSP root changes and calls during tightening fail closed", t => {
+test("removed tools and calls during tightening fail closed", t => {
   const p = fixture(t);
-  assert.throws(() => p.inspect("root", "lsp_diagnostics", { root: "/" }), /override/);
+  assert.throws(() => p.inspect("root", "lsp_diagnostics", { path: "file" }), /capability ceiling/);
   p.transitioning = true;
   assert.throws(() => p.inspect("root", "read", { path: "file" }), /transition/);
 });

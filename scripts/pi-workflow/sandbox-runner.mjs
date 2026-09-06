@@ -108,7 +108,7 @@ const validateLease = (value, kind) => {
 };
 
 const requestLease = (
-  { socketPath, token, role, kind, name },
+  { socketPath, token, role, kind, name, ticket },
   terminationDependencies,
 ) =>
   new Promise((resolve, reject) => {
@@ -147,7 +147,7 @@ const requestLease = (
     };
 
     socket.once("connect", () => {
-      socket.write(`${JSON.stringify({ action: "lease", token, role, kind, name })}\n`);
+      socket.write(`${JSON.stringify({ action: "lease", token, role, kind, name, ticket })}\n`);
     });
     socket.on("data", (chunk) => {
       buffer += chunk;
@@ -221,7 +221,7 @@ const commandForLease = (lease, kind, name) => {
   if (kind === "server") {
     return `${quoteArg(lease.command)} ${lease.args.map(quoteArg).join(" ")}`;
   }
-  const worker = join(dirname(fileURLToPath(import.meta.url)), "tool-worker.mjs");
+  const worker = join(dirname(fileURLToPath(import.meta.url)), "ops-worker.mjs");
   return `${quoteArg(process.execPath)} ${quoteArg(worker)} ${quoteArg(name)}`;
 };
 
@@ -245,6 +245,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
     role: environment.PI_WORKFLOW_ROLE || "root",
     kind,
     name,
+    ticket: environment.PI_WORKFLOW_TICKET,
   }, terminationDependencies);
   let sandboxManager;
   let child;

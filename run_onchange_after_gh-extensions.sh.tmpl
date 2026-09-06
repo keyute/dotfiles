@@ -1,8 +1,10 @@
 #!/bin/bash
-# Idempotent install of gh CLI extensions. Runs after run_onchange_after_brew
-# (which installs gh), and no-ops on hosts where gh is absent.
-#   dlvhdr/gh-dash    — PR/issue dashboard
-#   dlvhdr/gh-enhance — GitHub Actions TUI, launched from gh-dash's PR view (T)
+# Idempotent install of gh CLI extensions (declared in .chezmoidata/packages.yaml).
+# Runs after run_onchange_after_brew (which installs gh), and no-ops on hosts
+# where gh is absent.
+{{- range $repo, $note := .gh.extensions }}
+#   {{ $repo }} — {{ $note }}
+{{- end }}
 set -euo pipefail
 
 command -v gh >/dev/null 2>&1 || exit 0
@@ -12,7 +14,7 @@ command -v gh >/dev/null 2>&1 || exit 0
 # under `pipefail` makes the pipeline exit 141 and wrongly re-triggers the install.
 installed="$(gh extension list 2>/dev/null || true)"
 
-for ext in dlvhdr/gh-dash dlvhdr/gh-enhance; do
+for ext in{{ range $repo, $_ := .gh.extensions }} {{ $repo | quote }}{{ end }}; do
   case "$installed" in
     *"$ext"*) ;;                          # already installed → skip
     *) gh extension install "$ext" ;;

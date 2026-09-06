@@ -27,18 +27,30 @@ export async function startBroker(config, cwd, review, transport = {}) {
   let closed = false;
   let reviewQueue = Promise.resolve();
 
+  // A tool authorization mints a single-use lease ticket bound to the current
+  // epoch, role, and tool, so a mode transition between authorization and
+  // process lease cannot run an already-approved call under a new policy.
+  const tickets = new Map();
+  function grant(request) {
+    if (request.action !== "authorize") return { ok: true };
+    const ticket = randomBytes(16).toString("hex");
+    if (tickets.size >= 256) tickets.delete(tickets.keys().next().value);
+    tickets.set(ticket, { epoch: policy.epoch, role: request.role, tool: request.tool });
+    return { ok: true, ticket };
+  }
+
   async function authorize(request) {
     const epoch = policy.epoch;
     const verdict = request.action === "mcp"
       ? policy.inspectMcp(request.role, request.server, request.tool, request.args)
       : policy.inspect(request.role, request.tool, request.args);
-    if (verdict === "allow") return { ok: true };
+    if (verdict === "allow") return grant(request);
     const { role, tool, server, args } = request;
     const pending = reviewQueue.then(() => review({ role, tool, server, args, mode: policy.mode, approval: policy.approval }));
     reviewQueue = pending.catch(() => {});
     const allowed = await pending;
     if (closed || policy.transitioning || epoch !== policy.epoch) throw new Error("Policy changed while approval was pending");
-    return { ok: allowed === true, error: allowed ? undefined : "Action not approved" };
+    return allowed === true ? grant(request) : { ok: false, error: "Action not approved" };
   }
 
   const server = (transport.createServer ?? createServer)(socket => {
@@ -71,7 +83,10 @@ export async function startBroker(config, cwd, review, transport = {}) {
         if (!equal(request.token, token) || closed) throw new Error("Unavailable policy broker");
         policy.role(request.role);
         if (request.action === "child") {
-          if (request.role === "root" || children.size >= 3 || policy.transitioning) throw new Error("Child capacity unavailable");
+          // The epoch travels through the launching parent's environment, so a
+          // child spawned before a mode/approval change cannot connect after it
+          // and inherit the newer, possibly wider policy.
+          if (request.role === "root" || children.size >= 3 || policy.transitioning || request.epoch !== policy.epoch) throw new Error("Child capacity unavailable");
           children.add(socket);
           leases.add(socket);
           return socket.write(line({ ok: true }));
@@ -83,6 +98,9 @@ export async function startBroker(config, cwd, review, transport = {}) {
         let command;
         let args;
         if (request.kind === "tool") {
+          const issued = tickets.get(request.ticket);
+          if (typeof request.ticket === "string") tickets.delete(request.ticket);
+          if (!issued || issued.epoch !== policy.epoch || issued.role !== request.role || issued.tool !== request.name) throw new Error("Tool process denied");
           if (!workerTools.includes(request.name) || !policy.role(request.role).tools.includes(publicToolName(request.name))) throw new Error("Tool process denied");
         } else if (request.kind === "server") {
           if (!policy.role(request.role).tools.includes("mcp")) throw new Error("MCP process denied");
@@ -100,6 +118,11 @@ export async function startBroker(config, cwd, review, transport = {}) {
               gui_log_window: false, web_dashboard: false,
             }));
             env.SERENA_HOME = serenaHome;
+            // uvx materializes tool/python environments under ~/.local/share/uv,
+            // which neighbors denied credentials; keep those in session scratch
+            // (the shared uv cache stays warm, so this is mostly re-linking).
+            env.UV_TOOL_DIR = join(scratch, "uv-tools");
+            env.UV_PYTHON_INSTALL_DIR = join(scratch, "uv-python");
           }
         } else throw new Error("Unknown process kind");
         leases.add(socket);
@@ -174,7 +197,7 @@ export function acquireChild(env, role, onStop, connect = createConnection) {
       if (!accepted) reject(new Error("Child policy disconnected"));
       if (!released) onStop(release);
     });
-    socket.on("connect", () => socket.write(line({ action: "child", role, token: env.PI_WORKFLOW_TOKEN })));
+    socket.on("connect", () => socket.write(line({ action: "child", role, token: env.PI_WORKFLOW_TOKEN, epoch: Number(env.PI_WORKFLOW_EPOCH) })));
     socket.on("data", chunk => {
       buffer += chunk;
       if (buffer.length > 8192) return socket.destroy();

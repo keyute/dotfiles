@@ -3,7 +3,7 @@ import { dirname, join, matchesGlob, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 
 export const fileTools = ["read", "write", "edit", "grep", "find", "ls"];
-export const workerTools = [...fileTools, "bash", "lsp_diagnostics", "lsp_fix"];
+export const workerTools = [...fileTools, "bash"];
 export const publicToolName = name => workerTools.includes(name) ? `workspace_${name}` : name;
 
 export function canonical(path) {
@@ -94,11 +94,6 @@ export class Policy {
     if (tool === "bash") {
       if (typeof args.command !== "string" || !args.command.trim()) throw new Error("Missing shell command");
       return "review";
-    }
-    if (tool.startsWith("lsp_")) {
-      if (args.root && canonical(expand(args.root, this.cwd)) !== this.cwd) throw new Error("LSP root override denied");
-      for (const path of args.paths ?? [args.path ?? "."]) this.checkPath(path, tool === "lsp_fix" && args.write !== false, role);
-      return tool === "lsp_fix" ? "review" : "allow";
     }
     return "review";
   }

@@ -79,6 +79,10 @@ test("pinned upstream packages register against the managed extension and prefli
   await checkChildLaunch(args, config, "root", ctx, resolveSubagentLaunchContract);
   assert.equal(args.agentScope, "user");
   await assert.rejects(checkChildLaunch({ ...args, workflowScript: "bad" }, config, "root", ctx, resolveSubagentLaunchContract), /workflow scripts/);
+  const list = { action: "list", capabilities: true };
+  await checkChildLaunch(list, config, "root", ctx, resolveSubagentLaunchContract);
+  assert.equal(list.agentScope, "user");
+  await assert.rejects(checkChildLaunch({ action: "list", view: "fleet" }, config, "root", ctx, resolveSubagentLaunchContract), /not enabled/);
   // Exercise only our cleanup: upstream lifecycle callbacks require a real Pi session.
   await handlers.get("session_shutdown").at(-1)();
 });
@@ -89,10 +93,15 @@ test("child sessions share one capacity ceiling and acknowledge revocation befor
   const broker = await startBroker(config, root, async () => true, transport);
   t.after(() => broker.close());
   await broker.setMode("execute");
+  const childEnv = () => ({ ...broker.env, PI_WORKFLOW_EPOCH: String(broker.policy.epoch) });
   let stopped = 0;
-  for (let i = 0; i < 3; i++) await acquireChild(broker.env, "fixture-reader", release => { stopped++; release(); }, transport.connect);
-  await assert.rejects(acquireChild(broker.env, "fixture-reader", () => {}, transport.connect), /capacity/);
+  const staleEnv = childEnv();
+  for (let i = 0; i < 3; i++) await acquireChild(childEnv(), "fixture-reader", release => { stopped++; release(); }, transport.connect);
+  await assert.rejects(acquireChild(childEnv(), "fixture-reader", () => {}, transport.connect), /capacity/);
   await broker.setMode("plan");
+  // A child launched under an earlier epoch cannot connect after the change.
+  await assert.rejects(acquireChild(staleEnv, "fixture-reader", () => {}, transport.connect), /capacity/);
+  await assert.rejects(acquireChild({ ...broker.env }, "fixture-reader", () => {}, transport.connect), /capacity/);
   assert.equal(stopped, 3);
   assert.equal(broker.policy.mode, "plan");
   assert.equal(broker.policy.transitioning, false);
@@ -108,7 +117,7 @@ test("a disconnected child without terminal proof blocks further work and mode c
     rmSync(broker.policy.scratch, { recursive: true, force: true });
   });
   let client;
-  await acquireChild(broker.env, "fixture-reader", () => {}, path => {
+  await acquireChild({ ...broker.env, PI_WORKFLOW_EPOCH: String(broker.policy.epoch) }, "fixture-reader", () => {}, path => {
     client = transport.connect(path);
     return client;
   });
@@ -117,4 +126,38 @@ test("a disconnected child without terminal proof blocks further work and mode c
   assert.equal(broker.policy.transitioning, true);
   await assert.rejects(broker.setMode("execute"), /terminal proof/);
   await assert.rejects(requestBroker(broker.env, "root", { action: "authorize", tool: "read", args: { path: "fixture" } }, transport.connect), /denied/);
+});
+
+test("tool leases require a single-use ticket bound to the current epoch", async t => {
+  const { root, config } = fixture(t);
+  const transport = memoryTransport();
+  const broker = await startBroker(config, root, async () => true, transport);
+  t.after(() => broker.close());
+  await broker.setMode("execute");
+  const leaseTool = request => new Promise(resolve => {
+    const socket = transport.connect(broker.env.PI_WORKFLOW_SOCKET);
+    let buffer = "";
+    socket.on("error", () => resolve({ ok: false }));
+    socket.on("connect", () => socket.write(`${JSON.stringify({ action: "lease", token: broker.env.PI_WORKFLOW_TOKEN, kind: "tool", role: "root", ...request })}\n`));
+    socket.on("data", chunk => {
+      buffer += chunk;
+      if (!buffer.includes("\n")) return;
+      let message;
+      try { message = JSON.parse(buffer.slice(0, buffer.indexOf("\n"))); } catch { return resolve({ ok: false }); }
+      if (message.ok) { socket.write(`${JSON.stringify({ action: "terminated" })}\n`); socket.end(); }
+      resolve(message);
+    });
+  });
+  const authorize = () => requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "true" } }, transport.connect);
+  const { ticket } = await authorize();
+  assert.ok(ticket);
+  assert.equal((await leaseTool({ name: "bash", ticket })).ok, true);
+  assert.equal((await leaseTool({ name: "bash", ticket })).ok, false);
+  const other = await authorize();
+  assert.equal((await leaseTool({ name: "read", ticket: other.ticket })).ok, false);
+  const stale = await authorize();
+  await broker.setMode("plan");
+  await broker.setMode("execute");
+  assert.equal((await leaseTool({ name: "bash", ticket: stale.ticket })).ok, false);
+  assert.equal((await leaseTool({ name: "bash" })).ok, false);
 });

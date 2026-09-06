@@ -2,15 +2,19 @@
 
 ## Launch and ownership (last verified 2026-09-06)
 
-Use the managed `pi` zsh function. Brew installs the native CLI on macOS; Linux
-uses the existing declarative package group. The function disables native tools
-and ambient extensions, then loads the managed workflow and Herdr when present.
-Calling `command pi` directly bypasses this managed launch configuration.
+Use the managed `pi` zsh function. It runs the repository's lockfile-pinned CLI
+(`node_modules/.bin/pi`) on every platform — there is no Brew or metapac
+install — disables native tools and ambient extensions, then loads the managed
+workflow and Herdr when present. Running a pi binary outside the function
+bypasses this managed launch configuration.
 
-The repository's npm manifest/lockfile supplies the extension dependencies and
-worker SDK; it does not globally install a second CLI. The pinned SDK is
-0.84.4. Re-run the compatibility tests after Brew Pi or extension upgrades.
-The existing npm dependency hook installs with lifecycle scripts disabled.
+The repository's npm manifest/lockfile is the single source for the CLI, the
+extension dependencies, and the worker SDK — one pinned unit (currently
+{{ index (fromJson (include "package.json")).dependencies "@earendil-works/pi-coding-agent" }}),
+so CLI/SDK skew cannot occur. Pi breaks extension APIs across 0.x point
+releases: upgrade by bumping that one pin, then `npm ci`, `npm run test:pi`,
+and `chezmoi apply`. The npm dependency hook installs with lifecycle scripts
+disabled.
 
 Settings are merged by managed key; unrelated UI/trust preferences survive.
 Authentication and session files remain unmanaged. Sign in through Pi's normal
@@ -28,9 +32,9 @@ Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`,
 - {{ $tier }}: `{{ $model }}`
 {{ end }}
 Frontier is for explicit escalation, not the default. The pinned Pi SDK
-(0.85.1) includes Astra in the OpenAI subscription catalog; if a future pin
-drops it, selection must report unavailable, not fabricate an alias or fall
-back to API billing.
+includes Astra in the OpenAI subscription catalog; if a future pin drops it,
+selection must report unavailable, not fabricate an alias or fall back to API
+billing.
 
 Standard input/cached/output credits per million tokens: Astra 250/25/1250,
 Sol 100/10/500, Terra 50/5/300, Luna 5/0.5/30. Actual Pro allowance consumption
@@ -54,10 +58,14 @@ lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
   Check orphan processes and restart; do not treat a lost connection as proof that
   a writer stopped.
 
-`workspace_read`, `workspace_write`, `workspace_edit`, `workspace_bash`,
-`workspace_grep`, `workspace_find`, `workspace_ls` and language tools run in SRT
-workers. Interactive `!` commands use the same shell boundary. MCP stdio servers
-also run inside SRT, while OAuth stays in the trusted host Pi process.
+The `workspace_*` tools are the SDK's own tools running in the host Pi process;
+each invocation leases a per-tool SRT worker that performs the actual file and
+shell operations, so effects and subprocess execution are sandboxed — not all
+file I/O (path probes, diff generation, and output temp files stay host-side).
+Every lease consumes a single-use ticket minted by its approval, so a mode
+change between approval and execution invalidates the lease. Interactive `!`
+commands use the same worker boundary. MCP stdio servers also run inside SRT,
+while OAuth stays in the trusted host Pi process.
 
 Sensitive paths come from the shared denylist. File tools additionally resolve
 symlinks and confine edits to the workspace; git metadata and managed policy/code
@@ -95,11 +103,14 @@ Configuration is explicit; other harnesses' private configuration is not importe
 MCP scripting, sampling and automatic OAuth discovery are disabled. The approval
 broker checks the resolved server/tool/arguments, not just the outer proxy call.
 
-`workspace_lsp_diagnostics` and `workspace_lsp_fix` use configured TypeScript,
-Python, Go and Lua servers. The entire plugin call runs inside the sandbox, not
-only its language-server subprocess. Project LSP command/root overrides are not
-loaded. Serena provides symbol navigation/references and execute-mode rename;
-its configuration and project caches are redirected into session scratch.
+There is no LSP integration (dropped 2026-09-06: per-invocation server starts
+paid LSP's cost without its persistent-index benefit, and the only candidate
+package was young, solo-maintained, and unproven for agents). Diagnostics come
+from project toolchains via `workspace_bash` (`tsc --noEmit`, `go vet`,
+pyright, linters). Serena provides symbol navigation/references and
+execute-mode rename; its configuration and project caches are redirected into
+session scratch. Revisit LSP only on measured pain, as a sandboxed MCP server
+or a persistent broker-owned worker.
 
 Claude/Codex proprietary plugins, cloud services and exact UI interactions are
 not supplied by these packages. Keep the other harnesses for those capabilities.

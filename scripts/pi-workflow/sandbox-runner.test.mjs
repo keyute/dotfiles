@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { main, quoteArg, safeEnvironment, terminateProcessGroup } from "./sandbox-runner.mjs";
 
@@ -210,4 +212,34 @@ test("a nonzero child exit status becomes the runner exit status", async () => {
     }),
     (error) => error.exitCode === 7,
   );
+});
+
+const runWorkerOps = (tool, requests) =>
+  new Promise((resolve) => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL("./ops-worker.mjs", import.meta.url)), tool], { stdio: ["pipe", "pipe", "pipe"] });
+    let output = "";
+    // Closing stdin aborts in-flight operations, so hold the pipe open until
+    // every request has produced its terminal frame.
+    child.stdout.on("data", (chunk) => {
+      output += chunk;
+      const terminal = output.split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((frame) => "ok" in frame);
+      if (terminal.length >= requests.length) child.stdin.end();
+    });
+    child.stderr.resume();
+    child.on("close", (code) => resolve({ code, frames: output.split("\n").filter(Boolean).map((line) => JSON.parse(line)) }));
+    child.stdin.write(requests.map((request) => `${JSON.stringify(request)}\n`).join(""));
+  });
+
+test("ops worker streams bash execution and reports the exit code", async () => {
+  const { code, frames } = await runWorkerOps("bash", [{ id: "op0", op: "exec", params: { command: "printf worker-bash-ok; exit 3" } }]);
+  assert.equal(code, 0);
+  const streamed = frames.filter((frame) => frame.chunk).map((frame) => Buffer.from(frame.chunk, "base64").toString()).join("");
+  assert.ok(streamed.includes("worker-bash-ok"));
+  assert.deepEqual(frames.at(-1), { id: "op0", ok: true, value: { exitCode: 3 } });
+});
+
+test("ops worker refuses operations outside the leased tool's set", async () => {
+  const { frames } = await runWorkerOps("read", [{ id: "op0", op: "exec", params: { command: "true" } }]);
+  assert.equal(frames.at(-1).ok, false);
+  assert.match(frames.at(-1).error.message, /not permitted/);
 });

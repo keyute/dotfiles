@@ -18,11 +18,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+// Sandbox and approval flags are a fixed security contract; reasoning effort
+// arrives via --reasoning-effort from the rendered MCP config (anchored to
+// agents.yaml defaults) so it cannot drift from the declared value.
+const effortIndex = process.argv.indexOf("--reasoning-effort");
+const effort = effortIndex !== -1 ? process.argv[effortIndex + 1] : "high";
+if (!/^[a-z]+$/.test(effort)) throw new Error(`Invalid reasoning effort: ${effort}`);
 const FIXED_ARGS = [
   "--json",
   "-c", 'sandbox_mode="read-only"',
   "-c", 'approval_policy="never"',
-  "-c", 'model_reasoning_effort="high"',
+  "-c", `model_reasoning_effort="${effort}"`,
 ];
 
 function checkCwd(cwd) {
