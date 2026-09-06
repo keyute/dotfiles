@@ -1,8 +1,9 @@
 # Codex workflow reference
 
-## Session defaults (last verified 2026-07-31)
+## Session defaults (last verified 2026-09-06)
 
-- Plain `codex` starts with `{{ .agents.codex.defaults.model }}` at {{ .agents.codex.defaults.model_reasoning_effort }} reasoning effort.
+- Plain `codex` starts with `{{ .agents.codex.defaults.model }}` at {{ .agents.codex.defaults.model_reasoning_effort }} reasoning effort;
+  plan mode is pinned to {{ .agents.codex.defaults.plan_mode_reasoning_effort }}.
 - `/model` changes the model or reasoning effort for the current session only; a new
   session returns to the managed defaults.
 - No launch profiles are configured. Start with plain `codex` and make any temporary
