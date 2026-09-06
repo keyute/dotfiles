@@ -42,7 +42,8 @@
       "approvals_reviewer"
       "default_permissions"
       "features.network_proxy"
-      "permissions.chezmoi-workspace" -}}
+      "permissions.chezmoi-workspace"
+      "notice.hide_rate_limit_model_nudge" -}}
 {{- $mcpServers := dict -}}
 {{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "harness" "codex") | fromJson -}}
   {{- if not (regexMatch "^[A-Za-z0-9_-]+$" $name) -}}
@@ -88,6 +89,9 @@
 {{- $deletes = concat $deletes (list "tui.status_line" "tui.status_line_use_colors" "tui.theme") -}}
 {{- /* features.hooks: herdr's codex integration sets it; owning it here keeps
        apply from wiping it. ~/.codex/hooks.json stays herdr-managed. */ -}}
+{{- /* notice: the rest of that table is Codex runtime state (dismissals,
+       model_migrations, migration-prompt timestamps), so only the one leaf that
+       suppresses the near-usage-limit model-switch nudge is claimed here. */ -}}
 {{- $managed := dict
       "model" $codex.defaults.model
       "model_reasoning_effort" $codex.defaults.model_reasoning_effort
@@ -108,7 +112,8 @@
       "mcp_servers" $mcpServers
       "tui" (dict
           "status_line" (list "model-with-reasoning" "context-used" "five-hour-limit" "weekly-limit" "git-branch" "branch-changes")
-          "status_line_use_colors" true) -}}
+          "status_line_use_colors" true)
+      "notice" (dict "hide_rate_limit_model_nudge" true) -}}
 {{- $manifest := dict "delete" $deletes "managed" $managed "skill_config" $skillConfig -}}
 #!/usr/bin/env bash
 # Partial management of ~/.codex/config.toml: the merge script replaces the keys
