@@ -68,6 +68,9 @@ verify with that agent and update this file.
   `codex exec` / `codex exec review` CLI (verified present at 0.153.1). Tools:
   `review`, `advise`, `reply`; invocation fixed to read-only sandbox, never
   approvals, high reasoning — callers pick scope only, never sandbox flags.
+  `review` states the scope inside the prompt when custom instructions are
+  given: the CLI rejects a PROMPT combined with `--base`/`--uncommitted`
+  (verified at 0.153.4).
 - MCP transport kept deliberately: the bridge is harness-spawned outside the
   Bash sandbox (the `~/.codex` deny stays fully intact), and its rendered
   allow rule (`mcp__codex`, from `auto_approve_tools`) makes the tools

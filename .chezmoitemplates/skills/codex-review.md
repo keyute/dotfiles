@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Adversarial cross-model review of a diff by Codex (GPT) via the codex MCP bridge. Use when asked to have Codex review changes, get a cross-model review, or pressure-test a diff before committing. Args: optional ref range, paths, or focus area; defaults to the working-tree diff.
+description: "Adversarial cross-model review of a diff by Codex (GPT) via the codex MCP bridge. Use when asked to have Codex review changes, get a cross-model review, or pressure-test a diff before committing. Args: optional ref range, paths, or focus area; defaults to the working-tree diff."
 ---
 
 Have Codex adversarially review a diff, verify its findings yourself, fix what is

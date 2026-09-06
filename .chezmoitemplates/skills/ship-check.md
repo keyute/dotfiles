@@ -1,6 +1,6 @@
 ---
 name: ship-check
-description: One converging pre-ship review of the branch's full state — committed and uncommitted — against its merge-base with main: correctness and quality (reuse, simplification, efficiency, altitude) in a single verified pass, holding a churn bar so a clean branch gets "ship it" rather than one more thing. Not a whole-repo audit; no GitHub/PR integration. Args: optional base ref (default main) or a single lens to focus.
+description: "One converging pre-ship review of the branch's full state — committed and uncommitted — against its merge-base with main: correctness and quality (reuse, simplification, efficiency, altitude) in a single verified pass, holding a churn bar so a clean branch gets \"ship it\" rather than one more thing. Not a whole-repo audit; no GitHub/PR integration. Args: optional base ref (default main) or a single lens to focus."
 ---
 
 Review everything this branch would ship — committed and uncommitted alike — and

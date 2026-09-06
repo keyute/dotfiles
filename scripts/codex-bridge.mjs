@@ -131,10 +131,24 @@ server.registerTool(
       throw new Error("pass either base or uncommitted, not both");
     }
     if (base && base.startsWith("-")) throw new Error(`invalid base: ${base}`);
+    // `codex exec review` rejects a PROMPT combined with --base/--uncommitted
+    // (clap conflict, codex-cli 0.153.4): custom instructions replace the
+    // preset scope, so with a prompt the scope is stated in the text instead.
+    if (prompt) {
+      const scopeText = base
+        ? `Review this branch's changes against base ${base}.`
+        : "Review the uncommitted changes (staged, unstaged, and untracked).";
+      return runCodex(
+        ["exec", "review", ...FIXED_ARGS],
+        [`${scopeText}\n\n${prompt}`],
+        cwd,
+        extra?.signal,
+      );
+    }
     const scope = base ? ["--base", base] : ["--uncommitted"];
     return runCodex(
       ["exec", "review", ...FIXED_ARGS, ...scope],
-      prompt ? [prompt] : [],
+      [],
       cwd,
       extra?.signal,
     );

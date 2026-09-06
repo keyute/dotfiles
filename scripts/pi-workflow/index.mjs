@@ -9,6 +9,7 @@ import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, a
 import { workerTools, canonical, publicToolName } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
 import { checkChildLaunch } from "./children.mjs";
+import { installFooter } from "./footer.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
@@ -22,6 +23,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let ready = false;
   let installed = false;
   let ceiling;
+  let footerInstalled = false;
   let releaseChild;
   let childRevoked = false;
   let broker;
@@ -143,6 +145,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       ready = !childRevoked;
     }
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
+    if (broker && ctx.hasUI && !footerInstalled) {
+      footerInstalled = true;
+      installFooter(pi, ctx);
+    }
     pi.setActiveTools(permittedTools.filter(name => pi.getAllTools().some(tool => tool.name === name)));
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
   });

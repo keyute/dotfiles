@@ -1,6 +1,6 @@
 ---
 name: codex-advisor
-description: Get an independent second opinion from Codex (GPT) on an architecture decision, approach trade-off, stuck bug, or judgment call. Use when asked for a second opinion, an outside take, or what Codex/GPT thinks. Args: optional question; defaults to the open question in the conversation.
+description: "Get an independent second opinion from Codex (GPT) on an architecture decision, approach trade-off, stuck bug, or judgment call. Use when asked for a second opinion, an outside take, or what Codex/GPT thinks. Args: optional question; defaults to the open question in the conversation."
 ---
 
 Consult Codex as an independent advisor and return a synthesis, not a verdict. The

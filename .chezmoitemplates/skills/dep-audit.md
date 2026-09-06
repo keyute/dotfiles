@@ -1,6 +1,6 @@
 ---
 name: dep-audit
-description: Audit dependency bumps (Dependabot/Renovate PRs, Helm chart bumps, lockfile updates) for breaking changes before merging. Use when asked to review version bumps in any ecosystem — npm, Go modules, Python, Helm charts, GitHub Actions. Args: optional branch/PR ref or list of bumps; defaults to bumps in the current diff.
+description: "Audit dependency bumps (Dependabot/Renovate PRs, Helm chart bumps, lockfile updates) for breaking changes before merging. Use when asked to review version bumps in any ecosystem — npm, Go modules, Python, Helm charts, GitHub Actions. Args: optional branch/PR ref or list of bumps; defaults to bumps in the current diff."
 ---
 
 Audit dependency version bumps for breaking changes and produce a risk matrix.

@@ -36,8 +36,7 @@ agents:
     home: "~/.codex"
     defaults:
       model: gpt-5.6-sol
-      model_reasoning_effort: medium
-      plan_mode_reasoning_effort: high
+      model_reasoning_effort: high
     sensitive_subpaths:
       - "auth.json"
       - "config.toml"
@@ -64,9 +63,9 @@ agents:
     defaults:
       provider: openai-codex
       model: gpt-5.6-sol
-      reasoning_effort: medium
+      reasoning_effort: high
       plan_reasoning_effort: high
-      classifier_model: gpt-5.6-terra
+      classifier_model: gpt-5.6-luna
       classifier_reasoning_effort: medium
     sensitive_subpaths:
       - "agent/auth.json"

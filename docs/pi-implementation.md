@@ -26,8 +26,9 @@ Last updated: 2026-09-06. Source implementation complete; not applied or live-au
   policy decisions, shared child capacity, revocation and runner lifecycle.
 - Pi, Claude and Codex projections pass isolated `chezmoi cat` and `diff` with
   inert secret stubs. No applied credential stores were read.
-- The installer and vendored plan mode are removed from source; `.chezmoiremove`
-  declares obsolete target cleanup for the user's next apply.
+- The installer and vendored plan mode are removed from source. Obsolete
+  targets were removed from the machine directly (2026-09-06) instead of via
+  `.chezmoiremove`, which is gone.
 - Actual Unix sockets/SRT cannot run in this session (socket binding returns
   EPERM). Broker tests use an explicit memory transport; the opt-in live test is
   not evidence of a successful sandbox run until executed on the user's host.

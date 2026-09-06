@@ -1,6 +1,6 @@
 ---
 name: align-sibling
-description: Align this repo with recent changes made in a sibling repo (e.g. backend → dashboard, API → client). Use when asked to review changes in another repo and reflect, surface, or align them here. Args: sibling repo path; optional ref range (e.g. main@{1.week.ago}..main) or feature description.
+description: "Align this repo with recent changes made in a sibling repo (e.g. backend → dashboard, API → client). Use when asked to review changes in another repo and reflect, surface, or align them here. Args: sibling repo path; optional ref range (e.g. main@{1.week.ago}..main) or feature description."
 ---
 
 Align the current repo with contract changes made in a sibling repo.

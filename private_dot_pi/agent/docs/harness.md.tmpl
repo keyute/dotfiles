@@ -27,10 +27,10 @@ Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`,
 {{ range $tier, $model := .subagent_tiers.pi -}}
 - {{ $tier }}: `{{ $model }}`
 {{ end }}
-Frontier is for explicit escalation, not the default. The pinned Pi SDK's
-OpenAI subscription catalog does not yet include Astra: selection must report
-unavailable, not fabricate an alias or fall back to API billing. Verify catalog
-and account availability after updating Pi before using it.
+Frontier is for explicit escalation, not the default. The pinned Pi SDK
+(0.85.1) includes Astra in the OpenAI subscription catalog; if a future pin
+drops it, selection must report unavailable, not fabricate an alias or fall
+back to API billing.
 
 Standard input/cached/output credits per million tokens: Astra 250/25/1250,
 Sol 100/10/500, Terra 50/5/300, Luna 5/0.5/30. Actual Pro allowance consumption
