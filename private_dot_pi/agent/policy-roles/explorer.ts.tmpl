@@ -1,0 +1,3 @@
+import { installWorkflow } from {{ printf "%s/scripts/pi-workflow/index.mjs" .chezmoi.sourceDir | toJson }};
+
+export default (pi) => installWorkflow(pi, {{ printf "%s/.pi/agent/workflow.json" .chezmoi.homeDir | toJson }}, "explorer");

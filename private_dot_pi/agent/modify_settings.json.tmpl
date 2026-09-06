@@ -1,0 +1,19 @@
+{{- $pi := .agents.pi -}}
+{{- $enabledModels := list -}}
+{{- range $model := .subagent_tiers.pi -}}
+  {{- $enabledModels = append $enabledModels (printf "%s/%s" $pi.defaults.provider $model) -}}
+{{- end -}}
+{{- $managed := dict
+      "defaultProvider" $pi.defaults.provider
+      "defaultModel" $pi.defaults.model
+      "defaultThinkingLevel" $pi.defaults.reasoning_effort
+      "enabledModels" ($enabledModels | sortAlpha)
+      "subagents" (dict
+          "disableBuiltins" true
+          "defaultProvider" $pi.defaults.provider) -}}
+#!/usr/bin/env bash
+# Pi writes trusted-project and UI state to settings.json. Keep it while replacing
+# only this declared settings subset.
+set -euo pipefail
+
+node "{{ .chezmoi.sourceDir }}/scripts/merge-pi-settings.mjs" '{{ $managed | toJson }}'

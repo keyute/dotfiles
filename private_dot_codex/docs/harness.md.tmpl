@@ -11,17 +11,20 @@
   override.
 - `/fast` is a separate speed toggle, not a model or reasoning-effort profile.
 
-## Limits (last verified 2026-08-28)
+## Limits (last verified 2026-09-06; revisit Sol pricing 2026-11-21)
 
 - Subscription metering is token-based credits (since 2026-04): one shared
   credit pool across CLI, IDE extension, cloud tasks, and other ChatGPT agent
   surfaces, drawn against a weekly window plus a rolling 5-hour window — treat
   both as potentially binding; check `/status`.
-- Credits are tier-weighted per token (official rate card): Sol 125 / Terra 50
-  / Luna 5 credits per 1M input tokens (~25× Sol→Luna spread; cached-input and
-  output rates scale similarly). Context size drives burn directly — a grown
-  session re-meters its whole context every turn — so bounded leaf work
-  belongs on Terra/Luna subagents.
+- Standard credits per million input/cached/output tokens: Astra 250/25/1250,
+  Sol 100/10/500, Terra 50/5/300, Luna 5/0.5/30. These are credit rates, not API
+  dollar charges or fixed Pro message limits. Sol's promotional pricing lasts
+  at least through 2026-11-21. [Official rate card](https://learn.chatgpt.com/docs/pricing).
+- Compare successful-task cost including reasoning, cached context, retries and
+  delegation overhead. A larger model can use fewer tokens without being cheaper.
+  Astra Standard costs 2.5× Sol at equivalent token usage; Astra Fast is a further
+  2.5× Standard. Keep bounded work on the lower tiers and Fast off unless needed.
 - Reasoning effort scales burn directly: drop effort per session via `/model`
   for routine work instead of changing the managed default.
 - Attached MCP servers reload their full tool schemas every turn — an accepted
@@ -43,3 +46,13 @@
 - OpenAI's own Codex guidance routes read-heavy exploration subagents to Terra;
   the small tier here stays on Luna (bounded extraction-shaped presets, far
   cheaper) — revisit if explorer output quality disappoints.
+
+## Frontier escalation (last verified 2026-09-06)
+
+- The shared OpenAI frontier tier is `{{ .subagent_tiers.codex.frontier }}`;
+  existing specialist pins and the main-session default are unchanged.
+- Use it for an explicit escalation or consequential architecture/review task,
+  preferably with a bounded handoff in a fresh session. Do not promote every role.
+- Availability depends on the account and installed harness. A model catalog
+  entry is not proof of account access; never substitute another provider or paid
+  API routing when subscription access is unavailable.

@@ -15,9 +15,7 @@
 
 ## Working agreements
 
-{{/* capability gate: harnesses without an entry in subagent_tiers (pi) have
-     no subagent fleet and no MCP/web tools, so the bullets that direct work
-     to those capabilities would be dead or false text there */ -}}
+{{/* Fleet instructions require a configured model-tier mapping. */ -}}
 {{ if hasKey $root.subagent_tiers $self -}}
 - Delegate bounded, independent work that repays the handoff — disposable
   searches, log triage, research, and spec-complete leaf implementation with an
@@ -29,15 +27,19 @@
 - For unpinned subagents, pick the lowest tier likely to one-shot the task —
   small for bounded mechanical/read-heavy work, mid for routine implementation
   and review, top for hard synthesis or expensive-to-reverse calls; escalate on
-  observed failure, not by default. The subagents in `{{ (index $root.agents $self).home }}/agents` are
+  observed failure, not by default. The subagents in `{{ default (printf "%s/agents" (index $root.agents $self).home) (get (index $root.agents $self) "agents_dir") }}` are
   already pinned and the dispatch-time list does not show it — pass a model
   override to one only to escalate it after an observed failure.
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
   library/API docs — resolve the library id and fetch unprompted.
 - Use Playwright for frontend interaction, inspection, and screenshots — not as a
   web-search substitute.
+{{ if and (hasKey (index $root.agents $self) "native_web_search") (not (index $root.agents $self).native_web_search) -}}
+- Use the Exa MCP for web search and fetching; no native web-search tool is configured.
+{{ else -}}
 - Web search: built-in by default (cost); escalate to the Exa MCP when built-in
   results are sparse, stale, or can't reach the source.
+{{ end -}}
 {{ end -}}
 - Keep implementations simple; do not overengineer.
 - Match the surrounding code's style, design language, and colocation; if the

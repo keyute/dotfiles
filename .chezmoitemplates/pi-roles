@@ -1,0 +1,41 @@
+{{- /* pi-roles: render the shared role definitions as Pi's child contracts.
+       input: dict "root" <template data>
+       output: JSON map keyed by Pi role name */ -}}
+{{- $root := .root -}}
+{{- $agentDir := printf "%s/.pi/agent" $root.chezmoi.homeDir -}}
+{{- $roles := dict -}}
+{{- range $name, $meta := $root.subagents -}}
+  {{- /* Explore and explorer are the same shared role; Pi has only explorer. */ -}}
+  {{- if ne $name "Explore" -}}
+    {{- $tools := list -}}
+    {{- $needsMcp := false -}}
+    {{- range splitList "," $meta.tools -}}
+      {{- $sourceTool := trim . -}}
+      {{- if eq $sourceTool "Read" -}}{{- $tools = append $tools "workspace_read" -}}
+      {{- else if eq $sourceTool "Grep" -}}{{- $tools = append $tools "workspace_grep" -}}
+      {{- else if eq $sourceTool "Glob" -}}{{- $tools = concat $tools (list "workspace_find" "workspace_ls") -}}
+      {{- else if eq $sourceTool "Bash" -}}{{- $tools = append $tools "workspace_bash" -}}
+      {{- else if eq $sourceTool "Edit" -}}{{- $tools = append $tools "workspace_edit" -}}
+      {{- else if eq $sourceTool "Write" -}}{{- $tools = append $tools "workspace_write" -}}
+      {{- end -}}
+      {{- if or (eq $sourceTool "WebSearch") (hasPrefix "mcp__" $sourceTool) -}}
+        {{- $needsMcp = true -}}
+      {{- end -}}
+    {{- end -}}
+    {{- if $needsMcp -}}{{- $tools = append $tools "mcp" -}}{{- end -}}
+    {{- if has "workspace_read" $tools -}}{{- $tools = append $tools "workspace_lsp_diagnostics" -}}{{- end -}}
+    {{- if not $meta.readonly -}}{{- $tools = append $tools "workspace_lsp_fix" -}}{{- end -}}
+    {{- if and (ne $name "dep-researcher") (ne $name "log-triager") -}}
+      {{- $tools = append $tools "subagent" -}}
+    {{- end -}}
+    {{- $role := dict
+          "readonly" $meta.readonly
+          "tools" ($tools | uniq)
+          "model" (printf "%s/%s" $root.agents.pi.defaults.provider (index $root.subagent_tiers.pi $meta.tier))
+          "thinking" $meta.reasoning_effort
+          "extensionPath" (printf "%s/policy-roles/%s.ts" $agentDir $name)
+          "agentPath" (printf "%s/agents/%s.md" $agentDir $name) -}}
+    {{- $roles = set $roles $name $role -}}
+  {{- end -}}
+{{- end -}}
+{{- $roles | toJson -}}

@@ -32,7 +32,9 @@
   {{- end -}}
   {{- $entry := dict "policy" (dict
         "auto_approve_tools" (default false (get $cfg "auto_approve_tools"))
-        "denied_tools" (default (list) (get $cfg "denied_tools"))) -}}
+        "denied_tools" (default (list) (get $cfg "denied_tools"))
+        "readonly_tools" (default (list) (get $cfg "readonly_tools"))
+        "allowed_tools" (default (list) (get $cfg "allowed_tools"))) -}}
   {{- if not $policyOnly -}}
     {{- $connection := dict -}}
     {{- $url := get $cfg "url" -}}
@@ -51,11 +53,15 @@
       {{- end -}}
       {{- range $cfg.args -}}
         {{- if kindIs "map" . -}}
+          {{- if hasKey . "home_path" -}}
+            {{- $args = append $args (printf "%s/%s" $root.chezmoi.homeDir .home_path) -}}
+          {{- else -}}
           {{- $ref := .op -}}
           {{- if not (hasPrefix "op://" $ref) -}}
             {{- $ref = printf "op://%s" $ref -}}
           {{- end -}}
           {{- $args = append $args (onepasswordRead $ref) -}}
+          {{- end -}}
         {{- else -}}
           {{- $args = append $args . -}}
         {{- end -}}

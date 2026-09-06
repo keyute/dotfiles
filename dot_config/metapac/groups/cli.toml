@@ -50,6 +50,8 @@ packages = [
 	"cloudflared",
 	"task",
 	# ai
+	"bubblewrap",
+	"socat",
 	"claude-code",
 	"herdr",
 	"ramalama",
@@ -59,7 +61,6 @@ packages = [
 
 [npm]
 packages = [
-	"@anthropic-ai/sandbox-runtime",
 	"@earendil-works/pi-coding-agent",
 	"@openai/codex",
 	"npm-check-updates",

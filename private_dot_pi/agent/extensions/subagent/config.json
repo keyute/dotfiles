@@ -1,0 +1,12 @@
+{
+  "globalConcurrencyLimit": 3,
+  "maxActiveAsyncRunsPerSession": 3,
+  "defaultSubagentContext": "fresh",
+  "toolDescriptionMode": "compact",
+  "inlineToolDisplay": "rich",
+  "mainWindowRenderer": {
+    "compactResultMaxLines": 2
+  },
+  "fleetView": true,
+  "fleetViewPlacement": "aboveEditor"
+}

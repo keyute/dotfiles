@@ -1,0 +1,118 @@
+# Pi workflow reference
+
+## Launch and ownership (last verified 2026-09-06)
+
+Use the managed `pi` zsh function. Brew installs the native CLI on macOS; Linux
+uses the existing declarative package group. The function disables native tools
+and ambient extensions, then loads the managed workflow and Herdr when present.
+Calling `command pi` directly bypasses this managed launch configuration.
+
+The repository's npm manifest/lockfile supplies the extension dependencies and
+worker SDK; it does not globally install a second CLI. The pinned SDK is
+0.84.4. Re-run the compatibility tests after Brew Pi or extension upgrades.
+The existing npm dependency hook installs with lifecycle scripts disabled.
+
+Settings are merged by managed key; unrelated UI/trust preferences survive.
+Authentication and session files remain unmanaged. Sign in through Pi's normal
+OpenAI subscription login; do not import another harness's auth files.
+
+## Models (last verified 2026-09-06; revisit pricing 2026-11-21)
+
+Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`,
+{{ .agents.pi.defaults.reasoning_effort }} reasoning; planning uses
+{{ .agents.pi.defaults.plan_reasoning_effort }}. The classifier uses
+`{{ .agents.pi.defaults.classifier_model }}` at
+{{ .agents.pi.defaults.classifier_reasoning_effort }} reasoning, with no tools.
+
+{{ range $tier, $model := .subagent_tiers.pi -}}
+- {{ $tier }}: `{{ $model }}`
+{{ end }}
+Frontier is for explicit escalation, not the default. The pinned Pi SDK's
+OpenAI subscription catalog does not yet include Astra: selection must report
+unavailable, not fabricate an alias or fall back to API billing. Verify catalog
+and account availability after updating Pi before using it.
+
+Standard input/cached/output credits per million tokens: Astra 250/25/1250,
+Sol 100/10/500, Terra 50/5/300, Luna 5/0.5/30. Actual Pro allowance consumption
+depends on task/context/reasoning/caching, not a fixed message count. Compare
+completed-task cost, including retries and delegation. Sol promotional pricing
+lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
+[Official rate card](https://learn.chatgpt.com/docs/pricing).
+
+## Planning and permissions (last verified 2026-09-06)
+
+- New sessions start in plan mode with auto-reviewed approvals. Source writes
+  remain disabled; temporary build/cache artifacts use designated writable roots.
+- `/execute` or approval of `submit_plan` explicitly enables scoped execution.
+  `/plan` revokes child sessions and sandbox processes before enabling planning.
+- `/approvals` selects auto review or individual prompts. Hard denial, inherited
+  role scope and mode restrictions run before approval; approval cannot widen them.
+- Classifier errors/uncertainty prompt the root session; unattended requests deny.
+- `ask_user` presents a decision with choices or free text. Approval dialogs are
+  once-only; MCP approvals are never cached across a mode change.
+- If a process disappears without acknowledging termination, the workflow blocks.
+  Check orphan processes and restart; do not treat a lost connection as proof that
+  a writer stopped.
+
+`workspace_read`, `workspace_write`, `workspace_edit`, `workspace_bash`,
+`workspace_grep`, `workspace_find`, `workspace_ls` and language tools run in SRT
+workers. Interactive `!` commands use the same shell boundary. MCP stdio servers
+also run inside SRT, while OAuth stays in the trusted host Pi process.
+
+Sensitive paths come from the shared denylist. File tools additionally resolve
+symlinks and confine edits to the workspace; git metadata and managed policy/code
+are write-protected. This is an explicit denylist, not a guarantee against unknown
+credential locations. Add new credential paths to shared policy before exposing
+them to a session.
+
+Extensions are trusted host code. Per-tool SRT is not containment against a
+malicious extension. No fallback to unsandboxed execution exists in the managed
+tools. Linux needs bubblewrap, socat and ripgrep; macOS needs sandbox-exec.
+
+## Specialists, skills and display (last verified 2026-09-06)
+
+Specialists under `~/.pi/agent/agents` render from the shared roster. Each has an
+explicit OpenAI model, tool list and mandatory child policy extension. Native
+builtin names cannot substitute for missing `workspace_*` tools. Read-only
+specialists stay read-only even when the root enters execution.
+
+Use named `subagent` launches with an agent and bounded task. Context is fresh;
+MCP-using specialists run in the background. Up to three child sessions share the
+root policy. Status, stop, interrupt and non-recovering steer are enabled; arbitrary
+workflow scripts, project role overrides, revival and mutating management are not.
+Use `bg_wait` in the root for background results. FleetView above the editor shows
+ongoing progress without a status command.
+
+Shared skills remain discoverable under `~/.agents/skills`; explicit skill loading
+is available through Pi. Tool output starts collapsed: Ctrl+O expands it. MCP
+results show a one-line preview. This is keyboard expansion, not per-card mouse
+interaction identical to Claude Code.
+
+## MCP and code intelligence (last verified 2026-09-06)
+
+Use the `mcp` proxy to discover and call Context7, Exa, Playwright and Serena.
+Configuration is explicit; other harnesses' private configuration is not imported.
+MCP scripting, sampling and automatic OAuth discovery are disabled. The approval
+broker checks the resolved server/tool/arguments, not just the outer proxy call.
+
+`workspace_lsp_diagnostics` and `workspace_lsp_fix` use configured TypeScript,
+Python, Go and Lua servers. The entire plugin call runs inside the sandbox, not
+only its language-server subprocess. Project LSP command/root overrides are not
+loaded. Serena provides symbol navigation/references and execute-mode rename;
+its configuration and project caches are redirected into session scratch.
+
+Claude/Codex proprietary plugins, cloud services and exact UI interactions are
+not supplied by these packages. Keep the other harnesses for those capabilities.
+
+## Acceptance checks (last verified 2026-09-06)
+
+From the source repository, run `npm run test:pi`. It covers policy, classifier
+fallback, terminal proof, child preflight and secret-stubbed chezmoi projections.
+`PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` additionally exercises actual Unix
+sockets and SRT against disposable fixtures; it needs an unrestricted local host.
+
+Before relying on the setup, separately verify subscription login, parent and
+foreground/background child model pins, auto approvals, cancellation, FleetView,
+MCP queries, diagnostics and approved edits in a disposable project. Fixture
+tests do not establish account access or live terminal behavior. Compare Sol and
+Astra on matched completed tasks before changing the default model.

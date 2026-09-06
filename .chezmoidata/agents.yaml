@@ -54,17 +54,27 @@ agents:
       # off so browser driving stays on one path, the playwright MCP server
       # (see agent_mcp_servers.playwright)
       "browser:control-in-app-browser": false
-  # side-by-side trial vs codex for interactive GPT sessions (2026-09-05).
-  # pi has no permission system, so the srt wrapper (private_dot_pi/
-  # srt-settings.json.tmpl + zsh alias) is its only boundary — launch pi
-  # through it, never bare. settings.json is deliberately unmanaged: pi
-  # rewrites it itself (/settings, Ctrl+S saves); wholesale ownership would
-  # revert those on every apply. Revisit with a modify_ merge if pi wins.
+  # Pi runs natively so OpenAI subscription authentication remains host-owned.
+  # A managed per-tool policy extension constrains model-invoked work; Pi's
+  # authentication and session state remain unmanaged.
   pi:
     home: "~/.pi"
+    native_web_search: false
+    agents_dir: "~/.pi/agent/agents"
+    defaults:
+      provider: openai-codex
+      model: gpt-5.6-sol
+      reasoning_effort: medium
+      plan_reasoning_effort: high
+      classifier_model: gpt-5.6-terra
+      classifier_reasoning_effort: medium
     sensitive_subpaths:
       - "agent/auth.json"
       - "agent/sessions"
+      - "agent/settings.json"
+      - "agent/models.json"
+      - "agent/mcp.json"
+      - "agent/mcp-oauth"
     extras:
       allowed_domains:
         - "openai.com"
@@ -169,14 +179,20 @@ subagent_tiers:
     small: claude-haiku-4-5
     mid: claude-sonnet-5
     top: claude-opus-5
-  codex:
+  codex: &openai_subagent_tiers
     small: gpt-5.6-luna
     mid: gpt-5.6-terra
     top: gpt-5.6-sol
+    frontier: gpt-6-astra
+  pi: *openai_subagent_tiers
 agent_sandbox:
   filesystem:
     paths:
       ".env": none
+      "~/.aws": none
+      "~/.netrc": none
+      "~/.git-credentials": none
+      "~/.npmrc": none
       "~/.ssh": none
       "~/.gnupg": none
       "~/.vault-token": none
@@ -251,6 +267,7 @@ agent_mcp_servers:
     package_bin: context7-mcp
     args: []
     auto_approve_tools: true
+    readonly_tools: [resolve-library-id, query-docs]
     env:
       CONTEXT7_API_KEY:
         op: Personal/Context7/api key
@@ -258,6 +275,7 @@ agent_mcp_servers:
     package_bin: exa-mcp-server
     args: []
     auto_approve_tools: true
+    readonly_tools: [web_search_exa, get_code_context_exa, company_research_exa, crawling_exa]
     # 3.4.1 added Exa-side agent orchestration: these dispatch and bill remote
     # agentic runs, a wider grant than the search/fetch tools blanket approval
     # was given for.
@@ -271,6 +289,7 @@ agent_mcp_servers:
       EXA_API_KEY:
         op: Personal/Exa/api key
   playwright:
+    readonly_tools: [browser_navigate, browser_navigate_back, browser_snapshot, browser_tabs, browser_wait_for]
     package_bin: playwright-mcp
     # deliberately NOT auto_approve_tools: its tools that take a caller-chosen
     # filename (snapshot, take_screenshot, evaluate, console_messages,
@@ -295,3 +314,19 @@ agent_mcp_servers:
       - chromium
       - --headless
       - --isolated
+  serena:
+    harnesses: [pi]
+    command: uvx
+    args:
+      - --from
+      - serena-agent==1.7.0
+      - serena
+      - start-mcp-server
+      - --project-from-cwd
+      - --context
+      - home_path: .pi/agent/serena-context.yml
+      - --enable-web-dashboard
+      - "false"
+    auto_approve_tools: true
+    readonly_tools: [get_symbols_overview, find_symbol, find_referencing_symbols]
+    allowed_tools: [get_symbols_overview, find_symbol, find_referencing_symbols, rename_symbol]

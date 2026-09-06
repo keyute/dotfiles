@@ -160,7 +160,3 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
   sensitive paths for sandboxed tools; treat that as a hard boundary even if the
   session's permission mode changes. *Why: a mode change must not reopen an
   irreversible exposure — extends `credential_hygiene`.*
-- **Wrapper boundary** *(pi)*: sessions run only inside the srt wrapper (the
-  `pi` alias); a denied path is a hard boundary — never relaunch bare to get
-  past it. *Why: the harness ships no permission system, so the wrapper is the
-  only enforced guarantee — extends `credential_hygiene`.*

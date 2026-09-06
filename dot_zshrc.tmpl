@@ -13,9 +13,14 @@ alias python='python3'
 alias lg='lazygit'
 alias lzd='lazydocker'
 alias lsql='lazysql'
-# pi ships no permission system; the srt wrapper is its only boundary — never
-# launch the bare binary (settings rendered from .chezmoidata/agents.yaml)
-alias pi='srt --settings ~/.pi/srt-settings.json pi'
+# Disable native tools even if the mandatory workflow extension fails to load.
+unalias pi 2>/dev/null
+pi() {
+  local -a pi_extensions=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts")
+  [[ ! -f "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts" ]] ||
+    pi_extensions+=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts")
+  command pi --no-builtin-tools --no-extensions "${pi_extensions[@]}" "$@"
+}
 
 # `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the
 # GHES host for repo-independent commands and for gh-dash (`ghe dash`).

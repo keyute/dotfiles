@@ -1,0 +1,17 @@
+{{- $name := "explore-deep" -}}
+{{- $meta := index .subagents $name -}}
+{{- $role := index (includeTemplate "pi-roles" (dict "root" .) | fromJson) $name -}}
+---
+name: {{ $name }}
+description: {{ $meta.description | toJson }}
+model: {{ $role.model }}
+thinking: {{ $role.thinking }}
+tools: {{ join ", " $role.tools }}
+extensions: {{ $role.extensionPath }}
+inheritProjectContext: true
+inheritGlobalContext: true
+inheritSkills: true
+allowNestedSubagents: true
+---
+
+{{ includeTemplate (printf "subagents/%s.md" $name) (dict "instructions_file" "AGENTS.md") -}}

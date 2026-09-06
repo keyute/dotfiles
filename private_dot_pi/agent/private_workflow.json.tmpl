@@ -1,0 +1,39 @@
+{{- $pi := .agents.pi -}}
+{{- $sandbox := includeTemplate "agent-sandbox" (dict "self" "pi" "root" .) | fromJson -}}
+{{- $agentDir := printf "%s/.pi/agent" .chezmoi.homeDir -}}
+{{- $source := .chezmoi.sourceDir -}}
+{{- $denyRead := concat $sandbox.denyRead (list (printf "%s/workflow.json" $agentDir)) | uniq | sortAlpha -}}
+{{- $denyWrite := list
+      $agentDir
+      (printf "%s/scripts/pi-workflow" $source)
+      (printf "%s/private_dot_pi" $source)
+      (printf "%s/.chezmoidata/agents.yaml" $source)
+      (printf "%s/.chezmoitemplates/agent-sandbox" $source)
+      (printf "%s/.chezmoitemplates/mcp-servers" $source)
+      (printf "%s/.chezmoitemplates/pi-roles" $source)
+      (printf "%s/dot_zshrc.tmpl" $source)
+      (printf "%s/.zshrc" .chezmoi.homeDir)
+      (printf "%s/node_modules" $source)
+      (printf "%s/package.json" $source)
+      (printf "%s/package-lock.json" $source) -}}
+{{- $domains := concat .agent_sandbox.network.allowed_domains $pi.extras.allowed_domains (list "api.exa.ai") | uniq | sortAlpha -}}
+{{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
+{{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
+{{- dict
+      "version" 1
+      "agentDir" $agentDir
+      "models" (dict
+          "provider" $pi.defaults.provider
+          "default" $pi.defaults.model
+          "classifier" $pi.defaults.classifier_model
+          "classifierEffort" $pi.defaults.classifier_reasoning_effort
+          "defaultEffort" $pi.defaults.reasoning_effort
+          "planEffort" $pi.defaults.plan_reasoning_effort
+          "tiers" .subagent_tiers.pi)
+      "filesystem" (dict
+          "denyRead" $denyRead
+          "denyWrite" $denyWrite
+          "allowWrite" $sandbox.allowWrite)
+      "network" (dict "allowedDomains" $domains)
+      "agents" $roles
+      "mcp" $mcp | toPrettyJson -}}

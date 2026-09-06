@@ -1,0 +1,7 @@
+description: Semantic navigation and rename for the managed Pi workflow
+prompt: |
+  Use semantic tools when symbol structure or references help answer the task.
+  The coding harness provides file tools, diagnostics, and permission enforcement.
+single_project: true
+excluded_tools: []
+tool_description_overrides: {}
