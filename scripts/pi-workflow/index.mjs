@@ -15,17 +15,23 @@ const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 
 // Claude-Code-style input caret. Rendered lines carry their cursor marker
-// inline, so prefixing the first content line (identified by its leading
-// padding) shifts the cursor correctly; when the shape ever changes, the
-// caret silently disappears instead of corrupting the editor.
-class CaretEditor extends sdk.CustomEditor {
+// inline, so prefixing the first content line shifts the cursor correctly;
+// if the render shape ever changes, the caret silently disappears instead
+// of corrupting the editor.
+export class CaretEditor extends sdk.CustomEditor {
   constructor(tui, theme, keybindings) {
     super(tui, theme, keybindings, { paddingX: 2 });
   }
+  // The host copies the settings editorPaddingX (default 0) onto custom
+  // editors right after construction and on settings reloads; the caret
+  // needs its two padding columns.
+  setPaddingX(padding) {
+    super.setPaddingX(Math.max(2, padding));
+  }
   render(width) {
     const lines = super.render(width);
-    const index = lines.findIndex(line => line.startsWith("  "));
-    if (index !== -1) lines[index] = this.borderColor("❯ ") + lines[index].slice(2);
+    // lines[0] is the top border; lines[1] is the first visible content line.
+    if (lines.length > 1 && lines[1].startsWith("  ")) lines[1] = this.borderColor("❯ ") + lines[1].slice(2);
     return lines;
   }
 }

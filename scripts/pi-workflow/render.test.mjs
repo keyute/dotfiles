@@ -62,6 +62,8 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.equal(workflow.agents.explorer.tools.includes("read"), false);
   assert.equal(piSettings.defaultProvider, "openai-codex");
   assert.equal(piSettings.enabledModels.length, 4);
+  assert.equal(piSettings.theme, "catppuccin-latte/catppuccin-mocha");
+  assert.match(piSettings.themes[0], /\/node_modules\/catppuccin-pi-theme\/themes$/);
 
   for (const role of Object.keys(workflow.agents)) {
     const agent = run("cat", target(`.pi/agent/agents/${role}.md`));

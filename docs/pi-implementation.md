@@ -1,7 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-06 (operations-seam refactor). Source implementation
-complete; not applied or live-tested on the host.
+Last updated: 2026-09-07 (pi-client gap, caret fix, catppuccin themes). Source
+implementation complete; not applied or live-tested on the host.
 
 ## Decisions
 
@@ -45,6 +45,17 @@ complete; not applied or live-tested on the host.
   against internals, per-invocation server starts forfeit LSP's benefit, and
   the package is young/solo/unproven). Serena covers symbols; diagnostics via
   toolchains in `workspace_bash`. Reintroduce only on measured pain.
+- pi-subagents' async runner resolves `@earendil-works/pi-client/unix`, which
+  no pi package dependency provides (its vendored fallback covers only
+  pi-server on pi 0.85.0 exactly); `@earendil-works/pi-client` is pinned at the
+  root so background children can start. Re-check on every pi/pi-subagents bump.
+- The host copies the settings `editorPaddingX` (default 0) onto custom editors
+  right after the factory runs and on settings reloads; `CaretEditor` clamps
+  `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`
+  editor option is the right upstream ask.
+- Themes come from the data-only `catppuccin-pi-theme` pin, registered by path
+  through the managed settings `themes` array (no `pi install`, no extension);
+  the `theme` light/dark pair enables pi's terminal-followed auto mode.
 - Serena metadata is redirected into session scratch; source remains read-only
   during planning. uv tool/python dirs are also redirected into scratch (they
   neighbor denied credentials), with uv's macOS cache allowed in the shared

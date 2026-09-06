@@ -8,6 +8,8 @@
       "defaultModel" $pi.defaults.model
       "defaultThinkingLevel" $pi.defaults.reasoning_effort
       "enabledModels" ($enabledModels | sortAlpha)
+      "theme" "catppuccin-latte/catppuccin-mocha"
+      "themes" (list (printf "%s/node_modules/catppuccin-pi-theme/themes" .chezmoi.sourceDir))
       "subagents" (dict
           "disableBuiltins" true
           "defaultProvider" $pi.defaults.provider) -}}

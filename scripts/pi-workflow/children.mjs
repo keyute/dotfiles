@@ -19,7 +19,7 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract)
     args.steeringRecovery = false;
     return;
   }
-  if (Object.keys(args).some(key => !launchKeys.has(key))) throw new Error("Use a named child launch; arbitrary workflow scripts and launch overrides are not enabled");
+  if (Object.keys(args).some(key => !launchKeys.has(key))) throw new Error("Use a named child launch with only: agent, task, and optionally async or model; workflow scripts and other launch overrides are not enabled");
   const child = config.agents[args.agent];
   if (!child || typeof args.task !== "string" || !args.task.trim()) throw new Error("A configured agent and bounded task are required");
   if (role !== "root" && config.agents[role].readonly && !child.readonly) throw new Error("Read-only children cannot delegate to writers");
