@@ -5,6 +5,8 @@ import { homedir } from "node:os";
 export const fileTools = ["read", "write", "edit", "grep", "find", "ls"];
 export const workerTools = [...fileTools, "bash"];
 export const publicToolName = name => workerTools.includes(name) ? `workspace_${name}` : name;
+// The parent session's tool set; children get theirs from the roster config.
+export const rootTools = [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan"];
 
 // Sandboxed shell runs without review, as Claude Code (autoAllowBashIfSandboxed)
 // and Codex do: the SRT profile is the boundary. The one effect the profile
@@ -79,17 +81,14 @@ export class Policy {
     this.approval = "auto";
     this.epoch = 0;
     this.transitioning = false;
-    this.denyRead = [...config.filesystem.denyRead, controlDir].flatMap(p => {
-      const path = expand(p, this.cwd);
-      return [path, canonicalPattern(path)];
-    });
-    this.denyWrite = [...this.denyRead, ...config.filesystem.denyWrite, join(this.cwd, ".git"), join(this.cwd, ".pi")]
-      .flatMap(p => { const path = expand(p, this.cwd); return [path, canonicalPattern(path)]; });
+    const resolvePaths = paths => paths.flatMap(p => { const path = expand(p, this.cwd); return [path, canonicalPattern(path)]; });
+    this.denyRead = resolvePaths([...config.filesystem.denyRead, controlDir]);
+    this.denyWrite = [...this.denyRead, ...resolvePaths([...config.filesystem.denyWrite, join(this.cwd, ".git"), join(this.cwd, ".pi")])];
     this.caches = config.filesystem.allowWrite.map(p => canonical(expand(p, this.cwd)));
   }
 
   role(name) {
-    if (name === "root") return { readonly: false, tools: [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan"] };
+    if (name === "root") return { readonly: false, tools: rootTools };
     const role = this.config.agents[name];
     if (!role) throw new Error("Unknown child policy role");
     return role;

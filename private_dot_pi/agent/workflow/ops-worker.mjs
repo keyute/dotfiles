@@ -5,6 +5,7 @@ import { basename, join, matchesGlob, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { detectSupportedImageMimeTypeFromFile, truncateHead, truncateLine } from "@earendil-works/pi-coding-agent";
 import { workerTools } from "./policy.mjs";
+import { terminateProcessGroup } from "./sandbox-runner.mjs";
 
 // This entire process runs inside SRT; it executes primitive operations for
 // exactly one host-side tool invocation and exits when stdin closes. Only the
@@ -29,11 +30,7 @@ const active = new Map();
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 const errorPayload = error => ({ message: error?.message || String(error), ...(error?.code ? { code: error.code } : {}) });
 
-function killGroup(child) {
-  if (!child?.pid) return;
-  try { process.kill(-child.pid, "SIGTERM"); } catch {}
-  setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, 1000).unref();
-}
+const killGroup = child => void terminateProcessGroup(child).catch(() => {});
 
 function exec({ command, cwd: dir, timeout }, { signal, onChunk }) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -57,6 +54,10 @@ function exec({ command, cwd: dir, timeout }, { signal, onChunk }) {
   });
 }
 
+function ripgrepMissing(error) {
+  return error?.code === "ENOENT" ? new Error("ripgrep is required in the sandbox") : error;
+}
+
 function listFiles(root, extraIgnores, signal) {
   return new Promise((resolvePromise, rejectPromise) => {
     // --hidden matches the SDK grep's own rg invocation; .git needs an
@@ -66,43 +67,19 @@ function listFiles(root, extraIgnores, signal) {
     const abort = () => killGroup(child);
     signal.addEventListener("abort", abort, { once: true });
     let output = "";
+    let stderr = "";
     child.stdout.on("data", chunk => { output += chunk; });
-    child.stderr.resume();
-    child.on("error", () => resolvePromise(undefined));
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("error", error => rejectPromise(ripgrepMissing(error)));
     child.on("close", code => {
       signal.removeEventListener("abort", abort);
       if (signal.aborted) return rejectPromise(new Error("aborted"));
       // rg exits 1 with no output when nothing matched; treat as empty.
-      if (code !== 0 && output === "") return resolvePromise(code === 1 ? [] : undefined);
+      if (code === 1 && output === "") return resolvePromise([]);
+      if (code !== 0) return rejectPromise(new Error(stderr.trim() || `ripgrep exited with code ${code}`));
       resolvePromise(output.split("\n").filter(Boolean));
     });
   });
-}
-
-// Fallback enumeration when ripgrep is unavailable; mirrors the official
-// example's walk (skips .git and node_modules, nothing gitignore-aware).
-async function* walk(root, relativeDir, signal) {
-  for (const entry of await readdir(root)) {
-    if (signal.aborted) throw new Error("aborted");
-    if (entry === ".git" || entry === "node_modules") continue;
-    const path = join(root, entry);
-    const relativePath = relativeDir ? join(relativeDir, entry) : entry;
-    let entryStat;
-    try { entryStat = await stat(path); } catch { continue; }
-    if (entryStat.isDirectory()) yield* walk(path, relativePath, signal);
-    else yield relativePath;
-  }
-}
-
-async function candidateFiles(root, extraIgnores, signal) {
-  const listed = await listFiles(root, extraIgnores, signal);
-  if (listed) return listed;
-  const matchesIgnore = relativePath => extraIgnores.some(pattern => matchesToolGlob(relativePath, pattern));
-  const collected = [];
-  for await (const relativePath of walk(root, "", signal)) {
-    if (!matchesIgnore(relativePath)) collected.push(relativePath);
-  }
-  return collected;
 }
 
 function matchesToolGlob(relativePath, pattern) {
@@ -110,63 +87,97 @@ function matchesToolGlob(relativePath, pattern) {
   return matchesGlob(basename(relativePath), pattern);
 }
 
-function lineMatcher({ pattern, literal, ignoreCase }) {
-  if (literal) {
-    const needle = ignoreCase ? pattern.toLowerCase() : pattern;
-    return line => (ignoreCase ? line.toLowerCase() : line).includes(needle);
-  }
-  const regex = new RegExp(pattern, ignoreCase ? "i" : undefined);
-  return line => regex.test(line);
-}
-
 async function grep(params, { signal }) {
   const root = resolve(cwd, params.path ?? ".");
   const rootIsDirectory = (await stat(root)).isDirectory();
-  const matcher = lineMatcher(params);
   const contextLines = params.context > 0 ? params.context : 0;
   const limit = Math.max(1, params.limit ?? GREP_DEFAULT_LIMIT);
-  const outputLines = [];
-  const details = {};
-  let matchCount = 0;
-  let linesTruncated = false;
-  const files = rootIsDirectory ? await candidateFiles(root, [], signal) : [basename(root)];
-  const fileRoot = rootIsDirectory ? root : resolve(root, "..");
-  for (const relativePath of files) {
-    if (matchCount >= limit) break;
-    if (params.glob && !matchesToolGlob(relativePath, params.glob)) continue;
-    let content;
-    try { content = await readFile(join(fileRoot, relativePath), "utf8"); } catch { continue; }
-    if (content.includes("\0")) continue;
-    const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-    for (let index = 0; index < lines.length && matchCount < limit; index++) {
-      if (signal.aborted) throw new Error("aborted");
-      if (!matcher(lines[index] ?? "")) continue;
-      matchCount++;
-      const start = Math.max(0, index - contextLines);
-      const end = Math.min(lines.length - 1, index + contextLines);
-      for (let at = start; at <= end; at++) {
-        const { text, wasTruncated } = truncateLine((lines[at] ?? "").replace(/\r/g, ""));
-        if (wasTruncated) linesTruncated = true;
-        const separator = at === index ? ":" : "-";
-        outputLines.push(`${relativePath}${separator}${at + 1}${separator} ${text}`);
-      }
-    }
+  const args = ["--json", "--hidden", "--glob", "!.git"];
+  if (params.ignoreCase) args.push("-i");
+  if (params.literal) args.push("-F");
+  if (contextLines > 0) args.push("-C", String(contextLines));
+  if (params.glob) {
+    // Mirror matchesToolGlob: a glob without "/" matches the basename anywhere
+    // (rg's default for slash-free globs); one with "/" is anchored to root,
+    // so also match it at any depth to keep the "**/" fallback semantic.
+    args.push("--glob", params.glob);
+    if (params.glob.includes("/")) args.push("--glob", `**/${params.glob}`);
   }
-  if (matchCount === 0) return { text: "No matches found" };
-  const truncation = truncateHead(outputLines.join("\n"), { maxLines: Number.MAX_SAFE_INTEGER });
-  const notices = [];
-  let output = truncation.content;
-  if (matchCount >= limit) { details.matchLimitReached = limit; notices.push(`${limit} matches limit reached`); }
-  if (linesTruncated) { details.linesTruncated = true; notices.push("long lines truncated"); }
-  if (truncation.truncated) { details.truncation = truncation; notices.push("output size limit reached"); }
-  if (notices.length) output += `\n\n[${notices.join(". ")}]`;
-  return { text: output, details: Object.keys(details).length ? details : undefined };
+  const target = rootIsDirectory ? "." : basename(root);
+  const searchCwd = rootIsDirectory ? root : resolve(root, "..");
+  args.push("--", params.pattern, target);
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn("rg", args, { cwd: searchCwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    const rl = createInterface({ input: child.stdout });
+    let stderr = "";
+    let matchCount = 0;
+    let linesTruncated = false;
+    let limitReached = false;
+    let pastLimit = false;
+    let lastMatch = null;
+    const outputLines = [];
+    const abort = () => killGroup(child);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    rl.on("line", line => {
+      if (!line.trim() || pastLimit) return;
+      let event;
+      try { event = JSON.parse(line); } catch { return; }
+      // Past the limit only the accepted match's trailing window (same file,
+      // within `context` lines) is kept, a further match inside it rendering
+      // as context; the first event beyond the window stops rg.
+      if (event.type === "end" && limitReached) { pastLimit = true; killGroup(child); return; }
+      if (event.type !== "match" && event.type !== "context") return;
+      const rawPath = event.data.path.text;
+      const relativePath = rawPath.startsWith("./") ? rawPath.slice(2) : rawPath;
+      const lineNumber = event.data.line_number;
+      if (limitReached && (relativePath !== lastMatch.path || lineNumber > lastMatch.line + contextLines)) { pastLimit = true; killGroup(child); return; }
+      const isMatch = event.type === "match" && !limitReached;
+      const rawText = event.data.lines.text.replace(/\r\n/g, "\n").replace(/\n$/, "").replace(/\r/g, "");
+      const { text, wasTruncated } = truncateLine(rawText);
+      if (wasTruncated) linesTruncated = true;
+      const separator = isMatch ? ":" : "-";
+      outputLines.push(`${relativePath}${separator}${lineNumber}${separator} ${text}`);
+      if (isMatch) {
+        matchCount++;
+        lastMatch = { path: relativePath, line: lineNumber };
+        if (matchCount >= limit) limitReached = true;
+      }
+    });
+    child.on("error", error => {
+      rl.close();
+      signal.removeEventListener("abort", abort);
+      rejectPromise(ripgrepMissing(error));
+    });
+    child.on("close", code => {
+      rl.close();
+      signal.removeEventListener("abort", abort);
+      if (signal.aborted) return rejectPromise(new Error("aborted"));
+      // Exit 1 is "no matches". Exit 2 also covers partial failures (a
+      // denied path inside the sandbox) alongside real matches, so it is an
+      // error only when nothing matched — then stderr carries the reason
+      // (a bad regex, a missing root).
+      if (code !== 0 && code !== 1 && !limitReached && matchCount === 0) return rejectPromise(new Error(stderr.trim() || `ripgrep exited with code ${code}`));
+      if (matchCount === 0) return resolvePromise({ text: "No matches found" });
+      const truncation = truncateHead(outputLines.join("\n"), { maxLines: Number.MAX_SAFE_INTEGER });
+      const notices = [];
+      let output = truncation.content;
+      const details = {};
+      if (limitReached) { details.matchLimitReached = limit; notices.push(`${limit} matches limit reached`); }
+      if (linesTruncated) { details.linesTruncated = true; notices.push("long lines truncated"); }
+      if (truncation.truncated) { details.truncation = truncation; notices.push("output size limit reached"); }
+      if (notices.length) output += `\n\n[${notices.join(". ")}]`;
+      resolvePromise({ text: output, details: Object.keys(details).length ? details : undefined });
+    });
+  });
 }
 
 async function findGlob({ pattern, cwd: dir, ignore, limit }, { signal }) {
   const root = resolve(cwd, dir ?? ".");
   const results = [];
-  for (const relativePath of await candidateFiles(root, ignore ?? [], signal)) {
+  for (const relativePath of await listFiles(root, ignore ?? [], signal)) {
     if (results.length >= limit) break;
     if (matchesToolGlob(relativePath, pattern)) results.push(join(root, relativePath));
   }

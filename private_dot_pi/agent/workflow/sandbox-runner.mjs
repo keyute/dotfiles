@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readLines, sendLine } from "./lines.mjs";
 
 const RESPONSE_LIMIT = 1024 * 1024;
 const RESPONSE_TIMEOUT_MS = 10_000;
@@ -41,7 +42,7 @@ const isProcessGone = (error) => error && error.code === "ESRCH";
 
 export const terminateProcessGroup = async (
   child,
-  { killProcess = process.kill, setTimer = setTimeout, clearTimer = clearTimeout, graceMs = 1_000 } = {},
+  { killProcess = process.kill, setTimer = setTimeout, clearTimer = clearTimeout } = {},
 ) => {
   if (!child?.pid) return;
   try {
@@ -53,7 +54,7 @@ export const terminateProcessGroup = async (
   let timer;
   try {
     await new Promise((resolve) => {
-      timer = setTimer(resolve, graceMs);
+      timer = setTimer(resolve, 1_000);
       timer?.unref?.();
     });
   } finally {
@@ -98,8 +99,7 @@ const validateLease = (value, kind) => {
       typeof value.command !== "string" ||
       value.command.length === 0 ||
       !Array.isArray(value.args) ||
-      !value.args.every((arg) => typeof arg === "string") ||
-      !Object.values(value.env).every((envValue) => typeof envValue === "string")
+      !value.args.every((arg) => typeof arg === "string")
     ) {
       throw fail();
     }
@@ -114,7 +114,6 @@ const requestLease = (
   new Promise((resolve, reject) => {
     let settled = false;
     let receivedLease = false;
-    let buffer = "";
     const socket = createConnection(socketPath);
     const state = {
       terminal: false,
@@ -147,44 +146,24 @@ const requestLease = (
     };
 
     socket.once("connect", () => {
-      socket.write(`${JSON.stringify({ action: "lease", token, role, kind, name, ticket })}\n`);
+      sendLine(socket, { action: "lease", token, role, kind, name, ticket });
     });
-    socket.on("data", (chunk) => {
-      buffer += chunk;
-      if (Buffer.byteLength(buffer) > RESPONSE_LIMIT) {
-        socket.destroy();
-        rejectOnce();
-        return;
-      }
-      while (true) {
-        const newline = buffer.indexOf("\n");
-        if (newline === -1) return;
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        let message;
+    readLines(socket, (message) => {
+      if (!receivedLease) {
+        receivedLease = true;
         try {
-          message = JSON.parse(line);
+          resolveOnce(validateLease(message, kind));
         } catch {
           socket.destroy();
           rejectOnce();
-          return;
         }
-        if (!receivedLease) {
-          receivedLease = true;
-          try {
-            resolveOnce(validateLease(message, kind));
-          } catch {
-            socket.destroy();
-            rejectOnce();
-          }
-        } else if (isRecord(message) && message.action === "stop") {
-          markTerminal();
-        } else {
-          socket.destroy();
-          markTerminal();
-        }
+      } else if (isRecord(message) && message.action === "stop") {
+        markTerminal();
+      } else {
+        socket.destroy();
+        markTerminal();
       }
-    });
+    }, { limit: RESPONSE_LIMIT, onError: () => { socket.destroy(); rejectOnce(); } });
     socket.on("error", rejectOnce);
     socket.on("close", () => {
       markTerminal();
@@ -200,19 +179,13 @@ const waitForClose = (child) =>
 
 const acknowledgeTermination = (socket) =>
   new Promise((resolve, reject) => {
-    const onError = (error) => {
-      socket.removeListener?.("error", onError);
-      reject(error);
-    };
-    socket.once?.("error", onError);
+    // end()'s callback never carries the error; a failed proof must reject,
+    // or the runner reports success while the broker saw a lease close unproven.
+    socket.once("error", reject);
     try {
-      socket.write(`${JSON.stringify({ action: "terminated" })}\n`);
-      socket.end(() => {
-        socket.removeListener?.("error", onError);
-        resolve();
-      });
+      sendLine(socket, { action: "terminated" });
+      socket.end(() => resolve());
     } catch (error) {
-      socket.removeListener?.("error", onError);
       reject(error);
     }
   });
@@ -236,7 +209,6 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
     killProcess: dependencies.killProcess,
     setTimer: dependencies.setTimer,
     clearTimer: dependencies.clearTimer,
-    graceMs: dependencies.graceMs,
   };
   const leaseRequest = dependencies.requestLease || requestLease;
   const { socket, state, response } = await leaseRequest({
@@ -261,8 +233,8 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
       if (dependencies.sandboxManager) sandboxManager = dependencies.sandboxManager;
       else ({ SandboxManager: sandboxManager } = await import("@anthropic-ai/sandbox-runtime"));
       await sandboxManager.initialize(response.profile);
-    } catch {
-      throw fail();
+    } catch (error) {
+      throw Object.assign(error, { exitCode: 1 });
     }
     if (state.terminal) throw fail();
 
@@ -270,8 +242,8 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
     let wrapped;
     try {
       wrapped = await sandboxManager.wrapWithSandbox(command, "bash");
-    } catch {
-      throw fail();
+    } catch (error) {
+      throw Object.assign(error, { exitCode: 1 });
     }
     if (state.terminal) throw fail();
 
@@ -297,9 +269,9 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
     try {
       if (sandboxManager) await sandboxManager.reset();
       await acknowledgeTermination(socket);
-    } catch {
+    } catch (error) {
       socket.destroy();
-      throw fail();
+      throw Object.assign(error, { exitCode: 1 });
     }
   }
 };
@@ -307,7 +279,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
 const invokedDirectly = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 if (invokedDirectly) {
   main().catch((error) => {
-    process.stderr.write("sandbox runner failed\n");
+    process.stderr.write(`${error.message}\n`);
     process.exitCode = Number.isInteger(error.exitCode) && error.exitCode > 0 ? error.exitCode : 1;
   });
 }

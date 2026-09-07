@@ -1,18 +1,26 @@
 import { createConnection, createServer } from "node:net";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Policy, workerTools, publicToolName } from "./policy.mjs";
+import { endLine, readLines, sendLine } from "./lines.mjs";
 
-const line = value => `${JSON.stringify(value)}\n`;
 const equal = (a, b) => typeof a === "string" && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
-export async function startBroker(config, cwd, review, transport = {}) {
+function childConcurrencyLimit(agentDir) {
+  try {
+    const config = JSON.parse(readFileSync(join(agentDir, "extensions", "subagent", "config.json"), "utf8"));
+    return typeof config.globalConcurrencyLimit === "number" ? config.globalConcurrencyLimit : 20;
+  } catch { return 20; }
+}
+
+export async function startBroker(config, cwd, review) {
   const control = mkdtempSync(join(tmpdir(), "pi-control-"));
   const scratch = mkdtempSync(join(tmpdir(), "pi-work-"));
   const socketPath = join(control, "policy.sock");
   const token = randomBytes(32).toString("hex");
+  const childLimit = childConcurrencyLimit(config.agentDir);
   let policy;
   try { policy = new Policy(config, cwd, scratch, control); }
   catch (error) {
@@ -53,9 +61,8 @@ export async function startBroker(config, cwd, review, transport = {}) {
     return allowed === true ? grant(request) : { ok: false, error: "Action not approved" };
   }
 
-  const server = (transport.createServer ?? createServer)(socket => {
+  const server = createServer(socket => {
     connections.add(socket);
-    let data = "";
     let handled = false;
     socket.on("error", () => {});
     socket.on("close", () => {
@@ -63,36 +70,28 @@ export async function startBroker(config, cwd, review, transport = {}) {
       if (terminated.has(socket)) { leases.delete(socket); children.delete(socket); terminated.delete(socket); }
       else if (leases.has(socket) && !closed) { policy.transitioning = true; policy.epoch++; }
     });
-    socket.on("data", chunk => {
-      data += chunk;
-      if (data.length > 128 * 1024) return socket.destroy();
-      if (!data.includes("\n")) return;
+    readLines(socket, message => {
       if (handled) {
-        try {
-          const proof = JSON.parse(data.slice(0, data.indexOf("\n")));
-          data = "";
-          if (proof.action !== "terminated" || !leases.has(socket)) return socket.destroy();
-          terminated.add(socket);
-        } catch { socket.destroy(); }
+        if (message.action !== "terminated" || !leases.has(socket)) return socket.destroy();
+        terminated.add(socket);
         return;
       }
       handled = true;
+      const request = message;
       void (async () => {
-        const request = JSON.parse(data.slice(0, data.indexOf("\n")));
-        data = "";
         if (!equal(request.token, token) || closed) throw new Error("Unavailable policy broker");
         policy.role(request.role);
         if (request.action === "child") {
           // The epoch travels through the launching parent's environment, so a
           // child spawned before a mode/approval change cannot connect after it
           // and inherit the newer, possibly wider policy.
-          if (request.role === "root" || children.size >= 20 || policy.transitioning || request.epoch !== policy.epoch) throw new Error("Child capacity unavailable");
+          if (request.role === "root" || children.size >= childLimit || policy.transitioning || request.epoch !== policy.epoch) throw new Error("Child capacity unavailable");
           children.add(socket);
           leases.add(socket);
-          return socket.write(line({ ok: true }));
+          return sendLine(socket, { ok: true });
         }
-        if (request.action === "state") return socket.end(line({ ok: true, mode: policy.mode, readonly: policy.readonly(request.role), epoch: policy.epoch }));
-        if (request.action === "authorize" || request.action === "mcp") return socket.end(line(await authorize(request)));
+        if (request.action === "state") return endLine(socket, { ok: true, mode: policy.mode, readonly: policy.readonly(request.role), epoch: policy.epoch });
+        if (request.action === "authorize" || request.action === "mcp") return endLine(socket, await authorize(request));
         if (request.action !== "lease" || policy.transitioning) throw new Error("Invalid process lease");
         // NODE_USE_ENV_PROXY: Node's built-in fetch ignores the HTTP(S)_PROXY the
         // sandbox injects unless told to; MCP servers are Node processes.
@@ -128,12 +127,12 @@ export async function startBroker(config, cwd, review, transport = {}) {
           }
         } else throw new Error("Unknown process kind");
         leases.add(socket);
-        socket.write(line({ ok: true, profile: policy.profile(request.role), cwd: policy.cwd, env, command, args }));
+        sendLine(socket, { ok: true, profile: policy.profile(request.role), cwd: policy.cwd, env, command, args });
       // The message is the model's only signal for why a call was refused
       // (plan mode vs. protected path vs. capacity); every thrown text here is
       // authored in this module or policy.mjs.
-      })().catch(error => socket.end(line({ ok: false, error: error?.message || "Managed policy denied this request" })));
-    });
+      })().catch(error => endLine(socket, { ok: false, error: error?.message || "Managed policy denied this request" }));
+    }, { limit: 128 * 1024, onError: () => socket.destroy() });
   });
   try {
     await new Promise((resolve, reject) => { server.once("error", reject); server.listen(socketPath, resolve); });
@@ -151,7 +150,7 @@ export async function startBroker(config, cwd, review, transport = {}) {
         if (leases.has(socket)) reject(new Error("Process lost without terminal proof"));
         else resolve();
       });
-      socket.write(line({ action: "stop" }));
+      sendLine(socket, { action: "stop" });
     }));
     let timer;
     try {
@@ -191,37 +190,26 @@ export async function startBroker(config, cwd, review, transport = {}) {
 export function acquireChild(env, role, onStop, connect = createConnection) {
   return new Promise((resolve, reject) => {
     const socket = connect(env.PI_WORKFLOW_SOCKET);
-    let buffer = "";
     let accepted = false;
     let released = false;
     const timer = setTimeout(() => { reject(new Error("Child policy handshake timed out")); socket.destroy(); }, 10_000);
-    const release = () => { if (released) return; released = true; clearTimeout(timer); socket.end(line({ action: "terminated" })); };
+    const release = () => { if (released) return; released = true; clearTimeout(timer); endLine(socket, { action: "terminated" }); };
     socket.on("error", error => { clearTimeout(timer); if (!accepted) reject(error); });
     socket.on("close", () => {
       clearTimeout(timer);
       if (!accepted) reject(new Error("Child policy disconnected"));
       if (!released) onStop(release);
     });
-    socket.on("connect", () => socket.write(line({ action: "child", role, token: env.PI_WORKFLOW_TOKEN, epoch: Number(env.PI_WORKFLOW_EPOCH) })));
-    socket.on("data", chunk => {
-      buffer += chunk;
-      if (buffer.length > 8192) return socket.destroy();
-      while (buffer.includes("\n")) {
-        const end = buffer.indexOf("\n");
-        const raw = buffer.slice(0, end);
-        buffer = buffer.slice(end + 1);
-        try {
-          const message = JSON.parse(raw);
-          if (!accepted) {
-            if (!message.ok) { reject(new Error("Child policy/capacity denied")); socket.destroy(); return; }
-            accepted = true;
-            clearTimeout(timer);
-            resolve(release);
-          } else if (message.action === "stop") onStop(release);
-          else socket.destroy();
-        } catch { socket.destroy(); }
-      }
-    });
+    socket.on("connect", () => sendLine(socket, { action: "child", role, token: env.PI_WORKFLOW_TOKEN, epoch: Number(env.PI_WORKFLOW_EPOCH) }));
+    readLines(socket, message => {
+      if (!accepted) {
+        if (!message.ok) { reject(new Error("Child policy/capacity denied")); socket.destroy(); return; }
+        accepted = true;
+        clearTimeout(timer);
+        resolve(release);
+      } else if (message.action === "stop") onStop(release);
+      else socket.destroy();
+    }, { limit: 8192, onError: () => socket.destroy() });
   });
 }
 
@@ -229,7 +217,6 @@ export function requestBroker(env, role, request, connect = createConnection) {
   return new Promise((resolve, reject) => {
     if (!env.PI_WORKFLOW_SOCKET || !env.PI_WORKFLOW_TOKEN) return reject(new Error("Parent policy unavailable"));
     const socket = connect(env.PI_WORKFLOW_SOCKET);
-    let buffer = "";
     let settled = false;
     // Approvals may wait on a human; everything else is answered by the broker itself.
     const approval = ["authorize", "mcp"].includes(request.action);
@@ -237,19 +224,13 @@ export function requestBroker(env, role, request, connect = createConnection) {
     const fail = error => { clearTimeout(timer); if (!settled) { settled = true; reject(error); } };
     socket.on("error", fail);
     socket.on("close", () => fail(new Error("Parent policy disconnected")));
-    socket.on("connect", () => socket.write(line({ ...request, role, token: env.PI_WORKFLOW_TOKEN })));
-    socket.on("data", chunk => {
-      buffer += chunk;
-      if (buffer.length > 128 * 1024) return socket.destroy(new Error("Oversized policy response"));
-      if (!buffer.includes("\n")) return;
-      try {
-        const result = JSON.parse(buffer.slice(0, buffer.indexOf("\n")));
-        settled = true;
-        clearTimeout(timer);
-        socket.destroy();
-        if (result.ok) resolve(result);
-        else reject(new Error(result.error || "Policy denied"));
-      } catch (error) { fail(error); socket.destroy(); }
-    });
+    socket.on("connect", () => sendLine(socket, { ...request, role, token: env.PI_WORKFLOW_TOKEN }));
+    readLines(socket, result => {
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      if (result.ok) resolve(result);
+      else reject(new Error(result.error || "Policy denied"));
+    }, { limit: 128 * 1024, onError: error => { fail(error); socket.destroy(); } });
   });
 }

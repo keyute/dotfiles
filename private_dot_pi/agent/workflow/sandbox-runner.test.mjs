@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { main, quoteArg, safeEnvironment, terminateProcessGroup } from "./sandbox-runner.mjs";
 
 const lease = () => ({
-  socket: { destroy() {}, end(callback) { callback?.(); }, write() {} },
+  socket: { destroy() {}, end(callback) { callback?.(); }, write() {}, once() {} },
   state: { terminal: false, child: undefined, groupTermination: undefined, terminationError: undefined },
   response: { profile: {}, cwd: process.cwd(), env: {} },
 });
@@ -148,6 +148,7 @@ test("a signal keeps the lease open until child closure and group termination", 
     write() {
       socketCalls.push("write");
     },
+    once() {},
   };
   const signals = new EventEmitter();
   const child = { pid: 44 };

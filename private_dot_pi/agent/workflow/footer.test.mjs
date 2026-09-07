@@ -1,6 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { setTimeout as sleep } from "node:timers/promises";
 import { buildSegments, footerEnv, formatReset, installFooter, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
+import { createTurnClock } from "./rows.mjs";
+
+// A footer wired to fake pi/ctx objects; handlers are invoked by event name.
+function harness({ active = 0, tickMs = 5 } = {}) {
+  const path = process.env.PATH;
+  process.env.PATH = ""; // codex/git lookups fail fast instead of spawning
+  const handlers = {};
+  const entries = [];
+  const messages = [];
+  const pi = { on: (name, fn) => { handlers[name] = fn; }, registerEntryRenderer() {}, appendEntry: (kind, data) => entries.push({ kind, data }) };
+  const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter() {}, setWorkingMessage: text => messages.push(text) } };
+  const fleet = { attach() {}, render: () => [], activeCount: () => active };
+  installFooter(pi, ctx, { fleet, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs });
+  process.env.PATH = path;
+  const fire = (name, event = {}) => handlers[name]?.(event, { cwd: "." });
+  return { fire, entries, messages, fleet, done: () => fire("session_shutdown") };
+}
 
 test("footer subprocesses never inherit workflow broker credentials", () => {
   const clean = footerEnv({ PATH: "/bin", PI_WORKFLOW_SOCKET: "/tmp/s", PI_WORKFLOW_TOKEN: "secret" });
@@ -75,7 +93,7 @@ test("footer renders the status line first and the fleet rows under it", () => {
     const attached = [];
     const fleet = { attach: tui => attached.push(tui), render: (width, theme) => [theme.fg("dim", `rows@${width}`)] };
     const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; } } };
-    installFooter({ on() {}, registerEntryRenderer() {} }, ctx, { fleet });
+    installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet });
     const tui = { requestRender() {} };
     const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", "plan"]]) };
     const lines = factory(tui, { fg: (_color, text) => text }, footerData).render(60);
@@ -85,4 +103,73 @@ test("footer renders the status line first and the fleet rows under it", () => {
   } finally {
     process.env.PATH = path;
   }
+});
+
+test("the running label lives in the working message and clears at settle", async () => {
+  const h = harness();
+  h.fire("agent_start");
+  await sleep(15);
+  assert.match(h.messages[0], /^Iterating… \d+s$/);
+  assert.ok(h.messages.length >= 2);
+  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+  h.fire("agent_settled");
+  assert.equal(h.messages.at(-1), undefined);
+  assert.equal(h.entries.length, 1);
+  assert.equal(h.entries[0].data.verb, "Iterated");
+  const ticks = h.messages.length;
+  await sleep(15);
+  assert.equal(h.messages.length, ticks);
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 1);
+});
+
+test("the turn line waits for background children and closes once with the total elapsed", async () => {
+  let active = 1;
+  const h = harness();
+  h.fleet.activeCount = () => active;
+  h.fire("agent_start");
+  await sleep(12);
+  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 0);
+  h.fire("input", { source: "extension" });
+  assert.equal(h.entries.length, 0);
+  active = 0;
+  h.fire("agent_start");
+  await sleep(12);
+  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 1);
+  assert.ok(h.entries[0].data.ms >= 20, String(h.entries[0].data.ms));
+  h.done();
+});
+
+test("a typed prompt while waiting on children closes the turn", () => {
+  const h = harness({ active: 1 });
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 0);
+  h.fire("input", { source: "interactive" });
+  assert.equal(h.entries.length, 1);
+  h.done();
+});
+
+test("an interrupted run closes immediately", () => {
+  const h = harness();
+  h.fire("agent_start");
+  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "aborted" }] });
+  assert.deepEqual([h.entries.length, h.entries[0].data.aborted], [1, true]);
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 1);
+  h.done();
+});
+
+test("ui prompts relabel the spinner", () => {
+  const h = harness();
+  h.fire("agent_start");
+  h.fire("ui_prompt_start");
+  assert.equal(h.messages.at(-1), "Waiting for you…");
+  h.fire("ui_prompt_end");
+  assert.match(h.messages.at(-1), /^Iterating…/);
+  h.done();
 });

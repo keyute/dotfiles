@@ -1,6 +1,6 @@
 # Pi implementation working record
 
-Last updated: 2026-09-07 evening (guard parity: applied workflow copy and
+Last updated: 2026-09-07 evening (transcript redesign and lean pass; earlier: guard parity: applied workflow copy and
 node_modules symlink, relayed policy messages, Claude-shaped transcript rows,
 ask-user plugin; earlier: fourth comparison run: footer-hosted fleet rows, launch-
 sourced task text, sibling rank pairing; third run: one-turn launches, Claude
@@ -205,6 +205,40 @@ live-tested on the host.
   `workspace_*` rows had been falling back to name + raw text.
   `@juicesharp/rpiv-ask-user-question` (48.8k dl/wk) replaces the hand-rolled
   `ask_user`; its answers feed the transcript entry and the classifier task.
+
+- 2026-09-07 (evening, transcript redesign): from a side-by-side of pi, Codex
+  and Claude Code the owner asked for Claude Code's presentation of work in
+  progress, Codex's composer, pi's own glyphs, and rules that stop the churn.
+  `docs/pi-design.md` now holds the design language (seven rules, each with
+  its why) and AGENTS.md points at it. Changes: reasoning hidden
+  (`hideThinkingBlock` + empty hidden label); rows are `• title` plus one `↳`
+  summary line, no body (the title-suffix state and its deferred invalidate
+  went with it); Claude's fold-on-speak — `workspace_*` rows since the last
+  assistant text collapse to one dim summary when the assistant speaks, ctrl+o
+  unfolds (module registry keyed by toolCallId; rows record their invalidator
+  on every render because the first render precedes `tool_execution_start`;
+  `message_update` and the non-streaming `message_end` both close a group);
+  the turn clock's label rides pi's working spinner via `setWorkingMessage`
+  and left the status line; the `π` turn entry waits for live children
+  (counted from `subagent:async-started/complete` — the status poll lags
+  `agent_settled`) or a typed prompt, and an aborted run prints `Interrupted`
+  at once; fleet rows are `π main` + `⊙ title · tokens · model` with `›` on
+  the cursor row (Enter peek kept by the owner's choice; `⊙` chosen over `∘`
+  as too small, `❯` kept over `>` for the same reason). Simplifications from
+  the same review: one newline-JSON reader (`lines.mjs`) for broker, worker
+  and codex wires; ripgrep runs the sandboxed grep (JS matcher and the
+  never-used walk fallback removed); sandbox-runner keeps two test seams and
+  surfaces real SRT errors; `memory-transport` gone (integration test binds a
+  real socket, skips where denied); `rootTools` exported once from
+  `policy.mjs`; literal prompt guidelines instead of a regex over SDK prose;
+  broker child cap read from the subagent config; `stability.test.mjs` fails
+  the pin bump on any undocumented import or event. Kept on purpose: the
+  serena env branch in the broker (its home and generated config are
+  per-session scratch paths the static MCP template cannot express), the `gh`
+  read-only regex (denying `~/.config/gh` would break the one-time `gh auth
+  login` all three harnesses share), the codex app-server usage read
+  (annotated, outside the npm pin), per-invocation SRT workers (a pool per
+  role and epoch is the follow-up).
 
 ## Verification and remaining gates
 

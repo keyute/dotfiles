@@ -1,11 +1,10 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { readLines, sendLine } from "./lines.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
-// Counted in wire bytes (base64 ≈ 1.37× content). File contents transfer
-// whole — the SDK truncates only after reading — and native pi imposes no
-// size bound at all, so this stays a runaway-worker backstop (~190MiB files),
-// never an ordinary-file limit.
+// Runaway-worker backstop (a `yes` under workspace_bash streams forever in
+// small frames): never an ordinary-file limit, the SDK truncates after reading.
 const OUTPUT_LIMIT = 256 * 1024 * 1024;
 
 // One sandboxed worker per tool invocation: the SDK tool runs in-process with
@@ -19,7 +18,6 @@ export function startToolWorker(name, { cwd, env, ticket, signal, spawnProcess }
   const pending = new Map();
   let nextId = 0;
   let received = 0;
-  let buffer = "";
   let errorOutput = "";
   let closed = false;
   const kill = () => child.kill("SIGTERM");
@@ -37,39 +35,34 @@ export function startToolWorker(name, { cwd, env, ticket, signal, spawnProcess }
     signal?.removeEventListener("abort", kill);
     failAll(`Sandboxed ${name} failed${errorOutput ? `: ${errorOutput}` : ""}`);
   });
-  child.stdout.on("data", chunk => {
-    received += chunk.length;
-    if (received > OUTPUT_LIMIT) return kill();
-    buffer += chunk;
-    let newline;
-    while ((newline = buffer.indexOf("\n")) !== -1) {
-      const raw = buffer.slice(0, newline);
-      buffer = buffer.slice(newline + 1);
-      let message;
-      try { message = JSON.parse(raw); } catch { return kill(); }
-      const entry = pending.get(message.id);
-      if (!entry) continue;
-      if (typeof message.chunk === "string") entry.onChunk?.(Buffer.from(message.chunk, "base64"));
-      else {
-        pending.delete(message.id);
-        if (message.ok) entry.resolve(message.value);
-        else entry.reject(Object.assign(new Error(message.error?.message || "Sandbox operation failed"), message.error?.code ? { code: message.error.code } : {}));
-      }
+  // Worker streams 4 MiB file slices as base64 (~5.6MiB on the wire); the
+  // per-line limit must clear that.
+  readLines(child.stdout, message => {
+    const entry = pending.get(message.id);
+    if (!entry) return;
+    if (typeof message.chunk === "string") {
+      if ((received += message.chunk.length) > OUTPUT_LIMIT) return kill();
+      entry.onChunk?.(Buffer.from(message.chunk, "base64"));
     }
-  });
+    else {
+      pending.delete(message.id);
+      if (message.ok) entry.resolve(message.value);
+      else entry.reject(Object.assign(new Error(message.error?.message || "Sandbox operation failed"), message.error?.code ? { code: message.error.code } : {}));
+    }
+  }, { limit: 8 * 1024 * 1024, onError: kill });
   return {
     call(op, params, { signal: opSignal, onChunk } = {}) {
       return new Promise((resolve, reject) => {
         if (closed) return reject(new Error(`Sandboxed ${name} unavailable`));
         const id = `op${nextId++}`;
-        const abort = () => child.stdin.write(`${JSON.stringify({ op: "abort", target: id })}\n`);
+        const abort = () => sendLine(child.stdin, { op: "abort", target: id });
         pending.set(id, {
           onChunk,
           resolve: value => { opSignal?.removeEventListener("abort", abort); resolve(value); },
           reject: error => { opSignal?.removeEventListener("abort", abort); reject(error); },
         });
         opSignal?.addEventListener("abort", abort, { once: true });
-        child.stdin.write(`${JSON.stringify({ id, op, params })}\n`);
+        sendLine(child.stdin, { id, op, params });
         if (opSignal?.aborted) abort();
       });
     },

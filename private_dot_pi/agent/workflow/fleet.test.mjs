@@ -3,11 +3,10 @@ import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { buildRow, createFleetState, formatTokens, installFleet, modelLabel, navigate, renderFleet, runIdFor, setEntries, shortTitle } from "./fleet.mjs";
 
-test("rows are an aligned agent column, a word-boundary title, and compact tokens; the model stays out", () => {
-  const entry = { agent: "diff-reviewer", goal: "Review 2051082^..7ebb0ad\n for correctness", tokens: { input: 1, output: 2, total: 22079 }, model: "gpt-5.6-terra", effort: "high" };
-  assert.equal(buildRow(entry), "diff-reviewer  Review 2051082^..7ebb0ad for…  22.1k");
-  assert.equal(buildRow(entry, 16), "diff-reviewer     Review 2051082^..7ebb0ad for…  22.1k");
-  assert.equal(buildRow({ agent: "explore-deep", tokens: { total: 0 } }, 14), "explore-deep");
+test("rows are a word-boundary title, compact tokens and the model; the agent name stands in for a missing title", () => {
+  const entry = { agent: "diff-reviewer", goal: "Review 2051082^..7ebb0ad\n for correctness", tokens: { input: 1, output: 2, total: 22079 }, model: "openai-codex/gpt-5.6-terra:high", effort: "high" };
+  assert.equal(buildRow(entry), "Review 2051082^..7ebb0ad for… · 22.1k tokens · gpt-5.6-terra high");
+  assert.equal(buildRow({ agent: "explore-deep", tokens: { total: 0 } }), "explore-deep");
   assert.equal(shortTitle("Audit latest 8 commits 2051082..3d1ce3e in /Users/keyute/.local/share/chezmoi for architecture"), "Audit latest 8 commits…");
   assert.equal(shortTitle("x".repeat(40)), `${"x".repeat(35)}…`);
   assert.equal(shortTitle("  short\n title "), "short title");
@@ -22,26 +21,27 @@ test("rows are an aligned agent column, a word-boundary title, and compact token
 // dim → ~text~, accent → *text*, so the assertions show which parts are styled.
 const theme = { fg: (color, text) => (color === "dim" ? `~${text}~` : color === "accent" ? `*${text}*` : text) };
 
-test("panel: child marker, aligned names, dim queued rows, cursor row, and overflow markers", () => {
+test("panel: root row, child marker, dim queued rows, cursor row, and overflow markers", () => {
   const state = createFleetState();
   const entries = Array.from({ length: 7 }, (_, i) => ({ agent: `a${i}`, goal: `task ${i}`, tokens: { total: 1000 * (i + 1) }, model: "gpt-5.6-terra", effort: "high" }));
   setEntries(state, { entries: [entries[0], { ...entries[1], agent: "long-name", status: "pending" }], totalActive: 2 });
   assert.deepEqual(renderFleet(state, 80, theme), [
-    "  ~↳~ a0         task 0  1k",
-    "  ~↳~ ~long-name  task 1  2k~",
+    "  *π* main",
+    "  ⊙ task 0 · 1k tokens · gpt-5.6-terra high",
+    "  ⊙ ~task 1 · 2k tokens · gpt-5.6-terra high~",
   ]);
   setEntries(state, { entries, totalActive: 9 });
   assert.equal(navigate(state, "enter"), true);
   state.cursor = 1;
   const rows = renderFleet(state, 80, theme);
-  assert.equal(rows.length, 6);
-  assert.equal(rows[0], "  ~↳~ a0  task 0  1k");
-  assert.equal(rows[1], "  *›* a1  task 1  2k");
+  assert.equal(rows.length, 7);
+  assert.equal(rows[1], "  ⊙ task 0 · 1k tokens · gpt-5.6-terra high");
+  assert.equal(rows[2], "  *›* task 1 · 2k tokens · gpt-5.6-terra high");
   assert.equal(rows.at(-1), "~  ↓ 4 more~");
   state.cursor = 6;
   const tail = renderFleet(state, 80, theme);
-  assert.deepEqual([tail[0], tail.at(-1)], ["~  ↑ 2 more~", "~  ↓ 2 more~"]);
-  assert.equal(tail[5], "  *›* a6  task 6  7k");
+  assert.deepEqual([tail[1], tail.at(-1)], ["~  ↑ 2 more~", "~  ↓ 2 more~"]);
+  assert.equal(tail[6], "  *›* task 6 · 7k tokens · gpt-5.6-terra high");
   assert.deepEqual(renderFleet(createFleetState(), 80, theme), []);
 });
 
@@ -97,7 +97,7 @@ function fakeBus() {
     delayMs: 0,
     on(channel, handler) { handlers.set(channel, handler); return () => handlers.delete(channel); },
     emit(channel, message) {
-      if (channel === "subagent:async-started") return handlers.get(channel)?.(message);
+      if (channel.startsWith("subagent:async-")) return handlers.get(channel)?.(message);
       if (channel !== "subagents:rpc:v1:request") return;
       this.requests.push(message.method);
       if (this.silent) return;
@@ -127,7 +127,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   fleet.attach({ requestRender: () => renders.push(1) });
   await sleep(20);
   assert.deepEqual(bus.requests.slice(0, 2), ["ping", "status"]);
-  assert.deepEqual(fleet.render(80, theme), ["  ~↳~ restored"]);
+  assert.deepEqual(fleet.render(80, theme), ["  *π* main", "  ⊙ restored"]);
   assert.ok(renders.length);
 
   // The DTO never carries the task; the launch's start/end events do, keyed by the run id.
@@ -138,11 +138,11 @@ test("rows poll while children run, name the task from the launch, peek each sib
   bus.runs = [{ id: "run-a-old", label: "a", startedAt: 900_000 }, { id: "run-a", label: "a", startedAt: 1200 }, { id: "run-b", label: "b", startedAt: 5000 }];
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { mode: "async", runId: "run-b" } } });
   await sleep(20);
-  assert.deepEqual(fleet.render(60, theme), ["  ~↳~ a  one  2k", "  ~↳~ b  Review the diff for correctness"]);
+  assert.deepEqual(fleet.render(60, theme), ["  *π* main", "  ⊙ one · 2k tokens · m high", "  ⊙ Review the diff for correctness"]);
   assert.equal(fleet.handleKey("enter"), true);
-  assert.equal(fleet.render(60, theme)[0], "  *›* a  one  2k");
+  assert.equal(fleet.render(60, theme)[1], "  *›* one · 2k tokens · m high");
   assert.equal(fleet.handleKey("down"), true);
-  assert.equal(fleet.render(60, theme)[1], "  *›* b  Review the diff for correctness");
+  assert.equal(fleet.render(60, theme)[2], "  *›* Review the diff for correctness");
   // Enter peeks at the highlighted child's transcript, not the first child's.
   assert.equal(fleet.handleKey("confirm"), true);
   await sleep(10);
@@ -172,7 +172,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
 
   bus.silent = true;
   await sleep(20);
-  assert.equal(fleet.render(60, theme).length, 2);
+  assert.equal(fleet.render(60, theme).length, 3);
   bus.silent = false;
 
   bus.entries = [];
@@ -184,9 +184,21 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.equal(bus.pending(), 0);
 
   bus.entries = [{ agent: "late", tokens: { total: 0 } }];
-  bus.emit("subagent:async-started", {});
+  bus.emit("subagent:async-started", { id: "late-1" });
   await sleep(20);
-  assert.equal(fleet.render(60, theme).length, 1);
+  assert.equal(fleet.render(60, theme).length, 2);
+  // Live children: the launch/complete events lead, the poll (which also
+  // covers runs restored with the session) catches up within an interval.
+  assert.equal(fleet.activeCount(), 1);
+  bus.emit("subagent:async-complete", { id: "unknown" });
+  assert.equal(fleet.activeCount(), 1);
+  bus.emit("subagent:async-complete", { runId: "late-1" });
+  bus.entries = [];
+  await sleep(20);
+  assert.equal(fleet.activeCount(), 0);
+  bus.entries = [{ agent: "late", tokens: { total: 0 } }];
+  await sleep(20);
+  assert.equal(fleet.activeCount(), 1);
   bus.delayMs = 5;
   await sleep(6);
   events.session_shutdown();

@@ -12,6 +12,8 @@ file are chezmoi-ignored (repo-local only).
   surfaces template errors that `chezmoi diff` silently hides, and a shared
   template is only half-checked from one harness's target.
 - Nested shared templates need `includeTemplate`, not `{{ template }}`.
+- Before editing the pi TUI (`private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`)
+  read `docs/pi-design.md`; its rules change only with a dated decision there.
 - Leave `chezmoi apply` and 1Password signin to me; when a change touches a
   template using `onepasswordRead`, verify renders with the call stubbed,
   never by triggering a signin prompt.

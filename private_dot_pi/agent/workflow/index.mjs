@@ -7,16 +7,28 @@ import { Text } from "@earendil-works/pi-tui";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, acquireChild } from "./broker.mjs";
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
-import { workerTools, canonical, publicToolName } from "./policy.mjs";
+import { rootTools, canonical, publicToolName } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
-import { answerLines, bulletMarkdown, planRenderers, toolRenderers } from "./rows.mjs";
+import { answerLines, bulletMarkdown, installFolding, planRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
+// The SDK's own guidelines for the pinned version, spelled with the managed
+// tool names (the SDK's mention plain `read`/`edit`, which do not exist here).
+const GUIDELINES = {
+  read: ["Use workspace_read to examine files instead of cat or sed."],
+  write: ["Use workspace_write only for new files or complete rewrites."],
+  edit: [
+    "Use workspace_edit for precise changes (edits[].oldText must match exactly)",
+    "When changing multiple separate locations in one file, use one workspace_edit call with multiple entries in edits[] instead of multiple workspace_edit calls",
+    "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
+    "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
+  ],
+};
 
 // Definitions must be identical across sessions: pi-mcp-adapter keys its
 // metadata cache on them, env included, and a cold cache costs a connect and
@@ -97,6 +109,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const startBroker = runtime.startBroker ?? createPolicyBroker;
   const requestBroker = runtime.requestBroker ?? callPolicyBroker;
   const config = JSON.parse(readFileSync(configPath, "utf8"));
+  const isRoot = role === "root";
   let currentContext;
   let userTask = "";
   let ready = false;
@@ -114,7 +127,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // Children carry the epoch they were launched under; the broker refuses a
   // child arriving after a later epoch, so root must refresh this on every bump.
   const publishEpoch = () => { process.env.PI_WORKFLOW_EPOCH = String(broker.policy.epoch); };
-  if (role === "root") {
+  if (isRoot) {
     broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request));
     env = broker.env;
     Object.assign(process.env, env);
@@ -123,7 +136,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     env = { PI_WORKFLOW_SOCKET: process.env.PI_WORKFLOW_SOCKET, PI_WORKFLOW_TOKEN: process.env.PI_WORKFLOW_TOKEN, PI_WORKFLOW_EPOCH: process.env.PI_WORKFLOW_EPOCH };
     await requestBroker(env, role, { action: "state" });
   }
-  const permittedTools = role === "root" ? [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan"] : config.agents[role].tools;
+  const permittedTools = isRoot ? rootTools : config.agents[role].tools;
   const permitted = name => permittedTools.includes(name) || (permittedTools.includes("mcp") && isDirectMcpTool(name));
 
   async function authorize(tool, args) {
@@ -140,7 +153,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   function sandboxTool(name) {
     if (!permittedTools.includes(publicToolName(name))) return;
     const template = toolFactory(name)(process.cwd(), name === "bash" ? bashOptions : undefined);
-    pi.registerTool({ ...template, ...toolRenderers(name), name: publicToolName(name), promptGuidelines: template.promptGuidelines?.map(text => text.replace(/\b(read|write|edit|grep|find|ls|bash)\b/g, publicToolName)), async execute(id, args, signal, onUpdate, ctx) {
+    pi.registerTool({ ...template, ...toolRenderers(name), name: publicToolName(name), promptGuidelines: GUIDELINES[name], async execute(id, args, signal, onUpdate, ctx) {
       const { ticket } = await authorize(name, args);
       const client = startToolWorker(name, { cwd: currentContext.cwd, env: workerEnv, ticket, signal });
       try {
@@ -197,7 +210,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("session_start", async (_event, ctx) => {
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     currentContext = ctx;
-    const allowedAgents = Object.entries(config.agents).filter(([, child]) => role === "root" || !config.agents[role].readonly || child.readonly).map(([name]) => name);
+    const allowedAgents = Object.entries(config.agents).filter(([, child]) => isRoot || !config.agents[role].readonly || child.readonly).map(([name]) => name);
     ceiling?.dispose();
     ceiling = registerSubagentCapabilityCeiling({ sessionId: ctx.sessionManager.getSessionId(), source: "managed-workflow", ceiling: { allowedAgents, allowedTools: permittedTools } });
     if (broker) await setMode("plan", ctx);
@@ -211,8 +224,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       ready = !childRevoked;
     }
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
-    if (broker && ctx.hasUI && !footerInstalled) {
+    if (isRoot && ctx.hasUI && !footerInstalled) {
       footerInstalled = true;
+      // Reasoning stays out of the transcript (docs/pi-design.md); an empty
+      // label renders no row at all.
+      ctx.ui.setHiddenThinkingLabel("");
+      installFolding(pi);
       const fleet = installFleet(pi, ctx);
       installHeader(ctx);
       installFooter(pi, ctx, { fleet });
@@ -222,7 +239,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
   });
   pi.on("input", event => {
-    if (role === "root" && event.source !== "extension") userTask = `${userTask}\n${event.text}`.slice(-8000);
+    if (isRoot && event.source !== "extension") userTask = `${userTask}\n${event.text}`.slice(-8000);
     return { action: "continue" };
   });
   pi.on("agent_end", () => { if (childRevoked) releaseChild?.(); });
@@ -234,7 +251,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     return { systemPrompt: `${event.systemPrompt}\n\nWorkflow mode: ${state.mode}. ${state.readonly ? "Investigate only; source edits and external mutations are disabled. Submit the plan for explicit approval before implementation." : "Execute only the user-approved task."}` };
   });
 
-  if (role === "root") {
+  if (isRoot) {
     pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", handler: (_args, ctx) => setMode("plan", ctx) });
     pi.registerCommand("execute", { description: "Approve the current plan and enable scoped execution", handler: async (_args, ctx) => {
       if (ctx.hasUI && await ctx.ui.confirm("Approve the current plan?", "Enable scoped edits and auto-reviewed actions for this task?")) await setMode("execute", ctx);

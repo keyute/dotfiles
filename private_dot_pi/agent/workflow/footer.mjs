@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { readLines, sendLine } from "./lines.mjs";
 import { createTurnClock, formatTurn } from "./rows.mjs";
 
 // The root workflow exports the broker socket and bearer token into
@@ -37,28 +38,15 @@ export function readRateLimits({ timeoutMs = 10_000, spawnImpl = spawn } = {}) {
     child.on("error", () => done(null));
     child.on("close", () => done(null));
     child.stdin.on("error", () => {});
-    const send = message => child.stdin.write(`${JSON.stringify(message)}\n`);
-    let buffer = "";
-    child.stdout.on("data", chunk => {
-      buffer += chunk;
-      let newline;
-      while ((newline = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        let message;
-        try {
-          message = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (message.id === 1) {
-          send({ method: "initialized" });
-          // no params: codex-cli 0.153.4 declares them as unit and rejects a
-          // map; the newer optional params object is nullable anyway
-          send({ id: 2, method: "account/rateLimits/read" });
-        } else if (message.id === 2) {
-          done(message.error ? null : parseRateLimits(message.result));
-        }
+    const send = message => sendLine(child.stdin, message);
+    readLines(child.stdout, message => {
+      if (message.id === 1) {
+        send({ method: "initialized" });
+        // no params: codex-cli 0.153.4 declares them as unit and rejects a
+        // map; the newer optional params object is nullable anyway
+        send({ id: 2, method: "account/rateLimits/read" });
+      } else if (message.id === 2) {
+        done(message.error ? null : parseRateLimits(message.result));
       }
     });
     send({ id: 1, method: "initialize", params: { clientInfo: { name: "pi-workflow-footer", title: "Pi workflow footer", version: "1.0.0" } } });
@@ -137,8 +125,8 @@ const PAD = "  ";
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
-export function installFooter(pi, ctx, { fleet, clock = createTurnClock() } = {}) {
-  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null };
+export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickMs = 1000 } = {}) {
+  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false };
 
   const refreshUsage = async () => {
     if (Date.now() - state.usageAt < USAGE_MIN_INTERVAL_MS) return;
@@ -158,22 +146,42 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock() } = {}
       state.tui?.requestRender();
     }
   };
-  pi.on("agent_end", (_event, eventCtx) => {
-    void refreshUsage();
-    void refreshGit(eventCtx.cwd);
-  });
-  // The turn line closes at agent_settled, after retries and queued
-  // continuations; the running label ticks once a second until then.
-  pi.on("agent_start", () => {
-    clock.start();
-    state.tick ??= setInterval(() => state.tui?.requestRender(), 1000);
-  });
-  pi.on("agent_settled", () => {
+
+  // The turn line: one entry per user turn. The clock starts at agent_start and
+  // its label rides pi's own working spinner; agent_settled closes the turn
+  // unless a background child is still running, in which case the turn stays
+  // open until the child's follow-up run settles (or the user types). An
+  // aborted run closes at once as "Interrupted".
+  const label = () => (state.prompting ? "Waiting for you…" : clock.label());
+  const showLabel = () => ctx.ui.setWorkingMessage(label());
+  const close = options => {
     clearInterval(state.tick);
     state.tick = null;
-    const turn = clock.stop();
+    state.waiting = false;
+    ctx.ui.setWorkingMessage();
+    const turn = clock.stop(Date.now(), options);
     if (turn) pi.appendEntry("workflow-turn", turn);
+  };
+  pi.on("agent_start", () => {
+    clock.start();
+    state.waiting = false;
+    state.tick ??= setInterval(showLabel, tickMs);
+    showLabel();
   });
+  pi.on("agent_end", (event, eventCtx) => {
+    void refreshUsage();
+    void refreshGit(eventCtx.cwd);
+    if (event.messages?.findLast(message => message.role === "assistant")?.stopReason === "aborted") close({ aborted: true });
+  });
+  pi.on("agent_settled", () => {
+    if (!clock.running()) return;
+    if ((fleet?.activeCount?.() ?? 0) > 0) state.waiting = true;
+    else close();
+  });
+  pi.on("input", event => { if (state.waiting && event.source !== "extension") close(); return { action: "continue" }; });
+  pi.on("ui_prompt_start", () => { state.prompting = true; showLabel(); });
+  pi.on("ui_prompt_end", () => { state.prompting = false; showLabel(); });
+  pi.on("session_shutdown", () => { clearInterval(state.tick); state.tick = null; });
   pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
   void refreshUsage();
@@ -197,8 +205,8 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock() } = {}
           changes: state.changes,
         });
         const left = segments.map(s => (s.color ? theme.fg(s.color, s.text) : s.text)).join(separator);
-        // The turn clock and the workflow mode; other extensions keep their own surfaces.
-        const right = [clock.label(), footerData.getExtensionStatuses().get("workflow") ?? ""].filter(Boolean).join(separator);
+        // The workflow mode; other extensions keep their own surfaces.
+        const right = footerData.getExtensionStatuses().get("workflow") ?? "";
         const pad = " ".repeat(Math.max(1, width - PAD.length * 2 - visibleWidth(left) - visibleWidth(right)));
         // Child rows hang under the status line: pi's dock keeps the footer
         // last, so this is the only slot below it.

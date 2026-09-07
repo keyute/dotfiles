@@ -1,8 +1,8 @@
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, keyHint, renderDiff } from "@earendil-works/pi-coding-agent";
 
-// Transcript glyphs: Codex's bullet for rows (Claude Code's ⏺ is its own
-// signature), π for the turn line, ↳ for sub-lines as in the fleet rows.
+// Transcript glyphs (docs/pi-design.md): Codex's bullet for rows, ↳ for the
+// line under a row, π for anything the harness says in its own voice.
 export const BULLET = "•";
 export const TURN_GLYPH = "π";
 export const SUB = "↳";
@@ -23,12 +23,11 @@ export const TURN_VERBS = [
   ["Transcending", "Transcended"],
 ];
 
-const PREVIEW_HEAD = 2;
-const PREVIEW_TAIL = 2;
-
 const firstLine = value => String(value ?? "").split("\n")[0];
 const resultText = result => (result?.content ?? []).filter(c => c.type === "text").map(c => c.text ?? "").join("\n").trim();
 const nonEmpty = text => text.split("\n").filter(line => line.trim());
+const plural = (n, noun, nouns = `${noun}s`) => `${n} ${n === 1 ? noun : nouns}`;
+const indent = line => `  ${line}`;
 
 // The glyph carries the row's state, as Claude Code's does: plain while the
 // call is running, then success or error.
@@ -51,73 +50,109 @@ export function callTitle(name, args = {}) {
   }
 }
 
-// What the collapsed row says about its result, on the title line.
-export function resultSuffix(name, result, isError = false) {
-  if (!result || isError) return "";
+// The one line under a collapsed row: what the result was, never what it said.
+export function resultSummary(name, result) {
+  if (!result) return "";
   if (name === "edit" || name === "write") {
     const diff = result.details?.diff;
     if (typeof diff !== "string") return "";
-    const lines = diff.split("\n");
-    const added = lines.filter(line => /^\+(?!\+\+)/.test(line)).length;
-    const removed = lines.filter(line => /^-(?!--)/.test(line)).length;
+    const added = diff.split("\n").filter(line => /^\+(?!\+\+)/.test(line)).length;
+    const removed = diff.split("\n").filter(line => /^-(?!--)/.test(line)).length;
     return `+${added} −${removed}`;
   }
-  if (name === "grep") {
-    const matches = resultText(result).split("\n").filter(line => /^[^:\n]+:\d+: /.test(line)).length;
-    return `(${matches} ${matches === 1 ? "match" : "matches"})`;
-  }
-  if (name === "find" || name === "ls") {
-    const text = resultText(result);
-    if (!text || /^No /.test(text)) return "";
-    const entries = nonEmpty(text).length;
-    return `(${entries} ${entries === 1 ? "entry" : "entries"})`;
-  }
-  return "";
+  const text = resultText(result);
+  if (name === "grep") return plural(text.split("\n").filter(line => /^[^:\n]+:\d+: /.test(line)).length, "match", "matches");
+  if (name === "find" || name === "ls") return !text || /^No /.test(text) ? "" : plural(nonEmpty(text).length, "entry", "entries");
+  return text ? plural(text.split("\n").length, "line") : "";
 }
 
-// Collapsed shell output keeps the head and tail, as Codex does; everything
-// else shows nothing until expanded. Errors always show in full.
+// Errors always show in full; everything else waits for ctrl+o.
 export function bodyLines(name, result, { expanded = false, isError = false } = {}) {
   if (!result) return [];
   const text = resultText(result);
   if (isError) return nonEmpty(text);
-  if (name === "edit") return expanded && typeof result.details?.diff === "string" ? renderDiff(result.details.diff).split("\n") : [];
+  if (!expanded) return [];
+  if (name === "edit") return typeof result.details?.diff === "string" ? renderDiff(result.details.diff).split("\n") : [];
   if (name === "write") return [];
-  const lines = text ? text.split("\n") : [];
-  if (expanded || name !== "bash") return expanded ? lines : [];
-  if (lines.length <= PREVIEW_HEAD + PREVIEW_TAIL + 1) return lines;
-  const hidden = lines.length - PREVIEW_HEAD - PREVIEW_TAIL;
-  return [...lines.slice(0, PREVIEW_HEAD), { hidden }, ...lines.slice(-PREVIEW_TAIL)];
+  return text ? text.split("\n") : [];
 }
 
-const indent = line => `  ${line}`;
-
 function renderBody(name, result, options, theme, context) {
-  const lines = bodyLines(name, result, { expanded: options.expanded, isError: context.isError }).map(line => {
-    if (typeof line === "object") return theme.fg("muted", `… +${line.hidden} lines `) + keyHint("app.tools.expand", "to expand");
-    return name === "edit" && options.expanded ? line : theme.fg(context.isError ? "error" : "toolOutput", line);
-  });
+  const lines = [];
+  const summary = context.isError ? "" : resultSummary(name, result);
+  const hint = summary && !options.expanded && (name === "bash" || name === "read") ? ` · ${keyHint("app.tools.expand", "to expand")}` : "";
+  if (summary) lines.push(theme.fg("muted", `${SUB} ${summary}${hint}`));
+  for (const line of bodyLines(name, result, { expanded: options.expanded, isError: context.isError })) {
+    lines.push(name === "edit" && !context.isError ? line : theme.fg(context.isError ? "error" : "toolOutput", line));
+  }
   return new Text(lines.map(indent).join("\n"), 0, 0);
 }
 
-// Renderers for the sandboxed workspace tools. The result suffix lands on the
-// title line through the row's shared state: the call renderer runs before the
-// result renderer in every pass, so the result schedules one more pass when
-// the suffix changes (never inside the current pass, which would rebuild the
-// row's container while it is being filled).
-export function toolRenderers(name) {
+// Fold-on-speak, as Claude Code does it: the workspace rows since the last
+// assistant text form a group; when the assistant speaks again the group
+// collapses to one line ("Read 3 files, ran 2 shell commands") and ctrl+o
+// brings the rows back. State is per process — a resumed session renders its
+// old rows unfolded.
+const WORDS = { read: ["read", "file"], bash: ["ran", "shell command"], grep: ["searched for", "pattern"], edit: ["edited", "file"], write: ["wrote", "file"], list: ["listed", "path"] };
+const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
+
+export function createFolds() {
+  return { current: null, byId: new Map(), invalidate: new Map() };
+}
+export const defaultFolds = createFolds();
+
+export function addFold(folds, id, tool) {
+  folds.current ??= { ids: [], counts: {}, collapsed: false };
+  folds.current.ids.push(id);
+  const key = countKey(tool);
+  folds.current.counts[key] = (folds.current.counts[key] ?? 0) + 1;
+  folds.byId.set(id, folds.current);
+}
+
+export function closeFolds(folds) {
+  const group = folds.current;
+  if (!group) return;
+  group.collapsed = true;
+  folds.current = null;
+  for (const id of group.ids) folds.invalidate.get(id)?.();
+}
+
+export function summarise(counts) {
+  const text = Object.entries(WORDS).filter(([key]) => counts[key]).map(([key, [verb, noun]]) => `${verb} ${plural(counts[key], noun)}`).join(", ");
+  return text ? text[0].toUpperCase() + text.slice(1) : "";
+}
+
+const speaks = event => event.message?.role === "assistant" && (event.message.content ?? []).some(c => c.type === "text" && c.text?.trim());
+
+export function installFolding(pi, folds = defaultFolds) {
+  pi.on("tool_execution_start", event => {
+    if (event.toolName.startsWith("workspace_")) addFold(folds, event.toolCallId, event.toolName.slice("workspace_".length));
+  });
+  // Streaming replies announce their text in updates; non-streaming ones only at the end.
+  pi.on("message_update", event => { if (speaks(event)) closeFolds(folds); });
+  pi.on("message_end", event => { if (speaks(event)) closeFolds(folds); });
+}
+
+// Renderers for the sandboxed workspace tools. A folded row renders nothing;
+// the group's last row carries the summary instead of its title. A failed row
+// stays visible in full even inside a fold.
+export function toolRenderers(name, folds = defaultFolds) {
+  const folded = context => { const group = folds.byId.get(context.toolCallId); return group?.collapsed && !context.expanded ? group : null; };
   return {
     renderShell: "self",
     renderCall(args, theme, context) {
-      const suffix = context.state.suffix ? theme.fg("muted", ` ${context.state.suffix}`) : "";
-      return new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", callTitle(name, args))}${suffix}`, 0, 0);
+      // The first render precedes tool_execution_start, so every render records the invalidator.
+      folds.invalidate.set(context.toolCallId, context.invalidate);
+      const title = `${glyph(theme, context)} ${theme.fg("toolTitle", callTitle(name, args))}`;
+      const group = folded(context);
+      if (!group) return new Text(title, 0, 0);
+      const lines = [];
+      if (group.ids.at(-1) === context.toolCallId) lines.push(theme.fg("muted", summarise(group.counts)));
+      if (context.isError) lines.push(title);
+      return new Text(lines.join("\n"), 0, 0);
     },
     renderResult(result, options, theme, context) {
-      const suffix = options.isPartial ? "" : resultSuffix(name, result, context.isError);
-      if (suffix !== context.state.suffix) {
-        context.state.suffix = suffix;
-        setTimeout(() => context.invalidate(), 0);
-      }
+      if (folded(context) && !context.isError) return new Text("", 0, 0);
       return renderBody(name, result, options, theme, context);
     },
   };
@@ -164,12 +199,14 @@ export function formatDuration(ms) {
 
 const clockTime = at => new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
 
-export function formatTurn({ verb, ms, endedAt }, theme) {
-  return `${theme.fg("accent", TURN_GLYPH)} ${theme.fg("muted", `${verb} for ${formatDuration(ms)} · done ${clockTime(endedAt)}`)}`;
+export function formatTurn({ verb, ms, endedAt, aborted }, theme) {
+  const text = aborted ? `Interrupted after ${formatDuration(ms)}` : `${verb} for ${formatDuration(ms)} · done ${clockTime(endedAt)}`;
+  return `${theme.fg("accent", TURN_GLYPH)} ${theme.fg("muted", text)}`;
 }
 
-// One turn from agent_start to agent_settled (agent_end fires before retries
-// and queued continuations). The verb is drawn once per turn.
+// One turn from agent_start until the footer decides it is over (see
+// footer.mjs); start is idempotent so retries and follow-up runs merge. The
+// running label sits next to pi's spinner, so it carries no glyph of its own.
 export function createTurnClock(verbs = TURN_VERBS, pick = () => Math.floor(Math.random() * verbs.length)) {
   let startedAt = null;
   let verb = null;
@@ -179,12 +216,13 @@ export function createTurnClock(verbs = TURN_VERBS, pick = () => Math.floor(Math
       startedAt = now;
       verb = verbs[pick()];
     },
+    running: () => startedAt != null,
     label(now = Date.now()) {
-      return startedAt == null ? "" : `${TURN_GLYPH} ${verb[0]}… ${formatDuration(now - startedAt)}`;
+      return startedAt == null ? "" : `${verb[0]}… ${formatDuration(now - startedAt)}`;
     },
-    stop(now = Date.now()) {
+    stop(now = Date.now(), { aborted = false } = {}) {
       if (startedAt == null) return null;
-      const turn = { verb: verb[1], ms: now - startedAt, endedAt: now };
+      const turn = { verb: verb[1], ms: now - startedAt, endedAt: now, aborted };
       startedAt = null;
       return turn;
     },

@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 
-// Rows hang under the status line as children: marker, agent column, a short
-// title, compact tokens. The title is cut at a word boundary so rows stay
-// short; the model shows only in the Enter overlay.
-const GAP = "  ";
+// Rows hang under the status line as Claude Code's subagent statusline does
+// (docs/pi-design.md): a `π main` root row, then `⊙ title · tokens · model`
+// per child, the cursor row marked `›`. The title is cut at a word boundary.
+export const ROOT = "π";
+export const CHILD = "⊙";
+export const CURSOR = "›";
+const SEP = " · ";
 const NAME_SEP = " › ";
 const TOK_FMT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1, minimumFractionDigits: 1 });
 export const VISIBLE_ROWS = 5;
@@ -36,8 +39,9 @@ export function shortTitle(text, width = TITLE_WIDTH) {
   return `${space > width / 2 ? cut.slice(0, space) : cut}…`;
 }
 
-export function buildRow({ agent, goal, tokens }, nameWidth = agent.length) {
-  return [agent.padEnd(nameWidth), shortTitle(goal), formatTokens(tokens?.total ?? tokens)].filter(Boolean).join(GAP).trimEnd();
+export function buildRow({ agent, goal, tokens, model, effort }) {
+  const total = formatTokens(tokens?.total ?? tokens);
+  return [shortTitle(goal) || agent, total && `${total} tokens`, modelLabel(model, effort)].filter(Boolean).join(SEP);
 }
 
 export function createFleetState() {
@@ -96,15 +100,14 @@ export function rowFor(state, entry) {
 export function renderFleet(state, width, theme) {
   if (!state.entries.length) return [];
   const dim = text => theme.fg("dim", text);
-  const nameWidth = Math.max(...state.entries.map(entry => entry.agent.length));
-  const lines = [];
+  const lines = [`  ${theme.fg("accent", ROOT)} main`];
   const start = Math.max(0, state.cursor - (VISIBLE_ROWS - 1));
   const shown = state.entries.slice(start, start + VISIBLE_ROWS);
   if (start > 0) lines.push(dim(`  ↑ ${start} more`));
   shown.forEach((entry, index) => {
     const selected = state.focused && start + index === state.cursor;
-    const marker = selected ? theme.fg("accent", "›") : dim("↳");
-    const row = buildRow(rowFor(state, entry), nameWidth);
+    const marker = selected ? theme.fg("accent", CURSOR) : CHILD;
+    const row = buildRow(rowFor(state, entry));
     lines.push(truncateToWidth(`  ${marker} ${entry.status === "pending" ? dim(row) : row}`, width));
   });
   const hidden = state.totalActive - (start + shown.length);
@@ -127,12 +130,13 @@ export function rpcCall(events, method, params = {}, timeoutMs = 2_000) {
 // The rows render inside the footer (attach/render): pi's dock order is fixed
 // with the footer last, so a widget could only sit above the status line.
 export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeoutMs = 2_000 } = {}) {
-  const state = { ...createFleetState(), pending: new Map(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null };
+  const state = { ...createFleetState(), pending: new Map(), active: new Set(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null };
 
+  const shape = () => [state.totalActive, ...state.entries.map(entry => `${entry.agent}|${entry.status}|${entry.goal}|${entry.tokens?.total ?? entry.tokens}`)].join("\n");
   const show = (fleet, snapshot) => {
-    const before = JSON.stringify([state.entries, state.totalActive]);
+    const before = shape();
     setEntries(state, fleet, snapshot);
-    if (JSON.stringify([state.entries, state.totalActive]) !== before) state.tui?.requestRender();
+    if (shape() !== before) state.tui?.requestRender();
   };
   const poll = async () => {
     state.timer = undefined;
@@ -167,8 +171,11 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     wake();
   });
   // The install-time and ready-time polls cover jobs restored with the session.
+  // Live children are counted from the launch events themselves: the status
+  // poll lags agent_settled, where the footer asks whether a turn is over.
   pi.events.on("subagents:rpc:v1:ready", wake);
-  pi.events.on("subagent:async-started", wake);
+  pi.events.on("subagent:async-started", payload => { if (payload?.id) state.active.add(payload.id); wake(); });
+  pi.events.on("subagent:async-complete", payload => { state.active.delete(payload?.id ?? payload?.runId); wake(); });
   pi.on("session_shutdown", () => {
     state.stopped = true;
     clearTimeout(state.timer);
@@ -198,6 +205,10 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
   return {
     wake,
     handleKey,
+    // Runs restored with the session never emit async-started; the poll's
+    // count covers them (it lags a completion by one poll, so the event set
+    // is the fast path).
+    activeCount: () => Math.max(state.active.size, state.totalActive),
     focused: () => state.focused,
     attach: tui => { state.tui = tui; },
     render: (width, theme) => renderFleet(state, width, theme),

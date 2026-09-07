@@ -1,13 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { createConnection, createServer } from "node:net";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
-import { memoryTransport } from "./memory-transport.mjs";
+
+// Unix sockets are unavailable in some sandboxes (EPERM on listen); probe once
+// up front so every test in this file can share one skip reason.
+const socketsDenied = await new Promise(resolve => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-probe-"));
+  const probe = createServer();
+  probe.once("error", () => { rmSync(dir, { recursive: true, force: true }); resolve(true); });
+  probe.listen(join(dir, "p.sock"), () => probe.close(() => { rmSync(dir, { recursive: true, force: true }); resolve(false); }));
+});
+const skip = socketsDenied && "Unix sockets are not permitted here";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-integration-test-"));
@@ -21,9 +31,8 @@ function fixture(t) {
   return { root, config };
 }
 
-test("broker does not expose its credential to the classifier and invalidates pending approval", async t => {
+test("broker does not expose its credential to the classifier and invalidates pending approval", { skip }, async t => {
   const { root, config } = fixture(t);
-  const transport = memoryTransport();
   let finish;
   let received;
   let reached;
@@ -32,19 +41,19 @@ test("broker does not expose its credential to the classifier and invalidates pe
     received = request;
     reached();
     return new Promise(resolve => { finish = resolve; });
-  }, transport);
+  });
   t.after(() => broker.close());
   // A remote-mutating verb: other sandboxed commands are allowed without review.
-  const pending = requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "git push" } }, transport.connect);
+  const pending = requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "git push" } });
   await reviewStarted;
   assert.equal(received.token, undefined);
   await broker.setMode("execute");
   finish(true);
   await assert.rejects(pending, /approval was pending/);
-  await assert.rejects(requestBroker({ ...broker.env, PI_WORKFLOW_TOKEN: "invalid" }, "root", { action: "state" }, transport.connect), /Unavailable/);
+  await assert.rejects(requestBroker({ ...broker.env, PI_WORKFLOW_TOKEN: "invalid" }, "root", { action: "state" }), /Unavailable/);
 });
 
-test("pinned upstream packages register against the managed extension and preflight custom child tools", async t => {
+test("pinned upstream packages register against the managed extension and preflight custom child tools", { skip }, async t => {
   const { config } = fixture(t);
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = config.agentDir;
@@ -66,8 +75,7 @@ test("pinned upstream packages register against the managed extension and prefli
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, setThinkingLevel() {},
   };
   const { installWorkflow, mcpServerDefinitions } = await import("./index.mjs");
-  const transport = memoryTransport();
-  await installWorkflow(pi, configPath, "root", { startBroker: (config, cwd, review) => startBroker(config, cwd, review, transport), requestBroker: (env, role, request) => requestBroker(env, role, request, transport.connect) });
+  await installWorkflow(pi, configPath, "root", { startBroker, requestBroker });
   assert.ok(tools.has("workspace_read"));
   assert.ok(tools.has("subagent"));
   assert.ok(tools.has("submit_plan"));
@@ -108,30 +116,28 @@ test("pinned upstream packages register against the managed extension and prefli
   await handlers.get("session_shutdown").at(-1)();
 });
 
-test("child sessions share one capacity ceiling and acknowledge revocation before plan becomes active", async t => {
+test("child sessions share one capacity ceiling and acknowledge revocation before plan becomes active", { skip }, async t => {
   const { root, config } = fixture(t);
-  const transport = memoryTransport();
-  const broker = await startBroker(config, root, async () => true, transport);
+  const broker = await startBroker(config, root, async () => true);
   t.after(() => broker.close());
   await broker.setMode("execute");
   const childEnv = () => ({ ...broker.env, PI_WORKFLOW_EPOCH: String(broker.policy.epoch) });
   let stopped = 0;
   const staleEnv = childEnv();
-  for (let i = 0; i < 20; i++) await acquireChild(childEnv(), "fixture-reader", release => { stopped++; release(); }, transport.connect);
-  await assert.rejects(acquireChild(childEnv(), "fixture-reader", () => {}, transport.connect), /capacity/);
+  for (let i = 0; i < 20; i++) await acquireChild(childEnv(), "fixture-reader", release => { stopped++; release(); });
+  await assert.rejects(acquireChild(childEnv(), "fixture-reader", () => {}), /capacity/);
   await broker.setMode("plan");
   // A child launched under an earlier epoch cannot connect after the change.
-  await assert.rejects(acquireChild(staleEnv, "fixture-reader", () => {}, transport.connect), /capacity/);
-  await assert.rejects(acquireChild({ ...broker.env }, "fixture-reader", () => {}, transport.connect), /capacity/);
+  await assert.rejects(acquireChild(staleEnv, "fixture-reader", () => {}), /capacity/);
+  await assert.rejects(acquireChild({ ...broker.env }, "fixture-reader", () => {}), /capacity/);
   assert.equal(stopped, 20);
   assert.equal(broker.policy.mode, "plan");
   assert.equal(broker.policy.transitioning, false);
 });
 
-test("a disconnected child without terminal proof blocks further work and mode changes", async t => {
+test("a disconnected child without terminal proof blocks further work and mode changes", { skip }, async t => {
   const { root, config } = fixture(t);
-  const transport = memoryTransport();
-  const broker = await startBroker(config, root, async () => true, transport);
+  const broker = await startBroker(config, root, async () => true);
   t.after(async () => {
     await assert.rejects(broker.close(), /terminal proof/);
     // This fixture never spawns a process; its retained scratch is safe to remove.
@@ -139,24 +145,25 @@ test("a disconnected child without terminal proof blocks further work and mode c
   });
   let client;
   await acquireChild({ ...broker.env, PI_WORKFLOW_EPOCH: String(broker.policy.epoch) }, "fixture-reader", () => {}, path => {
-    client = transport.connect(path);
+    client = createConnection(path);
     return client;
   });
   client.destroy();
-  await new Promise(resolve => setImmediate(resolve));
+  // A real socket's close propagates through the kernel, not a same-tick
+  // EventEmitter, so poll instead of assuming one microtask suffices.
+  for (let i = 0; i < 50 && !broker.policy.transitioning; i++) await new Promise(resolve => setImmediate(resolve));
   assert.equal(broker.policy.transitioning, true);
   await assert.rejects(broker.setMode("execute"), /terminal proof/);
-  await assert.rejects(requestBroker(broker.env, "root", { action: "authorize", tool: "read", args: { path: "fixture" } }, transport.connect), /transition in progress/);
+  await assert.rejects(requestBroker(broker.env, "root", { action: "authorize", tool: "read", args: { path: "fixture" } }), /transition in progress/);
 });
 
-test("tool leases require a single-use ticket bound to the current epoch", async t => {
+test("tool leases require a single-use ticket bound to the current epoch", { skip }, async t => {
   const { root, config } = fixture(t);
-  const transport = memoryTransport();
-  const broker = await startBroker(config, root, async () => true, transport);
+  const broker = await startBroker(config, root, async () => true);
   t.after(() => broker.close());
   await broker.setMode("execute");
   const leaseTool = request => new Promise(resolve => {
-    const socket = transport.connect(broker.env.PI_WORKFLOW_SOCKET);
+    const socket = createConnection(broker.env.PI_WORKFLOW_SOCKET);
     let buffer = "";
     socket.on("error", () => resolve({ ok: false }));
     socket.on("connect", () => socket.write(`${JSON.stringify({ action: "lease", token: broker.env.PI_WORKFLOW_TOKEN, kind: "tool", role: "root", ...request })}\n`));
@@ -169,7 +176,7 @@ test("tool leases require a single-use ticket bound to the current epoch", async
       resolve(message);
     });
   });
-  const authorize = () => requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "true" } }, transport.connect);
+  const authorize = () => requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "true" } });
   const { ticket } = await authorize();
   assert.ok(ticket);
   assert.equal((await leaseTool({ name: "bash", ticket })).ok, true);
@@ -183,7 +190,7 @@ test("tool leases require a single-use ticket bound to the current epoch", async
   assert.equal((await leaseTool({ name: "bash" })).ok, false);
 });
 
-test("an inherit-model child resolves to the parent's model before the tier check", async t => {
+test("an inherit-model child resolves to the parent's model before the tier check", { skip }, async t => {
   const { config } = fixture(t);
   const role = config.agents["fixture-reader"];
   config.agents["fixture-worker"] = { ...role, readonly: false, model: "inherit" };
