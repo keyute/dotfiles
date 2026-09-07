@@ -1,8 +1,9 @@
 # Pi implementation working record
 
-Last updated: 2026-09-07 (transcript comparison fixes: forced-async children,
-local read-only command check, MCP cache key, Exa tool list). Source
-implementation complete; not applied or live-tested on the host.
+Last updated: 2026-09-07 (second comparison run: sandbox-parity shell
+approvals, fleet widget; earlier the same day: forced-async children, MCP
+cache key, Exa tool list). Source implementation complete; not applied or
+live-tested on the host.
 
 ## Decisions
 
@@ -68,20 +69,28 @@ implementation complete; not applied or live-tested on the host.
   per turn and FleetView shows async runs only — and the parent-facing tool
   description is the managed `subagent-tool-description.md` (upstream's tells
   the model to use `workflowScript`, which policy blocks).
-- 2026-09-07: shell authorization checks locally first, as Claude Code and
-  Codex do. `isReadOnlyCommand` (union of Codex's `is_safe_command` set and
-  Claude Code's read-only Bash set, fail-closed on any substitution, redirect,
-  grouping, quote inside a token, or unquoted glob where flags decide — the
-  last two were Codex-review catches: bash reassembles `--p're=x'` and expands
-  `--p*` into flags the rules never saw) allows without review; everything else
-  keeps the classifier.
-  Execute-mode edits inside the workspace allow after the path check. The SRT
-  profile, not the list, is the security boundary. Reuse was checked:
-  `@gotgenes/pi-permission-system` has the best pi-side classifier but does
-  not export it; no generic npm library ships a maintained read-only list.
-  Deferred hardening options: Codex-style dangerous-command denylist (forced
-  `rm`, `sudo`/`env` unwrapping); a separate network-capable bash lease (the
-  SRT README warns domain filtering cannot tell fetch from push on github.com).
+- 2026-09-07 (second same-prompt run): sandboxed shell no longer goes to the
+  classifier, matching Claude Code's `autoAllowBashIfSandboxed` and Codex's
+  sandboxed exec. The earlier read-only allowlist sent 36 of 54 bash calls to
+  Luna at a 17 s median (p90 = the 30 s timeout) and it denied two read-only
+  commands; the run was bounded by the slowest child spending ~2 of its 5
+  minutes waiting. `needsReview` keeps only remote-mutating verbs on the
+  classifier (`git push`, non-read `gh`, `gh api` with method/field,
+  `npm publish`, `docker push`, `curl`/`wget` upload flags, `ssh`/`scp`/
+  `sftp`/`rsync`): the SRT profile cannot tell fetch from push on an allowed
+  domain and `~/.config/gh` plus keychain git auth are reachable inside it.
+  Obfuscation of a listed verb is an accepted residual, as with Codex's
+  dangerous-command check. `/approvals ask` still prompts for every command.
+  Plugin check the same day: `@gotgenes/pi-permission-system` (8.5k dl/wk) is
+  deterministic rules with the same safe list, no LLM; the LLM classifiers on
+  npm (`pi-auto-approval`, `pi-cruise-control`) have <50 dl/wk. Custom stays.
+- 2026-09-07: subagent display is a workflow-owned widget below the editor
+  (`scripts/pi-workflow/fleet.mjs`) rendering `agent › task · tokens · model`
+  per running child — the Claude Code subagent-statusline row — from
+  pi-subagents' documented in-process RPC (`subagents:rpc:v1` `status`,
+  `data.fleet` DTO v1; renders nothing when the capability is absent).
+  FleetView, the async widget and rich inline rows are off in
+  `extensions/subagent/config.json`; the `Ctrl+Alt+F` inspector stays.
 - 2026-09-07: MCP server definitions carry only `PI_WORKFLOW_ROLE` in `env`.
   pi-mcp-adapter keys `~/.pi/agent/mcp-cache.json` on the definition including
   env, so the per-session broker socket/token made every session a cache miss
@@ -105,7 +114,7 @@ implementation complete; not applied or live-tested on the host.
 - Actual Unix sockets/SRT cannot run in this session (socket binding returns
   EPERM). Broker tests use an explicit memory transport; the opt-in live test is
   not evidence of a successful sandbox run until executed on the user's host.
-- Live OAuth, foreground/background children, cancellation, FleetView, MCP and
+- Live OAuth, foreground/background children, cancellation, the fleet widget, MCP and
   LSP remain acceptance gates. Do not treat fixture tests as full DX parity.
 - See `private_dot_pi/agent/docs/harness.md.tmpl` for operator checks and limitations.
 

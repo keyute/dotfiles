@@ -10,6 +10,7 @@ import { workerTools, canonical, publicToolName } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
+import { installFleet } from "./fleet.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
@@ -165,6 +166,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (broker && ctx.hasUI && !footerInstalled) {
       footerInstalled = true;
       installFooter(pi, ctx);
+      installFleet(pi, ctx);
       ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings));
     }
     pi.setActiveTools(permittedTools.filter(name => pi.getAllTools().some(tool => tool.name === name)));

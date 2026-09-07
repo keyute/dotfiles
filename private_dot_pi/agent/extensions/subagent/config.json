@@ -3,10 +3,7 @@
   "maxActiveAsyncRunsPerSession": 3,
   "defaultSubagentContext": "fresh",
   "toolDescriptionMode": "custom",
-  "inlineToolDisplay": "rich",
-  "mainWindowRenderer": {
-    "compactResultMaxLines": 2
-  },
-  "fleetView": true,
-  "fleetViewPlacement": "aboveEditor"
+  "inlineToolDisplay": "summary",
+  "fleetView": false,
+  "asyncWidget": false
 }

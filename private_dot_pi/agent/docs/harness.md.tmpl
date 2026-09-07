@@ -24,7 +24,8 @@ OpenAI subscription login; do not import another harness's auth files.
 
 Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`,
 {{ .agents.pi.defaults.reasoning_effort }} reasoning; planning uses
-{{ .agents.pi.defaults.plan_reasoning_effort }}. The classifier uses
+{{ .agents.pi.defaults.plan_reasoning_effort }}. The approval classifier (MCP
+calls and remote-mutating shell verbs) uses
 `{{ .agents.pi.defaults.classifier_model }}` at
 {{ .agents.pi.defaults.classifier_reasoning_effort }} reasoning, with no tools.
 
@@ -51,12 +52,14 @@ lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
   `/plan` revokes child sessions and sandbox processes before enabling planning.
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
-- Shell commands are checked locally first, as Claude Code and Codex do: a
-  command made only of read-only words (`ls`, `cat`, `grep`, `rg`, `find`,
-  `git status|log|diff|show|branch`, `sed -n`, …) joined by `&&`/`;`/`|` runs
-  without review; anything else — substitutions, redirects, writes, scripts —
-  goes to the auto classifier, then to a confirm dialog on `ask`. File edits
-  inside the workspace run without review once execution is approved.
+- Shell commands run inside the SRT profile without review, as sandboxed
+  commands do in Claude Code and Codex; the profile is the boundary. Only
+  remote-mutating verbs the profile cannot judge — `git push`, `gh` other than
+  view/list/status/search/diff/checks, `gh api` with a method or field,
+  `npm publish`, `docker push`, `curl`/`wget` with data, json or upload flags,
+  `ssh`, `scp`, `sftp`, `rsync` — go to the auto classifier, then to a confirm
+  dialog on `ask`. File edits inside the workspace run without review once
+  execution is approved.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
   A pending dialog is announced in the footer and times out after ten minutes.
 - `ask_user` presents a decision with choices or free text. Approval dialogs are
@@ -96,8 +99,10 @@ and every child runs in the background; up to three share the root policy, so
 launch independent children in one turn. Status, stop, interrupt and
 non-recovering steer are enabled; arbitrary workflow scripts, project role
 overrides, revival and mutating management are not. Results arrive as
-notifications — `bg_wait` only when the current turn depends on them. FleetView
-above the editor shows ongoing progress without a status command.
+notifications — `bg_wait` only when the current turn depends on them. A fleet
+widget below the editor lists each running child as `agent › task · tokens ·
+model`, the same row as the Claude Code subagent statusline; `Ctrl+Alt+F`
+(⌃⌥F on macOS) opens pi-subagents' full inspector.
 
 Shared skills remain discoverable under `~/.agents/skills`; explicit skill loading
 is available through Pi. Tool output starts collapsed: Ctrl+O expands it. MCP
@@ -136,7 +141,7 @@ fallback, terminal proof, child preflight and secret-stubbed chezmoi projections
 sockets and SRT against disposable fixtures; it needs an unrestricted local host.
 
 Before relying on the setup, separately verify subscription login, parent and
-foreground/background child model pins, auto approvals, cancellation, FleetView,
+foreground/background child model pins, auto approvals, cancellation, the fleet widget,
 MCP queries, diagnostics and approved edits in a disposable project. Fixture
 tests do not establish account access or live terminal behavior. Compare Sol and
 Astra on matched completed tasks before changing the default model.

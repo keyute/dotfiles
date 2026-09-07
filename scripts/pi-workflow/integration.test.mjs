@@ -34,8 +34,8 @@ test("broker does not expose its credential to the classifier and invalidates pe
     return new Promise(resolve => { finish = resolve; });
   }, transport);
   t.after(() => broker.close());
-  // A non-read-only command: read-only ones are allowed locally without review.
-  const pending = requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "npm test" } }, transport.connect);
+  // A remote-mutating verb: other sandboxed commands are allowed without review.
+  const pending = requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "git push" } }, transport.connect);
   await reviewStarted;
   assert.equal(received.token, undefined);
   await broker.setMode("execute");

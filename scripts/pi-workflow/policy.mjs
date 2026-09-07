@@ -6,37 +6,30 @@ export const fileTools = ["read", "write", "edit", "grep", "find", "ls"];
 export const workerTools = [...fileTools, "bash"];
 export const publicToolName = name => workerTools.includes(name) ? `workspace_${name}` : name;
 
-// Local read-only shell check: the union of Codex's is_safe_command set and
-// Claude Code's built-in read-only Bash set. It only decides which commands
-// skip the classifier; the sandbox profile stays the boundary. Fails closed:
-// substitution, redirection, grouping, comments, escapes and quoted operators
-// all fall through to review.
-const READ_ONLY_COMMANDS = {
-  cat: null, cd: null, diff: null, du: null, echo: null, false: null, grep: null, head: null, ls: null, nl: null, pwd: null, stat: null, tail: null, true: null, wc: null, which: null,
-  find: args => !args.some(arg => /^-(exec|execdir|ok|okdir|delete|fls|fprint0?|fprintf)$/.test(arg)),
-  rg: args => !args.some(arg => /^(--pre|--hostname-bin|--search-zip)(=|$)|^-[a-zA-Z]*z/.test(arg)),
-  git: args => ["branch", "status", "log", "diff", "show"].includes(args[0]),
-  sed: args => args.length === 3 && args[0] === "-n" && /^\d+(,\d+)?p$/.test(args[1]),
-};
-// Only a whole-token quote is removed; a quote inside a token (`--p're=x'`)
-// would let bash reassemble a flag the rules never saw, so it fails closed.
-const unquote = token => {
-  if (!/['"]/.test(token)) return token;
-  const whole = /^(['"])([^'"]*)\1$/.exec(token);
-  return whole ? whole[2] : undefined;
-};
+// Sandboxed shell runs without review, as Claude Code (autoAllowBashIfSandboxed)
+// and Codex do: the SRT profile is the boundary. The one effect the profile
+// cannot judge is a remote mutation through an allowed domain with ambient
+// credentials (~/.config/gh and keychain git auth are reachable inside it), so
+// those verbs still go to review. Matching is per shell segment and errs
+// toward review: a verb anywhere after its program (so `git -C . push`,
+// `bash -c "git push"` and `xargs git push` all match), the ssh family in any
+// command position, and `gh` unless the segment is one of its read shapes.
+// A false positive (`rg ssh …`) costs one classifier call; obfuscation is an
+// accepted residual, as with Codex's check.
+const REVIEWED = [
+  /\bgit\b.*\bpush\b/,
+  /\bdocker\b.*\bpush\b/,
+  /\b(npm|pnpm|yarn)\b.*\bpublish\b/,
+  /\b(curl|wget)\b.*\s(-[a-zA-Z]*[dFTX]|--data|--form|--json|--request|--upload-file|--method|--post-|--body-)/,
+  /(^|[\s/'"`])(ssh|scp|sftp|rsync)\s/,
+];
+const GH_READ = /^gh\s+(?:api\s+(?!(?:.*\s)?(?:-[a-zA-Z]*[XfF]|--method|--field|--raw-field|--input))|(?:(?:pr|issue|repo|run|release|workflow|gist|label|project|cache|search)\s+)?(?:view|list|status|search|diff|checks|browse|download|logs)\b)/;
+const PREFIX = /^(?:(?:\w+=\S*|sudo|env|command|exec|nohup|time|xargs)\s+)+/;
 
-export function isReadOnlyCommand(command) {
-  if (typeof command !== "string" || /[`$(){}<>#\\\n]/.test(command)) return false;
-  return command.split(/\|\||&&|[;|&]/).every(segment => {
-    const raw = segment.trim().split(/\s+/);
-    const [word, ...args] = raw.map(unquote);
-    if (word === undefined || args.includes(undefined) || !Object.hasOwn(READ_ONLY_COMMANDS, word)) return false;
-    const rule = READ_ONLY_COMMANDS[word];
-    // Where flags decide, an unquoted glob could expand to a crafted filename
-    // such as `--pre=sh`; the flag-free words stay read-only whatever they get.
-    const unquotedGlob = raw.slice(1).some(token => !/['"]/.test(token) && /[*?[]/.test(token));
-    return rule === null || (!unquotedGlob && rule(args));
+export function needsReview(command) {
+  return command.replace(/\\\n/g, " ").split(/\|\||&&|[;|&\n]/).some(segment => {
+    const text = segment.trim().replace(PREFIX, "");
+    return REVIEWED.some(rule => rule.test(text)) || (/\bgh\b/.test(text) && !GH_READ.test(text));
   });
 }
 
@@ -127,7 +120,7 @@ export class Policy {
     }
     if (tool === "bash") {
       if (typeof args.command !== "string" || !args.command.trim()) throw new Error("Missing shell command");
-      return isReadOnlyCommand(args.command) ? "allow" : "review";
+      return this.approval === "ask" || needsReview(args.command) ? "review" : "allow";
     }
     return "review";
   }

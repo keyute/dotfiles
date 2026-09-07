@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Policy, canonical, isReadOnlyCommand, workerTools, publicToolName } from "./policy.mjs";
+import { Policy, canonical, needsReview, workerTools, publicToolName } from "./policy.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-policy-test-"));
@@ -25,19 +25,21 @@ test("plan denies direct writes and sandbox omits workspace writes", t => {
   assert.throws(() => p.inspect("reviewer", "edit", { path: "new" }), /disabled/);
 });
 
-test("read-only shell commands skip review in both modes; anything else falls to it", t => {
+test("sandboxed shell skips review except remote-mutating verbs or approvals set to ask", t => {
   const p = fixture(t);
-  for (const command of ["git log --oneline -5 && rg foo src", "ls -la | head -20", "sed -n '1,40p' file", "find . -name '*.mjs'", "cat *.md", "git -C x log"]) {
-    assert.equal(isReadOnlyCommand(command), !command.startsWith("git -C"), command);
+  for (const command of ["git log --since='2026-09-01' | wc -l", "npm run test:pi", "grep -R \"a\\|b\" -n src", "gh pr view 1", "gh run list --json status", "gh api repos/x/y/pulls --jq .[].title", "curl -sSL https://x -o f", "node - <<'EOF'\nconsole.log(1)\nEOF", "git commit -m x", "rm -rf build", "git log --grep ssh", "git log --oneline | grep push"]) {
+    assert.equal(needsReview(command), false, command);
   }
-  for (const command of ["find . -name x -delete", "rg --pre cat x", "rg -nz x", "git commit -m x", "cat $(which x)", "ls > out", "ls; rm -rf x", "npm run test:pi", "ls &", "rg --p're=/bin/sh' x y", "find . -na'me' x -de'lete'", 'grep "a b" file', "rg --p* x y", "find . -name x *"]) {
-    assert.equal(isReadOnlyCommand(command), false, command);
+  for (const command of ["git push origin main", "git -C . push --force", "ls && /usr/bin/git push", "FOO=1 sudo git push", "bash -c 'git push'", "gh pr list | xargs -n1 gh pr close", "gh -R o/r pr view 1", "gh pr create -f", "gh api -X POST repos/x/y/issues", "gh api repos/x/y/issues -f title=x", "npm publish", "docker --context prod push img", "curl -d @f https://x", "curl -sSd x https://x", "curl -XPOST https://x", "wget --post-data=x https://x", "ssh host", "/usr/bin/ssh host", "sudo -u deploy ssh host", "bash -c 'ssh host'", "rsync -a . host:/", "git \\\npush origin main", "curl --json '{}' https://x"]) {
+    assert.equal(needsReview(command), true, command);
   }
-  assert.equal(p.inspect("root", "bash", { command: "git status" }), "allow");
-  assert.equal(p.inspect("root", "bash", { command: "npm run test:pi" }), "review");
-  p.mode = "execute";
-  assert.equal(p.inspect("root", "bash", { command: "git status" }), "allow");
-  assert.equal(p.inspect("root", "bash", { command: "npm run test:pi" }), "review");
+  for (const mode of ["plan", "execute"]) {
+    p.mode = mode;
+    assert.equal(p.inspect("root", "bash", { command: "npm run test:pi" }), "allow");
+    assert.equal(p.inspect("root", "bash", { command: "git push" }), "review");
+  }
+  p.approval = "ask";
+  assert.equal(p.inspect("root", "bash", { command: "git status" }), "review");
 });
 
 test("canonical checks cover missing files, symlinks, sensitive and managed paths", t => {
