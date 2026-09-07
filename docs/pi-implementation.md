@@ -1,6 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-07 (third comparison run: one-turn launches, Claude
+Last updated: 2026-09-07 (fourth comparison run: footer-hosted fleet rows, launch-
+sourced task text, sibling rank pairing; third run: one-turn launches, Claude
 Code's concurrency and nesting shape, interactive fleet panel, direct MCP
 tools; earlier the same day: sandbox-parity shell approvals, forced-async
 children, MCP cache key). Source implementation complete; not applied or
@@ -140,6 +141,25 @@ live-tested on the host.
   pi-subagents' ⌃⌥F shortcut bytes through the editor's `onExtensionShortcut`
   (legacy `ESC ^F`, CSI u under kitty), which opens the inspector without an
   agent turn but on its own first row (Codex review finding).
+- 2026-09-07 (fourth same-prompt run, on f77d134): pi 5m25s at 426k uncached /
+  3.5M cached / 26.4k out — Codex parity in time (5m11s–5m23s) and below it in
+  tokens; Claude Code's 1m46s is a delegation choice (it ran the review itself),
+  not a harness gap, and the rule for that already sits in the AGENTS.md
+  projection. Launches were accepted in one turn 22 s in (one `action:list`
+  turn still precedes them, ~5 s); all six Exa calls succeeded, confirming the
+  `NODE_USE_ENV_PROXY` fix; the critical path was a 4m56s fresh-context
+  shell-reviewer (19 turns) the root waited 157 s for. Panel changes from the
+  run: the rows moved into the footer under the status line (the dock order in
+  `chat-viewport.js` is fixed with the footer last, so a `belowEditor` widget
+  can only sit above it) and the `⏺ main` row went — pi has no thread switching
+  into a child, only the transcript peek. pi-subagents 0.66.0 never fills the
+  fleet DTO's `goal` (`rpc.ts` `buildFleetStatus` passes none — worth an
+  upstream issue) and reports `model` as the launch string with the thinking
+  suffix plus `effort` again, so the task now comes from the launch's own
+  `tool_execution_start`/`end` events keyed by `details.asyncId`, and the label
+  strips provider and suffix (`gpt-5.6-terra medium`). Enter on same-agent
+  siblings pairs rows to runs by rank (entries sort by `(startedAt, async id)`
+  upstream) instead of giving up, and a failed inspector fallback notifies.
 - 2026-09-07: Context7, Exa and Serena register direct tools
   (`agent_mcp_servers.<name>.direct_tools`, adapter `toolPrefix: "mcp"` →
   `mcp__exa_web_search_exa`), Playwright stays behind the proxy; results render

@@ -134,7 +134,7 @@ function readGitChanges(cwd) {
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
-export function installFooter(pi, ctx) {
+export function installFooter(pi, ctx, { fleet } = {}) {
   const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null };
 
   const refreshUsage = async () => {
@@ -165,6 +165,7 @@ export function installFooter(pi, ctx) {
 
   ctx.ui.setFooter((tui, theme, footerData) => {
     state.tui = tui;
+    fleet?.attach(tui);
     const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
     const separator = theme.fg("dim", " · ");
     return {
@@ -183,7 +184,9 @@ export function installFooter(pi, ctx) {
         // Only the workflow mode; other extensions keep their own surfaces.
         const right = footerData.getExtensionStatuses().get("workflow") ?? "";
         const pad = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
-        return [truncateToWidth(left + pad + right, width)];
+        // Child rows hang under the status line: pi's dock keeps the footer
+        // last, so this is the only slot below it.
+        return [truncateToWidth(left + pad + right, width), ...(fleet?.render(width, theme) ?? [])];
       },
     };
   });

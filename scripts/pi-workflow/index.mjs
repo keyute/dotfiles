@@ -187,8 +187,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (broker && ctx.hasUI && !footerInstalled) {
       footerInstalled = true;
-      installFooter(pi, ctx);
       const fleet = installFleet(pi, ctx);
+      installFooter(pi, ctx, { fleet });
       ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet }));
     }
     pi.setActiveTools(pi.getAllTools().map(tool => tool.name).filter(permitted));

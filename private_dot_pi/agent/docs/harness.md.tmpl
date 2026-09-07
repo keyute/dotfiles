@@ -108,14 +108,14 @@ transcript view), stop, interrupt and non-recovering steer are enabled;
 project role overrides, revival and mutating management are not. Results
 arrive as notifications — `bg_wait` only when the current turn depends on them.
 
-The panel below the editor follows Claude Code's subagent panel: a `⏺ main`
-row, then `◯ agent › task · tokens · model` per running child (five rows, then
-`↓ N more`). Arrow-down from the last line of the prompt moves a `❯` cursor
-into the panel; up/down move it, Enter shows the highlighted child's transcript
-tail in an overlay (Esc closes; when the row cannot be matched to a run it
-opens the inspector instead), Esc or up past the first row returns to the
-prompt, any other key returns and types. `Ctrl+Alt+F` (⌃⌥F on macOS) opens
-pi-subagents' inspector (steer, stop, full transcripts).
+Running children hang under the status line as Claude Code's subagent rows:
+`◯ agent › task · tokens · model effort` each (five rows, then `↓ N more`); the
+status line itself stays put under the editor. Arrow-down from the last line of
+the prompt moves a `❯` cursor into the rows; up/down move it, Enter shows the
+highlighted child's transcript tail in an overlay (Esc closes; a child with no
+transcript yet opens the inspector or says so), Esc or up past the first row
+returns to the prompt, any other key returns and types. `Ctrl+Alt+F` (⌃⌥F on
+macOS) opens pi-subagents' inspector (steer, stop, full transcripts).
 
 Shared skills remain discoverable under `~/.agents/skills`; explicit skill loading
 is available through Pi. Tool output starts collapsed: Ctrl+O expands it. MCP

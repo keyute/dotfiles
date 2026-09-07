@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import { buildRow, createFleetState, formatTokens, installFleet, navigate, renderFleet, setEntries } from "./fleet.mjs";
+import { buildRow, createFleetState, formatTokens, installFleet, modelLabel, navigate, renderFleet, runIdFor, setEntries } from "./fleet.mjs";
+
+const HINT = "⌃⌥F fleet";
+const hinted = (row, width) => row + " ".repeat(width - row.length - HINT.length) + HINT;
 
 test("rows follow the Claude Code subagent statusline shape and trim the goal only", () => {
   const entry = { agent: "diff-reviewer", goal: "Review 2051082^..7ebb0ad\n for correctness", tokens: { input: 1, output: 2, total: 22079 }, model: "gpt-5.6-terra", effort: "high" };
@@ -9,33 +12,38 @@ test("rows follow the Claude Code subagent statusline shape and trim the goal on
   assert.equal(buildRow(entry, 60), "diff-reviewer › Review … · 22.1k tokens · gpt-5.6-terra high");
   assert.equal(buildRow({ agent: "explore-deep", tokens: { total: 0 } }, 80), "explore-deep");
   assert.equal(buildRow({ agent: "x", goal: "g", tokens: { total: 1000 }, model: "gpt-5.6-luna" }, 80), "x › g · 1k tokens · gpt-5.6-luna");
+  // pi-subagents reports the launch string as model and the level again as effort.
+  assert.equal(modelLabel("openai-codex/gpt-5.6-terra:medium", "medium"), "gpt-5.6-terra medium");
+  assert.equal(modelLabel("openai-codex/gpt-5.6-terra:medium"), "gpt-5.6-terra");
+  assert.equal(modelLabel(undefined, "high"), null);
   assert.equal(formatTokens(1234567), "1.2m tokens");
   assert.equal(formatTokens(undefined), null);
 });
 
 const theme = { fg: (_color, text) => text };
 
-test("panel has a root row, glyph and cursor per child, and overflow markers like Claude Code's", () => {
+test("panel has a glyph and cursor per child, the hint on the first row, and overflow markers like Claude Code's", () => {
   const state = createFleetState();
   const entries = Array.from({ length: 7 }, (_, i) => ({ agent: `a${i}`, goal: `task ${i}`, tokens: { total: 1000 * (i + 1) }, model: "gpt-5.6-terra", effort: "high" }));
   setEntries(state, { entries: entries.slice(0, 2), totalActive: 2 });
-  assert.deepEqual(renderFleet(state, 80, theme, { model: "gpt-5.6-sol", effort: "high" }), [
-    "  ⏺ main · gpt-5.6-sol high",
+  assert.deepEqual(renderFleet(state, 80, theme), [
     "  ◯ a0 › task 0 · 1k tokens · gpt-5.6-terra high",
     "  ◯ a1 › task 1 · 2k tokens · gpt-5.6-terra high",
   ]);
-  assert.equal(renderFleet(state, 80, theme, { hint: "⌃⌥F fleet" })[0], "  ⏺ main" + " ".repeat(63) + "⌃⌥F fleet");
+  assert.equal(renderFleet(state, 80, theme, { hint: HINT })[0], hinted("  ◯ a0 › task 0 · 1k tokens · gpt-5.6-terra high", 80));
+  // The hint takes its columns from the first row's goal, never from the tail.
+  assert.equal(renderFleet(state, 56, theme, { hint: HINT })[0], hinted("  ◯ a0 › tas… · 1k tokens · gpt-5.6-terra high", 56));
   setEntries(state, { entries, totalActive: 9 });
   assert.equal(navigate(state, "enter"), true);
   state.cursor = 1;
   const rows = renderFleet(state, 80, theme);
-  assert.equal(rows.length, 7);
-  assert.equal(rows[2], "❯ ◯ a1 › task 1 · 2k tokens · gpt-5.6-terra high");
+  assert.equal(rows.length, 6);
+  assert.equal(rows[1], "❯ ◯ a1 › task 1 · 2k tokens · gpt-5.6-terra high");
   assert.equal(rows.at(-1), "  ↓ 4 more");
   state.cursor = 6;
   const tail = renderFleet(state, 80, theme);
-  assert.deepEqual([tail[1], tail.at(-1)], ["  ↑ 2 more", "  ↓ 2 more"]);
-  assert.equal(tail[6], "❯ ◯ a6 › task 6 · 7k tokens · gpt-5.6-terra high");
+  assert.deepEqual([tail[0], tail.at(-1)], ["  ↑ 2 more", "  ↓ 2 more"]);
+  assert.equal(tail[5], "❯ ◯ a6 › task 6 · 7k tokens · gpt-5.6-terra high");
   assert.deepEqual(renderFleet(createFleetState(), 80, theme), []);
 });
 
@@ -70,6 +78,17 @@ test("navigation is an editor-owned mode: enter on a stuck cursor, move, open, l
   assert.equal(state.focused, false);
 });
 
+test("same-agent siblings pair with their runs by rank; other agents and far runs never match", () => {
+  const state = createFleetState();
+  const entries = [{ agent: "b", startedAt: 5000 }, { agent: "b", startedAt: 5100 }, { agent: "c", startedAt: 5200 }, { agent: "d" }];
+  setEntries(state, { entries, totalActive: 4 }, { runs: [
+    { id: "run-b-old", label: "b", startedAt: 900_000 }, { id: "run-b2", label: "b", startedAt: 5100 }, { id: "run-b", label: "b", startedAt: 5000 }, { id: "run-c", label: "c", startedAt: 5050 },
+  ] });
+  assert.deepEqual(entries.map(entry => runIdFor(state, entry)), ["run-b", "run-b2", "run-c", null]);
+  setEntries(state, { entries, totalActive: 4 }, { runs: [{ id: "run-b", label: "b", startedAt: 5000 }] });
+  assert.deepEqual(entries.slice(0, 2).map(entry => runIdFor(state, entry)), ["run-b", null]);
+});
+
 function fakeBus() {
   const handlers = new Map();
   return {
@@ -94,65 +113,82 @@ function fakeBus() {
   };
 }
 
-test("widget polls while children run, survives dropped replies, and stops on shutdown", async () => {
+test("rows poll while children run, name the task from the launch, peek each sibling, and stop on shutdown", async () => {
   const bus = fakeBus();
   const events = {};
-  let factory;
   const pi = { events: bus, on: (name, handler) => { events[name] = handler; } };
   const overlays = [];
-  const ctx = { hasUI: true, ui: { setWidget: (key, content, options) => { assert.equal(options.placement, "belowEditor"); factory = content; }, custom: async (make, options) => { assert.equal(options.overlay, true); const component = make({}, theme, {}, () => overlays.push("closed")); overlays.push(component.render(80).join("\n")); component.handleInput("\x1b"); } }, model: { id: "gpt-5.6-sol" }, thinkingLevel: "high" };
+  const notices = [];
+  const ctx = { hasUI: true, ui: {
+    custom: async (make, options) => { assert.equal(options.overlay, true); const component = make({}, theme, {}, () => overlays.push("closed")); overlays.push(component.render(80).join("\n")); component.handleInput("\x1b"); },
+    notify: (message, level) => notices.push(`${level}: ${message}`),
+  } };
   bus.entries = [{ agent: "restored", tokens: { total: 0 } }];
   const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 30, timeoutMs: 10 });
-  const widget = factory({ requestRender() {} }, theme);
+  const renders = [];
+  fleet.attach({ requestRender: () => renders.push(1) });
   await sleep(20);
   assert.deepEqual(bus.requests.slice(0, 2), ["ping", "status"]);
-  assert.deepEqual(widget.render(80), ["  ⏺ main · gpt-5.6-sol high" + " ".repeat(44) + "⌃⌥F fleet", "  ◯ restored"]);
+  assert.deepEqual(fleet.render(80, theme), [hinted("  ◯ restored", 80)]);
+  assert.ok(renders.length);
 
-  bus.entries = [{ agent: "a", goal: "one", tokens: { total: 2000 }, model: "m", startedAt: 1000 }, { agent: "b", goal: "two", tokens: { total: 0 }, startedAt: 5000 }];
+  // The DTO never carries the task; the launch's start/end events do, keyed by the async id.
+  events.tool_execution_start({ toolName: "subagent", toolCallId: "c1", args: { agent: "b", task: "Review the diff\n  for correctness", cwd: "/x" } });
+  events.tool_execution_start({ toolName: "workspace_bash", toolCallId: "c2", args: { command: "ls" } });
+  events.tool_execution_end({ toolName: "workspace_bash", toolCallId: "c2", result: {} });
+  bus.entries = [{ agent: "a", goal: "one", tokens: { total: 2000 }, model: "openai-codex/m:high", effort: "high", startedAt: 1000 }, { agent: "b", tokens: { total: 0 }, startedAt: 5000 }];
   bus.runs = [{ id: "run-a-old", label: "a", startedAt: 900_000 }, { id: "run-a", label: "a", startedAt: 1200 }, { id: "run-b", label: "b", startedAt: 5000 }];
-  events.tool_execution_end({ toolName: "subagent" });
+  events.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { mode: "async", asyncId: "run-b", runId: "run-b" } } });
   await sleep(20);
-  assert.deepEqual(widget.render(60), ["  ⏺ main · gpt-5.6-sol high" + " ".repeat(24) + "⌃⌥F fleet", "  ◯ a › one · 2k tokens · m", "  ◯ b › two"]);
+  assert.deepEqual(fleet.render(60, theme), [hinted("  ◯ a › one · 2k tokens · m high", 60), "  ◯ b › Review the diff for correctness"]);
   const shortcuts = [];
   const editor = { onExtensionShortcut: data => shortcuts.push(data) };
   assert.equal(fleet.handleKey("enter", editor), true);
-  assert.equal(widget.render(60)[1], "❯ ◯ a › one · 2k tokens · m");
+  assert.equal(fleet.render(60, theme)[0], hinted("❯ ◯ a › one · 2k tokens · m high", 60));
   assert.equal(fleet.handleKey("down", editor), true);
-  assert.equal(widget.render(60)[2], "❯ ◯ b › two");
+  assert.equal(fleet.render(60, theme)[1], "❯ ◯ b › Review the diff for correctness");
   // Enter peeks at the highlighted child's transcript, not the first child's.
   assert.equal(fleet.handleKey("confirm", editor), true);
   await sleep(10);
   assert.deepEqual(shortcuts, []);
-  assert.match(overlays[0], /b › two/);
+  assert.match(overlays[0], /b › Review the diff for correctness/);
   assert.match(overlays[0], /transcript of run-b \(transcript, 40\)/);
   assert.equal(overlays[1], "closed");
   assert.equal(fleet.focused(), false);
-  // Ambiguous (same-agent siblings) or missing run ids open the inspector instead.
+  // Same-agent siblings: the second row peeks the second run.
+  bus.entries = [{ agent: "b", tokens: { total: 0 }, startedAt: 5000 }, { agent: "b", tokens: { total: 0 }, startedAt: 5100 }];
   bus.runs = [{ id: "run-b", label: "b", startedAt: 5000 }, { id: "run-b2", label: "b", startedAt: 5100 }];
-  events.tool_execution_end({ toolName: "subagent" });
+  events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
   fleet.handleKey("enter", editor);
   fleet.handleKey("down", editor);
   fleet.handleKey("confirm", editor);
   await sleep(10);
-  assert.deepEqual(shortcuts, ["\x1b\x06"]);
+  assert.match(overlays[2], /transcript of run-b2 /);
+  assert.deepEqual(shortcuts, []);
+  // No run at all: the inspector shortcut, and a notice when even that is unavailable.
   bus.runs = [];
-  events.tool_execution_end({ toolName: "subagent" });
+  events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
   fleet.handleKey("enter", editor);
   fleet.handleKey("confirm", editor);
   await sleep(10);
-  assert.deepEqual(shortcuts, ["\x1b\x06", "\x1b\x06"]);
-  assert.equal(overlays.length, 2);
+  assert.deepEqual(shortcuts, ["\x1b\x06"]);
+  assert.deepEqual(notices, []);
+  fleet.handleKey("enter", { onExtensionShortcut: () => false });
+  fleet.handleKey("confirm", { onExtensionShortcut: () => false });
+  await sleep(10);
+  assert.deepEqual(notices, ["info: No transcript yet for b"]);
+  assert.equal(overlays.length, 4);
 
   bus.silent = true;
   await sleep(20);
-  assert.equal(widget.render(60).length, 3);
+  assert.equal(fleet.render(60, theme).length, 2);
   bus.silent = false;
 
   bus.entries = [];
   await sleep(60);
-  assert.deepEqual(widget.render(60), []);
+  assert.deepEqual(fleet.render(60, theme), []);
   const settled = bus.requests.length;
   await sleep(30);
   assert.equal(bus.requests.length, settled);
@@ -161,16 +197,16 @@ test("widget polls while children run, survives dropped replies, and stops on sh
   bus.entries = [{ agent: "late", tokens: { total: 0 } }];
   bus.emit("subagent:async-started", {});
   await sleep(20);
-  assert.equal(widget.render(60).length, 2);
+  assert.equal(fleet.render(60, theme).length, 1);
   bus.delayMs = 5;
   await sleep(6);
   events.session_shutdown();
-  assert.deepEqual(widget.render(60), []);
+  assert.deepEqual(fleet.render(60, theme), []);
   const afterShutdown = bus.requests.length;
   await sleep(30);
-  assert.deepEqual(widget.render(60), []);
+  assert.deepEqual(fleet.render(60, theme), []);
   assert.equal(bus.requests.length, afterShutdown);
-  events.tool_execution_end({ toolName: "subagent" });
+  events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
   assert.equal(bus.requests.length, afterShutdown);
 });

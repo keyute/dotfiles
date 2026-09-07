@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSegments, footerEnv, formatReset, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
+import { buildSegments, footerEnv, formatReset, installFooter, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
 
 test("footer subprocesses never inherit workflow broker credentials", () => {
   const clean = footerEnv({ PATH: "/bin", PI_WORKFLOW_SOCKET: "/tmp/s", PI_WORKFLOW_TOKEN: "secret" });
@@ -65,4 +65,24 @@ test("git shortstat parses to compact change counts", () => {
   assert.equal(parseGitChanges(" 3 files changed, 14 insertions(+), 2 deletions(-)"), "+14 -2");
   assert.equal(parseGitChanges(" 1 file changed, 5 deletions(-)"), "-5");
   assert.equal(parseGitChanges(""), null);
+});
+
+test("footer renders the status line first and the fleet rows under it", () => {
+  const path = process.env.PATH;
+  process.env.PATH = ""; // codex/git lookups fail fast instead of spawning
+  try {
+    let factory;
+    const attached = [];
+    const fleet = { attach: tui => attached.push(tui), render: (width, theme) => [theme.fg("dim", `rows@${width}`)] };
+    const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; } } };
+    installFooter({ on() {} }, ctx, { fleet });
+    const tui = { requestRender() {} };
+    const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", "plan"]]) };
+    const lines = factory(tui, { fg: (_color, text) => text }, footerData).render(60);
+    assert.deepEqual(attached, [tui]);
+    assert.equal(lines[0], "gpt-5.6-sol high · 27.2% · main" + " ".repeat(60 - 31 - 4) + "plan");
+    assert.deepEqual(lines.slice(1), ["rows@60"]);
+  } finally {
+    process.env.PATH = path;
+  }
 });
