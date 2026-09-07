@@ -1,16 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { Text, isKittyProtocolActive, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 
-// Row contract mirrors ~/.claude/subagent-statusline.js: name › description ·
-// <compact> tokens · model, description trimmed first, tail never.
-const SEP = " · ";
+// Rows hang under the status line as children: marker, agent column, a short
+// title, compact tokens. The title is cut at a word boundary so rows stay
+// short; the model shows only in the Enter overlay.
+const GAP = "  ";
 const NAME_SEP = " › ";
 const TOK_FMT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1, minimumFractionDigits: 1 });
 export const VISIBLE_ROWS = 5;
-const HINT = "⌃⌥F fleet";
-// pi-subagents' fleet inspector shortcut (⌃⌥F): legacy ESC+control-char, or
-// CSI u with modifier 1+alt(2)+ctrl(4) under the kitty keyboard protocol.
-const FLEET_SHORTCUT = () => (isKittyProtocolActive() ? "\x1b[102;7u" : "\x1b\x06");
+export const TITLE_WIDTH = 36;
 // The fleet DTO's `model` is the launch string (provider/model:thinking) and
 // `effort` repeats the thinking level, so the suffix is dropped before the
 // effort is appended once — the footer's own spelling.
@@ -19,7 +17,7 @@ const EFFORT_SUFFIX = /:(low|medium|high|xhigh|max)$/;
 export function formatTokens(n) {
   const v = Number(n);
   if (!Number.isFinite(v) || v <= 0) return null;
-  return `${TOK_FMT.format(v).toLowerCase().replace(".0", "")} tokens`;
+  return TOK_FMT.format(v).toLowerCase().replace(".0", "");
 }
 
 export function modelLabel(model, effort) {
@@ -28,16 +26,18 @@ export function modelLabel(model, effort) {
   return effort ? `${id} ${effort}` : id;
 }
 
-export function buildRow({ agent, goal, tokens, model, effort }, width) {
-  const label = modelLabel(model, effort);
-  const description = (goal ?? "").replace(/\s+/g, " ").trim();
-  const build = text => [text ? `${agent}${NAME_SEP}${text}` : agent, formatTokens(tokens?.total ?? tokens), label].filter(Boolean).join(SEP);
-  let row = build(description);
-  if (width > 0 && row.length > width && description) {
-    const room = width - build("").length - NAME_SEP.length;
-    row = build(room > 1 ? `${description.slice(0, room - 1)}…` : "");
-  }
-  return row;
+const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
+
+export function shortTitle(text, width = TITLE_WIDTH) {
+  const title = oneLine(text);
+  if (title.length <= width) return title;
+  const cut = title.slice(0, width - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${space > width / 2 ? cut.slice(0, space) : cut}…`;
+}
+
+export function buildRow({ agent, goal, tokens }, nameWidth = agent.length) {
+  return [agent.padEnd(nameWidth), shortTitle(goal), formatTokens(tokens?.total ?? tokens)].filter(Boolean).join(GAP).trimEnd();
 }
 
 export function createFleetState() {
@@ -91,22 +91,21 @@ export function rowFor(state, entry) {
   return entry.goal ? entry : { ...entry, goal: state.launches.get(runIdFor(state, entry))?.task };
 }
 
-// Claude Code's subagent panel shape under the status line: a window of child
-// rows with a selection cursor and overflow markers instead of a growing list.
-export function renderFleet(state, width, theme, { hint } = {}) {
+// A window of child rows with a selection cursor and overflow markers instead
+// of a growing list; queued children render dim.
+export function renderFleet(state, width, theme) {
   if (!state.entries.length) return [];
   const dim = text => theme.fg("dim", text);
+  const nameWidth = Math.max(...state.entries.map(entry => entry.agent.length));
   const lines = [];
   const start = Math.max(0, state.cursor - (VISIBLE_ROWS - 1));
   const shown = state.entries.slice(start, start + VISIBLE_ROWS);
   if (start > 0) lines.push(dim(`  ↑ ${start} more`));
   shown.forEach((entry, index) => {
     const selected = state.focused && start + index === state.cursor;
-    const prefix = selected ? theme.fg("accent", "❯ ") : "  ";
-    const hintText = index === 0 && hint ? dim(hint) : "";
-    const row = `${prefix}${dim("◯")} ${buildRow(rowFor(state, entry), width - 4 - (hintText ? visibleWidth(hint) + 1 : 0))}`;
-    const pad = hintText ? " ".repeat(Math.max(1, width - visibleWidth(row) - visibleWidth(hintText))) : "";
-    lines.push(truncateToWidth(row + pad + hintText, width));
+    const marker = selected ? theme.fg("accent", "›") : dim("↳");
+    const row = buildRow(rowFor(state, entry), nameWidth);
+    lines.push(truncateToWidth(`  ${marker} ${entry.status === "pending" ? dim(row) : row}`, width));
   });
   const hidden = state.totalActive - (start + shown.length);
   if (hidden > 0) lines.push(dim(`  ↓ ${hidden} more`));
@@ -163,7 +162,7 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     if (event.toolName !== "subagent") return;
     const launch = state.pending.get(event.toolCallId);
     state.pending.delete(event.toolCallId);
-    const id = event.result?.details?.asyncId ?? event.result?.details?.runId;
+    const id = event.result?.details?.runId ?? event.result?.details?.asyncId;
     if (launch && id) state.launches.set(id, launch);
     wake();
   });
@@ -178,23 +177,21 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
   wake();
 
   // Enter shows the highlighted child's transcript tail (pi-subagents' own
-  // status view) in an overlay; without one it falls back to the fleet
-  // inspector via the editor's extension-shortcut path, and says so when even
-  // that path is unavailable — Enter is never silent.
-  const peek = async (entry, editor) => {
+  // status view) in an overlay, and says so when there is none yet — Enter is
+  // never silent.
+  const peek = async entry => {
     const id = runIdFor(state, entry);
     const reply = id ? await rpcCall(pi.events, "status", { id, view: "transcript", lines: 40 }, timeoutMs) : null;
-    if (reply?.text && ctx.hasUI) {
-      await ctx.ui.custom((_tui, theme, _keybindings, done) => {
-        const body = new Text(`${theme.fg("accent", buildRow(rowFor(state, entry), 0))}\n\n${reply.text}\n\n${theme.fg("dim", `esc close · ${HINT}`)}`, 1, 0);
-        return { render: width => body.render(width), invalidate: () => body.invalidate(), handleInput: () => done() };
-      }, { overlay: true, overlayOptions: { anchor: "center", width: "90%", maxHeight: "80%", margin: 1 } });
-      return;
-    }
-    if (!editor.onExtensionShortcut?.(FLEET_SHORTCUT())) ctx.ui.notify(`No transcript yet for ${entry.agent}`, "info");
+    if (!reply?.text || !ctx.hasUI) return ctx.ui.notify(`No transcript yet for ${entry.agent}`, "info");
+    const { agent, goal, model, effort } = rowFor(state, entry);
+    const header = [goal ? `${agent}${NAME_SEP}${oneLine(goal)}` : agent, modelLabel(model, effort)].filter(Boolean).join(" · ");
+    await ctx.ui.custom((_tui, theme, _keybindings, done) => {
+      const body = new Text(`${theme.fg("accent", header)}\n\n${reply.text}\n\n${theme.fg("dim", "esc close")}`, 1, 0);
+      return { render: width => body.render(width), invalidate: () => body.invalidate(), handleInput: () => done() };
+    }, { overlay: true, overlayOptions: { anchor: "center", width: "90%", maxHeight: "80%", margin: 1 } });
   };
-  const handleKey = (action, editor) => {
-    const consumed = navigate(state, action, entry => { void peek(entry, editor); });
+  const handleKey = action => {
+    const consumed = navigate(state, action, entry => { void peek(entry); });
     state.tui?.requestRender();
     return consumed;
   };
@@ -203,6 +200,6 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     handleKey,
     focused: () => state.focused,
     attach: tui => { state.tui = tui; },
-    render: (width, theme) => renderFleet(state, width, theme, { hint: HINT }),
+    render: (width, theme) => renderFleet(state, width, theme),
   };
 }

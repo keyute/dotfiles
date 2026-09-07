@@ -1,4 +1,4 @@
-Delegate one bounded task to one named child: { agent, task }. Children start in the background under this session's policy; up to twenty run at once, so issue independent launches in the same turn and continue only work outside their scope, then synthesise from their reports.
+Delegate one bounded task to one named child: { agent, task }. Children start in the background under this session's policy; up to twenty run at once, so batch independent launches that each repay their handoff into the same turn, then continue only work outside their scope and synthesise from their reports.
 
 Agents (models are pinned; pass model only to escalate after an observed failure):
 {{ range $name, $meta := .subagents -}}

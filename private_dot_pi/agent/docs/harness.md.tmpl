@@ -87,7 +87,7 @@ Extensions are trusted host code. Per-tool SRT is not containment against a
 malicious extension. No fallback to unsandboxed execution exists in the managed
 tools. Linux needs bubblewrap, socat and ripgrep; macOS needs sandbox-exec.
 
-## Specialists, skills and display (last verified 2026-09-07, third smoke run)
+## Specialists, skills and display (last verified 2026-09-07, fifth smoke run)
 
 Specialists under `~/.pi/agent/agents` render from the shared roster. Each has an
 explicit OpenAI model, tool list and mandatory child policy extension. Native
@@ -99,7 +99,7 @@ children, to the same depth as Claude Code's built-in general-purpose agent.
 Use named `subagent` launches with an agent and bounded task; the roster is in
 the tool description, so no `list` call is needed. Every child runs in the
 background and up to twenty share the root policy (Claude Code's default), so
-launch independent children in one turn. Children start fresh; `context:
+batch the independent launches that each repay their handoff into one turn. Children start fresh; `context:
 "fork"` branches this session's transcript into the child, as Codex's forked
 children do, for a second pass over material already read. Unsupported launch
 keys the upstream schema still advertises (`cwd`, `toolBudget`, …) are dropped
@@ -108,14 +108,22 @@ transcript view), stop, interrupt and non-recovering steer are enabled;
 project role overrides, revival and mutating management are not. Results
 arrive as notifications — `bg_wait` only when the current turn depends on them.
 
-Running children hang under the status line as Claude Code's subagent rows:
-`◯ agent › task · tokens · model effort` each (five rows, then `↓ N more`); the
-status line itself stays put under the editor. Arrow-down from the last line of
-the prompt moves a `❯` cursor into the rows; up/down move it, Enter shows the
-highlighted child's transcript tail in an overlay (Esc closes; a child with no
-transcript yet opens the inspector or says so), Esc or up past the first row
-returns to the prompt, any other key returns and types. `Ctrl+Alt+F` (⌃⌥F on
-macOS) opens pi-subagents' inspector (steer, stop, full transcripts).
+Running children hang under the status line as short rows, `↳ agent  title
+tokens` (title cut at a word boundary to 36 columns; five rows, then `↓ N more`;
+queued children dim). The composer is a shaded block with a `›` prompt instead
+of rule lines, and the status line shares its two-column inset. Arrow-down from
+the last line of the prompt moves a `›` cursor into the rows; up/down move it,
+Enter shows the highlighted child's transcript tail and model in an overlay
+(Esc closes; a child with no transcript yet says so), Esc or up past the first
+row returns to the prompt, any other key returns and types. `Ctrl+Alt+F` (⌃⌥F
+on macOS) opens pi-subagents' inspector (steer, stop, full transcripts). On
+exit pi restores the screen and prints only the resume command
+(`fullscreenExitOutput: resume-hint`).
+
+The status line's usage segments come from `codex app-server` JSON-RPC
+(`account/rateLimits/read`), a codex-cli surface with no published contract:
+re-verify after every codex-cli bump (last verified against 0.153.4); a failed
+read only drops the segments.
 
 Shared skills remain discoverable under `~/.agents/skills`; explicit skill loading
 is available through Pi. Tool output starts collapsed: Ctrl+O expands it. MCP

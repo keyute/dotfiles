@@ -131,6 +131,8 @@ function readGitChanges(cwd) {
   });
 }
 
+// The status line shares the composer's two-column inset.
+const PAD = "  ";
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
@@ -183,10 +185,10 @@ export function installFooter(pi, ctx, { fleet } = {}) {
         const left = segments.map(s => (s.color ? theme.fg(s.color, s.text) : s.text)).join(separator);
         // Only the workflow mode; other extensions keep their own surfaces.
         const right = footerData.getExtensionStatuses().get("workflow") ?? "";
-        const pad = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
+        const pad = " ".repeat(Math.max(1, width - PAD.length * 2 - visibleWidth(left) - visibleWidth(right)));
         // Child rows hang under the status line: pi's dock keeps the footer
         // last, so this is the only slot below it.
-        return [truncateToWidth(left + pad + right, width), ...(fleet?.render(width, theme) ?? [])];
+        return [truncateToWidth(PAD + left + pad + right + PAD, width), ...(fleet?.render(width, theme) ?? [])];
       },
     };
   });

@@ -28,14 +28,22 @@ export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.
 // for servers left behind it (playwright).
 const isDirectMcpTool = name => name.startsWith("mcp__");
 
-// Claude-Code-style input caret. Rendered lines carry their cursor marker
-// inline, so prefixing the first content line shifts the cursor correctly;
-// if the render shape ever changes, the caret silently disappears instead
-// of corrupting the editor.
+const padRow = (text, width) => text.slice(0, width).padEnd(width);
+
+// Codex-style composer: a shaded block with a "› " prompt instead of rule
+// lines. Rendered lines carry their cursor marker inline, so replacing the
+// first content line's padding shifts the cursor correctly; if the render
+// shape ever changes, the prompt silently disappears instead of corrupting
+// the editor.
 export class CaretEditor extends sdk.CustomEditor {
   constructor(tui, theme, keybindings, { fleet } = {}) {
     super(tui, theme, keybindings, { paddingX: 2 });
     this.fleet = fleet;
+    this.theme = theme;
+    // The editor's fake cursor ends in a full SGR reset, which also drops the
+    // background; re-open it after every reset so the shade spans the line.
+    const open = theme.bg("userMessageBg", "").replace(/\x1b\[49m$/, "");
+    this.shade = line => theme.bg("userMessageBg", line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
   }
   // Fleet navigation is an editor-owned mode (widgets cannot take focus). Down
   // enters it only when the editor itself had nothing left to do with the key,
@@ -44,11 +52,11 @@ export class CaretEditor extends sdk.CustomEditor {
     const fleet = this.fleet;
     if (fleet?.focused()) {
       const action = ["down", "up", "confirm", "cancel"].find(name => this.keybindings.matches(data, `tui.select.${name}`)) ?? "other";
-      if (fleet.handleKey(action, this)) return;
+      if (fleet.handleKey(action)) return;
     } else if (fleet && this.keybindings.matches(data, "tui.editor.cursorDown") && !this.isShowingAutocomplete()) {
       const before = JSON.stringify([this.getCursor(), this.getLines()]);
       super.handleInput(data);
-      if (JSON.stringify([this.getCursor(), this.getLines()]) === before) fleet.handleKey("enter", this);
+      if (JSON.stringify([this.getCursor(), this.getLines()]) === before) fleet.handleKey("enter");
       return;
     }
     super.handleInput(data);
@@ -59,10 +67,23 @@ export class CaretEditor extends sdk.CustomEditor {
   setPaddingX(padding) {
     super.setPaddingX(Math.max(2, padding));
   }
+  // The rule lines become blank shaded rows (a scroll count when clipped), so
+  // the block keeps its line count and pi's mouse and autocomplete row
+  // offsets stay valid.
+  renderTopBorder(width, hidden) {
+    return this.shade(padRow(hidden ? `  ↑ ${hidden} more` : "", width));
+  }
+  renderBottomBorder(width, hidden) {
+    this.bottomRow = this.shade(padRow(hidden ? `  ↓ ${hidden} more` : "", width));
+    return this.bottomRow;
+  }
   render(width) {
     const lines = super.render(width);
-    // lines[0] is the top border; lines[1] is the first visible content line.
-    if (lines.length > 1 && lines[1].startsWith("  ")) lines[1] = this.borderColor("❯ ") + lines[1].slice(2);
+    // Content sits between the two shaded rows; autocomplete follows the
+    // bottom one and stays unshaded.
+    const end = lines.lastIndexOf(this.bottomRow);
+    if (end > 1 && lines[1].startsWith("  ")) lines[1] = this.theme.fg("accent", "› ") + lines[1].slice(2);
+    for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
     return lines;
   }
 }

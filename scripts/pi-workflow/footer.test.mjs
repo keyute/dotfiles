@@ -80,7 +80,7 @@ test("footer renders the status line first and the fleet rows under it", () => {
     const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", "plan"]]) };
     const lines = factory(tui, { fg: (_color, text) => text }, footerData).render(60);
     assert.deepEqual(attached, [tui]);
-    assert.equal(lines[0], "gpt-5.6-sol high · 27.2% · main" + " ".repeat(60 - 31 - 4) + "plan");
+    assert.equal(lines[0], "  gpt-5.6-sol high · 27.2% · main" + " ".repeat(60 - 4 - 31 - 4) + "plan  ");
     assert.deepEqual(lines.slice(1), ["rows@60"]);
   } finally {
     process.env.PATH = path;
