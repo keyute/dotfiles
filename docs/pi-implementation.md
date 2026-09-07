@@ -1,6 +1,8 @@
 # Pi implementation working record
 
-Last updated: 2026-09-07 (fourth comparison run: footer-hosted fleet rows, launch-
+Last updated: 2026-09-07 evening (guard parity: applied workflow copy and
+node_modules symlink, relayed policy messages, Claude-shaped transcript rows,
+ask-user plugin; earlier: fourth comparison run: footer-hosted fleet rows, launch-
 sourced task text, sibling rank pairing; third run: one-turn launches, Claude
 Code's concurrency and nesting shape, interactive fleet panel, direct MCP
 tools; earlier the same day: sandbox-parity shell approvals, forced-async
@@ -169,6 +171,40 @@ live-tested on the host.
   Server workers get `NODE_USE_ENV_PROXY=1`: Node's global fetch ignores the
   proxy variables the sandbox injects, the leading hypothesis for run 3's
   `fetch failed` — unverified until a live call succeeds on the host.
+
+- 2026-09-07 (session `01a07b0e`, padding task): every edit after plan approval
+  was refused because the workflow code lived in the repository and was loaded
+  from there, so `scripts/pi-workflow`, `private_dot_pi`, the templates,
+  `agents.yaml`, `package.json` and the lockfile sat in `denyWrite` as
+  self-protection, and the broker hid the reason behind one generic string.
+  Claude and Codex protect only their applied homes and treat the repository as
+  fair game because their live code goes through `chezmoi apply`. Pi now takes
+  the same shape: the code moved to `private_dot_pi/agent/workflow/` (tests
+  colocated, ignored on apply), the shims re-export
+  `~/.pi/agent/workflow/index.mjs`, and `~/.pi/agent/node_modules` is a
+  chezmoi symlink to the repository's `node_modules` — pi aliases its own SDK
+  packages for any extension, so the symlink serves only the third-party
+  imports and keeps one physical tree (a second `npm install` under `~/.pi`
+  would duplicate the SDK and reopen the peer-alias problem). `denyWrite` keeps
+  only the live-loaded paths (`~/.pi/agent`, `node_modules`, `~/.zshrc`), and
+  the broker relays policy messages verbatim.
+- 2026-09-07: transcript takes Claude Code's shape on pi's documented surface
+  (`rows.mjs`): `•` rows for the `workspace_*` tools (`renderShell: "self"`,
+  glyph coloured by state, Codex-style head/tail shell preview, edit `+a −b`
+  and grep/find counts on the title line via the row's shared state and one
+  deferred `invalidate`), `•` prefix on assistant text through the markdown
+  transformer (pi-tui's list marker is a fixed `-` with a colour-only theme
+  hook, so a bullet with hanging indent would need patched internals — what
+  `pi-claude-code-ui` does; rejected with `pi-pretty` and `pi-tui-kit`),
+  `Updated plan · approved` rows, `π <verb> for … · done …` turn entries
+  from `agent_start`/`agent_settled` with a verb array in `rows.mjs`, and
+  pi-mcp-adapter's own `compact` rendering with one collapsed line. Grouped
+  "Read 3 files, ran 2 commands" summaries and agent-finished lines were cut
+  (cross-row state; pi-subagents already notifies). Built-in renderers are
+  keyed by tool name in `withBuiltInRenderers` and not exported, so
+  `workspace_*` rows had been falling back to name + raw text.
+  `@juicesharp/rpiv-ask-user-question` (48.8k dl/wk) replaces the hand-rolled
+  `ask_user`; its answers feed the transcript entry and the classifier task.
 
 ## Verification and remaining gates
 

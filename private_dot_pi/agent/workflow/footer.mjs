@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { createTurnClock, formatTurn } from "./rows.mjs";
 
 // The root workflow exports the broker socket and bearer token into
 // process.env for child sessions; footer subprocesses sit outside that
@@ -136,8 +137,8 @@ const PAD = "  ";
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
-export function installFooter(pi, ctx, { fleet } = {}) {
-  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null };
+export function installFooter(pi, ctx, { fleet, clock = createTurnClock() } = {}) {
+  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null };
 
   const refreshUsage = async () => {
     if (Date.now() - state.usageAt < USAGE_MIN_INTERVAL_MS) return;
@@ -161,6 +162,19 @@ export function installFooter(pi, ctx, { fleet } = {}) {
     void refreshUsage();
     void refreshGit(eventCtx.cwd);
   });
+  // The turn line closes at agent_settled, after retries and queued
+  // continuations; the running label ticks once a second until then.
+  pi.on("agent_start", () => {
+    clock.start();
+    state.tick ??= setInterval(() => state.tui?.requestRender(), 1000);
+  });
+  pi.on("agent_settled", () => {
+    clearInterval(state.tick);
+    state.tick = null;
+    const turn = clock.stop();
+    if (turn) pi.appendEntry("workflow-turn", turn);
+  });
+  pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
   void refreshUsage();
   void refreshGit(ctx.cwd);
@@ -183,8 +197,8 @@ export function installFooter(pi, ctx, { fleet } = {}) {
           changes: state.changes,
         });
         const left = segments.map(s => (s.color ? theme.fg(s.color, s.text) : s.text)).join(separator);
-        // Only the workflow mode; other extensions keep their own surfaces.
-        const right = footerData.getExtensionStatuses().get("workflow") ?? "";
+        // The turn clock and the workflow mode; other extensions keep their own surfaces.
+        const right = [clock.label(), footerData.getExtensionStatuses().get("workflow") ?? ""].filter(Boolean).join(separator);
         const pad = " ".repeat(Math.max(1, width - PAD.length * 2 - visibleWidth(left) - visibleWidth(right)));
         // Child rows hang under the status line: pi's dock keeps the footer
         // last, so this is the only slot below it.

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { Type } from "typebox";
+import { Text } from "@earendil-works/pi-tui";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, acquireChild } from "./broker.mjs";
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
@@ -12,6 +13,7 @@ import { checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
+import { answerLines, bulletMarkdown, planRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
@@ -121,7 +123,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     env = { PI_WORKFLOW_SOCKET: process.env.PI_WORKFLOW_SOCKET, PI_WORKFLOW_TOKEN: process.env.PI_WORKFLOW_TOKEN, PI_WORKFLOW_EPOCH: process.env.PI_WORKFLOW_EPOCH };
     await requestBroker(env, role, { action: "state" });
   }
-  const permittedTools = role === "root" ? [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user", "submit_plan"] : config.agents[role].tools;
+  const permittedTools = role === "root" ? [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan"] : config.agents[role].tools;
   const permitted = name => permittedTools.includes(name) || (permittedTools.includes("mcp") && isDirectMcpTool(name));
 
   async function authorize(tool, args) {
@@ -138,7 +140,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   function sandboxTool(name) {
     if (!permittedTools.includes(publicToolName(name))) return;
     const template = toolFactory(name)(process.cwd(), name === "bash" ? bashOptions : undefined);
-    pi.registerTool({ ...template, name: publicToolName(name), promptGuidelines: template.promptGuidelines?.map(text => text.replace(/\b(read|write|edit|grep|find|ls|bash)\b/g, publicToolName)), async execute(id, args, signal, onUpdate, ctx) {
+    pi.registerTool({ ...template, ...toolRenderers(name), name: publicToolName(name), promptGuidelines: template.promptGuidelines?.map(text => text.replace(/\b(read|write|edit|grep|find|ls|bash)\b/g, publicToolName)), async execute(id, args, signal, onUpdate, ctx) {
       const { ticket } = await authorize(name, args);
       const client = startToolWorker(name, { cwd: currentContext.cwd, env: workerEnv, ticket, signal });
       try {
@@ -241,14 +243,22 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
       if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); ctx.ui.setStatus("workflow", broker.policy.mode); }
     } });
-    pi.registerTool({ name: "ask_user", label: "Question", description: "Ask the user for a missing decision.", parameters: Type.Object({ question: Type.String(), options: Type.Optional(Type.Array(Type.String())) }), async execute(_id, args) {
-      if (!currentContext.hasUI) return resultText("User input unavailable; stop and report the missing decision.");
-      const answer = args.options?.length ? await currentContext.ui.select(args.question, [...args.options, "Enter another answer"]) : "Enter another answer";
-      const text = answer === "Enter another answer" ? await currentContext.ui.input(args.question) : answer;
-      if (text) userTask = `${userTask}\nUser decision: ${text}`.slice(-8000);
-      return resultText(text || "No answer submitted.");
-    } });
-    pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present the implementation plan for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), async execute(_id, args) {
+    // The questionnaire dialog is the pinned plugin's; the answers feed the
+    // classifier's task context and the transcript line from its result.
+    const askUserQuestion = await jiti.import("@juicesharp/rpiv-ask-user-question", { default: true });
+    askUserQuestion(pi);
+    pi.on("tool_execution_end", event => {
+      // A cancelled questionnaire keeps its partial answers in details; they
+      // are not decisions.
+      if (event.toolName !== "ask_user_question" || event.result?.details?.cancelled) return;
+      const answers = (event.result?.details?.answers ?? []).map(entry => ({ question: entry.question, answer: entry.answer ?? entry.selected?.join(", ") ?? "" })).filter(entry => entry.answer);
+      if (!answers.length) return;
+      userTask = `${userTask}\n${answers.map(entry => `User decision: ${entry.question} → ${entry.answer}`).join("\n")}`.slice(-8000);
+      pi.appendEntry("workflow-answers", { answers });
+    });
+    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
+    pi.registerMarkdownTransformer(bulletMarkdown);
+    pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present the implementation plan for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), ...planRenderers, async execute(_id, args) {
       const ctx = currentContext;
       if (!ctx.hasUI || !await ctx.ui.confirm("Approve this implementation plan?", args.plan)) return resultText("Plan not approved. Remain in planning mode.");
       userTask = `${userTask}\nApproved plan: ${args.plan}`.slice(-8000);
@@ -265,7 +275,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   if (permittedTools.includes("mcp")) {
     const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
-    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, toolResultRendering: "boxed", collapsedResultLines: 3, autoAuth: false, sampling: false, elicitation: false } } })(pi);
+    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, toolResultRendering: "compact", collapsedResultLines: 1, autoAuth: false, sampling: false, elicitation: false } } })(pi);
   }
   pi.on("session_shutdown", async () => {
     ready = false;

@@ -89,7 +89,7 @@ export class Policy {
   }
 
   role(name) {
-    if (name === "root") return { readonly: false, tools: [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user", "submit_plan"] };
+    if (name === "root") return { readonly: false, tools: [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan"] };
     const role = this.config.agents[name];
     if (!role) throw new Error("Unknown child policy role");
     return role;

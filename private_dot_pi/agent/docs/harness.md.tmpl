@@ -1,12 +1,19 @@
 # Pi workflow reference
 
-## Launch and ownership (last verified 2026-09-06)
+## Launch and ownership (last verified 2026-09-07)
 
 Use the managed `pi` zsh function. It runs the repository's lockfile-pinned CLI
 (`node_modules/.bin/pi`) on every platform — there is no Brew or metapac
 install — disables native tools and ambient extensions, then loads the managed
 workflow and Herdr when present. Running a pi binary outside the function
 bypasses this managed launch configuration.
+
+The workflow code pi loads is the applied copy under `~/.pi/agent/workflow`,
+not the repository source; `~/.pi/agent/node_modules` is a symlink to the
+repository's pinned `node_modules`, which pi's documented "node_modules in a
+parent directory" lookup follows. A source edit reaches a running or future
+session only through `chezmoi apply`, the same gate as Claude's hooks or
+Codex's config.
 
 The repository's npm manifest/lockfile is the single source for the CLI, the
 extension dependencies, and the worker SDK — one pinned unit (currently
@@ -62,8 +69,11 @@ lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
   execution is approved.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
   A pending dialog is announced in the footer and times out after ten minutes.
-- `ask_user` presents a decision with choices or free text. Approval dialogs are
-  once-only; MCP approvals are never cached across a mode change.
+- `ask_user_question` (the pinned `@juicesharp/rpiv-ask-user-question` plugin)
+  presents up to four questions with options, previews and free text in one
+  tabbed dialog; answers land in the transcript and the classifier's task
+  context. Approval dialogs are once-only; MCP approvals are never cached
+  across a mode change.
 - If a process disappears without acknowledging termination, the workflow blocks.
   Check orphan processes and restart; do not treat a lost connection as proof that
   a writer stopped.
@@ -78,10 +88,14 @@ commands use the same worker boundary. MCP stdio servers also run inside SRT,
 while OAuth stays in the trusted host Pi process.
 
 Sensitive paths come from the shared denylist. File tools additionally resolve
-symlinks and confine edits to the workspace; git metadata and managed policy/code
-are write-protected. This is an explicit denylist, not a guarantee against unknown
-credential locations. Add new credential paths to shared policy before exposing
-them to a session.
+symlinks and confine edits to the workspace; git metadata and live-loaded code
+(`~/.pi/agent`, the repository `node_modules`, `~/.zshrc`) are write-protected
+in every mode, while the repository source is editable once execution is
+approved. A refusal names its reason (`Writes are disabled in this scope`,
+`Path denied by managed policy`, `File edits must remain inside the
+workspace`); the model should report it rather than re-submit the plan. This is
+an explicit denylist, not a guarantee against unknown credential locations. Add
+new credential paths to shared policy before exposing them to a session.
 
 Extensions are trusted host code. Per-tool SRT is not containment against a
 malicious extension. No fallback to unsandboxed execution exists in the managed

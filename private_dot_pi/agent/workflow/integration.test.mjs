@@ -40,8 +40,8 @@ test("broker does not expose its credential to the classifier and invalidates pe
   assert.equal(received.token, undefined);
   await broker.setMode("execute");
   finish(true);
-  await assert.rejects(pending, /denied/);
-  await assert.rejects(requestBroker({ ...broker.env, PI_WORKFLOW_TOKEN: "invalid" }, "root", { action: "state" }, transport.connect), /denied/);
+  await assert.rejects(pending, /approval was pending/);
+  await assert.rejects(requestBroker({ ...broker.env, PI_WORKFLOW_TOKEN: "invalid" }, "root", { action: "state" }, transport.connect), /Unavailable/);
 });
 
 test("pinned upstream packages register against the managed extension and preflight custom child tools", async t => {
@@ -61,7 +61,7 @@ test("pinned upstream packages register against the managed extension and prefli
     events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); },
-    registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {},
+    registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
     getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, setThinkingLevel() {},
   };
@@ -71,6 +71,8 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.has("workspace_read"));
   assert.ok(tools.has("subagent"));
   assert.ok(tools.has("submit_plan"));
+  assert.ok(tools.has("ask_user_question"));
+  assert.ok(!tools.has("ask_user"));
   assert.ok(!tools.has("read"));
   await assert.rejects(tools.get("workspace_read").execute("test", { path: "fixture" }), /not ready/);
   const jiti = createJiti(import.meta.url);
@@ -144,7 +146,7 @@ test("a disconnected child without terminal proof blocks further work and mode c
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(broker.policy.transitioning, true);
   await assert.rejects(broker.setMode("execute"), /terminal proof/);
-  await assert.rejects(requestBroker(broker.env, "root", { action: "authorize", tool: "read", args: { path: "fixture" } }, transport.connect), /denied/);
+  await assert.rejects(requestBroker(broker.env, "root", { action: "authorize", tool: "read", args: { path: "fixture" } }, transport.connect), /transition in progress/);
 });
 
 test("tool leases require a single-use ticket bound to the current epoch", async t => {

@@ -75,7 +75,7 @@ test("footer renders the status line first and the fleet rows under it", () => {
     const attached = [];
     const fleet = { attach: tui => attached.push(tui), render: (width, theme) => [theme.fg("dim", `rows@${width}`)] };
     const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; } } };
-    installFooter({ on() {} }, ctx, { fleet });
+    installFooter({ on() {}, registerEntryRenderer() {} }, ctx, { fleet });
     const tui = { requestRender() {} };
     const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", "plan"]]) };
     const lines = factory(tui, { fg: (_color, text) => text }, footerData).render(60);

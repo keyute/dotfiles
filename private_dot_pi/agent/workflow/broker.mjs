@@ -129,7 +129,10 @@ export async function startBroker(config, cwd, review, transport = {}) {
         } else throw new Error("Unknown process kind");
         leases.add(socket);
         socket.write(line({ ok: true, profile: policy.profile(request.role), cwd: policy.cwd, env, command, args }));
-      })().catch(() => socket.end(line({ ok: false, error: "Managed policy denied this request" })));
+      // The message is the model's only signal for why a call was refused
+      // (plan mode vs. protected path vs. capacity); every thrown text here is
+      // authored in this module or policy.mjs.
+      })().catch(error => socket.end(line({ ok: false, error: error?.message || "Managed policy denied this request" })));
     });
   });
   try {

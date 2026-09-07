@@ -3,19 +3,14 @@
 {{- $agentDir := printf "%s/.pi/agent" .chezmoi.homeDir -}}
 {{- $source := .chezmoi.sourceDir -}}
 {{- $denyRead := concat $sandbox.denyRead (list (printf "%s/workflow.json" $agentDir)) | uniq | sortAlpha -}}
+{{- /* Only live-loaded code is write-protected: the applied agent dir, the
+       shell init that launches pi, and the pinned node_modules the running CLI
+       and its children import from. Repo source is fair game, as for the other
+       harnesses; chezmoi apply is the gate. */ -}}
 {{- $denyWrite := list
       $agentDir
-      (printf "%s/scripts/pi-workflow" $source)
-      (printf "%s/private_dot_pi" $source)
-      (printf "%s/.chezmoidata/agents.yaml" $source)
-      (printf "%s/.chezmoitemplates/agent-sandbox" $source)
-      (printf "%s/.chezmoitemplates/mcp-servers" $source)
-      (printf "%s/.chezmoitemplates/pi-roles" $source)
-      (printf "%s/dot_zshrc.tmpl" $source)
       (printf "%s/.zshrc" .chezmoi.homeDir)
-      (printf "%s/node_modules" $source)
-      (printf "%s/package.json" $source)
-      (printf "%s/package-lock.json" $source) -}}
+      (printf "%s/node_modules" $source) -}}
 {{- $domains := concat .agent_sandbox.network.allowed_domains $pi.extras.allowed_domains (list "api.exa.ai") | uniq | sortAlpha -}}
 {{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
 {{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}

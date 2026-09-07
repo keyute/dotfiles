@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const source = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 const fixture = (t) => {
   const root = mkdtempSync(join(tmpdir(), "pi-workflow-render-"));
@@ -105,7 +105,10 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.equal(frontier, "gpt-6-astra");
   assert.match(run("cat", target(".pi/agent/docs/harness.md")), /Astra/);
   assert.match(run("cat", target(".codex/docs/harness.md")), /Astra/);
-  assert.match(run("cat", target(".pi/agent/extensions/workflow.ts")), /pi-workflow\/index.mjs/);
+  assert.match(run("cat", target(".pi/agent/extensions/workflow.ts")), /\/\.pi\/agent\/workflow\/index\.mjs/);
+  assert.match(run("cat", target(".pi/agent/node_modules")), /\/node_modules\s*$/);
+  assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/private_dot_pi")), false);
+  assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/node_modules")), true);
   assert.match(run("cat", target(".pi/agent/serena-context.yml")), /single_project: true/);
 
   const zsh = run("cat", target(".zshrc"));
@@ -125,6 +128,8 @@ test("diff renders each affected harness target against an isolated destination"
     ".pi/agent/subagent-tool-description.md",
     ".pi/agent/extensions/subagent/config.json",
     ".pi/agent/extensions/workflow.ts",
+    ".pi/agent/workflow/index.mjs",
+    ".pi/agent/node_modules",
     ".pi/agent/serena-context.yml",
     ".claude/settings.json",
     ".claude/CLAUDE.md",
