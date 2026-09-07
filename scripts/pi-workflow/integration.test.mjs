@@ -34,7 +34,8 @@ test("broker does not expose its credential to the classifier and invalidates pe
     return new Promise(resolve => { finish = resolve; });
   }, transport);
   t.after(() => broker.close());
-  const pending = requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "pwd" } }, transport.connect);
+  // A non-read-only command: read-only ones are allowed locally without review.
+  const pending = requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "npm test" } }, transport.connect);
   await reviewStarted;
   assert.equal(received.token, undefined);
   await broker.setMode("execute");
@@ -64,7 +65,7 @@ test("pinned upstream packages register against the managed extension and prefli
     getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, setThinkingLevel() {},
   };
-  const { installWorkflow } = await import("./index.mjs");
+  const { installWorkflow, mcpServerDefinitions } = await import("./index.mjs");
   const transport = memoryTransport();
   await installWorkflow(pi, configPath, "root", { startBroker: (config, cwd, review) => startBroker(config, cwd, review, transport), requestBroker: (env, role, request) => requestBroker(env, role, request, transport.connect) });
   assert.ok(tools.has("workspace_read"));
@@ -78,7 +79,12 @@ test("pinned upstream packages register against the managed extension and prefli
   const args = { agent: "fixture-reader", task: "Inspect fixture" };
   await checkChildLaunch(args, config, "root", ctx, resolveSubagentLaunchContract);
   assert.equal(args.agentScope, "user");
+  const blocking = { agent: "fixture-reader", task: "Inspect fixture", async: false };
+  await checkChildLaunch(blocking, config, "root", ctx, resolveSubagentLaunchContract);
+  assert.equal(blocking.async, true);
   await assert.rejects(checkChildLaunch({ ...args, workflowScript: "bad" }, config, "root", ctx, resolveSubagentLaunchContract), /workflow scripts/);
+  // Session-varying values would change pi-mcp-adapter's cache key every launch.
+  assert.deepEqual(mcpServerDefinitions({ mcp: { docs: { policy: { denied_tools: ["x"] } } } }, "root").docs.env, { PI_WORKFLOW_ROLE: "root" });
   const list = { action: "list", capabilities: true };
   await checkChildLaunch(list, config, "root", ctx, resolveSubagentLaunchContract);
   assert.equal(list.agentScope, "user");

@@ -14,6 +14,15 @@ import { installFooter } from "./footer.mjs";
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 
+// Definitions must be identical across sessions: pi-mcp-adapter keys its
+// metadata cache on them, env included, and a cold cache costs a connect and
+// describe round trip per server per session. The runner takes the broker
+// socket and token from the inherited process environment, never from here.
+export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.entries(config.mcp).map(([name, entry]) => [name, {
+  command: process.execPath, args: [runnerPath, "server", name], env: { PI_WORKFLOW_ROLE: role },
+  excludeTools: entry.policy.denied_tools, ...(entry.policy.allowed_tools?.length ? { includeTools: entry.policy.allowed_tools } : {}), approveTools: true,
+}]));
+
 // Claude-Code-style input caret. Rendered lines carry their cursor marker
 // inline, so prefixing the first content line shifts the cursor correctly;
 // if the render shape ever changes, the caret silently disappears instead
@@ -133,7 +142,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     publishEpoch();
     ready = true;
     pi.setThinkingLevel(mode === "plan" ? config.models.planEffort : config.models.defaultEffort);
-    ctx.ui.setStatus("workflow", `${mode} · ${broker.policy.approval} approvals · sandboxed tools`);
+    ctx.ui.setStatus("workflow", mode);
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -181,7 +190,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     } });
     pi.registerCommand("approvals", { description: "Choose auto-reviewed or individually prompted approvals", handler: async (_args, ctx) => {
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
-      if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); ctx.ui.setStatus("workflow", `${broker.policy.mode} · ${value} approvals · sandboxed tools`); }
+      if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); ctx.ui.setStatus("workflow", broker.policy.mode); }
     } });
     pi.registerTool({ name: "ask_user", label: "Question", description: "Ask the user for a missing decision.", parameters: Type.Object({ question: Type.String(), options: Type.Optional(Type.Array(Type.String())) }), async execute(_id, args) {
       if (!currentContext.hasUI) return resultText("User input unavailable; stop and report the missing decision.");
@@ -207,11 +216,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   if (permittedTools.includes("mcp")) {
     const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
-    const mcpServers = Object.fromEntries(Object.entries(config.mcp).map(([name, entry]) => [name, {
-      command: process.execPath, args: [runnerPath, "server", name], env: { ...env, PI_WORKFLOW_ROLE: role },
-      excludeTools: entry.policy.denied_tools, ...(entry.policy.allowed_tools?.length ? { includeTools: entry.policy.allowed_tools } : {}), approveTools: true,
-    }]));
-    await createMcpAdapter({ config: { mcpServers, settings: { hostConfigDiscovery: "off", directTools: false, scriptMode: false, approveTools: true, toolResultRendering: "compact", collapsedResultLines: 1, autoAuth: false, sampling: false, elicitation: false } } })(pi);
+    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, scriptMode: false, approveTools: true, toolResultRendering: "compact", collapsedResultLines: 1, autoAuth: false, sampling: false, elicitation: false } } })(pi);
   }
   pi.on("session_shutdown", async () => {
     ready = false;

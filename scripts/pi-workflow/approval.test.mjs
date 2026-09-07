@@ -7,6 +7,7 @@ test("only structured classifier decisions are accepted", () => {
     assert.equal(parseDecision({ content: [{ type: "text", text }] }), "ask");
   }
   assert.equal(parseDecision({ content: [{ type: "text", text: '{"decision":"allow"}' }] }), "allow");
+  assert.equal(parseDecision({ content: [{ type: "text", text: '```json\n{"decision":"deny"}\n```' }] }), "deny");
   assert.equal(parseDecision({ stopReason: "error", content: [] }), "ask");
 });
 

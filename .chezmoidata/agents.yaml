@@ -278,11 +278,15 @@ agent_mcp_servers:
     package_bin: exa-mcp-server
     args: []
     auto_approve_tools: true
-    readonly_tools: [web_search_exa, get_code_context_exa, company_research_exa, crawling_exa]
+    # web_fetch_exa is 3.4.x's fetch tool; crawling_exa is its legacy name and
+    # stays listed while the build still carries it
+    readonly_tools: [web_search_exa, web_fetch_exa, get_code_context_exa, company_research_exa, crawling_exa]
     # 3.4.1 added Exa-side agent orchestration: these dispatch and bill remote
     # agentic runs, a wider grant than the search/fetch tools blanket approval
     # was given for.
     denied_tools:
+      - deep_researcher_start
+      - deep_researcher_check
       - agent_run
       - agent_create_run
       - agent_get_run

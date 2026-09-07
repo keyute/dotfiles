@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Policy, canonical, workerTools, publicToolName } from "./policy.mjs";
+import { Policy, canonical, isReadOnlyCommand, workerTools, publicToolName } from "./policy.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-policy-test-"));
@@ -21,8 +21,23 @@ test("plan denies direct writes and sandbox omits workspace writes", t => {
   assert.throws(() => p.inspect("root", "write", { path: "new" }), /disabled/);
   assert.ok(!p.profile("root").filesystem.allowWrite.includes(p.cwd));
   p.mode = "execute";
-  assert.equal(p.inspect("root", "write", { path: "new" }), "review");
+  assert.equal(p.inspect("root", "write", { path: "new" }), "allow");
   assert.throws(() => p.inspect("reviewer", "edit", { path: "new" }), /disabled/);
+});
+
+test("read-only shell commands skip review in both modes; anything else falls to it", t => {
+  const p = fixture(t);
+  for (const command of ["git log --oneline -5 && rg foo src", "ls -la | head -20", "sed -n '1,40p' file", "find . -name '*.mjs'", "cat *.md", "git -C x log"]) {
+    assert.equal(isReadOnlyCommand(command), !command.startsWith("git -C"), command);
+  }
+  for (const command of ["find . -name x -delete", "rg --pre cat x", "rg -nz x", "git commit -m x", "cat $(which x)", "ls > out", "ls; rm -rf x", "npm run test:pi", "ls &", "rg --p're=/bin/sh' x y", "find . -na'me' x -de'lete'", 'grep "a b" file', "rg --p* x y", "find . -name x *"]) {
+    assert.equal(isReadOnlyCommand(command), false, command);
+  }
+  assert.equal(p.inspect("root", "bash", { command: "git status" }), "allow");
+  assert.equal(p.inspect("root", "bash", { command: "npm run test:pi" }), "review");
+  p.mode = "execute";
+  assert.equal(p.inspect("root", "bash", { command: "git status" }), "allow");
+  assert.equal(p.inspect("root", "bash", { command: "npm run test:pi" }), "review");
 });
 
 test("canonical checks cover missing files, symlinks, sensitive and managed paths", t => {

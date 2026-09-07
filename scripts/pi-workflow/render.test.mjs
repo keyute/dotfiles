@@ -109,6 +109,8 @@ test("diff renders each affected harness target against an isolated destination"
     ".pi/agent/settings.json",
     ".pi/agent/AGENTS.md",
     ".pi/agent/docs/harness.md",
+    ".pi/agent/subagent-tool-description.md",
+    ".pi/agent/extensions/subagent/config.json",
     ".pi/agent/extensions/workflow.ts",
     ".pi/agent/serena-context.yml",
     ".claude/settings.json",

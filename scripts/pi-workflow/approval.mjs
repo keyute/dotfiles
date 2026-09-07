@@ -1,8 +1,9 @@
 export function parseDecision(message) {
   if (message.stopReason === "error" || message.stopReason === "aborted") return "ask";
   try {
-    const text = message.content.filter(part => part.type === "text").map(part => part.text).join("");
-    const result = JSON.parse(text);
+    const text = message.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
+    // Small models fence their JSON despite the instruction not to.
+    const result = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
     return ["allow", "deny", "ask"].includes(result.decision) ? result.decision : "ask";
   } catch { return "ask"; }
 }
@@ -23,5 +24,8 @@ export async function reviewAction(ctx, config, task, request) {
   }
   if (decision === "allow") return true;
   if (decision === "deny" || !ctx.hasUI) return false;
-  return ctx.ui.confirm("Approve this action once?", JSON.stringify({ tool: request.tool, server: request.server, args: request.args }).slice(0, 12_000));
+  const action = JSON.stringify({ tool: request.tool, server: request.server, args: request.args });
+  // The dialog can sit behind an unattended terminal; make the pending state visible.
+  ctx.ui.notify?.(`Awaiting approval: ${action.slice(0, 80)}`, "warning");
+  return ctx.ui.confirm("Approve this action once?", action.slice(0, 12_000));
 }

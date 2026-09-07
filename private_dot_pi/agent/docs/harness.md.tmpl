@@ -43,7 +43,7 @@ completed-task cost, including retries and delegation. Sol promotional pricing
 lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
 [Official rate card](https://learn.chatgpt.com/docs/pricing).
 
-## Planning and permissions (last verified 2026-09-06)
+## Planning and permissions (last verified 2026-09-07)
 
 - New sessions start in plan mode with auto-reviewed approvals. Source writes
   remain disabled; temporary build/cache artifacts use designated writable roots.
@@ -51,7 +51,14 @@ lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
   `/plan` revokes child sessions and sandbox processes before enabling planning.
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
+- Shell commands are checked locally first, as Claude Code and Codex do: a
+  command made only of read-only words (`ls`, `cat`, `grep`, `rg`, `find`,
+  `git status|log|diff|show|branch`, `sed -n`, …) joined by `&&`/`;`/`|` runs
+  without review; anything else — substitutions, redirects, writes, scripts —
+  goes to the auto classifier, then to a confirm dialog on `ask`. File edits
+  inside the workspace run without review once execution is approved.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
+  A pending dialog is announced in the footer and times out after ten minutes.
 - `ask_user` presents a decision with choices or free text. Approval dialogs are
   once-only; MCP approvals are never cached across a mode change.
 - If a process disappears without acknowledging termination, the workflow blocks.
@@ -77,28 +84,34 @@ Extensions are trusted host code. Per-tool SRT is not containment against a
 malicious extension. No fallback to unsandboxed execution exists in the managed
 tools. Linux needs bubblewrap, socat and ripgrep; macOS needs sandbox-exec.
 
-## Specialists, skills and display (last verified 2026-09-06)
+## Specialists, skills and display (last verified 2026-09-07)
 
 Specialists under `~/.pi/agent/agents` render from the shared roster. Each has an
 explicit OpenAI model, tool list and mandatory child policy extension. Native
 builtin names cannot substitute for missing `workspace_*` tools. Read-only
 specialists stay read-only even when the root enters execution.
 
-Use named `subagent` launches with an agent and bounded task. Context is fresh;
-MCP-using specialists run in the background. Up to three child sessions share the
-root policy. Status, stop, interrupt and non-recovering steer are enabled; arbitrary
-workflow scripts, project role overrides, revival and mutating management are not.
-Use `bg_wait` in the root for background results. FleetView above the editor shows
-ongoing progress without a status command.
+Use named `subagent` launches with an agent and bounded task. Context is fresh
+and every child runs in the background; up to three share the root policy, so
+launch independent children in one turn. Status, stop, interrupt and
+non-recovering steer are enabled; arbitrary workflow scripts, project role
+overrides, revival and mutating management are not. Results arrive as
+notifications — `bg_wait` only when the current turn depends on them. FleetView
+above the editor shows ongoing progress without a status command.
 
 Shared skills remain discoverable under `~/.agents/skills`; explicit skill loading
 is available through Pi. Tool output starts collapsed: Ctrl+O expands it. MCP
 results show a one-line preview. This is keyboard expansion, not per-card mouse
 interaction identical to Claude Code.
 
-## MCP and code intelligence (last verified 2026-09-06)
+## MCP and code intelligence (last verified 2026-09-07)
 
-Use the `mcp` proxy to discover and call Context7, Exa, Playwright and Serena.
+Use the `mcp` proxy to discover and call Context7, Exa, Playwright and Serena —
+tools load on demand, none sit in context: `mcp({ search: "web search" })`
+finds tools from the cached catalog, `mcp({ describe: "web_search_exa" })`
+shows one schema, `mcp({ tool: "web_search_exa", args: { … } })` calls it.
+`mcp__<server>__<tool>` names do not exist here; a server shown as not
+connected connects on the first call.
 Configuration is explicit; other harnesses' private configuration is not imported.
 MCP scripting, sampling and automatic OAuth discovery are disabled. The approval
 broker checks the resolved server/tool/arguments, not just the outer proxy call.

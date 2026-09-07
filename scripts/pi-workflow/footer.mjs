@@ -180,7 +180,8 @@ export function installFooter(pi, ctx) {
           changes: state.changes,
         });
         const left = segments.map(s => (s.color ? theme.fg(s.color, s.text) : s.text)).join(separator);
-        const right = [...footerData.getExtensionStatuses().values()].join(separator);
+        // Only the workflow mode; other extensions keep their own surfaces.
+        const right = footerData.getExtensionStatuses().get("workflow") ?? "";
         const pad = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
         return [truncateToWidth(left + pad + right, width)];
       },

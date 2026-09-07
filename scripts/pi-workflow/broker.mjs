@@ -226,7 +226,9 @@ export function requestBroker(env, role, request, connect = createConnection) {
     const socket = connect(env.PI_WORKFLOW_SOCKET);
     let buffer = "";
     let settled = false;
-    const timer = setTimeout(() => socket.destroy(new Error("Policy request timed out")), 120_000);
+    // Approvals may wait on a human; everything else is answered by the broker itself.
+    const approval = ["authorize", "mcp"].includes(request.action);
+    const timer = setTimeout(() => socket.destroy(new Error(approval ? "Approval timed out waiting for the user" : "Policy request timed out")), approval ? 600_000 : 120_000);
     const fail = error => { clearTimeout(timer); if (!settled) { settled = true; reject(error); } };
     socket.on("error", fail);
     socket.on("close", () => fail(new Error("Parent policy disconnected")));

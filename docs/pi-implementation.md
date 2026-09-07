@@ -1,6 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-07 (pi-client gap, caret fix, catppuccin themes). Source
+Last updated: 2026-09-07 (transcript comparison fixes: forced-async children,
+local read-only command check, MCP cache key, Exa tool list). Source
 implementation complete; not applied or live-tested on the host.
 
 ## Decisions
@@ -45,10 +46,11 @@ implementation complete; not applied or live-tested on the host.
   against internals, per-invocation server starts forfeit LSP's benefit, and
   the package is young/solo/unproven). Serena covers symbols; diagnostics via
   toolchains in `workspace_bash`. Reintroduce only on measured pain.
-- pi-subagents' async runner resolves `@earendil-works/pi-client/unix`, which
-  no pi package dependency provides (its vendored fallback covers only
-  pi-server on pi 0.85.0 exactly); `@earendil-works/pi-client` is pinned at the
-  root so background children can start. Re-check on every pi/pi-subagents bump.
+- pi-subagents 0.66.0 (bumped 2026-09-07) resolves `@earendil-works/pi-client/unix`
+  only when the host pi is exactly 0.85.0 (`runner-aliases.ts`
+  `PI0850_PEER_ALIASES`, #1944), so the root `@earendil-works/pi-client` pin
+  added for 0.65.1 was removed. Re-check on every pi/pi-subagents bump: the
+  child-preflight test passes without it, live background launch is the gate.
 - The host copies the settings `editorPaddingX` (default 0) onto custom editors
   right after the factory runs and on settings reloads; `CaretEditor` clamps
   `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`
@@ -60,6 +62,36 @@ implementation complete; not applied or live-tested on the host.
   during planning. uv tool/python dirs are also redirected into scratch (they
   neighbor denied credentials), with uv's macOS cache allowed in the shared
   sandbox data.
+- 2026-09-07, from the same-prompt comparison against Claude Code and Codex
+  (pi 20 min vs Codex 5.5 min at equal cost): every child launch is forced
+  `async` in the `tool_call` hook — pi-subagents admits one foreground launch
+  per turn and FleetView shows async runs only — and the parent-facing tool
+  description is the managed `subagent-tool-description.md` (upstream's tells
+  the model to use `workflowScript`, which policy blocks).
+- 2026-09-07: shell authorization checks locally first, as Claude Code and
+  Codex do. `isReadOnlyCommand` (union of Codex's `is_safe_command` set and
+  Claude Code's read-only Bash set, fail-closed on any substitution, redirect,
+  grouping, quote inside a token, or unquoted glob where flags decide — the
+  last two were Codex-review catches: bash reassembles `--p're=x'` and expands
+  `--p*` into flags the rules never saw) allows without review; everything else
+  keeps the classifier.
+  Execute-mode edits inside the workspace allow after the path check. The SRT
+  profile, not the list, is the security boundary. Reuse was checked:
+  `@gotgenes/pi-permission-system` has the best pi-side classifier but does
+  not export it; no generic npm library ships a maintained read-only list.
+  Deferred hardening options: Codex-style dangerous-command denylist (forced
+  `rm`, `sudo`/`env` unwrapping); a separate network-capable bash lease (the
+  SRT README warns domain filtering cannot tell fetch from push on github.com).
+- 2026-09-07: MCP server definitions carry only `PI_WORKFLOW_ROLE` in `env`.
+  pi-mcp-adapter keys `~/.pi/agent/mcp-cache.json` on the definition including
+  env, so the per-session broker socket/token made every session a cache miss
+  and cost a connect/describe dance per server. The runner reads socket/token
+  from the inherited process environment.
+- 2026-09-07: approval requests (`authorize`/`mcp`) time out after 600 s with
+  a user-facing message and announce the pending dialog; classifier replies
+  fenced in ```json parse. Known residuals (Codex review): a timed-out
+  approval does not cancel the queued review; tickets are not bound to the
+  reviewed arguments; the confirm dialog truncates at 12,000 chars.
 
 ## Verification and remaining gates
 
