@@ -103,7 +103,6 @@ live-tested on the host.
   fenced in ```json parse. Known residuals (Codex review): a timed-out
   approval does not cancel the queued review; tickets are not bound to the
   reviewed arguments; the confirm dialog truncates at 12,000 chars.
-
 - 2026-09-07 (third same-prompt run, on the sandbox-parity source): pi 8m07s vs
   Codex 5m11s at equal or lower tokens (342k uncached / 3.5M cached / 27.7k out
   vs ~448k / 4.5M / ~30k). Time went to: 41 s before the first accepted launch

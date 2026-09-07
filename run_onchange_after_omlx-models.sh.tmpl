@@ -83,6 +83,12 @@ while IFS='|' read -r id path repo bits group; do
 	if [ -n "$bits" ]; then
 		echo "Converting omlx model $id from ${repo}…"
 		rm -rf "$tmp" # mlx_lm refuses an existing path, and keeps no resume state
+		# mlx_lm 0.31.3 (omlx 0.6.4) fetches only weight/config patterns, then
+		# re-opens the repo with local_files_only=True, and huggingface_hub >= 1.x
+		# refuses the incomplete snapshot (IncompleteSnapshotError). A full fetch
+		# first makes the cached snapshot whole; convert then reads from cache.
+		# Fixed on mlx-lm main — drop when omlx ships it.
+		"$hf" download "$repo"
 		"$py" -m mlx_lm convert --hf-path "$repo" \
 			-q --q-bits "$bits" --q-group-size "$group" \
 			--mlx-path "$tmp"

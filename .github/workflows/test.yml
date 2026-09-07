@@ -1,4 +1,4 @@
-name: verify
+name: Test
 
 on:
   pull_request:
@@ -8,31 +8,18 @@ on:
     branches:
       - main
   merge_group:
-  workflow_dispatch:
-  schedule:
-    - cron: "17 2 * * 1"
 
 permissions: {}
 
-# Keyed on event_name as well as ref so a push cannot cancel the weekly
-# full-apply run — they share neither duration nor purpose.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  group: ${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
-
-defaults:
-  run:
-    shell: bash
 
 jobs:
   # docs/, README.md, AGENTS.md, CLAUDE.md and .claude/ are chezmoi-ignored —
   # repo-local only — so a commit touching nothing else cannot change a
   # rendered target. Everything else, this workflow included, runs render.
   changes:
-    # schedule and workflow_dispatch have no diff base to resolve.
-    if: >-
-      github.event_name == 'pull_request' || github.event_name == 'push'
-      || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,6 +30,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # merge_group runs diff against merge_group.base_sha, which
+          # paths-filter fetches when it isn't local — a fetch that
+          # persist-credentials: false leaves unauthenticated. fetch-depth: 0
+          # puts the base in the clone so it never fires. Pull requests read
+          # the file list from the API and don't need this.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Detect changed paths
@@ -68,9 +61,7 @@ jobs:
   # with 1Password stubbed so no real secret ever reaches a runner.
   render:
     needs: changes
-    # Fail open: a skipped (schedule/dispatch) or failed `changes` must still
-    # run the render rather than silently pass by skipping it.
-    if: always() && needs.changes.outputs.chezmoi != 'false'
+    if: needs.changes.outputs.chezmoi != 'false'
     strategy:
       fail-fast: false
       matrix:
@@ -112,8 +103,8 @@ jobs:
         run: brew install shellcheck
 
       # execute-template renders for the host OS, so each matrix leg checks its
-      # own branch of the templates. The fresh-* jobs actually run these, but
-      # only weekly and only down the paths they happen to take.
+      # own branch of the templates. fresh.yml actually runs these, but only
+      # weekly and only down the paths they happen to take.
       - name: Render and check run scripts
         run: |
           set -euo pipefail
@@ -153,87 +144,11 @@ jobs:
           done <<< "$bins"
           [ "$missing" -eq 0 ]
 
-  # Weekly + on-demand only (no path filters by design): a full fresh-machine
-  # apply with scripts and externals included. The point is ordering — a
-  # script invoking a binary that no earlier step installed must fail the
-  # apply. Manual baseline is git + chezmoi (+ Homebrew on macOS) only:
-  # node/npm/jq come from the repo's own run_once bootstrap script, so the
-  # apply is validated from bare.
-  fresh-macos:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: macos-latest
-    permissions:
-      contents: read
-    timeout-minutes: 180
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: ./.github/actions/setup-verify-env
-
-      - name: Disk before
-        run: df -h /
-
-      # Real home, everything included: npm deps + Playwright Chromium, full
-      # `brew bundle --global` (formulae, casks incl. mactex, omlx service),
-      # nvim Lazy restore, omlx model downloads/conversions.
-      # `brew bundle cleanup --force` will uninstall runner-preinstalled
-      # formulae not in the Brewfile — harmless on an ephemeral VM, just slow.
-      - name: Full apply
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: chezmoi -S "$GITHUB_WORKSPACE" apply --no-tty
-
-      - name: Disk after
-        if: always()
-        run: df -h /
-
-  fresh-linux:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    # Deliberately unpinned: this job exists to prove a fresh apply still works
-    # on whatever Fedora is current. Pinning a release would defeat its purpose
-    # and turn a real regression into a silently stale pass. The suppression has
-    # to sit on the offending line, not above it.
-    container: fedora:latest # zizmor: ignore[unpinned-images]
-    timeout-minutes: 90
-    steps:
-      # Container-only artifacts, present on a real Fedora install: sudo, git,
-      # tar/gzip (actions/checkout fallback), dnf5-plugins (`dnf copr` in the
-      # dnf-repos script). node/npm/jq are deliberately NOT here — the repo's
-      # run_once bootstrap script must provide them.
-      - name: Bootstrap
-        run: dnf install -y sudo git tar gzip dnf5-plugins
-
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # After checkout: a local action has to exist on disk to be resolved.
-      - uses: ./.github/actions/setup-verify-env
-        with:
-          bin_dir: /usr/local/bin
-
-      # Real home, everything included: dnf vendor repos + metapac copr +
-      # development-tools (before), npm deps, then metapac sync and nvim Lazy
-      # restore (after).
-      - name: Full apply
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: chezmoi -S "$GITHUB_WORKSPACE" apply --no-tty
-
   # One stable check name for branch protection, so the required-checks list
-  # does not have to track matrix legs or the conditional fresh-* jobs. It
-  # cannot speak for lint.yml — that is a separate workflow, and has to be
-  # required alongside this one.
+  # does not have to track matrix legs.
   ci:
     if: always()
-    needs: [changes, render, fresh-macos, fresh-linux]
+    needs: [changes, render]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
