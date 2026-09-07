@@ -5,13 +5,15 @@ flags, modes) is injected into every session or answerable live via the
 claude-code-guide agent — it does not belong here. If behavior seems changed,
 verify with that agent and update this file.
 
-## Models (last verified 2026-07-31)
+## Models (last verified 2026-09-07)
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo as
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
   session. The pin exists to hold the current Opus in its long-context variant
-  (`[1m]`); it is not the top tier — Fable 5 sits above it, explicit-selection
-  only (`/model fable`).
+  (`[1m]`); it is not the top tier — Fable 5.1 sits above it, explicit-selection
+  only (`/model fable` resolved to Fable 5.1 on 2026-09-07). Pin kept on Opus 5
+  at the 2026-09-07 audit: Anthropic's "low-effort Fable 5.1 beats Opus on cost
+  per task" claim is API pricing, not Max-plan metering.
 - Pins use explicit model IDs, never bare aliases: aliases re-resolve across
   CLI releases (`opus`/`sonnet` float to the newest generation at v2.1.219+,
   and `haiku` was observed resolving to sonnet-5), so an alias pin can silently
@@ -22,27 +24,36 @@ verify with that agent and update this file.
   subagents inherit the session model; a subagent naming an unavailable model
   silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
   (lowest tier likely to one-shot the task).
-- Subscription limits (Max plan; re-verified 2026-08-28 against official docs):
-  a rolling 5-hour session window plus a shared weekly pool. Docs still list
-  Sonnet and Opus per-model sub-limits under it ("You've hit your Sonnet/Opus
-  limit", code.claude.com errors doc); Fable 5 has no bucket of its own — it
-  draws the shared pool under a 50% ceiling. The account UI has been observed
-  disagreeing on the Sonnet sub-limit's existence — reconcile against `/usage`
-  next time a limit binds. Cheaper models burn the pool more slowly ("Opus 5
-  consumes the budget fastest; Haiku barely dents it", costs doc), so leaf
-  work on small/mid subagents spares the pool — provided the pin actually ran
-  the cheap tier.
-- Fable 5 is escalation-only (hardest long-horizon architecture/synthesis —
+- Subscription limits (Max plan; re-checked 2026-09-07 against the costs doc):
+  a rolling 5-hour session window plus a shared weekly pool, "shared across all
+  models"; the errors doc still names Opus and Sonnet family sub-limit messages.
+  The earlier notes that Fable draws the shared pool under a 50% ceiling and
+  that "Opus 5 consumes the budget fastest; Haiku barely dents it" are no longer
+  in the costs doc — unverified, re-check against the errors doc or support
+  article next time a limit binds, and reconcile the Sonnet sub-limit against
+  `/usage`. Leaf work on small/mid subagents still spares the pool — provided
+  the pin actually ran the cheap tier.
+- Fable 5.1 is escalation-only (hardest long-horizon architecture/synthesis —
   current Opus is near-parity on ordinary coding at normal metering): a grown
   session `/model`-bumped into Fable re-meters its whole context against the
   shared pool at Fable's weight every turn — the rationale behind the CLAUDE.md
-  intake rule.
+  intake rule. Fable 5.1's own quirks (whole-file rewrites, fewer progress
+  updates, under-batched tool calls) are projected in CLAUDE.md or carried by
+  the harness prompt; Opus 5's (over-delegation, over-verification) showed no
+  signal in the 2026-09-07 sweep — Opus 5 and Fable sessions delegated at the
+  same rate (3.8% vs 3.5% of tool calls) under the model-neutral rule.
 - `implementer` subagent (added 2026-08-28): mid-tier executor for
   spec-complete mechanical write work. Rationale is weighted metering plus
   grown-context re-metering — a bounded edit delegated out of a grown `[1m]`
   session avoids re-sending the whole context at Opus rates, independent of
-  sub-limit structure. Revisit trigger: next `agent-instructions-audit`
-  transcript sweep checks implementer uptake and rework/redo signals.
+  sub-limit structure. 2026-09-07 sweep: 8 dispatches in its first week, one
+  with a haiku override that silently undid the mid pin; rework signal not
+  measurable from metadata. Revisit trigger: next `agent-instructions-audit`
+  transcript sweep re-checks uptake and any redo pattern.
+- Roster gap flagged 2026-09-07: 113 of 183 `general-purpose` dispatches in 30
+  days carried a hand-picked `sonnet` model, mostly web research — the
+  friction signal for a scoped mid-tier `researcher` subagent (read-only,
+  web + Exa + context7). Decision deferred; revisit at the next audit.
 - If Codex is available, `codex-review` / `codex-advisor` are read-only Codex
   consultation for high-risk diffs or stuck calls; Claude and Codex meter on
   independent windows, so read-work can offload to Codex — write-work means driving
@@ -54,11 +65,13 @@ verify with that agent and update this file.
   (2/265), with ~2/3 of reviews returning zero-finding "approve"; every
   surviving catch sat in a high-stakes category (auth, data loss, migration
   safety). External practitioner consensus and Anthropic's yield-by-size data
-  agree: gate on risk first, breadth second, never blanket. Revisit trigger:
-  next `agent-instructions-audit` transcript sweep re-measures firing rate and
-  needs-attention rate — expect single-digit weekly firings and a hit rate
-  back above ~3%; if volume stays high or the rate stays under ~2%, tighten
-  further or drop the unprompted clause.
+  agree: gate on risk first, breadth second, never blanket. 2026-09-07 sweep:
+  firings fell from 13–28/day to ~1/day once the recalibration applied
+  (09-05 onward); hit rate not yet measurable (5 verdict mentions). Revisit
+  trigger: next `agent-instructions-audit` transcript sweep, with at least two
+  weeks of post-apply data, re-measures both — expect single-digit weekly
+  firings and a hit rate back above ~3%; if volume stays high or the rate
+  stays under ~2%, tighten further or drop the unprompted clause.
 
 ## Codex transport: owned MCP bridge (decision 2026-09-05)
 
@@ -109,3 +122,6 @@ verify with that agent and update this file.
 - Trial decision trigger: revisit at the next `agent-instructions-audit`, or
   sooner once one harness clearly owns all interactive GPT sessions — then
   demote or drop the loser (codex keeps the review-backend role regardless).
+  2026-09-07 audit: two days in, not measurable from Claude transcripts (pi and
+  codex session stores are out of the sweep's scope) — decide from your own
+  usage at the next audit.

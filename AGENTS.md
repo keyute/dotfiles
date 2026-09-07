@@ -27,13 +27,15 @@ future session, so hold edits to the gates below.
 
 ### Gates — a rule earns its place only if all four hold
 
-*Why: instruction-following is a finite budget shared with the harness's
-own system prompt; overspending erodes compliance across the whole set, not
-just the new rule's.*
+*Why: always-loaded instructions compete through contradiction, duplication,
+density, and the reasoning cost every line adds on every turn; overspending
+erodes compliance across the whole set, not just the new rule's.*
 
 1. **Observed failure**: it fixes a diagnosed, recurring mistake — never an
    anticipated one. Diagnose first: a mechanical mistake wants enforcement,
    a one-off wants a better prompt; only a durable intent gap wants a rule.
+   A failure the vendor documents for the model generation in use counts as
+   observed when the harness prompt does not already carry the fix.
 2. **Non-inferable**: agents cannot derive it at runtime from the code, the
    harness's own system prompt, or enforced policy.
 3. **Durable intent**: it encodes what I want, not a workaround for a

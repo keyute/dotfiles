@@ -63,11 +63,22 @@ when my actual intent changes, never to track harness churn.
 
 ## Engineering discipline
 
-- **Simplicity**: keep implementations simple; do not overengineer.
-  *Why: unrequested abstraction is debt.*
+- **Simplicity**: keep implementations simple — the simplest thing that
+  works: no features, refactors, or abstractions beyond the task, no helpers
+  for one-shot operations, no speculative error handling, fallbacks, or
+  validation without a boundary, invariant, or observed failure to justify it
+  (validate at system boundaries, trust internal code), and no feature flags
+  or compatibility shims where the code can just change. *Why: unrequested
+  abstraction is debt, and current models add it by default — more at higher
+  effort.*
 - **Style matching**: match the surrounding code's style, design language,
   and colocation; when project rules don't settle it, derive the pattern
   from the codebase before writing. *Why: consistency outlives preference.*
+- **Targeted edits**: edit a file surgically when the result is the same;
+  rewrite a whole file only when the change needs it. *Why: rewrites cost
+  output tokens and wall-clock — the current generation was measured at ~3×
+  more whole-file writes for the same result — and bury the real change in a
+  full-file diff.*
 - **Comment discipline**: do your reasoning in scratch space, not the source;
   deliver code whose comments carry only what a reader can't reconstruct from
   it — non-obvious rationale, constraints, invariants, units, protocol/format
@@ -81,6 +92,27 @@ when my actual intent changes, never to track harness churn.
 - **Test discipline**: where tests are wired up, write a simple meaningful
   repro test — see it fail, fix, see it pass; no unnecessary cases.
   *Why: a failing repro proves both bug and fix.*
+- **Scope of extras**: a pre-existing bug, performance concern, or adjacent
+  cleanup found while working goes in the summary as a follow-up, not into
+  the change, unless the requested behaviour cannot work without it; keep
+  scratch checks out of the repo, and add tests to the repository only where
+  the task asks or it already keeps tests for that kind of change, sized like
+  their neighbours. *Why: models deliver what was asked and more; an explicit
+  leave-out cuts the extras and the committed scratch tests with no loss in
+  task success, and every extra widens the review.*
+- **Test integrity**: make the code pass the tests, never the tests pass the
+  code — no hard-coding for known inputs, no editing, skipping, or deleting a
+  failing test; when a test or the task itself is wrong, say so, and stop
+  only when it blocks a correct completion or needs my decision. *Why: agents
+  optimise for the gate — skipped and re-parameterised tests and hard-coded
+  returns are documented on current models even with a no-skip rule in
+  context — and a weakened test is a false green that outlives the session.*
+- **Faithful reporting**: claims about actions taken, state, and verification
+  rest on a tool result from this session: failing tests with the relevant
+  output, skipped steps by name, unverified work labelled as such. *Why:
+  self-reports drift from what ran — audits found claimed verifications that
+  never executed and edited files left out of summaries — and a false "done"
+  costs more than an honest "blocked".*
 - **Review focus**: when asked to review, gate ship/no-ship on what makes
   the change unshippable now; an edge case worth fixing only once a real
   user hits it gets a mention in the review — no code comment, no fix until
@@ -90,9 +122,10 @@ when my actual intent changes, never to track harness churn.
   security, data, concurrency, migrations — check the artifact against the
   requirements with a fresh set of eyes before calling it done: hand a subagent
   both, not your own reasoning trace; skip trivial, easily-reverted changes.
-  *Why: a producing context silently endorses a measurable share of its own
-  behaviour-changing output, and that blind spot does not shrink as the model
-  gets stronger.*
+  *Why: a producing context endorses its own output — same model, same diff,
+  a self-review passed what a fresh-context reviewer failed — and the bias is
+  structural rather than a capability gap; the high-stakes scope keeps it from
+  doubling the verification current models already do unprompted.*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*
@@ -115,9 +148,11 @@ when my actual intent changes, never to track harness churn.
   *Why: presets are tuned once, not per session.*
 - **Reviewer contract**: reviewers are read-only and share one
   severity/reporting contract. *Why: comparable findings across languages.*
-- **Skill bodies**: imperative, minimal numbered steps; never duplicate what
-  the harness already provides natively. *Why: duplication drifts and burns
-  instruction budget.*
+- **Skill bodies**: imperative; numbered steps only where order matters,
+  otherwise goal, constraints, and definition of done; never duplicate what
+  the harness already provides natively. *Why: step choreography degrades
+  current models' output, and duplication drifts and burns instruction
+  budget.*
 
 ## Harness-specific intent
 

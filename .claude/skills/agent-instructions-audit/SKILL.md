@@ -18,13 +18,16 @@ covers it natively — the same projection must serve them all.
 1. **Gather inputs.** Read `docs/agents-baseline.md`,
    `.chezmoitemplates/agent-instructions.md`,
    `private_dot_claude/CLAUDE.md.tmpl`, `private_dot_codex/AGENTS.md.tmpl`,
-   the rendered outputs via `chezmoi cat ~/.claude/CLAUDE.md` and
-   `chezmoi cat ~/.codex/AGENTS.md`, plus `.chezmoitemplates/subagents/*.md`,
+   `private_dot_pi/agent/AGENTS.md.tmpl`, the rendered outputs via
+   `chezmoi cat ~/.claude/CLAUDE.md`, `chezmoi cat ~/.codex/AGENTS.md`, and
+   `chezmoi cat ~/.pi/agent/AGENTS.md`, plus `.chezmoitemplates/subagents/*.md`,
    `.chezmoitemplates/skills/*.md`, and the repo-local
    `.claude/skills/*/SKILL.md` bodies (this skill included). Extract the
    principle list from the baseline — it drives every later step; never
-   hardcode topics. A principle may carry a `(claude)`/`(codex)` tag; a tagged
-   principle is probed and reconciled only against that harness.
+   hardcode topics. A principle may carry a `(claude)`/`(codex)`/`(pi)` tag; a
+   tagged principle is probed and reconciled only against that harness. Pi has
+   no probe path from here — record its coverage as unverified and reconcile
+   it with the Codex verdicts, which share its model family.
 
 2. **Self-probe (session model — always runs).** For each principle applicable
    to Claude (agnostic + `(claude)`-tagged), judge from your own system prompt only — mentally excluding anything sourced
@@ -81,7 +84,8 @@ covers it natively — the same projection must serve them all.
    with its `model` override for Codex, and the same per Codex tier ID.
    Flag dead pins.
    Also sweep the on-demand docs (`private_dot_claude/docs/*.tmpl`,
-   `private_dot_codex/docs/*.tmpl`) for expired facts: a last-verified
+   `private_dot_codex/docs/*.tmpl`, `private_dot_pi/agent/docs/*.tmpl`) for
+   expired facts: a last-verified
    date older than the current model/harness generation, or a recorded
    revisit trigger that has fired (e.g. a linked issue closed — check with
    `gh`); verify live only where cheap, and flag facts carrying neither
@@ -111,8 +115,8 @@ covers it natively — the same projection must serve them all.
 7. **Report, then edit only on confirmation.** Emit the matrix and, for each
    proposal, a concrete diff — shaped per the authoring doctrine in the
    repo-root `AGENTS.md` — against the source templates
-   (`.chezmoitemplates/agent-instructions.md`, the two consumer `.tmpl`
+   (`.chezmoitemplates/agent-instructions.md`, the three consumer `.tmpl`
    files, or the subagent/skill bodies — never the rendered targets, never
    the generated sensitive-path prose). On confirmation, apply to the
-   working tree and verify with `chezmoi diff` plus `chezmoi cat` for both
-   targets, then stop. Never commit, stage, or run `chezmoi apply`.
+   working tree and verify with `chezmoi diff` plus `chezmoi cat` for all
+   three targets, then stop. Never commit, stage, or run `chezmoi apply`.
