@@ -31,7 +31,7 @@ const isDirectMcpTool = name => name.startsWith("mcp__");
 
 const padRow = (text, width) => text.slice(0, width).padEnd(width);
 
-// Codex-style composer: a shaded block with a "› " prompt instead of rule
+// Codex-style composer: a shaded block with a "❯ " prompt instead of rule
 // lines. Rendered lines carry their cursor marker inline, so replacing the
 // first content line's padding shifts the cursor correctly; if the render
 // shape ever changes, the prompt silently disappears instead of corrupting
@@ -85,7 +85,7 @@ export class CaretEditor extends sdk.CustomEditor {
     // Content sits between the two shaded rows; autocomplete follows the
     // bottom one and stays unshaded.
     const end = lines.lastIndexOf(this.bottomRow);
-    if (end > 1 && lines[1].startsWith("  ")) lines[1] = this.palette.fg("accent", "› ") + lines[1].slice(2);
+    if (end > 1 && lines[1].startsWith("  ")) lines[1] = this.palette.fg("accent", "❯ ") + lines[1].slice(2);
     for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
     return lines;
   }
