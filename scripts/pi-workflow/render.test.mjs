@@ -75,6 +75,7 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.equal(piSettings.defaultProvider, "openai-codex");
   assert.equal(piSettings.enabledModels.length, 4);
   assert.equal(piSettings.theme, "catppuccin-latte/catppuccin-mocha");
+  assert.equal(piSettings.quietStartup, true);
   assert.match(piSettings.themes[0], /\/node_modules\/catppuccin-pi-theme\/themes$/);
 
   for (const role of Object.keys(workflow.agents)) {

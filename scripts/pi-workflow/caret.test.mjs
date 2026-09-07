@@ -4,8 +4,11 @@ import { CaretEditor } from "./index.mjs";
 
 const BG = "\x1b[48;5;1m";
 const keybindings = { matches: (data, id) => ({ "tui.editor.cursorDown": "\x1b[B", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b" })[id] === data };
-const theme = { borderColor: text => text, selectList: {}, fg: (_color, text) => text, bg: (_color, text) => `${BG}${text}\x1b[49m` };
-const editor = options => new CaretEditor({ terminal: { rows: 24 }, requestRender: () => {} }, theme, keybindings, options);
+// The host hands the editor factory an EditorTheme; the full palette arrives
+// separately, so the mocks stay split or the test stops matching the runtime.
+const editorTheme = { borderColor: text => text, selectList: {} };
+const palette = { fg: (_color, text) => text, bg: (_color, text) => `${BG}${text}\x1b[49m` };
+const editor = options => new CaretEditor({ terminal: { rows: 24 }, requestRender: () => {} }, editorTheme, keybindings, { palette, ...options });
 
 test("composer is a shaded block: blank shaded rows instead of rules, a prompt, bg re-opened after the cursor reset", () => {
   const lines = editor().render(40);

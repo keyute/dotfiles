@@ -10,6 +10,7 @@ import { workerTools, canonical, publicToolName } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
+import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
@@ -36,14 +37,16 @@ const padRow = (text, width) => text.slice(0, width).padEnd(width);
 // shape ever changes, the prompt silently disappears instead of corrupting
 // the editor.
 export class CaretEditor extends sdk.CustomEditor {
-  constructor(tui, theme, keybindings, { fleet } = {}) {
+  // The editor factory is handed an EditorTheme (borders and autocomplete only),
+  // so the full palette for shading and the caret arrives separately.
+  constructor(tui, theme, keybindings, { fleet, palette } = {}) {
     super(tui, theme, keybindings, { paddingX: 2 });
     this.fleet = fleet;
-    this.theme = theme;
+    this.palette = palette;
     // The editor's fake cursor ends in a full SGR reset, which also drops the
     // background; re-open it after every reset so the shade spans the line.
-    const open = theme.bg("userMessageBg", "").replace(/\x1b\[49m$/, "");
-    this.shade = line => theme.bg("userMessageBg", line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
+    const open = palette.bg("userMessageBg", "").replace(/\x1b\[49m$/, "");
+    this.shade = line => palette.bg("userMessageBg", line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
   }
   // Fleet navigation is an editor-owned mode (widgets cannot take focus). Down
   // enters it only when the editor itself had nothing left to do with the key,
@@ -82,7 +85,7 @@ export class CaretEditor extends sdk.CustomEditor {
     // Content sits between the two shaded rows; autocomplete follows the
     // bottom one and stays unshaded.
     const end = lines.lastIndexOf(this.bottomRow);
-    if (end > 1 && lines[1].startsWith("  ")) lines[1] = this.theme.fg("accent", "› ") + lines[1].slice(2);
+    if (end > 1 && lines[1].startsWith("  ")) lines[1] = this.palette.fg("accent", "› ") + lines[1].slice(2);
     for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
     return lines;
   }
@@ -209,8 +212,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (broker && ctx.hasUI && !footerInstalled) {
       footerInstalled = true;
       const fleet = installFleet(pi, ctx);
+      installHeader(ctx);
       installFooter(pi, ctx, { fleet });
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet }));
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme }));
     }
     pi.setActiveTools(pi.getAllTools().map(tool => tool.name).filter(permitted));
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
