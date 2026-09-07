@@ -83,6 +83,19 @@ test("pinned upstream packages register against the managed extension and prefli
   await checkChildLaunch(blocking, config, "root", ctx, resolveSubagentLaunchContract);
   assert.equal(blocking.async, true);
   await assert.rejects(checkChildLaunch({ ...args, workflowScript: "bad" }, config, "root", ctx, resolveSubagentLaunchContract), /workflow scripts/);
+  // Keys the upstream schema advertises are dropped, not refused: every observed
+  // first launch carried some of them and the refusal cost a turn per batch.
+  const noisy = { ...args, cwd: "/elsewhere", toolBudget: { hard: 20 }, acceptance: false, context: "fork" };
+  await checkChildLaunch(noisy, config, "root", ctx, resolveSubagentLaunchContract);
+  assert.deepEqual(Object.keys(noisy).sort(), ["agent", "agentScope", "async", "context", "task"]);
+  assert.equal(noisy.context, "fork");
+  const profile = { ...args, context: "profile" };
+  await checkChildLaunch(profile, config, "root", ctx, resolveSubagentLaunchContract);
+  assert.equal("context" in profile, false);
+  const transcript = { action: "status", id: "run", view: "transcript", lines: 50 };
+  await checkChildLaunch(transcript, config, "root", ctx, resolveSubagentLaunchContract);
+  assert.equal(transcript.steeringRecovery, false);
+  await assert.rejects(checkChildLaunch({ action: "status", id: "run", view: "events" }, config, "root", ctx, resolveSubagentLaunchContract), /not enabled/);
   // Session-varying values would change pi-mcp-adapter's cache key every launch.
   assert.deepEqual(mcpServerDefinitions({ mcp: { docs: { policy: { denied_tools: ["x"] } } } }, "root").docs.env, { PI_WORKFLOW_ROLE: "root" });
   const list = { action: "list", capabilities: true };
@@ -102,13 +115,13 @@ test("child sessions share one capacity ceiling and acknowledge revocation befor
   const childEnv = () => ({ ...broker.env, PI_WORKFLOW_EPOCH: String(broker.policy.epoch) });
   let stopped = 0;
   const staleEnv = childEnv();
-  for (let i = 0; i < 3; i++) await acquireChild(childEnv(), "fixture-reader", release => { stopped++; release(); }, transport.connect);
+  for (let i = 0; i < 20; i++) await acquireChild(childEnv(), "fixture-reader", release => { stopped++; release(); }, transport.connect);
   await assert.rejects(acquireChild(childEnv(), "fixture-reader", () => {}, transport.connect), /capacity/);
   await broker.setMode("plan");
   // A child launched under an earlier epoch cannot connect after the change.
   await assert.rejects(acquireChild(staleEnv, "fixture-reader", () => {}, transport.connect), /capacity/);
   await assert.rejects(acquireChild({ ...broker.env }, "fixture-reader", () => {}, transport.connect), /capacity/);
-  assert.equal(stopped, 3);
+  assert.equal(stopped, 20);
   assert.equal(broker.policy.mode, "plan");
   assert.equal(broker.policy.transitioning, false);
 });
@@ -166,4 +179,20 @@ test("tool leases require a single-use ticket bound to the current epoch", async
   await broker.setMode("execute");
   assert.equal((await leaseTool({ name: "bash", ticket: stale.ticket })).ok, false);
   assert.equal((await leaseTool({ name: "bash" })).ok, false);
+});
+
+test("an inherit-model child resolves to the parent's model before the tier check", async t => {
+  const { config } = fixture(t);
+  const role = config.agents["fixture-reader"];
+  config.agents["fixture-worker"] = { ...role, readonly: false, model: "inherit" };
+  const contract = { agent: { filePath: role.agentPath }, tools: { configuredExtensions: [role.extensionPath], effectiveAllowlist: ["workspace_read"] }, digest: "d" };
+  const resolve = async request => { resolve.model = request.model; return { ok: true, contract }; };
+  const registry = { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] };
+  const launch = () => ({ agent: "fixture-worker", task: "Do the thing" });
+  const ctxFor = id => ({ cwd: process.cwd(), model: { provider: "openai-codex", id }, modelRegistry: registry });
+  const resolved = launch();
+  await checkChildLaunch(resolved, config, "root", ctxFor("gpt-5.6-sol"), resolve);
+  assert.deepEqual([resolve.model, resolved.model], ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-sol"]);
+  await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-5-other"), resolve), /tier policy/);
+  await assert.rejects(checkChildLaunch(launch(), config, "fixture-reader", ctxFor("gpt-5.6-sol"), resolve), /delegate to writers/);
 });

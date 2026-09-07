@@ -23,13 +23,18 @@
       {{- end -}}
     {{- end -}}
     {{- if $needsMcp -}}{{- $tools = append $tools "mcp" -}}{{- end -}}
-    {{- if and (ne $name "dep-researcher") (ne $name "log-triager") -}}
-      {{- $tools = append $tools "subagent" -}}
+    {{- $nests := default false (get $meta "nests") -}}
+    {{- if $nests -}}{{- $tools = append $tools "subagent" -}}{{- end -}}
+    {{- /* `inherit` is pi-subagents' frontmatter value for the parent's model */ -}}
+    {{- $model := "inherit" -}}
+    {{- if ne $meta.tier "inherit" -}}
+      {{- $model = printf "%s/%s" $root.agents.pi.defaults.provider (index $root.subagent_tiers.pi $meta.tier) -}}
     {{- end -}}
     {{- $role := dict
           "readonly" $meta.readonly
+          "nests" $nests
           "tools" ($tools | uniq)
-          "model" (printf "%s/%s" $root.agents.pi.defaults.provider (index $root.subagent_tiers.pi $meta.tier))
+          "model" $model
           "thinking" $meta.reasoning_effort
           "extensionPath" (printf "%s/policy-roles/%s.ts" $agentDir $name)
           "agentPath" (printf "%s/agents/%s.md" $agentDir $name) -}}

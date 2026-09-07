@@ -1,6 +1,7 @@
 {
-  "globalConcurrencyLimit": 3,
-  "maxActiveAsyncRunsPerSession": 3,
+  "globalConcurrencyLimit": 20,
+  "maxActiveAsyncRunsPerSession": 20,
+  "maxSubagentDepth": 2,
   "defaultSubagentContext": "fresh",
   "toolDescriptionMode": "custom",
   "inlineToolDisplay": "summary",

@@ -8,9 +8,11 @@
                              — op: refs resolved via onepasswordRead, command
                              defaulting to node_modules/.bin/<package_bin>, or
                              `node scripts/<script>` for repo-local bridges
-                 policy:     {auto_approve_tools, denied_tools} — always both keys,
+                 policy:     {auto_approve_tools, denied_tools, readonly_tools,
+                             allowed_tools, direct_tools} — always all keys,
                              normalized to false/[] so consumers can index them
-                             unguarded
+                             unguarded (direct_tools: pi registers the server's
+                             tools by name instead of behind the mcp proxy)
        policyOnly omits `connection` entirely (and resolves no secrets), so a
        caller that must not depend on 1Password can still reuse this filter. It
        omits rather than emitting connection with unresolved refs on purpose: a
@@ -34,7 +36,8 @@
         "auto_approve_tools" (default false (get $cfg "auto_approve_tools"))
         "denied_tools" (default (list) (get $cfg "denied_tools"))
         "readonly_tools" (default (list) (get $cfg "readonly_tools"))
-        "allowed_tools" (default (list) (get $cfg "allowed_tools"))) -}}
+        "allowed_tools" (default (list) (get $cfg "allowed_tools"))
+        "direct_tools" (default false (get $cfg "direct_tools"))) -}}
   {{- if not $policyOnly -}}
     {{- $connection := dict -}}
     {{- $url := get $cfg "url" -}}

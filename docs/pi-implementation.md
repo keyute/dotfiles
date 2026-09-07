@@ -1,8 +1,9 @@
 # Pi implementation working record
 
-Last updated: 2026-09-07 (second comparison run: sandbox-parity shell
-approvals, fleet widget; earlier the same day: forced-async children, MCP
-cache key, Exa tool list). Source implementation complete; not applied or
+Last updated: 2026-09-07 (third comparison run: one-turn launches, Claude
+Code's concurrency and nesting shape, interactive fleet panel, direct MCP
+tools; earlier the same day: sandbox-parity shell approvals, forced-async
+children, MCP cache key). Source implementation complete; not applied or
 live-tested on the host.
 
 ## Decisions
@@ -101,6 +102,54 @@ live-tested on the host.
   fenced in ```json parse. Known residuals (Codex review): a timed-out
   approval does not cancel the queued review; tickets are not bound to the
   reviewed arguments; the confirm dialog truncates at 12,000 chars.
+
+- 2026-09-07 (third same-prompt run, on the sandbox-parity source): pi 8m07s vs
+  Codex 5m11s at equal or lower tokens (342k uncached / 3.5M cached / 27.7k out
+  vs ~448k / 4.5M / ~30k). Time went to: 41 s before the first accepted launch
+  (`action:list` turn, then a batch refused for an extra `cwd` key — the same
+  misfire in every run, driven by pi-subagents' tool schema and always-appended
+  safety guidance, which the custom description cannot remove); a 6m16s
+  diff-reviewer child re-reading everything from a fresh context while Codex's
+  forked children made zero tool calls; 14 MCP calls with zero successes (proxy
+  discovery, three calls to a Claude-style `mcp__exa` name, then `fetch failed`
+  on every Exa/Context7 request in the tree); three grandchildren admitted then
+  denied at session_start by the broker's cap of 3. Changes: the launch hook
+  drops unsupported keys instead of refusing (only workflow scripts, task lists
+  and chains still throw), the tool description carries the roster generated
+  from `agents.yaml` so no `list` turn is needed, `context: "fork"` is accepted
+  (Codex's `fork_turns: all`), status `view: transcript` is allowed, capacity
+  is 20 in `extensions/subagent/config.json` and the broker (Claude Code's
+  `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` default; Codex 0.153 uses 4), and
+  nesting takes Claude Code's shape: specialists are leaf roles (`nests: true`
+  opts a role in, `allowNestedSubagents` follows it) and a pi-only
+  `general-purpose` role — every tool, `model: inherit`, resolved to the
+  parent's model in the hook — is the one that delegates, at
+  `maxSubagentDepth: 2` (Claude's three layers). `forkContext` stays at the
+  default full copy: the pruned mode fails the launch on any summary error.
+- 2026-09-07: the fleet widget takes Claude Code's panel shape (`⏺ main` row,
+  `◯` child rows, five visible, `↓ N more`, `❯` cursor) and navigation is an
+  editor-owned mode: pi-tui widgets cannot take focus, so `CaretEditor` lets
+  the base editor handle Down first and enters fleet mode only when the cursor
+  did not move (wrapped lines, history and autocomplete keep priority — Codex
+  advisor's refinement), then routes `tui.select.*` keys to a pure reducer in
+  `fleet.mjs`; Enter shows the highlighted child's transcript tail (RPC
+  `status {id, view: transcript}`) in a `ctx.ui.custom` overlay. The fleet DTO's
+  keys are opaque, so the row maps to its run through `asyncSnapshot.runs`
+  (label = agent, raw `startedAt` within 30 s, and only when exactly one run
+  qualifies — same-agent siblings launched together are ambiguous); otherwise it feeds
+  pi-subagents' ⌃⌥F shortcut bytes through the editor's `onExtensionShortcut`
+  (legacy `ESC ^F`, CSI u under kitty), which opens the inspector without an
+  agent turn but on its own first row (Codex review finding).
+- 2026-09-07: Context7, Exa and Serena register direct tools
+  (`agent_mcp_servers.<name>.direct_tools`, adapter `toolPrefix: "mcp"` →
+  `mcp__exa_web_search_exa`), Playwright stays behind the proxy; results render
+  `boxed` with three collapsed lines. pi-mcp-adapter (Nico Bailon's package,
+  not Earendil's or ours) exposes only that two-value rendering knob. The
+  `tool_call` hook and session-start activation admit `mcp__*` names for any
+  role with `mcp`; the adapter's approval event already covers direct calls.
+  Server workers get `NODE_USE_ENV_PROXY=1`: Node's global fetch ignores the
+  proxy variables the sandbox injects, the leading hypothesis for run 3's
+  `fetch failed` — unverified until a live call succeeds on the host.
 
 ## Verification and remaining gates
 

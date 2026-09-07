@@ -57,9 +57,21 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.equal(workflow.version, 1);
   assert.equal(workflow.models.default, "gpt-5.6-sol");
   assert.equal(workflow.models.tiers.frontier, "gpt-6-astra");
-  assert.equal(Object.keys(workflow.agents).length, 11);
+  assert.equal(Object.keys(workflow.agents).length, 12);
   assert.equal(workflow.agents.implementer.tools.includes("workspace_write"), true);
   assert.equal(workflow.agents.explorer.tools.includes("read"), false);
+  // Only general-purpose delegates, as Claude Code's roster implies.
+  assert.equal(workflow.agents.explorer.tools.includes("subagent"), false);
+  assert.deepEqual([workflow.agents["general-purpose"].model, workflow.agents["general-purpose"].nests], ["inherit", true]);
+  assert.ok(["workspace_write", "mcp", "subagent"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
+  assert.equal(workflow.mcp.exa.policy.direct_tools, true);
+  assert.equal(workflow.mcp.playwright.policy.direct_tools, false);
+  const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
+  assert.match(description, /^- diff-reviewer: Review a changed diff/m);
+  assert.match(description, /^- general-purpose: /m);
+  assert.doesNotMatch(description, /^- Explore:/m);
+  assert.match(run("cat", target(".pi/agent/agents/general-purpose.md")), /^allowNestedSubagents: true$/m);
+  assert.match(run("cat", target(".pi/agent/agents/explorer.md")), /^allowNestedSubagents: false$/m);
   assert.equal(piSettings.defaultProvider, "openai-codex");
   assert.equal(piSettings.enabledModels.length, 4);
   assert.equal(piSettings.theme, "catppuccin-latte/catppuccin-mocha");

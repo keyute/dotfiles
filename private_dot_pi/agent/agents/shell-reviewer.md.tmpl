@@ -11,7 +11,7 @@ extensions: {{ $role.extensionPath }}
 inheritProjectContext: true
 inheritGlobalContext: true
 inheritSkills: true
-allowNestedSubagents: true
+allowNestedSubagents: {{ $role.nests }}
 ---
 
 {{ includeTemplate (printf "subagents/%s.md" $name) (dict "instructions_file" "AGENTS.md") -}}

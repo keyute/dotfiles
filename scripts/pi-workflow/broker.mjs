@@ -86,7 +86,7 @@ export async function startBroker(config, cwd, review, transport = {}) {
           // The epoch travels through the launching parent's environment, so a
           // child spawned before a mode/approval change cannot connect after it
           // and inherit the newer, possibly wider policy.
-          if (request.role === "root" || children.size >= 3 || policy.transitioning || request.epoch !== policy.epoch) throw new Error("Child capacity unavailable");
+          if (request.role === "root" || children.size >= 20 || policy.transitioning || request.epoch !== policy.epoch) throw new Error("Child capacity unavailable");
           children.add(socket);
           leases.add(socket);
           return socket.write(line({ ok: true }));
@@ -94,7 +94,9 @@ export async function startBroker(config, cwd, review, transport = {}) {
         if (request.action === "state") return socket.end(line({ ok: true, mode: policy.mode, readonly: policy.readonly(request.role), epoch: policy.epoch }));
         if (request.action === "authorize" || request.action === "mcp") return socket.end(line(await authorize(request)));
         if (request.action !== "lease" || policy.transitioning) throw new Error("Invalid process lease");
-        const env = { TMPDIR: scratch, PI_CODING_AGENT_DIR: config.agentDir };
+        // NODE_USE_ENV_PROXY: Node's built-in fetch ignores the HTTP(S)_PROXY the
+        // sandbox injects unless told to; MCP servers are Node processes.
+        const env = { TMPDIR: scratch, PI_CODING_AGENT_DIR: config.agentDir, NODE_USE_ENV_PROXY: "1" };
         let command;
         let args;
         if (request.kind === "tool") {

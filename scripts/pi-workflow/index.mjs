@@ -22,15 +22,36 @@ const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.entries(config.mcp).map(([name, entry]) => [name, {
   command: process.execPath, args: [runnerPath, "server", name], env: { PI_WORKFLOW_ROLE: role },
   excludeTools: entry.policy.denied_tools, ...(entry.policy.allowed_tools?.length ? { includeTools: entry.policy.allowed_tools } : {}), approveTools: true,
+  directTools: entry.policy.direct_tools === true,
 }]));
+// Direct MCP tools carry the adapter's mcp__<server> prefix; the proxy stays
+// for servers left behind it (playwright).
+const isDirectMcpTool = name => name.startsWith("mcp__");
 
 // Claude-Code-style input caret. Rendered lines carry their cursor marker
 // inline, so prefixing the first content line shifts the cursor correctly;
 // if the render shape ever changes, the caret silently disappears instead
 // of corrupting the editor.
 export class CaretEditor extends sdk.CustomEditor {
-  constructor(tui, theme, keybindings) {
+  constructor(tui, theme, keybindings, { fleet } = {}) {
     super(tui, theme, keybindings, { paddingX: 2 });
+    this.fleet = fleet;
+  }
+  // Fleet navigation is an editor-owned mode (widgets cannot take focus). Down
+  // enters it only when the editor itself had nothing left to do with the key,
+  // so wrapped lines, line-end moves, history and autocomplete keep priority.
+  handleInput(data) {
+    const fleet = this.fleet;
+    if (fleet?.focused()) {
+      const action = ["down", "up", "confirm", "cancel"].find(name => this.keybindings.matches(data, `tui.select.${name}`)) ?? "other";
+      if (fleet.handleKey(action, this)) return;
+    } else if (fleet && this.keybindings.matches(data, "tui.editor.cursorDown") && !this.isShowingAutocomplete()) {
+      const before = JSON.stringify([this.getCursor(), this.getLines()]);
+      super.handleInput(data);
+      if (JSON.stringify([this.getCursor(), this.getLines()]) === before) fleet.handleKey("enter", this);
+      return;
+    }
+    super.handleInput(data);
   }
   // The host copies the settings editorPaddingX (default 0) onto custom
   // editors right after construction and on settings reloads; the caret
@@ -77,6 +98,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     await requestBroker(env, role, { action: "state" });
   }
   const permittedTools = role === "root" ? [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user", "submit_plan"] : config.agents[role].tools;
+  const permitted = name => permittedTools.includes(name) || (permittedTools.includes("mcp") && isDirectMcpTool(name));
 
   async function authorize(tool, args) {
     if (!ready) throw new Error("Managed workflow is not ready");
@@ -107,7 +129,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   pi.on("tool_call", async (event, ctx) => {
     try {
-      if (!ready || !permittedTools.includes(event.toolName)) throw new Error("Tool not available in this managed scope");
+      if (!ready || !permitted(event.toolName)) throw new Error("Tool not available in this managed scope");
       if (event.toolName === "mcp" && event.input.action) throw new Error("MCP authentication/UI actions are user-operated, not model tools");
       if (event.toolName === "subagent") await checkChildLaunch(event.input, config, role, ctx, resolveSubagentLaunchContract);
       // The adapter's broker handles resolved MCP operations, not proxy arguments.
@@ -166,10 +188,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (broker && ctx.hasUI && !footerInstalled) {
       footerInstalled = true;
       installFooter(pi, ctx);
-      installFleet(pi, ctx);
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings));
+      const fleet = installFleet(pi, ctx);
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet }));
     }
-    pi.setActiveTools(permittedTools.filter(name => pi.getAllTools().some(tool => tool.name === name)));
+    pi.setActiveTools(pi.getAllTools().map(tool => tool.name).filter(permitted));
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
   });
   pi.on("input", event => {
@@ -218,7 +240,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   if (permittedTools.includes("mcp")) {
     const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
-    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, scriptMode: false, approveTools: true, toolResultRendering: "compact", collapsedResultLines: 1, autoAuth: false, sampling: false, elicitation: false } } })(pi);
+    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, toolResultRendering: "boxed", collapsedResultLines: 3, autoAuth: false, sampling: false, elicitation: false } } })(pi);
   }
   pi.on("session_shutdown", async () => {
     ready = false;

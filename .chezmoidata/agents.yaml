@@ -171,6 +171,17 @@ subagents:
     readonly: false
     tools: "Read, Grep, Glob, Bash, Edit, Write"
     description: "Execute a fully-specified, bounded mechanical change — renames, translations, boilerplate, pattern-repeat edits, spec'd fixes — against explicit acceptance criteria and a verification command. Makes no design decisions and stops to report when one surfaces. NOT for exploratory or judgment-heavy implementation; never commits."
+  # pi only (no per-harness file renders elsewhere): Claude Code and Codex
+  # ship an equivalent built-in. Mirrors Claude's general-purpose agent — every
+  # tool, the parent's model, and the only role that may launch children; the
+  # specialists above stay leaf roles, as their Claude tool lists imply.
+  general-purpose:
+    tier: inherit
+    reasoning_effort: high
+    readonly: false
+    nests: true
+    tools: "Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
+    description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation. Inherits the session model; prefer a specialist when one fits."
 # explicit model IDs, not aliases: aliases re-resolve across CLI releases and can
 # silently land on another tier; the agent-instructions-audit skill live-probes
 # these pins, so drift fails loudly there instead
@@ -268,6 +279,7 @@ agent_mcp_servers:
       - claude
   context7:
     package_bin: context7-mcp
+    direct_tools: true
     args: []
     auto_approve_tools: true
     readonly_tools: [resolve-library-id, query-docs]
@@ -276,6 +288,7 @@ agent_mcp_servers:
         op: Personal/Context7/api key
   exa:
     package_bin: exa-mcp-server
+    direct_tools: true
     args: []
     auto_approve_tools: true
     # web_fetch_exa is 3.4.x's fetch tool; crawling_exa is its legacy name and
@@ -323,6 +336,7 @@ agent_mcp_servers:
       - --isolated
   serena:
     harnesses: [pi]
+    direct_tools: true
     command: uvx
     args:
       - --from

@@ -87,36 +87,54 @@ Extensions are trusted host code. Per-tool SRT is not containment against a
 malicious extension. No fallback to unsandboxed execution exists in the managed
 tools. Linux needs bubblewrap, socat and ripgrep; macOS needs sandbox-exec.
 
-## Specialists, skills and display (last verified 2026-09-07)
+## Specialists, skills and display (last verified 2026-09-07, third smoke run)
 
 Specialists under `~/.pi/agent/agents` render from the shared roster. Each has an
 explicit OpenAI model, tool list and mandatory child policy extension. Native
 builtin names cannot substitute for missing `workspace_*` tools. Read-only
-specialists stay read-only even when the root enters execution.
+specialists stay read-only even when the root enters execution. Specialists are
+leaf roles; only `general-purpose` (every tool, the session's model) may launch
+children, to the same depth as Claude Code's built-in general-purpose agent.
 
-Use named `subagent` launches with an agent and bounded task. Context is fresh
-and every child runs in the background; up to three share the root policy, so
-launch independent children in one turn. Status, stop, interrupt and
-non-recovering steer are enabled; arbitrary workflow scripts, project role
-overrides, revival and mutating management are not. Results arrive as
-notifications — `bg_wait` only when the current turn depends on them. A fleet
-widget below the editor lists each running child as `agent › task · tokens ·
-model`, the same row as the Claude Code subagent statusline; `Ctrl+Alt+F`
-(⌃⌥F on macOS) opens pi-subagents' full inspector.
+Use named `subagent` launches with an agent and bounded task; the roster is in
+the tool description, so no `list` call is needed. Every child runs in the
+background and up to twenty share the root policy (Claude Code's default), so
+launch independent children in one turn. Children start fresh; `context:
+"fork"` branches this session's transcript into the child, as Codex's forked
+children do, for a second pass over material already read. Unsupported launch
+keys the upstream schema still advertises (`cwd`, `toolBudget`, …) are dropped
+silently; workflow scripts, task lists and chains are refused. Status (fleet or
+transcript view), stop, interrupt and non-recovering steer are enabled;
+project role overrides, revival and mutating management are not. Results
+arrive as notifications — `bg_wait` only when the current turn depends on them.
+
+The panel below the editor follows Claude Code's subagent panel: a `⏺ main`
+row, then `◯ agent › task · tokens · model` per running child (five rows, then
+`↓ N more`). Arrow-down from the last line of the prompt moves a `❯` cursor
+into the panel; up/down move it, Enter shows the highlighted child's transcript
+tail in an overlay (Esc closes; when the row cannot be matched to a run it
+opens the inspector instead), Esc or up past the first row returns to the
+prompt, any other key returns and types. `Ctrl+Alt+F` (⌃⌥F on macOS) opens
+pi-subagents' inspector (steer, stop, full transcripts).
 
 Shared skills remain discoverable under `~/.agents/skills`; explicit skill loading
 is available through Pi. Tool output starts collapsed: Ctrl+O expands it. MCP
-results show a one-line preview. This is keyboard expansion, not per-card mouse
-interaction identical to Claude Code.
+results show a boxed three-line preview. This is keyboard expansion, not
+per-card mouse interaction identical to Claude Code. Inside a child, pi-subagents'
+tool allowlist may leave the direct `mcp__*` tools inactive; the `mcp` proxy is
+always in the allowlist and reaches the same servers.
 
-## MCP and code intelligence (last verified 2026-09-07)
+## MCP and code intelligence (last verified 2026-09-07, third smoke run)
 
-Use the `mcp` proxy to discover and call Context7, Exa, Playwright and Serena —
-tools load on demand, none sit in context: `mcp({ search: "web search" })`
-finds tools from the cached catalog, `mcp({ describe: "web_search_exa" })`
-shows one schema, `mcp({ tool: "web_search_exa", args: { … } })` calls it.
-`mcp__<server>__<tool>` names do not exist here; a server shown as not
-connected connects on the first call.
+Context7, Exa and Serena register their tools directly, named
+`mcp__<server>_<tool>` (for example `mcp__exa_web_search_exa`), so they are
+called like any other tool. Playwright stays behind the `mcp` proxy:
+`mcp({ search: "…" })` finds a tool in the cached catalog,
+`mcp({ describe: "<name>" })` shows its schema, `mcp({ tool: "<name>", args:
+{ … } })` calls it. A server shown as not connected connects on the first
+call. MCP servers run as sandboxed Node processes with `NODE_USE_ENV_PROXY=1`
+so their fetch calls follow the sandbox proxy; if every call from a server
+fails with `fetch failed`, check that first, then the allowed domains.
 Configuration is explicit; other harnesses' private configuration is not imported.
 MCP scripting, sampling and automatic OAuth discovery are disabled. The approval
 broker checks the resolved server/tool/arguments, not just the outer proxy call.

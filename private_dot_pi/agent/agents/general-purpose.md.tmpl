@@ -1,4 +1,4 @@
-{{- $name := "diff-reviewer" -}}
+{{- $name := "general-purpose" -}}
 {{- $meta := index .subagents $name -}}
 {{- $role := index (includeTemplate "pi-roles" (dict "root" .) | fromJson) $name -}}
 ---
