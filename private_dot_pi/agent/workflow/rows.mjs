@@ -1,9 +1,10 @@
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, keyHint, renderDiff } from "@earendil-works/pi-coding-agent";
 
-// Transcript glyphs (docs/pi-design.md): Codex's bullet for rows, a hollow
-// circle for subagents, ↳ for the line under a row, π for anything the
-// harness says in its own voice. Every row sits at the shared two-column inset.
+// Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
+// line under a row, π for anything the harness says in its own voice, the
+// hollow circle only on fleet rows. A line that opens with a glyph starts at
+// column 0; a line without one (↳, the fold summary) sits at the text column.
 export const BULLET = "•";
 export const CHILD = "○";
 export const TURN_GLYPH = "π";
@@ -11,6 +12,7 @@ export const SUB = "↳";
 export const PAD = "  ";
 export const TITLE_WIDTH = 36;
 const PREVIEW_WIDTH = 48;
+const SUMMARY_WIDTH = 60;
 
 // [running, done] pairs for the turn line; pi/circle/maths flavoured. Edit freely.
 export const TURN_VERBS = [
@@ -76,7 +78,8 @@ export function callTitle(name, args = {}) {
 
 // Plugin rows: pi-mcp-adapter's direct tools are `mcp__<server>_<tool>` and its
 // proxy takes the same server-prefixed name in `tool`; pi-subagents' launch
-// carries `agent` and `task`, its other actions an `action`.
+// carries `agent` and `task`, its other actions an `action`. Any other plugin
+// tool (bg_wait, the supervisor channel) is its name and first string argument.
 const mcpName = (raw, servers) => {
   const server = servers.filter(s => raw.startsWith(`${s}_`)).sort((a, b) => b.length - a.length)[0];
   return server ? `${server} › ${raw.slice(server.length + 1)}` : raw.replace("_", " › ");
@@ -98,12 +101,16 @@ export function pluginTitle(name, args = {}, servers = []) {
     if (args.describe) return `mcp describe ${args.describe}`;
     return "mcp";
   }
-  return `${mcpName(name.slice("mcp__".length), servers)}${preview(args)}`;
+  if (name.startsWith("mcp__")) return `${mcpName(name.slice("mcp__".length), servers)}${preview(args)}`;
+  return `${name.replaceAll("_", " ")}${preview(args)}`;
 }
 
 // The one line under a collapsed row: what the result was, never what it said.
+// A plugin tool outside the known kinds answers in a sentence (bg_wait's
+// "Waited 33.2s for run …; done."), which is the summary itself.
 export function resultSummary(name, result) {
   if (!result) return "";
+  if (name === "plugin") return shortTitle(firstLine(resultText(result)), SUMMARY_WIDTH);
   if (name === "edit" || name === "write") {
     const diff = result.details?.diff;
     if (typeof diff !== "string") return "";
@@ -146,7 +153,7 @@ function renderBody(name, result, options, theme, context) {
     if (context.isError && ELIDED.test(line)) lines.push(theme.fg("muted", `${line}${hint}`));
     else lines.push(name === "edit" && !context.isError ? line : theme.fg(context.isError ? "error" : "toolOutput", line));
   }
-  return new Text(lines.map(indent).join("\n"), PAD.length, 0);
+  return new Text(lines.map(indent).join("\n"), 0, 0);
 }
 
 // Fold-on-speak, as Claude Code does it: the workspace and MCP rows since the
@@ -158,8 +165,10 @@ const WORDS = { read: ["read", "file"], bash: ["ran", "shell command"], grep: ["
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
 const isMcp = name => name === "mcp" || name.startsWith("mcp__");
 
-export function createFolds() {
-  return { current: null, byId: new Map(), invalidate: new Map() };
+// `toolsExpanded` reads pi's global ctrl+o flag (ctx.ui.getToolsExpanded);
+// a closed group reopens when that flag changes.
+export function createFolds(toolsExpanded = () => undefined) {
+  return { current: null, byId: new Map(), invalidate: new Map(), toolsExpanded };
 }
 export const defaultFolds = createFolds();
 
@@ -175,6 +184,7 @@ export function closeFolds(folds) {
   const group = folds.current;
   if (!group) return;
   group.collapsed = true;
+  group.expandedAt = folds.toolsExpanded();
   folds.current = null;
   for (const id of group.ids) folds.invalidate.get(id)?.();
 }
@@ -186,7 +196,8 @@ export function summarise(counts) {
 
 const speaks = event => event.message?.role === "assistant" && (event.message.content ?? []).some(c => c.type === "text" && c.text?.trim());
 
-export function installFolding(pi, folds = defaultFolds) {
+export function installFolding(pi, ctx, folds = defaultFolds) {
+  folds.toolsExpanded = () => ctx.ui.getToolsExpanded();
   pi.on("tool_execution_start", event => {
     if (event.toolName.startsWith("workspace_")) addFold(folds, event.toolCallId, event.toolName.slice("workspace_".length));
     else if (isMcp(event.toolName)) addFold(folds, event.toolCallId, "mcp");
@@ -196,38 +207,59 @@ export function installFolding(pi, folds = defaultFolds) {
   pi.on("message_end", event => { if (speaks(event)) closeFolds(folds); });
 }
 
-// The collapsed group's only surface is its last row, and pi's click flips
-// that one row's `expanded`; the row shares the flag with the group and wakes
-// its siblings, so a click (or ctrl+o) opens and closes every row together.
-function foldedGroup(folds, context) {
-  const group = folds.byId.get(context.toolCallId);
-  if (!group?.collapsed) return null;
-  const open = Boolean(context.expanded);
-  if (group.ids.at(-1) === context.toolCallId && group.open !== open) {
-    group.open = open;
-    for (const id of group.ids) if (id !== context.toolCallId) folds.invalidate.get(id)?.();
+// The group's first row draws the summary line whether the group is open or
+// closed, so the handle never moves. The handle answers its own clicks (pi's
+// MouseRegion asks the child before its own toggle), so a row's `expanded`
+// flag only ever expands its body; the group opens on the handle or when
+// pi's global ctrl+o flag changes while it is closed, and closes on the
+// handle.
+class FoldHandle extends Text {
+  constructor(text, toggle) {
+    super(text, 0, 0);
+    this.toggle = toggle;
   }
-  return group.open || open ? null : group;
+  handleMouse(event) {
+    if (event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
+    this.toggle();
+    return { handled: true };
+  }
+}
+
+const closedFold = (folds, id) => {
+  const group = folds.byId.get(id);
+  return group?.collapsed ? group : null;
+};
+
+function toggleFold(folds, group, rendering) {
+  group.open = !group.open;
+  for (const id of group.ids) if (id !== rendering) folds.invalidate.get(id)?.();
 }
 
 // A row is `glyph title` and one ↳ line; a folded row renders nothing while the
-// group's last row carries the summary at the text column. A failed row stays
+// group's first row carries the summary at the text column. A failed row stays
 // visible in full even inside a fold.
-function rowRenderers({ name, title, mark = BULLET, folds = defaultFolds, failed = (_result, context) => context.isError }) {
+function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, context) => context.isError }) {
   const status = context => (context.state?.failed ? { ...context, isError: true } : context);
   return {
     renderShell: "self",
     renderCall(args, theme, rawContext) {
       // The first render precedes tool_execution_start, so every render records the invalidator.
-      folds.invalidate.set(rawContext.toolCallId, rawContext.invalidate);
+      const id = rawContext.toolCallId;
+      folds.invalidate.set(id, rawContext.invalidate);
       const context = status(rawContext);
-      const line = `${glyph(theme, context, mark)} ${theme.fg("toolTitle", title(args))}`;
-      const group = foldedGroup(folds, context);
-      if (!group) return new Text(line, PAD.length, 0);
+      const line = `${glyph(theme, context)} ${theme.fg("toolTitle", title(args))}`;
+      const group = closedFold(folds, id);
+      if (!group) return new Text(line, 0, 0);
+      const first = group.ids[0] === id;
+      const toolsExpanded = folds.toolsExpanded();
+      if (toolsExpanded !== group.expandedAt) {
+        group.expandedAt = toolsExpanded;
+        if (!group.open) toggleFold(folds, group, id);
+      }
       const lines = [];
-      if (group.ids.at(-1) === context.toolCallId) lines.push(indent(theme.fg("muted", summarise(group.counts))));
-      if (context.isError) lines.push(line);
-      return new Text(lines.join("\n"), PAD.length, 0);
+      if (first) lines.push(indent(theme.fg("muted", summarise(group.counts))));
+      if (group.open || context.isError) lines.push(line);
+      return first ? new FoldHandle(lines.join("\n"), () => toggleFold(folds, group)) : new Text(lines.join("\n"), 0, 0);
     },
     renderResult(result, options, theme, rawContext) {
       // The call slot only sees pi's isError; a failure known from the result
@@ -239,7 +271,8 @@ function rowRenderers({ name, title, mark = BULLET, folds = defaultFolds, failed
         queueMicrotask(() => rawContext.invalidate?.());
       }
       const context = status(rawContext);
-      if (foldedGroup(folds, context) && !context.isError) return new Text("", 0, 0);
+      const group = closedFold(folds, context.toolCallId);
+      if (group && !group.open && !context.isError) return new Text("", 0, 0);
       return renderBody(name, result, options, theme, context);
     },
   };
@@ -250,13 +283,17 @@ export function toolRenderers(name, folds = defaultFolds) {
 }
 
 // pi-mcp-adapter reports init, auth and server failures in details.error
-// without isError; a subagent launch answers with its run id and finishes later.
+// without isError; a subagent launch answers with its run id and finishes
+// later. The questionnaire tool is an overlay while it runs and a
+// workflow-answers entry once it ends, so its own row would say nothing.
+const NOTHING = { renderShell: "self", renderCall: () => new Text("", 0, 0), renderResult: () => new Text("", 0, 0) };
+
 export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {}) {
+  if (name === "ask_user_question") return NOTHING;
   const subagent = name === "subagent";
   const renderers = rowRenderers({
-    name: subagent ? "subagent" : "mcp",
+    name: subagent ? "subagent" : isMcp(name) ? "mcp" : "plugin",
     title: args => pluginTitle(name, args, servers),
-    mark: subagent ? CHILD : BULLET,
     folds,
     failed: (result, context) => context.isError || Boolean(result?.details?.error),
   });
@@ -264,7 +301,7 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
   return {
     ...renderers,
     renderResult(result, options, theme, context) {
-      if (result?.details?.asyncId && !context.isError) return new Text(indent(theme.fg("muted", `${SUB} launched`)), PAD.length, 0);
+      if (result?.details?.asyncId && !context.isError) return new Text(indent(theme.fg("muted", `${SUB} launched`)), 0, 0);
       return renderers.renderResult(result, options, theme, context);
     },
   };
@@ -273,27 +310,30 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 export const planRenderers = {
   renderShell: "self",
   renderCall(_args, theme, context) {
-    return new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Updated plan")}`, PAD.length, 0);
+    return new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Updated plan")}`, 0, 0);
   },
   renderResult(result, options, theme, context) {
     const approved = /approved;/.test(resultText(result));
     const container = new Container();
-    container.addChild(new Text(indent(`${theme.fg("muted", SUB)} ${theme.fg(approved ? "success" : "warning", approved ? "approved" : "not approved")}`), PAD.length, 0));
-    if (options.expanded && context.args?.plan) container.addChild(new Markdown(context.args.plan, PAD.length * 2, 0, getMarkdownTheme()));
+    container.addChild(new Text(indent(`${theme.fg("muted", SUB)} ${theme.fg(approved ? "success" : "warning", approved ? "approved" : "not approved")}`), 0, 0));
+    if (options.expanded && context.args?.plan) container.addChild(new Markdown(context.args.plan, PAD.length, 0, getMarkdownTheme()));
     return container;
   },
 };
 
 // Assistant text gets the bullet as a plain prefix (pi-tui's list marker is a
-// fixed dash, so a list item would not give this glyph). pi renders assistant
-// text one column in; the leading space, which marked keeps, lands the bullet
-// on the rows' column. Block-level starts keep their syntax by taking the
-// bullet as their own paragraph.
+// fixed dash, so a list item would not give this glyph). A block-level start
+// keeps its syntax by taking the bullet as the paragraph before it; lists,
+// headings, fences, quotes and tables all interrupt that paragraph, so no
+// blank line is needed between them. Reasoning renders as nothing at all:
+// pi's own hidden-thinking label is wrapped in colour codes, so even an empty
+// label leaves an invisible, clickable line.
 export function bulletMarkdown(markdown, { messageType }) {
+  if (messageType === "assistant-thinking") return "";
   if (messageType !== "assistant") return markdown;
   const body = markdown.trimStart();
   if (!body) return markdown;
-  return /^(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? ` ${BULLET}\n\n${body}` : ` ${BULLET} ${body}`;
+  return /^(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? `${BULLET}\n${body}` : `${BULLET} ${body}`;
 }
 
 export function answerLines(answers, theme) {
@@ -302,12 +342,14 @@ export function answerLines(answers, theme) {
 }
 
 // One line when an async child ends; pi-subagents' own notice shows only for
-// failures, so this is the transcript's record of a finished child.
-export function completionLine({ agent, task, status }, theme) {
+// failures, so this is the transcript's record of a finished child and of how
+// long it took.
+export function completionLine({ agent, task, status, durationMs }, theme) {
   const ok = status === "completed";
   const colour = ok ? "success" : status === "failed" || status === "stopped" ? "error" : "warning";
   const title = `${agent} ${ok ? "finished" : status}`;
-  return `${theme.fg(colour, CHILD)} ${theme.fg("toolTitle", title)}${task ? theme.fg("muted", ` · ${shortTitle(task, 60)}`) : ""}`;
+  const tail = [task && shortTitle(task, SUMMARY_WIDTH), typeof durationMs === "number" && formatDuration(durationMs)].filter(Boolean).map(part => ` · ${part}`).join("");
+  return `${theme.fg(colour, BULLET)} ${theme.fg("toolTitle", title)}${tail ? theme.fg("muted", tail) : ""}`;
 }
 
 export function formatDuration(ms) {

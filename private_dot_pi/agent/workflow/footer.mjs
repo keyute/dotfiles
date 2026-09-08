@@ -180,7 +180,7 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickM
   pi.on("ui_prompt_start", () => { state.prompting = true; showLabel(); });
   pi.on("ui_prompt_end", () => { state.prompting = false; showLabel(); });
   pi.on("session_shutdown", () => { clearInterval(state.tick); state.tick = null; });
-  pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), PAD.length, 0));
+  pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
   void refreshUsage();
   void refreshGit(ctx.cwd);

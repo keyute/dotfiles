@@ -199,7 +199,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   // per-result status leads, the file's own fields are the fallback.
   bus.emit("subagent:async-complete", { runId: "run-b", success: false, interrupted: true, state: "partial", results: [{ agent: "b", status: "paused" }] });
   bus.emit("subagent:async-complete", { runId: "run-b", success: false, state: "failed", results: [{ status: "completed" }, { status: "failed" }] });
-  bus.emit("subagent:async-complete", { runId: "late-1", success: true });
+  bus.emit("subagent:async-complete", { runId: "late-1", success: true, durationMs: 134_000 });
   assert.deepEqual(entries.map(entry => [entry.kind, entry.data.agent, entry.data.status]), [
     ["workflow-child", "stray", "completed"],
     ["workflow-child", "b", "stopped"],
@@ -208,6 +208,9 @@ test("rows poll while children run, name the task from the launch, peek each sib
     ["workflow-child", "subagent", "completed"],
   ]);
   assert.equal(entries[1].data.task, "Review the diff\n  for correctness");
+  // The result file's run-level duration rides along; a payload without one leaves it out.
+  assert.equal(entries[4].data.durationMs, 134_000);
+  assert.equal(entries[0].data.durationMs, undefined);
   bus.entries = [];
   await sleep(20);
   assert.equal(fleet.activeCount(), 0);

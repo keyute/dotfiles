@@ -43,41 +43,36 @@ export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.
 // for servers left behind it (playwright).
 const isDirectMcpTool = name => name.startsWith("mcp__");
 
-const padRow = (text, width) => text.slice(0, width).padEnd(width);
-// The prompt glyph sits at the transcript's inset with its own trailing space.
-const PROMPT_PADDING = PAD.length * 2;
+// The prompt glyph and its trailing space take the editor's padding columns.
+const PROMPT_PADDING = PAD.length;
 
 // Plugins register their tools through the API they are handed and pi keeps the
-// definition object, so a Proxy that decorates matching registrations gives
-// their rows the transcript's shape without touching schema or execution. Only
+// definition object, so a Proxy that decorates every registration gives their
+// rows the transcript's shape without touching schema or execution. Only
 // `registerTool` is intercepted; everything else (events included) is the
 // original, and the raw function is called on the raw API because the adapter
 // extracts it.
-export function pluginApi(pi, renderersFor, matches = name => name === "subagent" || name === "mcp" || name.startsWith("mcp__")) {
+export function pluginApi(pi, renderersFor) {
   return new Proxy(pi, {
     get(target, key, receiver) {
       if (key !== "registerTool") return Reflect.get(target, key, receiver);
-      return tool => target.registerTool(matches(tool.name) ? { ...tool, ...renderersFor(tool.name) } : tool);
+      return tool => target.registerTool({ ...tool, ...renderersFor(tool.name) });
     },
   });
 }
 
-// Codex-style composer: a shaded block with a "❯ " prompt instead of rule
-// lines. Rendered lines carry their cursor marker inline, so replacing the
-// first content line's padding shifts the cursor correctly; if the render
+// Claude Code's composer: pi's rule lines with a "❯ " prompt in the padding
+// columns of the first content line. Rendered lines carry their cursor marker
+// inline, so replacing the padding shifts the cursor correctly; if the render
 // shape ever changes, the prompt silently disappears instead of corrupting
 // the editor.
 export class CaretEditor extends sdk.CustomEditor {
   // The editor factory is handed an EditorTheme (borders and autocomplete only),
-  // so the full palette for shading and the caret arrives separately.
+  // so the palette for the caret arrives separately.
   constructor(tui, theme, keybindings, { fleet, palette } = {}) {
     super(tui, theme, keybindings, { paddingX: PROMPT_PADDING });
     this.fleet = fleet;
     this.palette = palette;
-    // The editor's fake cursor ends in a full SGR reset, which also drops the
-    // background; re-open it after every reset so the shade spans the line.
-    const open = palette.bg("userMessageBg", "").replace(/\x1b\[49m$/, "");
-    this.shade = line => palette.bg("userMessageBg", line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
   }
   // Fleet navigation is an editor-owned mode (widgets cannot take focus). Down
   // enters it only when the editor itself had nothing left to do with the key,
@@ -101,23 +96,9 @@ export class CaretEditor extends sdk.CustomEditor {
   setPaddingX(padding) {
     super.setPaddingX(Math.max(PROMPT_PADDING, padding));
   }
-  // The rule lines become blank shaded rows (a scroll count when clipped), so
-  // the block keeps its line count and pi's mouse and autocomplete row
-  // offsets stay valid.
-  renderTopBorder(width, hidden) {
-    return this.shade(padRow(hidden ? `  ↑ ${hidden} more` : "", width));
-  }
-  renderBottomBorder(width, hidden) {
-    this.bottomRow = this.shade(padRow(hidden ? `  ↓ ${hidden} more` : "", width));
-    return this.bottomRow;
-  }
   render(width) {
     const lines = super.render(width);
-    // Content sits between the two shaded rows; autocomplete follows the
-    // bottom one and stays unshaded.
-    const end = lines.lastIndexOf(this.bottomRow);
-    if (end > 1 && lines[1].startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = PAD + this.palette.fg("accent", "❯ ") + lines[1].slice(PROMPT_PADDING);
-    for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
+    if (lines[1]?.startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = this.palette.fg("accent", "❯ ") + lines[1].slice(PROMPT_PADDING);
     return lines;
   }
 }
@@ -243,15 +224,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (isRoot && ctx.hasUI) {
       if (!surfaces) {
-        installFolding(pi);
+        installFolding(pi, ctx);
         const fleet = installFleet(pi, ctx);
         surfaces = { fleet, footer: installFooter(pi, ctx, { fleet }) };
       }
       // pi resets every extension surface when a session is invalidated
-      // (/new, /resume), so these are applied on each session start. Reasoning
-      // stays out of the transcript (docs/pi-design.md); an empty label
-      // renders no row at all.
-      ctx.ui.setHiddenThinkingLabel("");
+      // (/new, /resume), so these are applied on each session start.
       installHeader(ctx);
       surfaces.footer.attach(ctx);
       ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet: surfaces.fleet, palette: ctx.ui.theme }));
@@ -287,7 +265,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     // The questionnaire dialog is the pinned plugin's; the answers feed the
     // classifier's task context and the transcript line from its result.
     const askUserQuestion = await jiti.import("@juicesharp/rpiv-ask-user-question", { default: true });
-    askUserQuestion(pi);
+    askUserQuestion(styled);
     pi.on("tool_execution_end", event => {
       // A cancelled questionnaire keeps its partial answers in details; they
       // are not decisions.
@@ -297,7 +275,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       userTask = `${userTask}\n${answers.map(entry => `User decision: ${entry.question} → ${entry.answer}`).join("\n")}`.slice(-8000);
       pi.appendEntry("workflow-answers", { answers });
     });
-    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), PAD.length, 0));
+    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
     pi.registerMarkdownTransformer(bulletMarkdown);
     pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present the implementation plan for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), ...planRenderers, async execute(_id, args) {
       const ctx = currentContext;
