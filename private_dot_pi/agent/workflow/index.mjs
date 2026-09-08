@@ -7,7 +7,7 @@ import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, acquireChild } from "./broker.mjs";
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
-import { rootTools, canonical, expand, publicToolName } from "./policy.mjs";
+import { rootTools, canonical, expand, publicToolName, unsandboxed } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
@@ -17,6 +17,27 @@ import { createTasks } from "./tasks.mjs";
 import { PAD, PROMPT, answerLines, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
+// The classifier's only evidence source: a shell command's record (command,
+// sandboxed, exit code; never output) is taken where the worker returns it. A
+// rejected exec keeps exitCode null. The command is cut to keep the classifier
+// message compact. Exported for its test.
+export function recordingExec(history, args, exec) {
+  return async (...params) => {
+    const entry = { command: args.command.slice(0, 2000), sandboxed: !unsandboxed("bash", args), exitCode: null };
+    if (history.push(entry) > 20) history.shift();
+    const result = await exec(...params);
+    entry.exitCode = result.exitCode ?? null;
+    return result;
+  };
+}
+// What an authorization carries: the newest records whose JSON fits the
+// budget, since the broker drops any request line over 128 KiB and escaping
+// can multiply a command's size. Exported for its test.
+export function trimHistory(history, budget = 16 * 1024) {
+  const kept = [...history];
+  while (kept.length && JSON.stringify(kept).length > budget) kept.shift();
+  return kept;
+}
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 // The SDK's own guidelines for the pinned version, spelled with the managed
 // tool names (the SDK's mention plain `read`/`edit`, which do not exist here).
@@ -181,6 +202,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const isRoot = role === "root";
   let currentContext;
   let userTask = "";
+  // This process's recent shell commands (command, sandboxed, exit code; never
+  // output), sent with every bash authorization as the classifier's evidence.
+  const shellHistory = [];
   let ready = false;
   let installed = false;
   let ceiling;
@@ -210,7 +234,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   async function authorize(tool, args) {
     if (!ready) throw new Error("Managed workflow is not ready");
-    return requestBroker(env, role, { action: "authorize", tool, args });
+    return requestBroker(env, role, { action: "authorize", tool, args, ...(tool === "bash" ? { history: trimHistory(shellHistory) } : {}) });
   }
 
   const toolFactory = name => sdk[`create${name[0].toUpperCase()}${name.slice(1)}ToolDefinition`];
@@ -245,9 +269,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       if (name === "bash" && background && args.run_in_background) {
         // No turn signal: the task outlives the call, and only workspace_task or a mode change stops it.
         const client = startToolWorker(name, { cwd: currentContext.cwd, env: workerEnv, ticket });
+        const exec = recordingExec(shellHistory, args, (params, options) => client.call("exec", params, options));
         const taskId = tasks.start({
           command: args.command,
-          run: (onChunk, taskSignal) => client.call("exec", { command: args.command, cwd: currentContext.cwd, timeout: args.timeout }, { signal: taskSignal, onChunk: chunk => onChunk(chunk.toString()) }),
+          run: (onChunk, taskSignal) => exec({ command: args.command, cwd: currentContext.cwd, timeout: args.timeout }, { signal: taskSignal, onChunk: chunk => onChunk(chunk.toString()) }),
           close: () => client.close(),
         });
         return { content: [{ type: "text", text: `Started background task ${taskId}; its output arrives when it ends. Use workspace_task to read or stop it.` }], details: { taskId } };
@@ -256,6 +281,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       try {
         if (name === "grep") return await executeSandboxGrep(client, args, signal);
         const operations = workerOperations(client)[name];
+        if (name === "bash") operations.exec = recordingExec(shellHistory, args, operations.exec);
         const tool = toolFactory(name)(currentContext.cwd, name === "bash" ? { ...bashOptions, operations } : { operations });
         return await tool.execute(id, args, signal, onUpdate, ctx);
       } finally { await client.close(); }
@@ -283,7 +309,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       const { ticket } = await authorize("bash", { command: event.command });
       client = startToolWorker("bash", { cwd: currentContext.cwd, env: workerEnv, ticket });
       let output = "";
-      const { exitCode } = await client.call("exec", { command: event.command, cwd: currentContext.cwd }, { onChunk: chunk => { output += chunk; } });
+      // Recorded like a model command: a `!` run that fails sandboxed is evidence too.
+      const exec = recordingExec(shellHistory, { command: event.command }, (params, options) => client.call("exec", params, options));
+      const { exitCode } = await exec({ command: event.command, cwd: currentContext.cwd }, { onChunk: chunk => { output += chunk; } });
       return { result: { output, exitCode: exitCode ?? 1, cancelled: false, truncated: false } };
     } catch (error) {
       return { result: { output: error.message, exitCode: 1, cancelled: false, truncated: false } };

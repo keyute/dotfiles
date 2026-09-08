@@ -126,10 +126,11 @@ verify with that agent and update this file.
   alongside codex until one wins the trial; ChatGPT-subscription OAuth in
   third-party OSS harnesses is OpenAI-sanctioned (Codex for OSS program names
   pi; last verified 2026-09-05) and draws the same plan quota as codex.
-- pi ships no permission system: the `pi` zsh alias wraps it in srt
-  (`@anthropic-ai/sandbox-runtime`) with settings rendered to
-  `~/.pi/srt-settings.json` from `.chezmoidata/agents.yaml`; the vendored
-  plan-mode extension (pinned from v0.85.0) supplies read-only planning.
+- pi ships no permission system: the managed workflow extension leases a
+  per-tool srt (`@anthropic-ai/sandbox-runtime`) worker for every
+  `workspace_*` call, its profile rendered from `.chezmoidata/agents.yaml`,
+  and the `pi` zsh function launches the pinned CLI with that extension; the
+  workflow's own plan mode supplies read-only planning (verified 2026-09-09).
   `~/.pi/agent/settings.json` is deliberately unmanaged — pi rewrites it
   itself; wholesale ownership would revert `/settings` and Ctrl+S saves on
   every apply (revisit with a `modify_` merge script if pi wins).

@@ -54,7 +54,13 @@ export async function startBroker(config, cwd, review) {
       : policy.inspect(request.role, request.tool, request.args);
     if (verdict === "allow") return grant(request);
     const { role, tool, server, args } = request;
-    const pending = reviewQueue.then(() => review({ role, tool, server, args, mode: policy.mode, approval: policy.approval }));
+    // The requester's recent shell commands, evidence for the classifier; a
+    // child process sends its own. Shape-checked here, where the socket ends.
+    const history = (Array.isArray(request.history) ? request.history : [])
+      .filter(entry => typeof entry?.command === "string" && typeof entry.sandboxed === "boolean" && (entry.exitCode === null || typeof entry.exitCode === "number"))
+      .slice(-20)
+      .map(({ command, sandboxed, exitCode }) => ({ command, sandboxed, exitCode }));
+    const pending = reviewQueue.then(() => review({ role, tool, server, args, history, mode: policy.mode, approval: policy.approval }));
     reviewQueue = pending.catch(() => {});
     const allowed = await pending;
     if (closed || policy.transitioning || epoch !== policy.epoch) throw new Error("Policy changed while approval was pending");

@@ -1,7 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-08 (unsandboxed shell flag; earlier the same day: dot
-form everywhere; earlier: 2026-09-07 evening
+Last updated: 2026-09-09 (classifier evidence and stages; earlier: 2026-09-08
+unsandboxed shell flag; earlier the same day: dot form everywhere; earlier: 2026-09-07 evening
 transcript redesign and lean pass; guard parity: applied workflow copy and
 node_modules symlink, relayed policy messages, Claude-shaped transcript rows,
 ask-user plugin; earlier: fourth comparison run: footer-hosted fleet rows, launch-
@@ -472,6 +472,71 @@ live-tested on the host.
   drop the embedded one), so it now stands down on the documented compaction
   events. pi's auto-retry countdown has no documented event and stays a
   recorded residual.
+
+- 2026-09-09 (classifier evidence and stages): a smoke test's read-only `gh`
+  failed inside the sandbox and its `dangerouslyDisableSandbox` retry was
+  refused. The sandbox half is not pi's: `gh` is a Go binary, Go's TLS
+  verifier calls Security.framework, and SRT's seatbelt allows the
+  `com.apple.trustd.agent` mach service only under
+  `enableWeakerNetworkIsolation` (SRT 0.0.75, `macos-sandbox-utils.js`), so
+  every `gh` HTTPS call fails with `x509: OSStatus -26276` — reproduced in a
+  Claude Code session with the same profile, where `curl` and Node fetch
+  succeed; the Claude Code docs list it under "Go-based CLIs fail TLS
+  verification on macOS" (anthropics/claude-code#23416, #29533, #34876) and
+  the flag is documented as an exfiltration vector. Codex's own seatbelt
+  allows trustd when network is on. Not fixed here: the profile stands. The
+  refusal half was the classifier: it was handed the user's messages and the
+  one action, so it could not see that the same command had just failed
+  sandboxed, and its prompt made deny the conformant answer. Reference
+  designs (vendor docs and source, same day): Claude Code's auto-mode
+  classifier is a prompted general model (Sonnet 5, user cannot pick it) in
+  two stages — a single-token allow/block filter, then chain-of-thought only
+  on a flag over the same cached prompt (Anthropic reports false positives
+  8.5% → 0.4%) — fed user messages, the tool-call history, CLAUDE.md and
+  environment slots with tool outputs stripped, denying on any classifier
+  error and falling back to prompts after 3 consecutive or 20 total blocks;
+  Codex gates deterministically (exec-policy rules, known-safe and dangerous
+  lists, approval policy), a sandboxed failure becomes the human prompt
+  "command failed; retry without sandbox?" with the model's one-sentence
+  `justification`, and the opt-in Guardian reviewer (`codex-auto-review`,
+  off by default) reviews only requests already needing approval. Pi's
+  deterministic tiers were already in that shape (hard refusals, silent
+  sandboxed allows, `needsReview` verbs, unsandboxed always reviewed); the
+  gap was evidence and stage. Now each process keeps its last 20 shell
+  commands (`command` cut to 2,000 chars, `sandboxed`, `exitCode`; never
+  output — both vendors keep the reviewer output-blind), recorded at the
+  `exec` operation for foreground, background and `!` runs alike, sent
+  with every bash authorization and shape-checked in the broker, and the
+  classifier message is `{ task, history, action }` with a prompt line naming
+  a retry after a sandboxed failure as the flag's intended use. Codex's
+  `justification` was not adopted: it is the model's claim, history is
+  evidence. The classifier itself takes Anthropic's shape:
+  `classifier_filter` (Luna, minimal effort — OpenAI's own "routing,
+  classification, extraction" tier) answers every reviewed action and a
+  verdict other than allow is re-judged by `classifier_judge` (Terra,
+  medium — "work that requires sound judgment") on the same prompt; tier
+  names do not map across vendors, so the choice rests on positioning plus
+  the two observed, stage-shaped failures (2026-09-07: 17 s median with p90
+  at the timeout; two read-only denials). Revisit trigger: the next
+  same-prompt run records per-stage latency, how many actions reached the
+  judge, and the judge's verdict on escalations that followed a failed
+  sandboxed attempt; if the filter still forwards read-only escalations more
+  than occasionally, raise its effort to low before touching the prompt.
+  The recording wrapper is exported (`recordingExec`) and unit-tested, since
+  neither the fixture nor the live test reaches `sandboxTool`'s worker.
+  Codex review (one round): a filter failure re-judged rather than prompted
+  was rejected — an allow still comes only from a parsed verdict, and a judge
+  failure still prompts; the unbounded command text (twenty heredocs could
+  pass the broker's 128 KiB line cap and fail valid calls) and the unrecorded
+  background and `!` paths were real and fixed. Its second round showed a
+  character cap does not bound the line (JSON escaping multiplies control
+  characters), so an authorization now carries the newest records whose
+  serialized size fits a 16 KiB budget (`trimHistory`).
+  Follow-ups, not done: denials return "Action not approved" with no
+  rationale and there is no fallback to prompting after repeated blocks;
+  new network hosts are never reviewed (Claude Code classifies them); no
+  per-rule allow/ask list; whether `codex-auto-review` is reachable on the
+  subscription endpoint is unprobed.
 
 ## Verification and remaining gates
 

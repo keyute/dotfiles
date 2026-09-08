@@ -102,8 +102,16 @@ agents:
       model: gpt-5.6-sol
       reasoning_effort: high
       plan_reasoning_effort: high
-      classifier_model: gpt-5.6-luna
-      classifier_reasoning_effort: medium
+      # Approval classifier in Anthropic's two-stage shape: the filter answers
+      # every reviewed action; a verdict other than allow is re-judged on the
+      # same prompt. Luna is OpenAI's routing/classification tier, Terra its
+      # judgment tier.
+      classifier_filter:
+        model: gpt-5.6-luna
+        reasoning_effort: minimal
+      classifier_judge:
+        model: gpt-5.6-terra
+        reasoning_effort: medium
     sensitive_subpaths:
       - "agent/auth.json"
       - "agent/sessions"

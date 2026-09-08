@@ -27,14 +27,18 @@ Settings are merged by managed key; unrelated UI/trust preferences survive.
 Authentication and session files remain unmanaged. Sign in through Pi's normal
 OpenAI subscription login; do not import another harness's auth files.
 
-## Models (last verified 2026-09-06; revisit pricing 2026-11-21)
+## Models (last verified 2026-09-09; revisit pricing 2026-11-21)
 
 Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`,
 {{ .agents.pi.defaults.reasoning_effort }} reasoning; planning uses
 {{ .agents.pi.defaults.plan_reasoning_effort }}. The approval classifier (MCP
-calls and remote-mutating shell verbs) uses
-`{{ .agents.pi.defaults.classifier_model }}` at
-{{ .agents.pi.defaults.classifier_reasoning_effort }} reasoning, with no tools.
+calls, remote-mutating shell verbs and unsandboxed requests) runs in two
+stages with no tools: `{{ .agents.pi.defaults.classifier_filter.model }}` at
+{{ .agents.pi.defaults.classifier_filter.reasoning_effort }} reasoning answers
+every reviewed action, and a verdict other than allow is re-judged on the same
+prompt by `{{ .agents.pi.defaults.classifier_judge.model }}` at
+{{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning, whose
+decision is final.
 
 {{ range $tier, $model := .subagent_tiers.pi -}}
 - {{ $tier }}: `{{ $model }}`
@@ -51,7 +55,7 @@ completed-task cost, including retries and delegation. Sol promotional pricing
 lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
 [Official rate card](https://learn.chatgpt.com/docs/pricing).
 
-## Planning and permissions (last verified 2026-09-08)
+## Planning and permissions (last verified 2026-09-09)
 
 - New sessions start in plan mode with auto-reviewed approvals. Source writes
   remain disabled; temporary build/cache artifacts use designated writable roots.
@@ -75,7 +79,9 @@ lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
   once?`) under ask or on a classifier `ask`. Read-only roles are refused. The
   row reads `Ran … · unsandboxed`. The model sets it only after a
   sandbox-attributable failure of that command or on request, per command;
-  `!` commands stay sandboxed.
+  `!` commands stay sandboxed. The classifier also sees the session's recent
+  shell commands (the command, whether it ran sandboxed, its exit code; never
+  its output), so a retry after a sandboxed failure is judged on that evidence.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
   A pending dialog is announced in the footer and times out after ten minutes.
 - `ask_user_question` (the pinned `@juicesharp/rpiv-ask-user-question` plugin)

@@ -44,9 +44,11 @@ test("broker does not expose its credential to the classifier and invalidates pe
   });
   t.after(() => broker.close());
   // A remote-mutating verb: other sandboxed commands are allowed without review.
-  const pending = requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "git push" } });
+  const pending = requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "git push" }, history: [{ command: "true", sandboxed: true, exitCode: 0, extra: "dropped" }, { command: "bad", sandboxed: "no" }, "bad"] });
   await reviewStarted;
   assert.equal(received.token, undefined);
+  // The requester's shell history reaches the review shape-checked.
+  assert.deepEqual(received.history, [{ command: "true", sandboxed: true, exitCode: 0 }]);
   await broker.setMode("execute");
   finish(true);
   await assert.rejects(pending, /approval was pending/);
@@ -167,7 +169,8 @@ test("a disconnected child without terminal proof blocks further work and mode c
 
 test("tool leases require a single-use ticket bound to the current epoch", { skip }, async t => {
   const { root, config } = fixture(t);
-  const broker = await startBroker(config, root, async () => true);
+  const histories = [];
+  const broker = await startBroker(config, root, async request => { histories.push(request.history); return true; });
   t.after(() => broker.close());
   await broker.setMode("execute");
   const leaseTool = request => new Promise(resolve => {
@@ -197,8 +200,10 @@ test("tool leases require a single-use ticket bound to the current epoch", { ski
   assert.equal((await leaseTool({ name: "bash", ticket: stale.ticket })).ok, false);
   assert.equal((await leaseTool({ name: "bash" })).ok, false);
   // The reviewed ticket alone decides the lease's profile: an unsandboxed bash gets none, a flagged read keeps its profile.
-  const escalated = await requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true } });
+  const escalated = await requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true }, history: "not a list" });
   assert.equal((await leaseTool({ name: "bash", ticket: escalated.ticket })).profile, null);
+  // A missing or malformed history reaches the review as an empty list.
+  assert.deepEqual(histories.at(-1), []);
   const flaggedRead = await requestBroker(broker.env, "root", { action: "authorize", tool: "read", args: { path: "fixture", dangerouslyDisableSandbox: true } });
   assert.ok((await leaseTool({ name: "read", ticket: flaggedRead.ticket })).profile.filesystem);
 });

@@ -20,8 +20,8 @@
       "models" (dict
           "provider" $pi.defaults.provider
           "default" $pi.defaults.model
-          "classifier" $pi.defaults.classifier_model
-          "classifierEffort" $pi.defaults.classifier_reasoning_effort
+          "classifierFilter" (dict "model" $pi.defaults.classifier_filter.model "reasoningEffort" $pi.defaults.classifier_filter.reasoning_effort)
+          "classifierJudge" (dict "model" $pi.defaults.classifier_judge.model "reasoningEffort" $pi.defaults.classifier_judge.reasoning_effort)
           "defaultEffort" $pi.defaults.reasoning_effort
           "planEffort" $pi.defaults.plan_reasoning_effort
           "tiers" .subagent_tiers.pi)
