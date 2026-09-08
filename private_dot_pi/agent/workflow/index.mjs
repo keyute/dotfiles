@@ -452,7 +452,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
   pi.on("session_shutdown", async () => {
     ready = false;
-    tasks.stopAll();
+    await tasks.stopAll();
     releaseChild?.();
     ceiling?.dispose();
     if (broker) {

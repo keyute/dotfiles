@@ -22,18 +22,27 @@ export function createTasks({ notify, record, now = Date.now }) {
       const controller = new AbortController();
       const task = { id, command, startedAt: now(), status: "running", output: "", exitCode: null, error: null, controller };
       tasks.set(id, task);
-      run(chunk => { task.output = (task.output + chunk).slice(-OUTPUT_KEEP); }, controller.signal)
-        .then(
-          ({ exitCode }) => { task.exitCode = exitCode; task.status = exitCode === 0 ? "completed" : "failed"; },
-          error => { task.status = controller.signal.aborted || /aborted/.test(error.message) ? "stopped" : "failed"; task.error = error.message; },
-        )
-        .then(() => close?.())
-        .then(() => {
-          record({ id, command, status: task.status, durationMs: now() - task.startedAt });
-          const reason = task.exitCode != null ? `exit ${task.exitCode}` : task.error ?? task.status;
+      task.done = (async () => {
+        let status;
+        try {
+          const { exitCode } = await run(chunk => { task.output = (task.output + chunk).slice(-OUTPUT_KEEP); }, controller.signal);
+          task.exitCode = exitCode;
+          status = exitCode === 0 ? "completed" : "failed";
+        } catch (error) {
+          status = controller.signal.aborted || /aborted/.test(error.message) ? "stopped" : "failed";
+          task.error = error.message;
+        }
+        // Live until the worker has closed: the turn line and session shutdown both wait on live tasks.
+        try { await close?.(); } catch {}
+        task.status = status;
+        // A session replaced while the task ran leaves a stale pi API that throws; the line is lost, not the process.
+        try {
+          record({ id, command, status, durationMs: now() - task.startedAt });
+          const reason = task.exitCode != null ? `exit ${task.exitCode}` : task.error ?? status;
           const tail = task.output.split("\n").filter(line => line.trim()).slice(-TAIL_LINES).join("\n");
-          notify(`Background task ${id} ${task.status} (${reason}): ${command}\n${tail || "(no output)"}`);
-        });
+          notify(`Background task ${id} ${status} (${reason}): ${command}\n${tail || "(no output)"}`);
+        } catch {}
+      })();
       return id;
     },
     output(id) {
@@ -47,6 +56,12 @@ export function createTasks({ notify, record, now = Date.now }) {
       return true;
     },
     live: () => running().length,
-    stopAll() { for (const task of running()) task.controller.abort(); },
+    // Bounded: session shutdown awaits this, and a worker that never answers
+    // the abort must not hold it; the broker's lease teardown kills it after.
+    stopAll({ timeoutMs = 5_000 } = {}) {
+      const live = running();
+      for (const task of live) task.controller.abort();
+      return Promise.race([Promise.all(live.map(task => task.done)), new Promise(resolve => setTimeout(resolve, timeoutMs).unref())]);
+    },
   };
 }

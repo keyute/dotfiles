@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBashToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createBashToolDefinition, createFindToolDefinition, createLsToolDefinition, createReadToolDefinition, createWriteToolDefinition } from "@earendil-works/pi-coding-agent";
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
 
 // Drives the real SDK tools through worker operations against a directly
@@ -23,12 +23,13 @@ function fixture(t) {
   return root;
 }
 
-test("SDK read, write, and ls tools execute through worker operations", async t => {
+test("SDK read, write, ls, and find tools execute through worker operations", async t => {
   const root = fixture(t);
   for (const [tool, factory, args, check] of [
     ["read", createReadToolDefinition, { path: "alpha.txt" }, text => text.includes("needle here")],
     ["write", createWriteToolDefinition, { path: "out.txt", content: "written" }, () => readFileSync(join(root, "out.txt"), "utf8") === "written"],
     ["ls", createLsToolDefinition, { path: "." }, text => text.includes("beta.md")],
+    ["find", createFindToolDefinition, { pattern: "*.txt" }, text => text.includes("alpha.txt") && text.includes("sub/gamma.txt") && !text.includes("beta.md")],
   ]) {
     const client = direct(tool, root);
     try {

@@ -16,4 +16,3 @@ README.md
 AGENTS.md
 CLAUDE.md
 .pi/agent/workflow/*.test.mjs
-.pi/agent/workflow/memory-transport.mjs

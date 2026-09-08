@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
-import { CHILD, TITLE_WIDTH, closeFolds, completionLine, defaultFolds, shortTitle } from "./rows.mjs";
+import { CHILD, TITLE_WIDTH, closeFolds, completionLine, defaultFolds, oneLine, shortTitle } from "./rows.mjs";
 
 // Rows hang under the status line as Claude Code's subagent statusline does
 // (docs/pi-design.md): `○ title · tokens · model` per child, the cursor row
@@ -30,7 +30,6 @@ export function modelLabel(model, effort) {
   return effort ? `${id} ${effort}` : id;
 }
 
-const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
 
 export function buildRow({ agent, goal, tokens, model, effort }) {
   const total = formatTokens(tokens?.total ?? tokens);

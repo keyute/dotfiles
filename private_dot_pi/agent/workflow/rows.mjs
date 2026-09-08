@@ -45,7 +45,7 @@ const resultText = result => {
 const nonEmpty = text => text.split("\n").filter(line => line.trim());
 const plural = (n, noun, nouns = `${noun}s`) => `${n} ${n === 1 ? noun : nouns}`;
 const indent = line => `${PAD}${line}`;
-const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
+export const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
 
 export function shortTitle(text, width = TITLE_WIDTH) {
   const title = oneLine(text);
