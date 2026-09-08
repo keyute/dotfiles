@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { readLines, sendLine } from "./lines.mjs";
 import { PAD, closeFolds, createTurnClock, defaultFolds, formatTurn } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
@@ -112,11 +112,31 @@ function readGitChanges(cwd) {
   });
 }
 
+// The working row is ours, not pi's (docs/pi-design.md rules 3 and 8): pi's own
+// standalone Loader row hardcodes a leading blank line and a one-column indent,
+// and setWidget's string form wraps its lines in that same indent, so the glyph
+// could never reach column 0. As a widget it sits directly above the composer —
+// pi docks widgetsAbove between the status container and the editor.
+class WorkingRow extends Loader {
+  constructor(tui, theme) {
+    super(tui, text => theme.fg("accent", text), text => theme.fg("muted", text), "");
+    this.paddingX = 0;
+    this.stop();
+  }
+  // Loader prefixes a blank line of its own; between turns the row is nothing.
+  render(width) {
+    return this.message ? super.render(width).slice(1) : [];
+  }
+  dispose() {
+    this.stop();
+  }
+}
+
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
 export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000 } = {}) {
-  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false };
+  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false, working: null, compacting: false };
 
   const refreshUsage = async () => {
     if (Date.now() - state.usageAt < USAGE_MIN_INTERVAL_MS) return;
@@ -143,12 +163,23 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   // stays open until the follow-up run settles (or the user types). An
   // aborted run closes at once as "Interrupted".
   const label = () => (state.prompting ? "Waiting for you…" : clock.label());
-  const showLabel = () => ctx.ui.setWorkingMessage(label());
+  // The tick keeps calling this, so the stood-down state has to survive it.
+  const showLabel = () => state.working?.setMessage(clock.running() && !state.compacting ? label() : "");
+  const stopWorking = () => {
+    state.working?.setMessage("");
+    state.working?.stop();
+  };
+  const startWorking = () => {
+    state.compacting = false;
+    if (!clock.running()) return;
+    state.working?.start();
+    showLabel();
+  };
   const close = options => {
     clearInterval(state.tick);
     state.tick = null;
     state.waiting = false;
-    ctx.ui.setWorkingMessage();
+    stopWorking();
     const turn = clock.stop(Date.now(), options);
     if (turn) { closeFolds(defaultFolds); pi.appendEntry("workflow-turn", turn); }
   };
@@ -156,7 +187,7 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     clock.start();
     state.waiting = false;
     state.tick ??= setInterval(showLabel, tickMs);
-    showLabel();
+    startWorking();
   });
   pi.on("agent_end", (event, eventCtx) => {
     void refreshUsage();
@@ -171,41 +202,55 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   pi.on("input", event => { if (state.waiting && event.source !== "extension") close(); return { action: "continue" }; });
   pi.on("ui_prompt_start", () => { state.prompting = true; showLabel(); });
   pi.on("ui_prompt_end", () => { state.prompting = false; showLabel(); });
-  pi.on("session_shutdown", () => { clearInterval(state.tick); state.tick = null; });
+  // pi draws its own indicator while it compacts, in the status container just
+  // above this row; rule 3 allows one, so the row stands down and comes back
+  // with the turn. Its auto-retry countdown has no documented event and keeps
+  // its own indicator alongside this one — the recorded residual.
+  pi.on("session_before_compact", () => { state.compacting = true; stopWorking(); });
+  pi.on("session_compact", () => startWorking());
+  pi.on("session_compact_failed", () => startWorking());
+  pi.on("session_shutdown", () => { clearInterval(state.tick); state.tick = null; stopWorking(); });
   pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
   void refreshUsage();
   void refreshGit(ctx.cwd);
 
-  // pi drops the extension footer on every session invalidate (/new, /resume),
-  // so the surface is re-attached at each session start; events are wired once.
-  const attach = uiCtx => uiCtx.ui.setFooter((tui, theme, footerData) => {
-    state.tui = tui;
-    fleet?.attach(tui);
-    const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
-    const separator = theme.fg("dim", " · ");
-    return {
-      dispose: unsubscribe,
-      invalidate() {},
-      render(width) {
-        const segments = buildSegments({
-          modelId: uiCtx.model?.id,
-          thinkingLevel: uiCtx.thinkingLevel,
-          contextPercent: uiCtx.getContextUsage()?.percent ?? null,
-          limits: state.limits,
-          branch: footerData.getGitBranch(),
-          changes: state.changes,
-        });
-        const left = segments.map(s => (s.color ? theme.fg(s.color, s.text) : s.text)).join(separator);
-        // The workflow mode; other extensions keep their own surfaces.
-        const right = footerData.getExtensionStatuses().get("workflow") ?? "";
-        const pad = " ".repeat(Math.max(1, width - PAD.length * 2 - visibleWidth(left) - visibleWidth(right)));
-        // Child rows hang under the status line: pi's dock keeps the footer
-        // last, so this is the only slot below it.
-        return [truncateToWidth(PAD + left + pad + right + PAD, width), ...(fleet?.render(width, theme) ?? [])];
-      },
-    };
-  });
+  // pi drops every extension surface on a session invalidate (/new, /resume),
+  // so they are re-applied at each session start; events are wired once.
+  const attach = uiCtx => {
+    // pi's built-in working row is switched off in favour of the widget above
+    // the composer; with it off no working indicator is ever built, so pi's
+    // two-line idle placeholder never lands in the status container either.
+    uiCtx.ui.setWorkingVisible(false);
+    uiCtx.ui.setWidget("workflow-working", (tui, theme) => (state.working = new WorkingRow(tui, theme)), { placement: "aboveEditor" });
+    uiCtx.ui.setFooter((tui, theme, footerData) => {
+      state.tui = tui;
+      fleet?.attach(tui);
+      const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+      const separator = theme.fg("dim", " · ");
+      return {
+        dispose: unsubscribe,
+        invalidate() {},
+        render(width) {
+          const segments = buildSegments({
+            modelId: uiCtx.model?.id,
+            thinkingLevel: uiCtx.thinkingLevel,
+            contextPercent: uiCtx.getContextUsage()?.percent ?? null,
+            limits: state.limits,
+            branch: footerData.getGitBranch(),
+            changes: state.changes,
+          });
+          const left = segments.map(s => (s.color ? theme.fg(s.color, s.text) : s.text)).join(separator);
+          // The workflow mode; other extensions keep their own surfaces.
+          const right = footerData.getExtensionStatuses().get("workflow") ?? "";
+          const pad = " ".repeat(Math.max(1, width - PAD.length * 2 - visibleWidth(left) - visibleWidth(right)));
+          // Child rows hang under the status line: pi's dock keeps the footer
+          // last, so this is the only slot below it.
+          return [truncateToWidth(PAD + left + pad + right + PAD, width), ...(fleet?.render(width, theme) ?? [])];
+        },
+      };
+    });
+  };
   attach(ctx);
   return { attach };
 }

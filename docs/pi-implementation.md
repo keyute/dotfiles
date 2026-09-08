@@ -429,6 +429,50 @@ live-tested on the host.
   close handler awaits it) and the footer reuses the runner's
   `hostEnvironment` for its own subprocess env.
 
+- 2026-09-08 (night, from two screenshots and the follow-ups): four changes.
+  (1) The gap under a fold summary was pi's assistant component, not the fold:
+  a folded row costs no lines (`Text("")` renders `[]` and a `renderShell:
+  "self"` component with no content returns `[]`), while each hidden reasoning
+  run leaves the `Spacer(1)` that component adds from raw content
+  (earendil-works/pi#8154) — six blanks under one summary. `blankReasoning`
+  (`rows.mjs`, wired to `message_end`) blanks the thinking text on the settled
+  message, gated on `message.api` being an OpenAI Responses one: that replay
+  sends `JSON.parse(block.thinkingSignature)` and never the text, and the
+  signature holds the whole reasoning item including the provider's summary,
+  so neither the model's context nor the session file loses anything; the
+  Anthropic replay sends the text with its signature and rejects a modified
+  block. Blocks are mutated in place and the same object returned, so pi's
+  in-place replacement is a no-op and the stream's signature backfill keeps
+  its references. (2) The working spinner left the composer for its own line
+  directly above it: `embedWorkingStatus: false`, pi's own row off through
+  `setWorkingVisible(false)`, and a `Loader` subclass at column 0 (dropping
+  pi-tui's hardcoded one-column pad and leading blank) handed to `setWidget`
+  at `placement: "aboveEditor"` from the footer's `attach`, which already
+  re-applies surfaces on every session start. (3) `@juicesharp/rpiv-todo`
+  removed — manifest, lockfile, the `jiti` import, `rootTools`, the row title
+  and summary branches, three pins and rule 10's panel. Research behind it:
+  Claude Code v2.1.233 (2026-08-14) disabled `TodoWrite` by default on its
+  newest models and Codex CLI v0.152.0 (PR #41744, 2026-08-31) made
+  `update_plan` opt-in, so the panel's own reference was gone; 2026 SWE-bench
+  work finding plans helpful was weighed and overruled by the owner.
+  (4) Sent user messages carry the composer's `❯` through the markdown
+  transformer, in the box's own colour (an inner colour's reset would end the
+  box's for the rest of the line). New pins cover Loader's two hardcodings,
+  the widget dock order and its leading spacer, the assistant component's
+  reasoning spacer, the message_end ordering and in-place replacement, and
+  both providers' reasoning replay. Codex review (one round) found two real
+  defects, both verified against pi's source and handled: `transformMessages`
+  (called from `openai-responses-shared.js:88`) keeps a signed thinking block
+  only where provider, api and model id all match, forwards the reasoning as
+  plain text otherwise, and drops a block whose text is empty — so blanking
+  costs those summaries after a model change, only the model id being variable
+  under the managed roster. Accepted and recorded in rule 2 with its own pin
+  rather than fixed, since the opaque item does not survive the change either; and an independent working row no
+  longer clears when pi shows its own indicator (`showStatusIndicator` used to
+  drop the embedded one), so it now stands down on the documented compaction
+  events. pi's auto-retry countdown has no documented event and stays a
+  recorded residual.
+
 ## Verification and remaining gates
 
 - Automated tests cover pinned package registration, real child launch preflight,

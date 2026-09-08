@@ -6,7 +6,7 @@ export const fileTools = ["read", "write", "edit", "grep", "find", "ls"];
 export const workerTools = [...fileTools, "bash"];
 export const publicToolName = name => workerTools.includes(name) ? `workspace_${name}` : name;
 // The parent session's tool set; children get theirs from the roster config.
-export const rootTools = [...workerTools.map(publicToolName), "workspace_task", "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan", "todo", "web_search"];
+export const rootTools = [...workerTools.map(publicToolName), "workspace_task", "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan", "web_search"];
 
 // Sandboxed shell runs without review, as Claude Code (autoAllowBashIfSandboxed)
 // and Codex do: the SRT profile is the boundary. The one effect the profile

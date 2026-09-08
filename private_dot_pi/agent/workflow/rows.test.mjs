@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, formatDuration, formatTurn, glyph, installFolding, pluginRenderers, pluginTitle, resultSummary, summarise, toolRenderers } from "./rows.mjs";
+import { addFold, answerLines, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, formatDuration, formatTurn, glyph, installFolding, pluginRenderers, pluginTitle, resultSummary, summarise, toolRenderers } from "./rows.mjs";
 
 // keyHint and the markdown theme read pi's theme; the default one is enough.
 initTheme();
@@ -33,16 +33,10 @@ test("plugin titles name the server and tool, or the child and its task", () => 
   assert.equal(pluginTitle("subagent", {}), "subagent");
   assert.equal(pluginTitle("bg_wait", { id: "eeeb8e9f", timeoutMs: 30000 }), 'bg wait "eeeb8e9f"');
   assert.equal(pluginTitle("contact_supervisor", {}), "contact supervisor");
-  assert.equal(pluginTitle("todo", { action: "create", subject: "Research existing tool" }), "Added todo Research existing tool");
-  assert.equal(pluginTitle("todo", { action: "update", id: 3, status: "completed" }), "Updated todo #3");
-  assert.equal(pluginTitle("todo", { action: "list" }), "Listed todos");
   assert.equal(pluginTitle("web_search", { query: "pi tui MouseRegion" }), 'Searched "pi tui MouseRegion"');
 });
 
-test("todo and background-task summaries", () => {
-  const tasks = [{ status: "completed" }, { status: "in_progress" }, { status: "deleted" }];
-  assert.equal(resultSummary("todo", result("Created #1", { tasks })), "1/2 done");
-  assert.equal(resultSummary("todo", result("Error: no", { tasks: [], error: "no" })), "");
+test("background-task summaries", () => {
   assert.equal(resultSummary("bash", result("Started background task t1", { taskId: "t1" })), "task t1 · running");
 });
 
@@ -225,7 +219,8 @@ test("assistant bullets sit at column 0, a leading heading rides the bullet line
   assert.equal(bulletMarkdown("Done.", { messageType: "assistant" }), "• Done.");
   assert.equal(bulletMarkdown("# Title\nbody", { messageType: "assistant" }), "• **Title**\n\nbody");
   assert.equal(bulletMarkdown("- one\n- two", { messageType: "assistant" }), "•\n- one\n- two");
-  assert.equal(bulletMarkdown("plain", { messageType: "user" }), "plain");
+  assert.equal(bulletMarkdown("plain", { messageType: "user" }), "❯ plain");
+  assert.equal(bulletMarkdown("  ", { messageType: "user" }), "  ");
   assert.equal(bulletMarkdown("  ", { messageType: "assistant" }), "  ");
   assert.equal(bulletMarkdown("Let me think.", { messageType: "assistant-thinking" }), "");
   const lines = md => new Markdown(bulletMarkdown(md, { messageType: "assistant" }), 0, 0, getMarkdownTheme()).render(40).map(line => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
@@ -235,6 +230,25 @@ test("assistant bullets sit at column 0, a leading heading rides the bullet line
   assert.deepEqual(lines("## Title"), ["• Title"]);
   assert.deepEqual(lines("## Title\n\nbody"), ["• Title", "", "body"]);
   assert.deepEqual(new Markdown(bulletMarkdown("hm", { messageType: "assistant-thinking" }), 0, 0, getMarkdownTheme()).render(40), []);
+});
+
+test("reasoning is blanked only where the provider replays it from the opaque item", () => {
+  const message = (api, blocks) => ({ role: "assistant", api, content: blocks });
+  const thinking = extra => ({ type: "thinking", thinking: "weighing it up", ...extra });
+  const opaque = message("openai-responses", [thinking({ thinkingSignature: '{"type":"reasoning"}' }), { type: "toolCall", id: "t1" }]);
+  assert.equal(blankReasoning(opaque), opaque);
+  assert.equal(opaque.content[0].thinking, "");
+  // The signature keeps the provider's own summary, so nothing leaves the session.
+  assert.equal(opaque.content[0].thinkingSignature, '{"type":"reasoning"}');
+  assert.equal(blankReasoning(opaque), undefined, "a blanked message is not replaced twice");
+  const anthropic = message("anthropic-messages", [thinking({ thinkingSignature: "sig" })]);
+  assert.equal(blankReasoning(anthropic), undefined);
+  assert.equal(anthropic.content[0].thinking, "weighing it up");
+  // Without a signature the text is all there is; an aborted stream leaves that.
+  const unsigned = message("openai-responses", [thinking({})]);
+  assert.equal(blankReasoning(unsigned), undefined);
+  assert.equal(unsigned.content[0].thinking, "weighing it up");
+  assert.equal(blankReasoning({ role: "user", content: [] }), undefined);
 });
 
 test("answers, completion and turn lines format", () => {

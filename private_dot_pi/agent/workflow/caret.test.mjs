@@ -21,13 +21,13 @@ test("composer is the user box's shape: shaded rows instead of rules, the prompt
   assert.ok(lines[1].endsWith("\x1b[49m"));
 });
 
-test("the working status rides the top shaded row at column 0 while a turn runs", () => {
+test("the working status is not embedded: the top shaded row is blank, or the scroll count", () => {
   const caret = editor();
-  assert.equal(caret.embedWorkingStatus, true);
-  caret.setWorkingStatusIndicator({ renderInBorder: () => "⠋ Deriving… 2s" });
-  assert.equal(caret.render(40)[0], `${BG}${"⠋ Deriving… 2s".padEnd(40)}\x1b[49m`);
-  caret.setWorkingStatusIndicator(undefined);
+  // pi hands the indicator to the editor only when it asks for it; the row
+  // above the composer is the footer's own (docs/pi-design.md rule 3).
+  assert.equal(caret.embedWorkingStatus, false);
   assert.equal(caret.render(40)[0], `${BG}${" ".repeat(40)}\x1b[49m`);
+  assert.equal(caret.renderTopBorder(40, 3), `${BG}${"  ↑ 3 more".padEnd(40)}\x1b[49m`);
 });
 
 test("prompt survives the host copying the default editor's paddingX onto the custom editor", () => {

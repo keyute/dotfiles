@@ -14,7 +14,7 @@ import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createTasks } from "./tasks.mjs";
-import { PAD, answerLines, bulletMarkdown, completionLine, installFolding, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { PAD, PROMPT, answerLines, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
@@ -97,17 +97,18 @@ const padRow = (text, width) => truncateToWidth(text, width, "", true);
 
 // The composer takes the user box's shape (docs/pi-design.md rule 5): pi's rule
 // lines become blank shaded rows, the content rows between them are shaded,
-// and "❯ " sits in the padding columns of the first content line. pi's working
-// spinner rides the top row (embedWorkingStatus routes it to the editor; its
-// standalone row is one column in with a blank line above). Rendered lines
-// carry their cursor marker inline, so replacing the padding shifts the cursor
-// correctly; if the render shape ever changes, the prompt silently disappears
-// instead of corrupting the editor.
+// and "❯ " sits in the padding columns of the first content line. The working
+// spinner is not embedded here: it is the footer's own row above the composer,
+// since pi's embedded status renders inside this top row and its standalone one
+// is a column in under a blank line. Rendered lines carry their cursor marker
+// inline, so replacing the padding shifts the cursor correctly; if the render
+// shape ever changes, the prompt silently disappears instead of corrupting the
+// editor.
 export class CaretEditor extends sdk.CustomEditor {
   // The editor factory is handed an EditorTheme (borders and autocomplete only),
   // so the palette for the shade and the caret arrives separately.
   constructor(tui, theme, keybindings, { fleet, palette } = {}) {
-    super(tui, theme, keybindings, { paddingX: PROMPT_PADDING, embedWorkingStatus: true });
+    super(tui, theme, keybindings, { paddingX: PROMPT_PADDING, embedWorkingStatus: false });
     this.fleet = fleet;
     this.palette = palette;
   }
@@ -152,12 +153,11 @@ export class CaretEditor extends sdk.CustomEditor {
   setPaddingX(padding) {
     super.setPaddingX(Math.max(PROMPT_PADDING, padding));
   }
-  // The rule lines become shaded rows (the working status on top while a turn
-  // runs, a scroll count when clipped, blank otherwise), so the block keeps
-  // its line count and pi's mouse and autocomplete row offsets stay valid.
+  // The rule lines become shaded rows (a scroll count when clipped, blank
+  // otherwise), so the block keeps its line count and pi's mouse and
+  // autocomplete row offsets stay valid.
   renderTopBorder(width, hidden) {
-    const status = this.workingStatusIndicator?.renderInBorder(width) ?? "";
-    return this.shade(padRow(status || (hidden ? `${PAD}↑ ${hidden} more` : ""), width));
+    return this.shade(padRow(hidden ? `${PAD}↑ ${hidden} more` : "", width));
   }
   renderBottomBorder(width, hidden) {
     this.bottomRow = this.shade(padRow(hidden ? `${PAD}↓ ${hidden} more` : "", width));
@@ -168,7 +168,7 @@ export class CaretEditor extends sdk.CustomEditor {
     // Content sits between the two shaded rows; autocomplete follows the
     // bottom one and stays unshaded.
     const end = lines.lastIndexOf(this.bottomRow);
-    if (end > 1 && lines[1].startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = this.palette.fg("accent", "❯ ") + lines[1].slice(PROMPT_PADDING);
+    if (end > 1 && lines[1].startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = this.palette.fg("accent", `${PROMPT} `) + lines[1].slice(PROMPT_PADDING);
     for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
     return lines;
   }
@@ -423,11 +423,14 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       pi.appendEntry("workflow-answers", { answers });
     });
     pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
-    // The task list (Claude Code's) is the pinned plugin's: its `todo` tool
-    // takes the row shape, its panel above the composer is its own.
-    const todo = await jiti.import("@juicesharp/rpiv-todo", { default: true });
-    todo(styled);
     pi.registerMarkdownTransformer(bulletMarkdown);
+    // Reasoning leaves the settled message as well as the transcript; the
+    // markdown transformer only reaches the render, and pi spaces the message
+    // from its raw content (see blankReasoning).
+    pi.on("message_end", event => {
+      const message = blankReasoning(event.message);
+      return message ? { message } : undefined;
+    });
     pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present the implementation plan for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), ...planRenderers, async execute(_id, args) {
       const ctx = currentContext;
       if (!ctx.hasUI || !await ctx.ui.confirm("Approve this implementation plan?", args.plan)) return resultText("Plan not approved. Remain in planning mode.");

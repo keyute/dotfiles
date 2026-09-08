@@ -177,20 +177,19 @@ that ends prints `• agent finished · task · 2m 14s`, or its status word
 (`failed`/`stopped` red, `paused`/`partial`/`detached` amber). Reasoning
 never renders (the markdown transformer empties `assistant-thinking`;
 `hideThinkingBlock` stays off), though pi's assistant component still adds
-its one spacer line per message that carried reasoning, and one more between
-reasoning and text — the component reads the raw content, and no documented
-API reaches it (earendil-works/pi#8154); with every tool row's own leading
-blank that makes two blank lines wherever the model reasoned between tool
-calls. Lines that open with a glyph (`•`, `π`, `❯`) start at column 0, lines
-without one (`↳`, the fold line, the status line, the fleet rows) two columns
+its one spacer line per message that carried reasoning — the component reads
+the raw content, and no display hook reaches it (earendil-works/pi#8154), so
+the reasoning text is blanked on the settled message instead (see the coupling
+inventory below). Lines that open with a glyph (`•`, `π`, `❯`) start at column
+0, lines without one (`↳`, the fold line, the status line, the fleet rows) two columns
 in; pi's `outputPad` is 0 so its own lines match, and assistant text
 therefore sits at column 0 under its bullet rather than at Claude Code's
 text column (`outputPad` is 0/1 by design, pi#6168/#6757; no assistant
 renderer hook, pi#6747/#6876 — re-check if any of these closes). A reply
 that opens with a heading renders it bold on the bullet line.
 While a turn runs the working spinner reads
-`Interpolating… 1m 12s` (a random π-flavoured verb from `rows.mjs`) in the
-composer's top shaded row; when it
+`Interpolating… 1m 12s` (a random π-flavoured verb from `rows.mjs`) on its own
+line at column 0 directly above the composer; when it
 ends a `π Interpolated for 3m 34s · done 9:04 pm` line is appended — only once
 no background child is live, otherwise after the child's follow-up run settles
 (or the user types); ctrl+c prints `π Interrupted after …`. The status line
@@ -200,10 +199,10 @@ the right.
 Running children hang under the status line as `○ agent › title · tokens ·
 model` rows (title cut at a word boundary to 36 columns; five rows, then
 `↓ N more`; queued children dim). The composer is the user box's shape: a
-block in `userMessageBg` with a blank shaded row above (the spinner while a
-turn runs) and below, a `❯` prompt at column 0, no rule lines, no
-placeholder; those two are the only backgrounds. Arrow-down from the last line of the
-prompt moves a `›` cursor into the rows; up/down move it, Enter shows the
+block in `userMessageBg` with a blank shaded row above and below, a `❯`
+prompt at column 0, no rule lines, no placeholder; a sent message carries the
+same `❯` in the same column, and those two are the only backgrounds.
+Arrow-down from the last line of the prompt moves a `›` cursor into the rows; up/down move it, Enter shows the
 highlighted child's transcript tail and model in an overlay (Esc closes; a
 child with no transcript yet says so), Esc or up past the first row returns
 to the prompt, any other key returns and types. Tab completes: on a command
@@ -219,18 +218,18 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
 - Documented pi surfaces: tool renderers (`renderShell: "self"`,
   `context.expanded/toolCallId/invalidate/state`), `registerMarkdownTransformer`,
   `appendEntry`/`registerEntryRenderer`, `setFooter`, `setHeader`,
-  `setEditorComponent`, `setWorkingMessage`, the `outputPad` and
+  `setEditorComponent`, `setWidget`, `setWorkingVisible`, the `outputPad` and
   `hideThinkingBlock` settings, the `agent_start/agent_end/agent_settled`,
   `message_update/message_end`, `tool_execution_*`, `ui_prompt_*` and `input`
   events; pi-subagents' `subagents:rpc:v1` status reply and
   `subagent:async-started/complete` events. `stability.test.mjs` checks every
   import and event name against the package exports and docs.
-- Plugin rows: pi-subagents, pi-mcp-adapter, the questionnaire, todo and
+- Plugin rows: pi-subagents, pi-mcp-adapter, the questionnaire and
   web-search plugins receive a Proxy of the extension API whose
   `registerTool` swaps `renderShell`/`renderCall`/`renderResult` on every
   registration (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the
   supervisor channel, `mcp`, `mcpScript`, `mcp__*`, `ask_user_question`,
-  `todo`, `web_search`, `url_context`); rests on the plugins
+  `web_search`, `url_context`); rests on the plugins
   registering through the API they are handed and pi keeping the definition
   object (`loader.js`). Rows read `args` and the result text; the two
   `details` reads are the adapter's `error` (failures it reports without
@@ -256,11 +255,7 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
 - Exported but undocumented: `renderDiff`, `keyHint`, `getMarkdownTheme`,
   `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
   render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
-  `setPaddingX`, the first content line's padding columns). The spinner in
-  the top row rests on the documented `embedWorkingStatus` option plus two
-  undocumented pieces: pi handing a `WorkingStatusIndicator` to the editor's
-  `setWorkingStatusIndicator` (and only that kind), and that indicator's
-  `renderInBorder(width)`; both pinned in `stability.test.mjs`.
+  `setPaddingX`, the first content line's padding columns).
 - Mouse: the fold handle answers clicks on its summary line from its own
   `handleMouse`; rests on pi-tui's `MouseRegion` asking the child before its
   own handler and on `ToolExecutionComponent` forwarding self-shell mouse
@@ -281,12 +276,30 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
   (a body only; a closed fold reopens when the documented
   `ctx.ui.getToolsExpanded()` value changes, i.e. on Ctrl+O). All pinned in
   `stability.test.mjs`.
-- Plugin data the rows and policy read: the todo tool's `details.tasks`,
-  `details.action` and `details.error`; pi-web-search's `details.error` and
+- Plugin data the rows and policy read: pi-web-search's `details.error` and
   its `web_search`/`url_context` names; the SDK bash schema being a plain
   object whose `properties` take the `run_in_background` flag. All pinned in
   `stability.test.mjs`, with `pi.sendMessage`, `ctx.ui.input` and
   `ctx.ui.select` checked against the docs.
+- The working row above the composer: pi's own row is a column in under a
+  blank line (pi-tui's `Loader` hardcodes both) and `setWidget`'s string form
+  wraps its lines in the same indent, so the extension subclasses `Loader` and
+  drops that leading line; it rides `setWidget`'s documented component form at
+  `placement: "aboveEditor"`, which pi docks between the status container and
+  the composer; it stands down for pi's compaction indicator, and pi's
+  auto-retry countdown (no documented event) shows alongside it. Pinned in
+  `stability.test.mjs`.
+- Blanked reasoning: pi spaces an assistant message from its raw reasoning
+  before any display hook runs (earendil-works/pi#8154), so a `message_end`
+  handler blanks the thinking text. Rests on the OpenAI Responses replay
+  sending the opaque reasoning item alone (`JSON.parse(block.thinkingSignature)`
+  in pi-ai's `openai-responses-shared.js`, which also stores the provider's own
+  summary) and on the Anthropic replay sending the text with its signature,
+  which is why the handler is gated on `message.api`. Accepted cost:
+  `transformMessages` keeps a signed block only where provider, api and model
+  id all match and drops one whose text is empty, so after a model change the
+  earlier reasoning no longer reaches the new model as plain text. All pinned
+  in `stability.test.mjs`.
 - Outside the npm pin: the status line's usage segments come from `codex
   app-server` JSON-RPC (`account/rateLimits/read`), a codex-cli surface with no
   published contract: re-verify after every codex-cli bump (last verified
@@ -297,13 +310,7 @@ is available through Pi. Inside a child, pi-subagents'
 tool allowlist may leave the direct `mcp__*` tools inactive; the `mcp` proxy is
 always in the allowlist and reaches the same servers.
 
-## Task list and web search (last verified 2026-09-08, evening; unapplied)
-
-`todo` is the pinned `@juicesharp/rpiv-todo` plugin (Claude Code's task
-list): `create`/`update`/`list`/`get`/`delete`/`clear`, a panel above the
-composer that survives `/reload` and compaction, `/todos` to print it,
-`ctrl+shift+t` to collapse it. Root only; children carry no list. Its rows
-take the transcript shape (`docs/pi-design.md` rule 10).
+## Web search (last verified 2026-09-08, evening; unapplied)
 
 `web_search` is the pinned `pi-web-search` plugin: OpenAI's server-side
 `web_search` tool, requested against the same Codex Responses endpoint and

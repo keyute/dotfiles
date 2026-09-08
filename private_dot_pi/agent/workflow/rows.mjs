@@ -9,6 +9,7 @@ export const BULLET = "•";
 export const CHILD = "○";
 export const TURN_GLYPH = "π";
 export const SUB = "↳";
+export const PROMPT = "❯";
 export const PAD = "  ";
 export const TITLE_WIDTH = 36;
 const PREVIEW_WIDTH = 48;
@@ -102,17 +103,8 @@ export function pluginTitle(name, args = {}, servers = []) {
     return "mcp";
   }
   if (name.startsWith("mcp__")) return `${mcpName(name.slice("mcp__".length), servers)}${preview(args)}`;
-  if (name === "todo") return todoTitle(args);
   if (name === "web_search") return `Searched "${shortTitle(args.query ?? "", PREVIEW_WIDTH)}"`;
   return `${name.replaceAll("_", " ")}${preview(args)}`;
-}
-
-// The todo tool's actions, Claude Code's task-list verbs; an update names the
-// task by id since its subject lives in the plugin's state.
-const TODO_VERBS = { create: "Added todo", update: "Updated todo", get: "Read todo", delete: "Deleted todo", list: "Listed todos", clear: "Cleared todos" };
-function todoTitle(args) {
-  const what = args.subject ? shortTitle(args.subject, PREVIEW_WIDTH) : args.id != null ? `#${args.id}` : "";
-  return `${TODO_VERBS[args.action] ?? "todo"}${what && !["list", "clear"].includes(args.action) ? ` ${what}` : ""}`;
 }
 
 // The one line under a collapsed row: what the result was, never what it said.
@@ -121,10 +113,6 @@ function todoTitle(args) {
 export function resultSummary(name, result) {
   if (!result) return "";
   if (result.details?.taskId) return `task ${result.details.taskId} · running`;
-  if (name === "todo") {
-    const tasks = (result.details?.tasks ?? []).filter(task => task.status !== "deleted");
-    return tasks.length ? `${tasks.filter(task => task.status === "completed").length}/${tasks.length} done` : "";
-  }
   if (name === "plugin") return shortTitle(firstLine(resultText(result)), SUMMARY_WIDTH);
   if (name === "edit" || name === "write") {
     const diff = result.details?.diff;
@@ -318,7 +306,7 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
   if (name === "ask_user_question") return NOTHING;
   const subagent = name === "subagent";
   const renderers = rowRenderers({
-    name: subagent ? "subagent" : isMcp(name) ? "mcp" : name === "todo" ? "todo" : "plugin",
+    name: subagent ? "subagent" : isMcp(name) ? "mcp" : "plugin",
     title: args => pluginTitle(name, args, servers),
     folds,
     failed: (result, context) => context.isError || Boolean(result?.details?.error),
@@ -360,6 +348,12 @@ export const planRenderers = {
 // label leaves an invisible, clickable line.
 export function bulletMarkdown(markdown, { messageType }) {
   if (messageType === "assistant-thinking") return "";
+  // A sent message opens with the composer's glyph at the same column: pi's
+  // user box renders its content at outputPad, which is 0. The glyph takes the
+  // box's own colour rather than the accent — the box colours its content
+  // through one function, and an inner colour's reset would end it for the rest
+  // of the line.
+  if (messageType === "user") return markdown.trim() ? `${PROMPT} ${markdown.trimStart()}` : markdown;
   if (messageType !== "assistant") return markdown;
   const body = markdown.trimStart();
   if (!body) return markdown;
@@ -367,6 +361,32 @@ export function bulletMarkdown(markdown, { messageType }) {
   const heading = first.match(/^#{1,6}\s+(.*?)\s*$/);
   if (heading) return [`${BULLET} **${heading[1]}**`, ...(rest[0]?.trim() ? [""] : []), ...rest].join("\n");
   return /^(```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? `${BULLET}\n${body}` : `${BULLET} ${body}`;
+}
+
+// pi's assistant component adds a blank line for any message whose raw content
+// carries reasoning, before any display hook runs (earendil-works/pi#8154), so
+// a folded run stacks one blank per hidden reasoning block. These APIs replay
+// reasoning from the opaque item alone (`JSON.parse(block.thinkingSignature)`
+// in pi-ai's openai-responses-shared) and never send the text, so the same
+// model loses nothing. The one cost is a change of model identity — pi's
+// `transformMessages` keeps a signed block only when provider, api and model id
+// all match, forwards the reasoning as plain text otherwise, and drops the block
+// once that text is empty, so those summaries stop reaching the new model. Only
+// the model id can change under the managed roster, which fixes the provider and
+// validates the id in `before_agent_start`. Anthropic replays the text with its
+// signature and rejects a modified block, hence the gate.
+const OPAQUE_REASONING_APIS = new Set(["openai-responses", "azure-openai-responses", "openai-codex-responses"]);
+export function blankReasoning(message) {
+  if (message?.role !== "assistant" || !OPAQUE_REASONING_APIS.has(message.api)) return undefined;
+  let blanked = false;
+  for (const block of message.content ?? []) {
+    if (block.type !== "thinking" || !block.thinkingSignature || !block.thinking) continue;
+    // Mutated in place: pi's replacement copies onto this same object, and the
+    // stream's signature backfill still holds the block by reference.
+    block.thinking = "";
+    blanked = true;
+  }
+  return blanked ? message : undefined;
 }
 
 export function answerLines(answers, theme) {

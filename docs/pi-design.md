@@ -12,19 +12,19 @@ pi's own glyphs. Each rule carries the why that earned it.
    state for every row (tool calls, subagent launches and actions, child
    completion lines), `○` only on a fleet row, `↳` for the line under a row,
    `π` for anything the harness says in its own voice (turn line), `›` for the
-   fleet cursor, `❯` for the prompt. No `⏺`/`✻`/`◯` (Claude's signatures), no
-   Codex `Called`/`Explored` headers. *Why:* a borrowed signature reads as a
+   fleet cursor, `❯` for the prompt and for the message it sent (rule 5). No
+   `⏺`/`✻`/`◯` (Claude's signatures), no Codex `Called`/`Explored` headers.
+   *Why:* a borrowed signature reads as a
    clone; a glyph set that is ours reads as pi. *2026-09-08:* the owner chose
    `○` over `⊙` for subagents, then the same day retired it from the transcript:
    a launch and a `subagent list` are both tool calls, and one glyph for tool
    calls is simpler than a second one that marked only some of them.
-2. **Quiet while working.** Reasoning renders as nothing: pi's
-   `hideThinkingBlock` stays off and the markdown transformer returns "" for
-   `assistant-thinking`, so the block has no lines and no click region (ctrl+t
-   is moot). pi's assistant component still spaces a message that carried
-   reasoning from raw content (one blank line before it, one more before
-   text that follows), and no documented API reaches that; it is the accepted
-   residual. A tool row is its title and one `↳` summary line (`+12 −4`,
+2. **Quiet while working.** Reasoning renders as nothing and takes no space:
+   pi's `hideThinkingBlock` stays off and the markdown transformer returns ""
+   for `assistant-thinking` while the stream runs, so the block has no lines
+   and no click region (ctrl+t is moot); the settled message's thinking text
+   is blanked, which takes pi's own spacer with it (below). A tool row is its
+   title and one `↳` summary line (`+12 −4`,
    `4 matches`, `31 lines · ctrl+o to expand`, `no output`), never output. A
    failed shell command shows its first two and last two lines with `… N more
    lines` between and the exit status last; other errors show in full. The
@@ -54,17 +54,36 @@ pi's own glyphs. Each rule carries the why that earned it.
    assistant's last words to its next, so a single handle at the top of a turn
    swallowed rows that sat after subagent launches and failed rows, with no
    handle of their own; the owner asked for the simpler rule above. The same
-   day's spacing complaint has two sources and no fix: every tool row draws
-   its own leading blank line (pi's tool component), and pi's assistant
-   component adds a spacer for any message whose raw content carried
-   reasoning, transformer or not (earendil-works/pi#8154, open) — two blanks
-   wherever the model reasoned between tool calls. Accepted. *2026-09-08,
-   night:* a shell row that ran outside the sandbox (Claude Code's
+   day's spacing complaint has two sources: every tool row draws its own
+   leading blank line (pi's tool component), and pi's assistant component adds
+   a spacer for any message whose raw content carried reasoning, transformer
+   or not (earendil-works/pi#8154, open). *2026-09-08, night:* a shell row
+   that ran outside the sandbox (Claude Code's
    `dangerouslyDisableSandbox`) carries `· unsandboxed` on its title, the
    background launch row included: under auto approvals the classifier may
    allow the escalation without a dialog, and the title is then its only
-   visible record.
-3. **One place per fact.** Elapsed time rides pi's working spinner while the
+   visible record. *2026-09-08, night:* the reasoning spacer stacked — a
+   folded run hid the rows but not the spacers between them, so the owner saw
+   six blank lines under one fold summary. Fixed at the content, since no display hook reaches
+   it: a `message_end` handler blanks the thinking text, and the component
+   then renders neither the block nor its spacer. Only where the provider
+   replays reasoning from the opaque item — pi's OpenAI Responses path sends
+   `JSON.parse(block.thinkingSignature)` and never the text, and that item
+   carries the provider's own summary, so the same model loses nothing and the
+   session file keeps the summary inside the signature; the Anthropic path
+   sends the text with its signature and rejects a modified block, hence the
+   gate on the message's `api`. The one cost, found in review and accepted: pi's
+   `transformMessages` keeps a signed block only where provider, api and model
+   id all match, forwards the reasoning as plain text otherwise, and drops the
+   block once that text is empty — so after a model change the new model no
+   longer sees the earlier summaries. Only the model id can change under the
+   managed roster, which fixes the provider and validates the id before every
+   turn. Accepted because the opaque item does not survive that change either,
+   and the owner holds that the human-language summary is not the load-bearing
+   part. The
+   transformer stays: it covers the live stream, which runs before the message
+   settles.
+3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the
    mode on the right, nothing transient. *Why:* the clock on the status line
@@ -72,6 +91,20 @@ pi's own glyphs. Each rule carries the why that earned it.
    from pi's standalone row into the composer's top shaded row (pi's
    documented `embedWorkingStatus`): the standalone row is pi's, one column
    in with a blank line above, and the owner saw both misalignments.
+   *2026-09-08, night:* it moved back out to a line of its own directly above
+   the composer, at column 0 under rule 8, because the owner wants the
+   composer to hold what they type and nothing else. Neither of pi's own
+   shapes fits — its standalone row and its string-array widget both take
+   pi-tui `Loader`'s hardcoded one-column pad, and the row a blank line with
+   it — so the extension subclasses `Loader`, drops that line, and hands it to
+   the documented `setWidget` at `placement: "aboveEditor"`, the slot pi docks
+   between the status container and the composer. pi's own row is switched off
+   with the documented `setWorkingVisible(false)`, and the row stands down for
+   pi's compaction indicator (`session_before_compact`/`session_compact`),
+   which draws in that same status container. Residual: pi's auto-retry
+   countdown draws there too and has no documented event, so a retry shows two
+   spinners — an undocumented `auto_retry_start` subscription is the only
+   reach, and rule 7 prices that above the cost.
 4. **A turn ends when nothing is running.** The turn line prints at
    `agent_settled` only when no background child or task is live; with either
    running it waits for the follow-up run to settle (or the user to type) and
@@ -90,10 +123,18 @@ pi's own glyphs. Each rule carries the why that earned it.
    `• Started cmd in background` with `↳ task t1 · running`, the end is the
    completion line above, and the in-progress bullet stays static — the
    owner kept the composer spinner as the one moving element.
-5. **Composer = the user box.** A shaded block in pi's `userMessageBg`: one
-   blank shaded row above and below the content (the spinner rides the top
-   one, rule 3), `❯` at column 0 on the first content line, no rule lines, no
-   placeholder; the status line follows the bottom row directly. *Why:* the
+5. **Composer = the user box, and the user box = the composer.** A shaded
+   block in pi's `userMessageBg`: one blank shaded row above and below the
+   content, `❯` at column 0 on the first content line, no rule lines, no
+   placeholder; the status line follows the bottom row directly. *2026-09-08,
+   night:* a sent message carries the same `❯` in the same column — the owner
+   asked for it once the composer's own glyph settled, and pi's user box
+   renders its content at `outputPad`, which is 0, so the two line up. It
+   arrives through the markdown transformer, the only hook into that box, in
+   the box's own colour: the box colours its content through one function, and
+   an inner colour's reset would end it for the rest of the line. A message
+   whose first line opens with a markdown block marker renders as a paragraph
+   instead — the accepted cost of the only available hook. *Why:* the
    prompt glyph flipped `❯→›→❯` across three commits; the owner chose the
    full-size glyph on 2026-09-07 and Codex's shaded block the same day, then
    on 2026-09-08 sent Claude Code's composer (rules, no shade: "too much
@@ -150,16 +191,18 @@ pi's own glyphs. Each rule carries the why that earned it.
    green card was a third background and read as a different program; the
    composer's shade came back the same afternoon because the owner wants the
    place they type to look like what they typed.
-10. **The task list is the pinned plugin's panel, its tool rows are ours.**
-   `@juicesharp/rpiv-todo` draws Claude Code's task list above the composer
-   with its own glyphs (`○` pending, `◐` in progress, `✓` done, `├─`/`└─`
-   tree lines, no background), and its `todo` tool takes the row shape:
-   `• Added todo Research existing tool`, `• Updated todo #3`, each with
-   `↳ 2/7 done`; the row never folds, as the list stays visible in Claude
-   Code. *Why (2026-09-08, evening):* the catalog's most-used todo package
-   (99k/month), same author and version line as the questionnaire, on
-   documented `registerTool`/`setWidget`; restyling its panel would mean a
-   fork, and a second `○` meaning (pending here, a child in the fleet) was
-   judged cheaper than that. `web_search` (pi-web-search) is a plain row,
-   `• Searched "query"` with the answer's first line under it, and the `π`
-   voice also records workspace changes (`π Added … to the workspace`).
+10. **A pinned plugin earns a tool row, not a panel.** `web_search`
+   (pi-web-search) is a plain row, `• Searched "query"` with the answer's
+   first line under it, and the `π` voice also records workspace changes
+   (`π Added … to the workspace`). The one panel above the composer is the
+   working row (rule 3). *Why (2026-09-08, evening):* `@juicesharp/rpiv-todo`
+   drew Claude Code's task list there and its `todo` tool took the row shape;
+   restyling its panel would have meant a fork, so a second `○` meaning
+   (pending there, a child in the fleet) was judged the cheaper cost.
+   *2026-09-08, night:* it was removed. The panel existed to mirror Claude
+   Code, and both references dropped the surface within a fortnight — Claude
+   Code v2.1.233 (2026-08-14) disabled `TodoWrite` by default on its newest
+   models, Codex CLI v0.152.0 (PR #41744, 2026-08-31) made `update_plan`
+   opt-in for all of them — and the owner had stopped seeing it used in
+   either. Weighed against it and overruled: 2026 SWE-bench work finds an
+   explicit plan raises resolution rates. `○` now means one thing again.

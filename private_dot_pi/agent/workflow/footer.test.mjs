@@ -12,13 +12,27 @@ function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
   const entries = [];
   const messages = [];
   const pi = { on: (name, fn) => { handlers[name] = fn; }, registerEntryRenderer() {}, appendEntry: (kind, data) => entries.push({ kind, data }) };
-  const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter() {}, setWorkingMessage: text => messages.push(text) } };
+  const widget = {};
+  const visible = [];
+  // The working row is a real Loader over a fake tui; every label it is given
+  // is recorded, so the turn clock's ticks stay observable.
+  const ui = {
+    setFooter() {},
+    setWorkingVisible: value => visible.push(value),
+    setWidget(key, factory) {
+      widget.key = key;
+      widget.row = factory({ requestRender() {} }, { fg: (_color, text) => text });
+      const setMessage = widget.row.setMessage.bind(widget.row);
+      widget.row.setMessage = text => { messages.push(text); setMessage(text); };
+    },
+  };
+  const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui };
   const fleet = { attach() {}, render: () => [], activeCount: () => active };
   const tasks = { live: () => live };
   installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs });
   process.env.PATH = path;
   const fire = (name, event = {}) => handlers[name]?.(event, { cwd: "." });
-  return { fire, entries, messages, fleet, tasks, done: () => fire("session_shutdown") };
+  return { fire, entries, messages, fleet, tasks, widget, visible, done: () => fire("session_shutdown") };
 }
 
 test("rate limits key only on stable window fields", () => {
@@ -88,7 +102,7 @@ test("footer renders the status line first and the fleet rows under it", () => {
     let factory;
     const attached = [];
     const fleet = { attach: tui => attached.push(tui), render: (width, theme) => [theme.fg("dim", `rows@${width}`)] };
-    const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; } } };
+    const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; }, setWorkingVisible() {}, setWidget() {} } };
     installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet });
     const tui = { requestRender() {} };
     const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", "plan"]]) };
@@ -101,7 +115,7 @@ test("footer renders the status line first and the fleet rows under it", () => {
   }
 });
 
-test("the running label lives in the working message and clears at settle", async () => {
+test("the running label lives in the working row and clears at settle", async () => {
   const h = harness();
   h.fire("agent_start");
   await sleep(15);
@@ -109,7 +123,7 @@ test("the running label lives in the working message and clears at settle", asyn
   assert.ok(h.messages.length >= 2);
   h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
   h.fire("agent_settled");
-  assert.equal(h.messages.at(-1), undefined);
+  assert.equal(h.messages.at(-1), "");
   assert.equal(h.entries.length, 1);
   assert.equal(h.entries[0].data.verb, "Iterated");
   const ticks = h.messages.length;
@@ -171,6 +185,40 @@ test("an interrupted run closes immediately", () => {
   assert.deepEqual([h.entries.length, h.entries[0].data.aborted], [1, true]);
   h.fire("agent_settled");
   assert.equal(h.entries.length, 1);
+  h.done();
+});
+
+test("the working row sits above the composer at column 0, with no row between turns", () => {
+  const h = harness();
+  assert.deepEqual(h.visible, [false], "pi's own working row is switched off");
+  assert.equal(h.widget.key, "workflow-working");
+  assert.deepEqual(h.widget.row.render(40), [], "no turn, no row");
+  h.fire("agent_start");
+  const lines = h.widget.row.render(40);
+  assert.equal(lines.length, 1, "one line, and none of pi's leading blank");
+  assert.match(lines[0], /^\S/, "the spinner glyph sits at column 0");
+  assert.match(lines[0], /Iterating…/);
+  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+  h.fire("agent_settled");
+  assert.deepEqual(h.widget.row.render(40), []);
+  h.done();
+});
+
+test("the working row stands down while pi compacts, and comes back with the turn", async () => {
+  const h = harness();
+  h.fire("agent_start");
+  assert.match(h.widget.row.render(40)[0], /Iterating…/);
+  h.fire("session_before_compact");
+  assert.deepEqual(h.widget.row.render(40), [], "pi's own compaction indicator is the only one");
+  await sleep(15);
+  assert.deepEqual(h.widget.row.render(40), [], "the turn clock's tick does not bring it back");
+  h.fire("session_compact");
+  assert.match(h.widget.row.render(40)[0], /Iterating…/);
+  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+  h.fire("agent_settled");
+  // The turn is over; a late compaction has nothing to come back to.
+  h.fire("session_compact");
+  assert.deepEqual(h.widget.row.render(40), []);
   h.done();
 });
 
