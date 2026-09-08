@@ -13,7 +13,7 @@
     "@juicesharp/rpiv-i18n": "2.9.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@playwright/mcp": "0.0.79",
-    "@upstash/context7-mcp": "3.2.4",
+    "@upstash/context7-mcp": "4.0.4",
     "catppuccin-pi-theme": "0.1.6",
     "ccstatusline": "2.2.27",
     "exa-mcp-server": "3.4.1",
