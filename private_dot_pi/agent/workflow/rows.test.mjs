@@ -15,6 +15,8 @@ const rendered = component => component.render(80).map(line => line.trimEnd());
 test("row titles name the action and the target", () => {
   assert.equal(callTitle("bash", { command: "git status\n# trailing" }), "Ran git status");
   assert.equal(callTitle("bash", { command: "npm test", run_in_background: true }), "Started npm test in background");
+  assert.equal(callTitle("bash", { command: "brew install x", dangerouslyDisableSandbox: true }), "Ran brew install x · unsandboxed");
+  assert.equal(callTitle("bash", { command: "npm test", run_in_background: true, dangerouslyDisableSandbox: true }), "Started npm test in background · unsandboxed");
   assert.equal(callTitle("read", { path: "a.mjs", offset: 40 }), "Read a.mjs:40");
   assert.equal(callTitle("grep", { pattern: "paddingX", path: "src" }), 'Search "paddingX" in src');
   assert.equal(callTitle("ls", {}), "List .");

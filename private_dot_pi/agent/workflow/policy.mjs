@@ -28,6 +28,11 @@ const REVIEWED = [
 const GH_READ = /^gh\s+(?:api\s+(?!(?:.*\s)?(?:-[a-zA-Z]*[XfF]|--method|--field|--raw-field|--input))|(?:(?:pr|issue|repo|run|release|workflow|gist|label|project|cache|search)\s+)?(?:view|list|status|search|diff|checks|browse|download|logs)\b)/;
 const PREFIX = /^(?:(?:\w+=\S*|sudo|env|command|exec|nohup|time|xargs)\s+)+/;
 
+// Claude Code's dangerouslyDisableSandbox, keyed on the tool and not the flag
+// alone: authorize forwards every tool's args verbatim and the schemas admit
+// extra properties, so a flagged read must stay a sandboxed read.
+export const unsandboxed = (tool, args) => tool === "bash" && args?.dangerouslyDisableSandbox === true;
+
 export function needsReview(command) {
   return command.replace(/\\\n/g, " ").split(/\|\||&&|[;|&\n]/).some(segment => {
     const text = segment.trim().replace(PREFIX, "");
@@ -189,6 +194,11 @@ export class Policy {
     }
     if (tool === "bash") {
       if (typeof args.command !== "string" || !args.command.trim()) throw new Error("Missing shell command");
+      if (unsandboxed(tool, args)) {
+        // The profile is a read-only role's only enforcement.
+        if (this.role(role).readonly) throw new Error("Unsandboxed shell is unavailable to read-only roles");
+        return "review";
+      }
       return this.approval === "ask" || needsReview(args.command) ? "review" : "allow";
     }
     return "review";

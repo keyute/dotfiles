@@ -58,7 +58,12 @@ pi's own glyphs. Each rule carries the why that earned it.
    its own leading blank line (pi's tool component), and pi's assistant
    component adds a spacer for any message whose raw content carried
    reasoning, transformer or not (earendil-works/pi#8154, open) — two blanks
-   wherever the model reasoned between tool calls. Accepted.
+   wherever the model reasoned between tool calls. Accepted. *2026-09-08,
+   night:* a shell row that ran outside the sandbox (Claude Code's
+   `dangerouslyDisableSandbox`) carries `· unsandboxed` on its title, the
+   background launch row included: under auto approvals the classifier may
+   allow the escalation without a dialog, and the title is then its only
+   visible record.
 3. **One place per fact.** Elapsed time rides pi's working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the

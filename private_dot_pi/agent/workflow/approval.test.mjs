@@ -19,3 +19,15 @@ test("classifier failure asks root UI and denies unattended requests", async () 
   ctx.ui = { confirm: async () => true };
   assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }), true);
 });
+
+test("an unsandboxed request is named as such in the notice and the dialog", async () => {
+  const seen = [];
+  const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: text => seen.push(text), confirm: async title => { seen.push(title); return true; } } };
+  const config = { models: { provider: "openai-codex", classifier: "fixture" } };
+  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true } });
+  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  assert.match(seen[0], /^Awaiting approval \(unsandboxed\): /);
+  assert.equal(seen[1], "Approve this unsandboxed action once?");
+  assert.match(seen[2], /^Awaiting approval: /);
+  assert.equal(seen[3], "Approve this action once?");
+});

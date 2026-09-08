@@ -1,6 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-08 (dot form everywhere; earlier: 2026-09-07 evening
+Last updated: 2026-09-08 (unsandboxed shell flag; earlier the same day: dot
+form everywhere; earlier: 2026-09-07 evening
 transcript redesign and lean pass; guard parity: applied workflow copy and
 node_modules symlink, relayed policy messages, Claude-shaped transcript rows,
 ask-user plugin; earlier: fourth comparison run: footer-hosted fleet rows, launch-
@@ -375,6 +376,48 @@ live-tested on the host.
   `failed` instead of `stopped` — `setMode` now stops tasks first; and a
   refused instructions read left the root added without an epoch bump — the
   add rolls back.
+
+- 2026-09-08 (night, unsandboxed shell): `workspace_bash` takes Claude Code's
+  `dangerouslyDisableSandbox` flag, superseding the 2026-09-06 "no fallback
+  to unsandboxed execution" line in `harness.md`. The owner's Claude Code
+  settings leave `allowUnsandboxedCommands` at its default (true) beside
+  `autoAllowBashIfSandboxed` and `defaultMode: plan`, and the Claude Code
+  docs (sandboxing, permission-modes) route an unsandboxed retry through the
+  regular permission flow in every mode — a prompt in manual, the classifier
+  in auto, plan mode included since v2.1.212 — never the sandboxed
+  auto-allow. Pi mirrors that: the flag makes the verdict `review` in every
+  mode (classifier under `auto`, dialog under `ask`), read-only roles are
+  refused (the profile is their only enforcement), and the owner rejected
+  auto-escalating "proven read-only" commands: what blocks a read-only
+  command inside the sandbox is the boundary itself (a denied credential
+  path, a non-allowlisted host, a privileged socket), which a read-only proof
+  does not cover. Mechanism: the ticket minted at approval carries
+  `sandbox: false`, the lease answers `profile: null`, and the runner spawns
+  the ops worker without SRT under the host environment minus `PI_WORKFLOW_*`
+  (the broker token must not reach the shell) and without the lease env
+  (`TMPDIR` scratch and the proxy flag are sandbox artifacts); stop, terminal
+  proof and background tasks are unchanged. Codex review (one round) found
+  one real defect, fixed in the worker for both paths: a command that
+  backgrounds work with its stdio redirected (`cmd </dev/null >/dev/null &`)
+  let the shell exit and the exec resolve while the child lived on in the
+  shell's process group, so the lease proved termination over a process it no
+  longer covered — confined by SRT before, a free host process on the new
+  path; `exec` now terminates the command's group once the shell exits, before
+  it reports (`run_in_background` is the supported way to keep a process). A
+  descendant the group kill cannot reach — one that left the group (`setsid`,
+  double fork) or one another user owns (`sudo`, a setuid binary; the kill
+  fails with EPERM and the exec now fails loudly with the reason instead of
+  swallowing it, Codex's second-round finding) — stays the accepted residual
+  in both paths: the terminal proof covers the leased worker's group and the
+  command's group, nothing that escapes them, and an approved unsandboxed
+  command that escalates privilege is the user's call at the dialog. The
+  predicate is keyed on
+  `tool === "bash"` (planning-review finding): `authorize` forwards every
+  tool's args and the schemas admit extra properties, so a flagged
+  `workspace_read` would otherwise have minted an unsandboxed file worker
+  without review. The row title carries `· unsandboxed` so a
+  classifier-approved escalation stays visible; `!` commands stay sandboxed.
+  The null-profile lease runs for real only in the opt-in live test.
 
 ## Verification and remaining gates
 

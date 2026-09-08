@@ -43,9 +43,17 @@ function exec({ command, cwd: dir, timeout }, { signal, onChunk }) {
     child.stdout.on("data", onChunk);
     child.stderr.on("data", onChunk);
     child.on("error", rejectPromise);
-    child.on("close", (code, killSignal) => {
+    child.on("close", async (code, killSignal) => {
       clearTimeout(timer);
       signal.removeEventListener("abort", abort);
+      // Work the command backgrounded with its stdio redirected outlives the
+      // shell in its group; the lease's terminal proof must not cover it
+      // (run_in_background is the supported way to keep a process). A group
+      // the worker cannot signal (another user's process) is reported, not
+      // hidden: the proof still cannot reach it.
+      try { await terminateProcessGroup(child); } catch (error) {
+        return rejectPromise(new Error(`command ended but its background processes could not be terminated: ${error.message}`));
+      }
       // Match the official tool-routing example's failure contract.
       if (signal.aborted && !timedOut) return rejectPromise(new Error("aborted"));
       if (timedOut) return rejectPromise(new Error(`timeout:${timeout}`));

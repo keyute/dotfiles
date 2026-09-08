@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { main, quoteArg, safeEnvironment, terminateProcessGroup } from "./sandbox-runner.mjs";
+import { hostEnvironment, main, quoteArg, safeEnvironment, terminateProcessGroup } from "./sandbox-runner.mjs";
 
 const lease = () => ({
   socket: { destroy() {}, end(callback) { callback?.(); }, write() {}, once() {} },
@@ -51,6 +51,34 @@ test("safeEnvironment keeps only approved inherited values and broker server val
     if (previousWorkflow === undefined) delete process.env.PI_WORKFLOW_TOKEN;
     else process.env.PI_WORKFLOW_TOKEN = previousWorkflow;
   }
+});
+
+test("a null profile skips the sandbox and strips workflow variables from the host environment", async () => {
+  assert.deepEqual(hostEnvironment({ PATH: "/bin", PI_WORKFLOW_TOKEN: "secret", PI_WORKFLOW_TICKET: "t" }), { PATH: "/bin" });
+  const activeLease = lease();
+  activeLease.response.profile = null;
+  let spawnOptions;
+  let spawnArgs;
+  await main(["tool", "bash"], {
+    environment: { PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token" },
+    requestLease: async () => activeLease,
+    sandboxManager: { async initialize() { throw new Error("sandbox must not start"); } },
+    spawnChild(command, args, options) {
+      spawnArgs = [command, ...args];
+      spawnOptions = options;
+      return { pid: 45 };
+    },
+    waitForClose: async () => ({ code: 0, signal: null }),
+    killProcess() {},
+    setTimer: immediateTimer,
+    clearTimer() {},
+    signals: new EventEmitter(),
+  });
+  assert.equal(spawnArgs[0], "bash");
+  assert.match(spawnArgs[2], /ops-worker\.mjs' 'bash'$/);
+  assert.equal(spawnOptions.detached, true);
+  assert.equal(spawnOptions.env.PI_WORKFLOW_TOKEN, undefined);
+  assert.equal(spawnOptions.env.PATH, process.env.PATH);
 });
 
 test("a stop during sandbox initialization prevents spawning", async () => {
@@ -237,6 +265,14 @@ test("ops worker streams bash execution and reports the exit code", async () => 
   const streamed = frames.filter((frame) => frame.chunk).map((frame) => Buffer.from(frame.chunk, "base64").toString()).join("");
   assert.ok(streamed.includes("worker-bash-ok"));
   assert.deepEqual(frames.at(-1), { id: "op0", ok: true, value: { exitCode: 3 } });
+});
+
+test("ops worker ends a command's backgrounded descendants before reporting it done", async () => {
+  const { frames } = await runWorkerOps("bash", [{ id: "op0", op: "exec", params: { command: "sleep 30 </dev/null >/dev/null 2>&1 & printf %s $!" } }]);
+  assert.deepEqual(frames.at(-1), { id: "op0", ok: true, value: { exitCode: 0 } });
+  const pid = Number(frames.filter((frame) => frame.chunk).map((frame) => Buffer.from(frame.chunk, "base64").toString()).join(""));
+  assert.ok(pid > 0);
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
 });
 
 test("ops worker refuses operations outside the leased tool's set", async () => {

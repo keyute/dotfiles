@@ -188,6 +188,11 @@ test("tool leases require a single-use ticket bound to the current epoch", { ski
   await broker.setMode("execute");
   assert.equal((await leaseTool({ name: "bash", ticket: stale.ticket })).ok, false);
   assert.equal((await leaseTool({ name: "bash" })).ok, false);
+  // The reviewed ticket alone decides the lease's profile: an unsandboxed bash gets none, a flagged read keeps its profile.
+  const escalated = await requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true } });
+  assert.equal((await leaseTool({ name: "bash", ticket: escalated.ticket })).profile, null);
+  const flaggedRead = await requestBroker(broker.env, "root", { action: "authorize", tool: "read", args: { path: "fixture", dangerouslyDisableSandbox: true } });
+  assert.ok((await leaseTool({ name: "read", ticket: flaggedRead.ticket })).profile.filesystem);
 });
 
 test("an inherit-model child resolves to the parent's model before the tier check", { skip }, async t => {

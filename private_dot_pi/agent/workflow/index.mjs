@@ -232,10 +232,14 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   function sandboxTool(name) {
     if (!permittedTools.includes(publicToolName(name))) return;
     const template = toolFactory(name)(process.cwd(), name === "bash" ? bashOptions : undefined);
-    // Claude Code's run_in_background flag, added to the SDK's own schema.
-    const parameters = name === "bash" && background
-      ? { ...template.parameters, properties: { ...template.parameters.properties, run_in_background: { type: "boolean", description: "Start the command as a background task and return at once; its output arrives when it ends, or through workspace_task." } } }
-      : template.parameters;
+    // Claude Code's bash flags, added to the SDK's own schema: run_in_background
+    // where the role has workspace_task, dangerouslyDisableSandbox where the
+    // role may write (the policy refuses it for read-only roles regardless).
+    const flags = name !== "bash" ? {} : {
+      ...(background ? { run_in_background: { type: "boolean", description: "Start the command as a background task and return at once; its output arrives when it ends, or through workspace_task." } } : {}),
+      ...(isRoot || !config.agents[role].readonly ? { dangerouslyDisableSandbox: { type: "boolean", description: "Run outside the OS sandbox with the full host environment; every such call is reviewed or prompted. Set it only when the user asks, or when this exact command just failed with a sandbox restriction (operation not permitted, denied path, blocked host or socket), and decide per command: an earlier approval does not carry over." } } : {}),
+    };
+    const parameters = Object.keys(flags).length ? { ...template.parameters, properties: { ...template.parameters.properties, ...flags } } : template.parameters;
     pi.registerTool({ ...template, parameters, ...toolRenderers(name), name: publicToolName(name), promptGuidelines: GUIDELINES[name], async execute(id, args, signal, onUpdate, ctx) {
       const { ticket } = await authorize(name, args);
       if (name === "bash" && background && args.run_in_background) {

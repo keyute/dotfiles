@@ -39,6 +39,13 @@ test("live SRT rejects source writes and sensitive symlinks, then permits approv
   // SRT layer: even in execute mode the leased profile denies reading the secret.
   const secretRead = await call("bash", { command: `cat ${JSON.stringify(secret)}` }, "exec", { command: `cat ${JSON.stringify(secret)}`, cwd: work });
   assert.notEqual(secretRead.exitCode, 0);
+  // An approved unsandboxed lease writes where the profile would refuse.
+  const outside = join(root, "outside");
+  const sandboxedWrite = await call("bash", { command: `printf blocked > ${JSON.stringify(outside)}` }, "exec", { command: `printf blocked > ${JSON.stringify(outside)}`, cwd: work });
+  assert.notEqual(sandboxedWrite.exitCode, 0);
+  const hostWrite = await call("bash", { command: `printf host > ${JSON.stringify(outside)}`, dangerouslyDisableSandbox: true }, "exec", { command: `printf host > ${JSON.stringify(outside)}`, cwd: work });
+  assert.equal(hostWrite.exitCode, 0);
+  assert.equal(readFileSync(outside, "utf8"), "host");
   // A lease without a live ticket is refused outright.
   const bare = startToolWorker("bash", { cwd: work, env: { ...broker.env, PI_WORKFLOW_ROLE: "root" } });
   await assert.rejects(bare.call("exec", { command: "true" }));

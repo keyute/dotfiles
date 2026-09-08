@@ -37,6 +37,10 @@ test("sandboxed shell skips review except remote-mutating verbs or approvals set
     p.mode = mode;
     assert.equal(p.inspect("root", "bash", { command: "npm run test:pi" }), "allow");
     assert.equal(p.inspect("root", "bash", { command: "git push" }), "review");
+    // Unsandboxed is always reviewed, plan mode included; read-only roles never get it; the flag means nothing to a file tool.
+    assert.equal(p.inspect("root", "bash", { command: "true", dangerouslyDisableSandbox: true }), "review");
+    assert.throws(() => p.inspect("reviewer", "bash", { command: "true", dangerouslyDisableSandbox: true }), /read-only/);
+    assert.equal(p.inspect("root", "read", { path: "x", dangerouslyDisableSandbox: true }), "allow");
   }
   p.approval = "ask";
   assert.equal(p.inspect("root", "bash", { command: "git status" }), "review");

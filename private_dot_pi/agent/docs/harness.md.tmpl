@@ -51,7 +51,7 @@ completed-task cost, including retries and delegation. Sol promotional pricing
 lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
 [Official rate card](https://learn.chatgpt.com/docs/pricing).
 
-## Planning and permissions (last verified 2026-09-07)
+## Planning and permissions (last verified 2026-09-08)
 
 - New sessions start in plan mode with auto-reviewed approvals. Source writes
   remain disabled; temporary build/cache artifacts use designated writable roots.
@@ -67,6 +67,15 @@ lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
   `ssh`, `scp`, `sftp`, `rsync` — go to the auto classifier, then to a confirm
   dialog on `ask`. File edits inside the workspace run without review once
   execution is approved.
+- `workspace_bash` with `dangerouslyDisableSandbox: true` (Claude Code's flag)
+  runs the command on the host outside the SRT profile, under the host
+  environment minus the workflow's own variables. Every such call is reviewed,
+  plan mode included, and never takes the sandboxed auto-allow: the classifier
+  under auto approvals, the confirm dialog (`Approve this unsandboxed action
+  once?`) under ask or on a classifier `ask`. Read-only roles are refused. The
+  row reads `Ran … · unsandboxed`. The model sets it only after a
+  sandbox-attributable failure of that command or on request, per command;
+  `!` commands stay sandboxed.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
   A pending dialog is announced in the footer and times out after ten minutes.
 - `ask_user_question` (the pinned `@juicesharp/rpiv-ask-user-question` plugin)
@@ -120,8 +129,9 @@ an explicit denylist, not a guarantee against unknown credential locations. Add
 new credential paths to shared policy before exposing them to a session.
 
 Extensions are trusted host code. Per-tool SRT is not containment against a
-malicious extension. No fallback to unsandboxed execution exists in the managed
-tools. Linux needs bubblewrap, socat and ripgrep; macOS needs sandbox-exec.
+malicious extension. The reviewed `dangerouslyDisableSandbox` flag above is the
+only unsandboxed path in the managed tools. Linux needs bubblewrap, socat and
+ripgrep; macOS needs sandbox-exec.
 
 ## Specialists, skills and display (last verified 2026-09-08, dot form; unapplied)
 

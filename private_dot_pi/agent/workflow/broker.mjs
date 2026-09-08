@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { Policy, workerTools, publicToolName } from "./policy.mjs";
+import { Policy, workerTools, publicToolName, unsandboxed } from "./policy.mjs";
 import { endLine, readLines, sendLine } from "./lines.mjs";
 
 const equal = (a, b) => typeof a === "string" && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -43,7 +43,7 @@ export async function startBroker(config, cwd, review) {
     if (request.action !== "authorize") return { ok: true };
     const ticket = randomBytes(16).toString("hex");
     if (tickets.size >= 256) tickets.delete(tickets.keys().next().value);
-    tickets.set(ticket, { epoch: policy.epoch, role: request.role, tool: request.tool });
+    tickets.set(ticket, { epoch: policy.epoch, role: request.role, tool: request.tool, sandbox: !unsandboxed(request.tool, request.args) });
     return { ok: true, ticket };
   }
 
@@ -98,11 +98,13 @@ export async function startBroker(config, cwd, review) {
         const env = { TMPDIR: scratch, PI_CODING_AGENT_DIR: config.agentDir, NODE_USE_ENV_PROXY: "1" };
         let command;
         let args;
+        let sandbox = true;
         if (request.kind === "tool") {
           const issued = tickets.get(request.ticket);
           if (typeof request.ticket === "string") tickets.delete(request.ticket);
           if (!issued || issued.epoch !== policy.epoch || issued.role !== request.role || issued.tool !== request.name) throw new Error("Tool process denied");
           if (!workerTools.includes(request.name) || !policy.role(request.role).tools.includes(publicToolName(request.name))) throw new Error("Tool process denied");
+          sandbox = issued.sandbox;
         } else if (request.kind === "server") {
           if (!policy.role(request.role).tools.includes("mcp")) throw new Error("MCP process denied");
           const connection = config.mcp[request.name]?.connection;
@@ -127,7 +129,9 @@ export async function startBroker(config, cwd, review) {
           }
         } else throw new Error("Unknown process kind");
         leases.add(socket);
-        sendLine(socket, { ok: true, profile: policy.profile(request.role), cwd: policy.cwd, env, command, args });
+        // A null profile is an approved unsandboxed run; the runner never asks
+        // for one, the reviewed ticket alone decides.
+        sendLine(socket, { ok: true, profile: sandbox ? policy.profile(request.role) : null, cwd: policy.cwd, env, command, args });
       // The message is the model's only signal for why a call was refused
       // (plan mode vs. protected path vs. capacity); every thrown text here is
       // authored in this module or policy.mjs.

@@ -34,6 +34,11 @@ export const safeEnvironment = (approved = {}) => {
   return environment;
 };
 
+// An unsandboxed lease runs with the host's own environment; the broker
+// socket, token and ticket the runner was handed must not reach that shell.
+export const hostEnvironment = (environment = process.env) =>
+  Object.fromEntries(Object.entries(environment).filter(([key]) => !key.startsWith("PI_WORKFLOW_")));
+
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 const fail = (exitCode = 1) => Object.assign(new Error("sandbox runner failed"), { exitCode });
@@ -87,7 +92,7 @@ const validateLease = (value, kind) => {
   if (
     !isRecord(value) ||
     value.ok !== true ||
-    !isRecord(value.profile) ||
+    !(isRecord(value.profile) || (kind === "tool" && value.profile === null)) ||
     !isAbsolute(value.cwd) ||
     !isRecord(value.env) ||
     !Object.values(value.env).every((envValue) => typeof envValue === "string")
@@ -229,29 +234,31 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
   signals.once("SIGINT", signalHandler);
   signals.once("SIGTERM", signalHandler);
   try {
-    try {
-      if (dependencies.sandboxManager) sandboxManager = dependencies.sandboxManager;
-      else ({ SandboxManager: sandboxManager } = await import("@anthropic-ai/sandbox-runtime"));
-      await sandboxManager.initialize(response.profile);
-    } catch (error) {
-      throw Object.assign(error, { exitCode: 1 });
-    }
-    if (state.terminal) throw fail();
+    const sandboxed = response.profile !== null;
+    let command = commandForLease(response, kind, name);
+    if (sandboxed) {
+      try {
+        if (dependencies.sandboxManager) sandboxManager = dependencies.sandboxManager;
+        else ({ SandboxManager: sandboxManager } = await import("@anthropic-ai/sandbox-runtime"));
+        await sandboxManager.initialize(response.profile);
+      } catch (error) {
+        throw Object.assign(error, { exitCode: 1 });
+      }
+      if (state.terminal) throw fail();
 
-    const command = commandForLease(response, kind, name);
-    let wrapped;
-    try {
-      wrapped = await sandboxManager.wrapWithSandbox(command, "bash");
-    } catch (error) {
-      throw Object.assign(error, { exitCode: 1 });
+      try {
+        command = await sandboxManager.wrapWithSandbox(command, "bash");
+      } catch (error) {
+        throw Object.assign(error, { exitCode: 1 });
+      }
     }
     if (state.terminal) throw fail();
 
     const spawnChild = dependencies.spawnChild || spawn;
-    child = spawnChild("bash", ["-c", wrapped], {
+    child = spawnChild("bash", ["-c", command], {
       cwd: response.cwd,
       detached: true,
-      env: safeEnvironment(response.env),
+      env: sandboxed ? safeEnvironment(response.env) : hostEnvironment(),
       stdio: "inherit",
     });
     state.child = child;

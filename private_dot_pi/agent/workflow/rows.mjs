@@ -65,7 +65,7 @@ export function glyph(theme, { isPartial, isError }, mark = BULLET) {
 export function callTitle(name, args = {}) {
   const where = args.path ? ` in ${args.path}` : "";
   switch (name) {
-    case "bash": return args.run_in_background ? `Started ${firstLine(args.command) || "…"} in background` : `Ran ${firstLine(args.command) || "…"}`;
+    case "bash": return `${args.run_in_background ? `Started ${firstLine(args.command) || "…"} in background` : `Ran ${firstLine(args.command) || "…"}`}${args.dangerouslyDisableSandbox ? " · unsandboxed" : ""}`;
     case "read": return `Read ${args.path ?? ""}${args.offset ? `:${args.offset}` : ""}`;
     case "edit": return `Edited ${args.path ?? ""}`;
     case "write": return `Wrote ${args.path ?? ""}`;
