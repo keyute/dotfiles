@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, matchesGlob, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 
@@ -6,7 +6,7 @@ export const fileTools = ["read", "write", "edit", "grep", "find", "ls"];
 export const workerTools = [...fileTools, "bash"];
 export const publicToolName = name => workerTools.includes(name) ? `workspace_${name}` : name;
 // The parent session's tool set; children get theirs from the roster config.
-export const rootTools = [...workerTools.map(publicToolName), "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan"];
+export const rootTools = [...workerTools.map(publicToolName), "workspace_task", "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan", "todo", "web_search"];
 
 // Sandboxed shell runs without review, as Claude Code (autoAllowBashIfSandboxed)
 // and Codex do: the SRT profile is the boundary. The one effect the profile
@@ -81,10 +81,50 @@ export class Policy {
     this.approval = "auto";
     this.epoch = 0;
     this.transitioning = false;
-    const resolvePaths = paths => paths.flatMap(p => { const path = expand(p, this.cwd); return [path, canonicalPattern(path)]; });
-    this.denyRead = resolvePaths([...config.filesystem.denyRead, controlDir]);
-    this.denyWrite = [...this.denyRead, ...resolvePaths([...config.filesystem.denyWrite, join(this.cwd, ".git"), join(this.cwd, ".pi")])];
+    this.baseDenyRead = this.resolvePaths([...config.filesystem.denyRead, controlDir], this.cwd);
+    this.baseDenyWrite = [...this.baseDenyRead, ...this.resolvePaths([...config.filesystem.denyWrite, join(this.cwd, ".git"), join(this.cwd, ".pi")], this.cwd)];
     this.caches = config.filesystem.allowWrite.map(p => canonical(expand(p, this.cwd)));
+    this.roots = new Map();
+  }
+
+  resolvePaths(paths, base) {
+    return paths.flatMap(p => { const path = expand(p, base); return [path, canonicalPattern(path)]; });
+  }
+
+  // The base lists never change; each added root contributes its own
+  // re-rooted entries, so removing a root cannot take a base entry with it.
+  get denyRead() { return [...this.baseDenyRead, ...[...this.roots.values()].flatMap(deny => deny.read)]; }
+  get denyWrite() { return [...this.baseDenyWrite, ...[...this.roots.values()].flatMap(deny => deny.write)]; }
+
+  // /add-dir: a further editable root (Claude Code's added working directory),
+  // bounded like cwd — a real directory, never home or one of its ancestors,
+  // never a denied path — and carrying the same relative deny entries (`.env`,
+  // `.git`, `.pi`) re-rooted there. Reads need nothing: they were never
+  // confined to cwd.
+  addRoot(input) {
+    const root = canonical(expand(input, this.cwd));
+    if (!statSync(root, { throwIfNoEntry: false })?.isDirectory()) throw new Error("Directory not found");
+    if (inside(canonical(homedir()), root)) throw new Error("Your home directory and its ancestors cannot be added");
+    if (denied(root, this.denyWrite) || inside(root, this.cwd) || this.roots.has(root)) throw new Error("Directory is already in scope or denied by managed policy");
+    const relative = paths => paths.filter(p => !p.startsWith("/") && !p.startsWith("~"));
+    const read = this.resolvePaths(relative(this.config.filesystem.denyRead), root);
+    const write = [...read, ...this.resolvePaths([...relative(this.config.filesystem.denyWrite), join(root, ".git"), join(root, ".pi")], root)];
+    this.roots.set(root, { read, write });
+    return root;
+  }
+
+  removeRoot(root) {
+    if (!this.roots.delete(root)) throw new Error("Directory was not added");
+  }
+
+  // The added root's instructions file, read through the read policy so a
+  // symlink cannot carry a denied file into the system prompt.
+  instructions(root) {
+    const lexical = ["AGENTS.md", "CLAUDE.md"].map(name => join(root, name)).find(existsSync);
+    if (!lexical) return "";
+    const path = this.checkPath(lexical);
+    if (!inside(path, root)) throw new Error("Instructions file resolves outside the added directory");
+    return readFileSync(path, "utf8");
   }
 
   role(name) {
@@ -104,7 +144,7 @@ export class Policy {
     if (denied(path, write ? this.denyWrite : this.denyRead)) throw new Error("Resolved path denied by managed policy");
     if (write) {
       if (this.readonly(role)) throw new Error("Writes are disabled in this scope");
-      if (!inside(path, this.cwd)) throw new Error("File edits must remain inside the workspace");
+      if (![this.cwd, ...this.roots.keys()].some(root => inside(path, root))) throw new Error("File edits must remain inside the workspace");
     }
     return path;
   }
@@ -142,7 +182,7 @@ export class Policy {
     return {
       filesystem: {
         denyRead: this.denyRead,
-        allowWrite: [this.scratch, ...this.caches, ...(!this.readonly(role) ? [this.cwd] : [])],
+        allowWrite: [this.scratch, ...this.caches, ...(!this.readonly(role) ? [this.cwd, ...this.roots.keys()] : [])],
         denyWrite: this.denyWrite,
       },
       network: { allowedDomains: this.config.network.allowedDomains, deniedDomains: [] },

@@ -74,6 +74,25 @@ lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
   tabbed dialog; answers land in the transcript and the classifier's task
   context. Approval dialogs are once-only; MCP approvals are never cached
   across a mode change.
+- `workspace_bash` with `run_in_background: true` starts a background task
+  (Claude Code's flag): the call returns a task id at once, the worker keeps
+  its lease, and when the command ends the model hears a steer message with
+  the exit status and the last twenty lines (with its next tool result, or
+  as a new turn when idle). `workspace_task` `{ id, action: "output" | "stop" }`
+  reads the output so far or stops it. Output is kept in memory, tail-capped
+  at 256 KiB. `/plan` and `/remove-dir` stop running tasks like any sandbox
+  process (they end as `stopped`); so does exiting pi.
+- `/add-dir <path>` (or `/add-dir` for a prompt) adds a directory to the
+  editable workspace, as Claude Code's does: edits inside it are allowed once
+  execution is approved, its `.git`, `.pi` and every relative deny entry
+  (`.env`) are protected there as under cwd, and its `AGENTS.md` (or
+  `CLAUDE.md`) is appended to the system prompt after passing the read policy
+  (a symlink out of the directory or onto a denied path refuses the add).
+  Home, its ancestors, denied paths and directories already in scope are
+  refused with the reason. `/remove-dir` picks one to drop. State is per session; skills
+  under an added directory need a restart with `--skill <path>`, since pi
+  discovers resources only at startup and `/reload`. Reads were never
+  confined to the workspace; only the deny list applies.
 - If a process disappears without acknowledging termination, the workflow blocks.
   Check orphan processes and restart; do not treat a lost connection as proof that
   a writer stopped.
@@ -184,11 +203,12 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
   events; pi-subagents' `subagents:rpc:v1` status reply and
   `subagent:async-started/complete` events. `stability.test.mjs` checks every
   import and event name against the package exports and docs.
-- Plugin rows: pi-subagents, pi-mcp-adapter and the questionnaire plugin
-  receive a Proxy of the extension API whose `registerTool` swaps
-  `renderShell`/`renderCall`/`renderResult` on every registration
-  (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the supervisor channel,
-  `mcp`, `mcpScript`, `mcp__*`, `ask_user_question`); rests on the plugins
+- Plugin rows: pi-subagents, pi-mcp-adapter, the questionnaire, todo and
+  web-search plugins receive a Proxy of the extension API whose
+  `registerTool` swaps `renderShell`/`renderCall`/`renderResult` on every
+  registration (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the
+  supervisor channel, `mcp`, `mcpScript`, `mcp__*`, `ask_user_question`,
+  `todo`, `web_search`, `url_context`); rests on the plugins
   registering through the API they are handed and pi keeping the definition
   object (`loader.js`). Rows read `args` and the result text; the two
   `details` reads are the adapter's `error` (failures it reports without
@@ -226,6 +246,12 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
   (a body only; a closed fold reopens when the documented
   `ctx.ui.getToolsExpanded()` value changes, i.e. on Ctrl+O). All pinned in
   `stability.test.mjs`.
+- Plugin data the rows and policy read: the todo tool's `details.tasks`,
+  `details.action` and `details.error`; pi-web-search's `details.error` and
+  its `web_search`/`url_context` names; the SDK bash schema being a plain
+  object whose `properties` take the `run_in_background` flag. All pinned in
+  `stability.test.mjs`, with `pi.sendMessage`, `ctx.ui.input` and
+  `ctx.ui.select` checked against the docs.
 - Outside the npm pin: the status line's usage segments come from `codex
   app-server` JSON-RPC (`account/rateLimits/read`), a codex-cli surface with no
   published contract: re-verify after every codex-cli bump (last verified
@@ -235,6 +261,26 @@ Shared skills remain discoverable under `~/.agents/skills`; explicit skill loadi
 is available through Pi. Inside a child, pi-subagents'
 tool allowlist may leave the direct `mcp__*` tools inactive; the `mcp` proxy is
 always in the allowlist and reaches the same servers.
+
+## Task list and web search (last verified 2026-09-08, evening; unapplied)
+
+`todo` is the pinned `@juicesharp/rpiv-todo` plugin (Claude Code's task
+list): `create`/`update`/`list`/`get`/`delete`/`clear`, a panel above the
+composer that survives `/reload` and compaction, `/todos` to print it,
+`ctrl+shift+t` to collapse it. Root only; children carry no list. Its rows
+take the transcript shape (`docs/pi-design.md` rule 10).
+
+`web_search` is the pinned `pi-web-search` plugin: OpenAI's server-side
+`web_search` tool, requested against the same Codex Responses endpoint and
+with the same subscription token as model calls, so it adds no endpoint,
+credential or network path beyond the provider's own — and sits in the same
+terms grey zone as the provider itself. Each search is one extra model
+request on the account's usage windows; `~/.pi/agent/web-search.json` (rendered
+from `agents.pi.search_tier`) pins it to the small tier so the default
+model's quota is untouched. Roles with Claude's `WebSearch` get it; the
+plugin's Gemini-only `url_context` also registers and is in no role's list.
+Fetching stays with the Exa MCP tools and Playwright (sandboxed); OpenAI's
+search accepts extra `urls` to analyse alongside the query.
 
 ## MCP and code intelligence (last verified 2026-09-07, third smoke run)
 

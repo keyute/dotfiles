@@ -59,7 +59,11 @@ agents:
   # authentication and session state remain unmanaged.
   pi:
     home: "~/.pi"
-    native_web_search: false
+    # pi-web-search: OpenAI's server-side web_search tool through the same
+    # Codex Responses endpoint and token as model calls; search_model keeps it
+    # off the default model's quota (the plugin's ~/.pi/agent/web-search.json).
+    native_web_search: true
+    search_tier: small
     agents_dir: "~/.pi/agent/agents"
     defaults:
       provider: openai-codex

@@ -53,6 +53,49 @@ test("canonical checks cover missing files, symlinks, sensitive and managed path
   assert.equal(canonical(join(p.cwd, "missing", "file")), join(p.cwd, "missing", "file"));
 });
 
+test("an added directory widens edits and the sandbox write list; home, denied and duplicate roots are refused", t => {
+  const p = fixture(t);
+  const other = join(p.cwd, "..", "other");
+  mkdirSync(other);
+  p.mode = "execute";
+  assert.throws(() => p.inspect("root", "write", { path: "../other/new" }), /workspace/);
+  assert.equal(p.addRoot("../other"), canonical(other));
+  assert.equal(p.inspect("root", "write", { path: "../other/new" }), "allow");
+  assert.throws(() => p.inspect("root", "write", { path: "../other/.git/config" }), /denied/);
+  assert.throws(() => p.inspect("root", "write", { path: "../other/.env" }), /denied/);
+  assert.throws(() => p.inspect("root", "read", { path: "../other/.env" }), /denied/);
+  assert.ok(p.profile("root").filesystem.denyRead.includes(join(canonical(other), ".env")));
+  assert.ok(p.profile("root").filesystem.allowWrite.includes(canonical(other)));
+  assert.ok(!p.profile("reviewer").filesystem.allowWrite.includes(canonical(other)));
+  assert.throws(() => p.addRoot("../other"), /already/);
+  assert.throws(() => p.addRoot("../secret"), /denied/);
+  assert.throws(() => p.addRoot("../missing"), /not found/);
+  assert.throws(() => p.addRoot("~"), /home/);
+  p.removeRoot(canonical(other));
+  assert.throws(() => p.inspect("root", "write", { path: "../other/new" }), /workspace/);
+  assert.ok(!p.profile("root").filesystem.denyRead.includes(join(canonical(other), ".env")));
+  assert.throws(() => p.removeRoot(canonical(other)), /not added/);
+  // A base entry that coincides with a re-rooted one survives the removal.
+  p.config.filesystem.denyRead.push(join(other, ".env"));
+  const q = new Policy(p.config, p.cwd, p.scratch, join(p.cwd, "..", "control"));
+  q.removeRoot(q.addRoot("../other"));
+  assert.throws(() => q.inspect("root", "read", { path: "../other/.env" }), /denied/);
+});
+
+test("an added directory's instructions are read through the read policy", t => {
+  const p = fixture(t);
+  const other = join(p.cwd, "..", "other");
+  mkdirSync(other);
+  assert.equal(p.instructions(p.addRoot("../other")), "");
+  writeFileSync(join(other, "CLAUDE.md"), "be brief");
+  assert.equal(p.instructions(canonical(other)), "be brief");
+  symlinkSync(join(p.cwd, "..", "secret", "fixture"), join(other, "AGENTS.md"));
+  assert.throws(() => p.instructions(canonical(other)), /denied/);
+  rmSync(join(other, "AGENTS.md"));
+  symlinkSync(join(p.cwd, "..", "cache"), join(other, "AGENTS.md"));
+  assert.throws(() => p.instructions(canonical(other)), /outside/);
+});
+
 test("MCP hard denial and plan scope precede approvals", t => {
   const p = fixture(t);
   assert.equal(p.inspectMcp("root", "docs", "search"), "allow");

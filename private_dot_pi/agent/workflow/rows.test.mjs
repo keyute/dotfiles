@@ -14,6 +14,7 @@ const rendered = component => component.render(80).map(line => line.trimEnd());
 
 test("row titles name the action and the target", () => {
   assert.equal(callTitle("bash", { command: "git status\n# trailing" }), "Ran git status");
+  assert.equal(callTitle("bash", { command: "npm test", run_in_background: true }), "Started npm test in background");
   assert.equal(callTitle("read", { path: "a.mjs", offset: 40 }), "Read a.mjs:40");
   assert.equal(callTitle("grep", { pattern: "paddingX", path: "src" }), 'Search "paddingX" in src');
   assert.equal(callTitle("ls", {}), "List .");
@@ -30,6 +31,17 @@ test("plugin titles name the server and tool, or the child and its task", () => 
   assert.equal(pluginTitle("subagent", {}), "subagent");
   assert.equal(pluginTitle("bg_wait", { id: "eeeb8e9f", timeoutMs: 30000 }), 'bg wait "eeeb8e9f"');
   assert.equal(pluginTitle("contact_supervisor", {}), "contact supervisor");
+  assert.equal(pluginTitle("todo", { action: "create", subject: "Research existing tool" }), "Added todo Research existing tool");
+  assert.equal(pluginTitle("todo", { action: "update", id: 3, status: "completed" }), "Updated todo #3");
+  assert.equal(pluginTitle("todo", { action: "list" }), "Listed todos");
+  assert.equal(pluginTitle("web_search", { query: "pi tui MouseRegion" }), 'Searched "pi tui MouseRegion"');
+});
+
+test("todo and background-task summaries", () => {
+  const tasks = [{ status: "completed" }, { status: "in_progress" }, { status: "deleted" }];
+  assert.equal(resultSummary("todo", result("Created #1", { tasks })), "1/2 done");
+  assert.equal(resultSummary("todo", result("Error: no", { tasks: [], error: "no" })), "");
+  assert.equal(resultSummary("bash", result("Started background task t1", { taskId: "t1" })), "task t1 · running");
 });
 
 test("glyph colour follows the row state", () => {

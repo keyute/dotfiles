@@ -1,6 +1,6 @@
 # Pi TUI design language
 
-Last verified 2026-09-08, afternoon (pi 0.85.1). Read this before editing
+Last verified 2026-09-08, evening (pi 0.85.1). Read this before editing
 `private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`; change a rule
 only with a dated decision here, never by re-wording.
 
@@ -68,17 +68,23 @@ pi's own glyphs. Each rule carries the why that earned it.
    documented `embedWorkingStatus`): the standalone row is pi's, one column
    in with a blank line above, and the owner saw both misalignments.
 4. **A turn ends when nothing is running.** The turn line prints at
-   `agent_settled` only when no background child is live; with children
+   `agent_settled` only when no background child or task is live; with either
    running it waits for the follow-up run to settle (or the user to type) and
    then prints the total. An aborted run prints `π Interrupted after …` at
    once. Each async child that ends prints `• agent finished · task ·
    2m 14s` (the run's own `durationMs`, launch to end), or its status word
    (`failed`/`stopped` in the error colour, `paused`/`partial`/`detached` in
-   the warning colour). *Why:* pi's `agent_settled` is honest about the root
-   run, not about the work; printing "done" while a child still ran was the
-   complaint. *2026-09-08:* the completion line returned because pi-subagents
-   shows its own notice only for failures and the owner wants finished
-   children visible in the chat, with how long they took.
+   the warning colour); a background task ends the same way, `• task t1
+   finished · command · 12s`. *Why:* pi's `agent_settled` is honest about the
+   root run, not about the work; printing "done" while a child still ran was
+   the complaint. *2026-09-08:* the completion line returned because
+   pi-subagents shows its own notice only for failures and the owner wants
+   finished children visible in the chat, with how long they took.
+   *2026-09-08, evening:* background shell tasks (Claude Code's
+   `run_in_background`) joined children as running work: the launch row is
+   `• Started cmd in background` with `↳ task t1 · running`, the end is the
+   completion line above, and the in-progress bullet stays static — the
+   owner kept the composer spinner as the one moving element.
 5. **Composer = the user box.** A shaded block in pi's `userMessageBg`: one
    blank shaded row above and below the content (the spinner rides the top
    one, rule 3), `❯` at column 0 on the first content line, no rule lines, no
@@ -134,3 +140,16 @@ pi's own glyphs. Each rule carries the why that earned it.
    green card was a third background and read as a different program; the
    composer's shade came back the same afternoon because the owner wants the
    place they type to look like what they typed.
+10. **The task list is the pinned plugin's panel, its tool rows are ours.**
+   `@juicesharp/rpiv-todo` draws Claude Code's task list above the composer
+   with its own glyphs (`○` pending, `◐` in progress, `✓` done, `├─`/`└─`
+   tree lines, no background), and its `todo` tool takes the row shape:
+   `• Added todo Research existing tool`, `• Updated todo #3`, each with
+   `↳ 2/7 done`; the row never folds, as the list stays visible in Claude
+   Code. *Why (2026-09-08, evening):* the catalog's most-used todo package
+   (99k/month), same author and version line as the questionnaire, on
+   documented `registerTool`/`setWidget`; restyling its panel would mean a
+   fork, and a second `○` meaning (pending here, a child in the fleet) was
+   judged cheaper than that. `web_search` (pi-web-search) is a plain row,
+   `• Searched "query"` with the answer's first line under it, and the `π`
+   voice also records workspace changes (`π Added … to the workspace`).

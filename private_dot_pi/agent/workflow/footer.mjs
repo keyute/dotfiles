@@ -123,7 +123,7 @@ function readGitChanges(cwd) {
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
-export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickMs = 1000 } = {}) {
+export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000 } = {}) {
   const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false };
 
   const refreshUsage = async () => {
@@ -147,8 +147,8 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickM
 
   // The turn line: one entry per user turn. The clock starts at agent_start and
   // its label rides pi's own working spinner; agent_settled closes the turn
-  // unless a background child is still running, in which case the turn stays
-  // open until the child's follow-up run settles (or the user types). An
+  // unless a background child or task is still running, in which case the turn
+  // stays open until the follow-up run settles (or the user types). An
   // aborted run closes at once as "Interrupted".
   const label = () => (state.prompting ? "Waiting for you…" : clock.label());
   const showLabel = () => ctx.ui.setWorkingMessage(label());
@@ -173,7 +173,7 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickM
   });
   pi.on("agent_settled", () => {
     if (!clock.running()) return;
-    if ((fleet?.activeCount?.() ?? 0) > 0) state.waiting = true;
+    if ((fleet?.activeCount?.() ?? 0) + (tasks?.live?.() ?? 0) > 0) state.waiting = true;
     else close();
   });
   pi.on("input", event => { if (state.waiting && event.source !== "extension") close(); return { action: "continue" }; });

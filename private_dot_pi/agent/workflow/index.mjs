@@ -13,7 +13,8 @@ import { checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
-import { PAD, answerLines, bulletMarkdown, installFolding, planRenderers, pluginRenderers, toolRenderers } from "./rows.mjs";
+import { createTasks } from "./tasks.mjs";
+import { PAD, answerLines, bulletMarkdown, completionLine, installFolding, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
@@ -176,11 +177,35 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const bashOptions = { exposeSessionEnvironment: false };
   const workerEnv = { ...env, PI_WORKFLOW_ROLE: role };
 
+  // Background tasks end in a steer message (heard with the next tool result,
+  // or as a new turn when idle, as Claude Code's task notification is) and one
+  // completion line; the message is not displayed, the line is its record.
+  const tasks = createTasks({
+    notify: text => pi.sendMessage({ customType: "workflow-task", content: text, display: false }, { deliverAs: "steer", triggerTurn: true }),
+    record: entry => pi.appendEntry("workflow-task", entry),
+  });
+  pi.registerEntryRenderer("workflow-task", (entry, _options, theme) => new Text(completionLine({ agent: `task ${entry.data.id}`, task: entry.data.command, status: entry.data.status, durationMs: entry.data.durationMs }, theme), 0, 0));
+  const background = permittedTools.includes("workspace_task");
+
   function sandboxTool(name) {
     if (!permittedTools.includes(publicToolName(name))) return;
     const template = toolFactory(name)(process.cwd(), name === "bash" ? bashOptions : undefined);
-    pi.registerTool({ ...template, ...toolRenderers(name), name: publicToolName(name), promptGuidelines: GUIDELINES[name], async execute(id, args, signal, onUpdate, ctx) {
+    // Claude Code's run_in_background flag, added to the SDK's own schema.
+    const parameters = name === "bash" && background
+      ? { ...template.parameters, properties: { ...template.parameters.properties, run_in_background: { type: "boolean", description: "Start the command as a background task and return at once; its output arrives when it ends, or through workspace_task." } } }
+      : template.parameters;
+    pi.registerTool({ ...template, parameters, ...toolRenderers(name), name: publicToolName(name), promptGuidelines: GUIDELINES[name], async execute(id, args, signal, onUpdate, ctx) {
       const { ticket } = await authorize(name, args);
+      if (name === "bash" && background && args.run_in_background) {
+        // No turn signal: the task outlives the call, and only workspace_task or a mode change stops it.
+        const client = startToolWorker(name, { cwd: currentContext.cwd, env: workerEnv, ticket });
+        const taskId = tasks.start({
+          command: args.command,
+          run: (onChunk, taskSignal) => client.call("exec", { command: args.command, cwd: currentContext.cwd, timeout: args.timeout }, { signal: taskSignal, onChunk: chunk => onChunk(chunk.toString()) }),
+          close: () => client.close(),
+        });
+        return { content: [{ type: "text", text: `Started background task ${taskId}; its output arrives when it ends. Use workspace_task to read or stop it.` }], details: { taskId } };
+      }
       const client = startToolWorker(name, { cwd: currentContext.cwd, env: workerEnv, ticket, signal });
       try {
         if (name === "grep") return await executeSandboxGrep(client, args, signal);
@@ -191,6 +216,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     } });
   }
   for (const name of ["read", "write", "edit", "bash", "grep", "find", "ls"]) sandboxTool(name);
+  if (background) {
+    pi.registerTool({ name: "workspace_task", label: "Background task", description: "Read the output so far of a background task started by workspace_bash with run_in_background, or stop it.", parameters: Type.Object({ id: Type.String(), action: Type.Union([Type.Literal("output"), Type.Literal("stop")]) }), ...taskRenderers, async execute(_id, args) {
+      if (args.action === "stop") return resultText(tasks.stop(args.id) ? `Stopping task ${args.id}` : `Task ${args.id} had already ended`);
+      return resultText(tasks.output(args.id));
+    } });
+  }
 
   pi.on("tool_call", async (event, ctx) => {
     try {
@@ -226,6 +257,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   async function setMode(mode, ctx) {
     if (!broker) throw new Error("Only the parent can change workflow mode");
     ready = false;
+    // Stopped here, before the broker revokes their leases, so a task ends as
+    // "stopped" rather than as a lost worker.
+    tasks.stopAll();
     await broker.setMode(mode);
     publishEpoch();
     ready = true;
@@ -254,7 +288,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       if (!surfaces) {
         installFolding(pi, ctx);
         const fleet = installFleet(pi, ctx);
-        surfaces = { fleet, footer: installFooter(pi, ctx, { fleet }) };
+        surfaces = { fleet, footer: installFooter(pi, ctx, { fleet, tasks }) };
       }
       // pi resets every extension surface when a session is invalidated
       // (/new, /resume), so these are applied on each session start.
@@ -275,8 +309,15 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     const model = ctx.model;
     if (!model || model.provider !== config.models.provider || !Object.values(config.models.tiers).includes(model.id) || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error("Select an available managed OpenAI subscription model; API fallback is disabled");
     const state = await requestBroker(env, role, { action: "state" });
-    return { systemPrompt: `${event.systemPrompt}\n\nWorkflow mode: ${state.mode}. ${state.readonly ? "Investigate only; source edits and external mutations are disabled. Submit the plan for explicit approval before implementation." : "Execute only the user-approved task."}` };
+    const added = [...extraDirs].filter(([, text]) => text).map(([dir, text]) => `\n\n# Instructions for ${dir}\n\n${text}`).join("");
+    return { systemPrompt: `${event.systemPrompt}${added}\n\nWorkflow mode: ${state.mode}. ${state.readonly ? "Investigate only; source edits and external mutations are disabled. Submit the plan for explicit approval before implementation." : "Execute only the user-approved task."}` };
   });
+
+  // /add-dir, Claude Code's added working directory: the policy widens the
+  // edit scope and the directory's AGENTS.md (or CLAUDE.md) rides the system
+  // prompt. Skills under it need a restart with --skill: pi discovers
+  // resources at startup and /reload, and /reload would also restart the broker.
+  const extraDirs = new Map();
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
@@ -290,6 +331,34 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
       if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); ctx.ui.setStatus("workflow", broker.policy.mode); }
     } });
+    pi.registerCommand("add-dir", { description: "Add a directory to the editable workspace and load its AGENTS.md", handler: async (args, ctx) => {
+      const input = args?.trim() || (ctx.hasUI ? await ctx.ui.input("Directory to add", "../other-project") : "");
+      if (!input) return;
+      let dir;
+      let text;
+      try {
+        dir = broker.policy.addRoot(input);
+        // Read through the policy; a refusal takes the root back out.
+        try { text = broker.policy.instructions(dir); } catch (error) { broker.policy.removeRoot(dir); throw error; }
+      } catch (error) { ctx.ui.notify(error.message, "error"); return; }
+      extraDirs.set(dir, text);
+      // A wider scope is a new epoch, as an approval change is; running
+      // processes keep their narrower profile until their next lease.
+      broker.policy.epoch++;
+      publishEpoch();
+      pi.appendEntry("workflow-note", { text: `Added ${dir} to the workspace${extraDirs.get(dir) ? " with its instructions" : ""}` });
+    } });
+    pi.registerCommand("remove-dir", { description: "Remove an added directory from the workspace", handler: async (_args, ctx) => {
+      if (!broker.policy.roots.size) return ctx.ui.notify("No added directories", "info");
+      const dir = await ctx.ui.select("Directory to remove", [...broker.policy.roots.keys()]);
+      if (!dir) return;
+      broker.policy.removeRoot(dir);
+      extraDirs.delete(dir);
+      // Narrowing stops running processes, as a mode change does.
+      await setMode(broker.policy.mode, ctx);
+      pi.appendEntry("workflow-note", { text: `Removed ${dir} from the workspace` });
+    } });
+    pi.registerEntryRenderer("workflow-note", (entry, _options, theme) => new Text(noteLine(entry.data.text, theme), 0, 0));
     // The questionnaire dialog is the pinned plugin's; the answers feed the
     // classifier's task context and the transcript line from its result.
     const askUserQuestion = await jiti.import("@juicesharp/rpiv-ask-user-question", { default: true });
@@ -304,6 +373,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       pi.appendEntry("workflow-answers", { answers });
     });
     pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
+    // The task list (Claude Code's) is the pinned plugin's: its `todo` tool
+    // takes the row shape, its panel above the composer is its own.
+    const todo = await jiti.import("@juicesharp/rpiv-todo", { default: true });
+    todo(styled);
     pi.registerMarkdownTransformer(bulletMarkdown);
     pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present the implementation plan for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), ...planRenderers, async execute(_id, args) {
       const ctx = currentContext;
@@ -320,12 +393,20 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     await subagents(styled);
   }
 
+  // Provider-native web search (OpenAI's server-side web_search tool on the
+  // same Codex endpoint and token as model calls). Its Gemini-only url_context
+  // registers too and stays outside every role's tool list.
+  if (permittedTools.includes("web_search")) {
+    const webSearch = await jiti.import("pi-web-search", { default: true });
+    webSearch(styled);
+  }
   if (permittedTools.includes("mcp")) {
     const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
     await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false } } })(styled);
   }
   pi.on("session_shutdown", async () => {
     ready = false;
+    tasks.stopAll();
     releaseChild?.();
     ceiling?.dispose();
     if (broker) {

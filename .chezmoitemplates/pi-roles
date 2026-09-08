@@ -14,11 +14,13 @@
       {{- if eq $sourceTool "Read" -}}{{- $tools = append $tools "workspace_read" -}}
       {{- else if eq $sourceTool "Grep" -}}{{- $tools = append $tools "workspace_grep" -}}
       {{- else if eq $sourceTool "Glob" -}}{{- $tools = concat $tools (list "workspace_find" "workspace_ls") -}}
-      {{- else if eq $sourceTool "Bash" -}}{{- $tools = append $tools "workspace_bash" -}}
+      {{- else if eq $sourceTool "Bash" -}}{{- $tools = concat $tools (list "workspace_bash" "workspace_task") -}}
       {{- else if eq $sourceTool "Edit" -}}{{- $tools = append $tools "workspace_edit" -}}
       {{- else if eq $sourceTool "Write" -}}{{- $tools = append $tools "workspace_write" -}}
+      {{- else if eq $sourceTool "WebSearch" -}}{{- $tools = append $tools "web_search" -}}
       {{- end -}}
-      {{- if or (eq $sourceTool "WebSearch") (hasPrefix "mcp__" $sourceTool) -}}
+      {{- /* Exa fetch stays behind the MCP proxy, as WebFetch's counterpart */ -}}
+      {{- if or (eq $sourceTool "WebFetch") (hasPrefix "mcp__" $sourceTool) -}}
         {{- $needsMcp = true -}}
       {{- end -}}
     {{- end -}}

@@ -294,6 +294,63 @@ live-tested on the host.
   the double blank line after hidden reasoning is pi#8154. Both recorded as
   residuals with their issue numbers in the design doc and `harness.md`.
 
+- 2026-09-08 (evening, catalog review): the pi.dev gallery (~5,450 listed,
+  9,328 npm packages tagged `pi-package`) was ranked by npm weekly and gallery
+  monthly downloads and ~70 candidates read for documented-API use, in-host
+  I/O that would bypass the SRT boundary, 0.85.x compatibility and
+  maintenance, against the bar "pi's UX close to Claude Code" and the cost of
+  our own code. Adopted: `@juicesharp/rpiv-todo` 2.9.0 (99k/month, the
+  questionnaire's author and version line; Claude Code's task list) and
+  `pi-web-search` 1.4.0 (18k/month; OpenAI's server-side `web_search` on the
+  same Codex endpoint and token as model calls — `pi-web-access`, 415k/month,
+  fetches in-host through third-party APIs and was rejected for that).
+  `native_web_search` flipped to true for pi so the shared instructions render
+  Claude's search line; `search_tier: small` renders
+  `~/.pi/agent/web-search.json`. Built ourselves, because every package with
+  the feature spawns or writes in the host: background bash (`tasks.mjs`;
+  `run_in_background` on the SDK schema, `workspace_task` output/stop, a steer
+  `pi.sendMessage` at the end, one completion line, counted as running work
+  by the turn line; a mode change stops it as a lease) and `/add-dir` /
+  `/remove-dir` (`Policy.addRoot/removeRoot` widen the edit check and the
+  sandbox write list with an epoch bump — a removal goes through `setMode`
+  and stops processes; the directory's AGENTS.md rides `before_agent_start`;
+  skills need a restart with `--skill` since `/reload` would restart the
+  broker). Kept custom with the evidence recorded: policy/sandbox
+  (`pi-sandbox` is bash-only SRT, `pi-landstrip` a closed binary, the
+  permission packages have no OS sandbox, none sandboxes MCP or children),
+  transcript rows (every Claude-styled package patches pi-tui or re-wraps
+  `registerTool`), footer and usage (all take `setFooter`; no programmatic
+  quota read exists), fleet (pi-subagents' FleetView exists but `goal` is
+  still never set in 0.66.0, verified in `rpc.ts`). Skipped with reasons:
+  `pi-lens` (60k/month, in-host LSP servers; the 2026-09-06 decision stands
+  and it is the candidate on measured pain), `@plannotator/pi-extension`
+  (53k/month; a second plan mode with browser approval beside the broker's;
+  its `external` mode is the seam if ever wanted), `pi-workspace-history`
+  (peer `^0.84.4`, restores files in-host; `/rewind` is a self-build
+  follow-up), `pi-context-view` (1.4k/week solo), memory packages (Claude
+  Code's auto-memory is prompt plus directory, a projection change if
+  wanted), the `@henryqw/pi-herdr-*` family (no overlap with the Herdr state
+  extension), `pi-condense` (pi's compaction already matches auto-compact),
+  queue/steer packages (pi's follow-up queue is enough), the three add-dir
+  packages (context loading only; the dominant one pins `^0.85.1` and hands
+  the model an `add_directory` tool). The in-progress tool bullet stays
+  static by the owner's choice. Usage/quota packages read the ChatGPT backend
+  or the app-server directly and take the footer; `@hk_net/pi-usage-bars`
+  claims to go through pi's provider API and is the one to read if the
+  app-server read ever breaks. Both `chezmoi cat` renders of the Claude and
+  Codex instruction files are byte-identical before and after; only the pi
+  render changes. Codex review (one round) found four real defects, all
+  fixed: relative deny entries (`.env`) were rooted at cwd only, so an added
+  directory's `.env` was writable — `addRoot` now re-expands them per root
+  and `removeRoot` drops exactly those; the instructions file was read in the
+  host outside the read policy (a symlinked `AGENTS.md` could carry a
+  credential into the system prompt) — now `Policy.instructions` goes through
+  `checkPath` and must resolve inside the root; a mode change revoked a
+  task's lease before its controller aborted, so a lost worker could report
+  `failed` instead of `stopped` — `setMode` now stops tasks first; and a
+  refused instructions read left the root added without an epoch bump — the
+  add rolls back.
+
 ## Verification and remaining gates
 
 - Automated tests cover pinned package registration, real child launch preflight,

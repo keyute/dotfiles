@@ -5,7 +5,7 @@ import { buildSegments, footerEnv, formatReset, installFooter, parseGitChanges, 
 import { createTurnClock } from "./rows.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
-function harness({ active = 0, tickMs = 5 } = {}) {
+function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
   const path = process.env.PATH;
   process.env.PATH = ""; // codex/git lookups fail fast instead of spawning
   const handlers = {};
@@ -14,10 +14,11 @@ function harness({ active = 0, tickMs = 5 } = {}) {
   const pi = { on: (name, fn) => { handlers[name] = fn; }, registerEntryRenderer() {}, appendEntry: (kind, data) => entries.push({ kind, data }) };
   const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter() {}, setWorkingMessage: text => messages.push(text) } };
   const fleet = { attach() {}, render: () => [], activeCount: () => active };
-  installFooter(pi, ctx, { fleet, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs });
+  const tasks = { live: () => live };
+  installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs });
   process.env.PATH = path;
   const fire = (name, event = {}) => handlers[name]?.(event, { cwd: "." });
-  return { fire, entries, messages, fleet, done: () => fire("session_shutdown") };
+  return { fire, entries, messages, fleet, tasks, done: () => fire("session_shutdown") };
 }
 
 test("footer subprocesses never inherit workflow broker credentials", () => {
@@ -141,6 +142,20 @@ test("the turn line waits for background children and closes once with the total
   h.fire("agent_settled");
   assert.equal(h.entries.length, 1);
   assert.ok(h.entries[0].data.ms >= 20, String(h.entries[0].data.ms));
+  h.done();
+});
+
+test("the turn line waits for background tasks as it waits for children", () => {
+  let live = 1;
+  const h = harness();
+  h.tasks.live = () => live;
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 0);
+  live = 0;
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 1);
   h.done();
 });
 

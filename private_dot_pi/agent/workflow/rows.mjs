@@ -65,7 +65,7 @@ export function glyph(theme, { isPartial, isError }, mark = BULLET) {
 export function callTitle(name, args = {}) {
   const where = args.path ? ` in ${args.path}` : "";
   switch (name) {
-    case "bash": return `Ran ${firstLine(args.command) || "…"}`;
+    case "bash": return args.run_in_background ? `Started ${firstLine(args.command) || "…"} in background` : `Ran ${firstLine(args.command) || "…"}`;
     case "read": return `Read ${args.path ?? ""}${args.offset ? `:${args.offset}` : ""}`;
     case "edit": return `Edited ${args.path ?? ""}`;
     case "write": return `Wrote ${args.path ?? ""}`;
@@ -102,7 +102,17 @@ export function pluginTitle(name, args = {}, servers = []) {
     return "mcp";
   }
   if (name.startsWith("mcp__")) return `${mcpName(name.slice("mcp__".length), servers)}${preview(args)}`;
+  if (name === "todo") return todoTitle(args);
+  if (name === "web_search") return `Searched "${shortTitle(args.query ?? "", PREVIEW_WIDTH)}"`;
   return `${name.replaceAll("_", " ")}${preview(args)}`;
+}
+
+// The todo tool's actions, Claude Code's task-list verbs; an update names the
+// task by id since its subject lives in the plugin's state.
+const TODO_VERBS = { create: "Added todo", update: "Updated todo", get: "Read todo", delete: "Deleted todo", list: "Listed todos", clear: "Cleared todos" };
+function todoTitle(args) {
+  const what = args.subject ? shortTitle(args.subject, PREVIEW_WIDTH) : args.id != null ? `#${args.id}` : "";
+  return `${TODO_VERBS[args.action] ?? "todo"}${what && !["list", "clear"].includes(args.action) ? ` ${what}` : ""}`;
 }
 
 // The one line under a collapsed row: what the result was, never what it said.
@@ -110,6 +120,11 @@ export function pluginTitle(name, args = {}, servers = []) {
 // "Waited 33.2s for run …; done."), which is the summary itself.
 export function resultSummary(name, result) {
   if (!result) return "";
+  if (result.details?.taskId) return `task ${result.details.taskId} · running`;
+  if (name === "todo") {
+    const tasks = (result.details?.tasks ?? []).filter(task => task.status !== "deleted");
+    return tasks.length ? `${tasks.filter(task => task.status === "completed").length}/${tasks.length} done` : "";
+  }
   if (name === "plugin") return shortTitle(firstLine(resultText(result)), SUMMARY_WIDTH);
   if (name === "edit" || name === "write") {
     const diff = result.details?.diff;
@@ -303,7 +318,7 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
   if (name === "ask_user_question") return NOTHING;
   const subagent = name === "subagent";
   const renderers = rowRenderers({
-    name: subagent ? "subagent" : isMcp(name) ? "mcp" : "plugin",
+    name: subagent ? "subagent" : isMcp(name) ? "mcp" : name === "todo" ? "todo" : "plugin",
     title: args => pluginTitle(name, args, servers),
     folds,
     failed: (result, context) => context.isError || Boolean(result?.details?.error),
@@ -317,6 +332,9 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
     },
   };
 }
+
+// The background-task tool: its result is a status line and the task's output.
+export const taskRenderers = rowRenderers({ name: "plugin", title: args => (args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`) });
 
 export const planRenderers = {
   renderShell: "self",
@@ -379,9 +397,13 @@ export function formatDuration(ms) {
 
 const clockTime = at => new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
 
-export function formatTurn({ verb, ms, endedAt, aborted }, theme) {
-  const text = aborted ? `Interrupted after ${formatDuration(ms)}` : `${verb} for ${formatDuration(ms)} · done ${clockTime(endedAt)}`;
+// Anything the harness says in its own voice: the turn line, a workspace change.
+export function noteLine(text, theme) {
   return `${theme.fg("accent", TURN_GLYPH)} ${theme.fg("muted", text)}`;
+}
+
+export function formatTurn({ verb, ms, endedAt, aborted }, theme) {
+  return noteLine(aborted ? `Interrupted after ${formatDuration(ms)}` : `${verb} for ${formatDuration(ms)} · done ${clockTime(endedAt)}`, theme);
 }
 
 // One turn from agent_start until the footer decides it is over (see

@@ -121,6 +121,13 @@ const pins = [
   ["pi resets every extension surface when a session is invalidated", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/setBeforeSessionInvalidate\(\(\) => \{\s*this\.resetExtensionUI\(\);/]],
   ["pi-subagents registers bg_wait and the supervisor channel without renderers of their own", "pi-subagents/src/runs/background/wait-tool.ts", [/name: "bg_wait"/]],
   ["the questionnaire plugin registers ask_user_question without renderers of its own", "@juicesharp/rpiv-ask-user-question/ask-user-question.ts", [/ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"/, /pi\.registerTool\(\{/]],
+  ["the todo plugin registers `todo` with its own renderers and answers with its task state in details", "@juicesharp/rpiv-todo/todo.ts", [/name: TOOL_NAME/, /renderCall\(args, theme, _context\)/, /renderResult\(result, _opts, theme, _context\)/]],
+  ["the todo tool's name and its details carry action, tasks and error", "@juicesharp/rpiv-todo/tool/response-envelope.ts", [/action,\s*params: params as Record<string, unknown>,\s*tasks: state\.tasks,/, /\{ error: op\.message \}/]],
+  ["the todo panel is a widget with pi's own glyphs and no background", "@juicesharp/rpiv-todo/todo-overlay.ts", [/this\.uiCtx\.setWidget\(/]],
+  ["pi-web-search registers web_search and a Gemini-only url_context with its own renderers", "pi-web-search/src/index.ts", [/const WEB_SEARCH_TOOL = "web_search"/, /const URL_CONTEXT_TOOL = "url_context"/, /name: WEB_SEARCH_TOOL/, /renderCall\(args, theme\)/]],
+  ["pi-web-search takes the model's credentials from pi and posts to the Codex responses endpoint", "pi-web-search/src/api.ts", [/ctx\.modelRegistry\.getApiKeyAndHeaders\(model\)/, /model\.api === "openai-codex-responses"/, /`\$\{base\}\/codex\/responses`/]],
+  ["pi-web-search reports failures in details.error", "pi-web-search/src/utils.ts", [/details: \{ error: true \}/]],
+  ["the SDK bash schema is a plain object with a properties map", "@earendil-works/pi-coding-agent/dist/core/tools/bash.js", [/parameters: bashSchema/]],
   ["an async launch answers with asyncId", "pi-subagents/src/runs/background/async-execution.ts", [/asyncId: id/]],
   ["a completion spreads the result file (agent, success, state, durationMs) plus runId and each result's resolved status", "pi-subagents/src/runs/background/result-watcher.ts", [/emit\(SUBAGENT_ASYNC_COMPLETE_EVENT, \{\s*\.\.\.data,\s*runId,/, /data\.success/, /data\.state === "stopped"/, /status: child\.status,/]],
   ["the result file's durationMs runs from launch to end", "pi-subagents/src/runs/background/subagent-runner.ts", [/durationMs: runEndedAt - overallStartTime/]],
@@ -133,5 +140,14 @@ for (const [claim, file, patterns] of pins) {
   test(`pin: ${claim} (${file})`, () => {
     const text = readFileSync(join(nodeModules, file), "utf8");
     for (const pattern of patterns) assert.match(text, pattern);
+  });
+}
+
+// API calls that are not events: each must stay documented.
+const documentedApis = ["pi.sendMessage(", "ctx.ui.input(", "ctx.ui.select(", "pi.appendEntry(", "pi.registerEntryRenderer("];
+for (const api of documentedApis) {
+  test(`${api} is documented in pi-coding-agent/docs/extensions.md`, () => {
+    const docs = readFileSync(join(nodeModules, "@earendil-works", "pi-coding-agent", "docs", "extensions.md"), "utf8");
+    assert.ok(docs.includes(api), `${api} is not documented`);
   });
 }
