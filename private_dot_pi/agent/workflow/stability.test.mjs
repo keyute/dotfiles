@@ -134,6 +134,10 @@ const pins = [
   ["a custom editor opting into embedWorkingStatus is handed pi's working indicator, and only that one", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/editor\.embedWorkingStatus === true/, /indicator instanceof WorkingStatusIndicator && this\.setEditorWorkingStatusIndicator\(indicator\)/]],
   ["the editor keeps the indicator it is handed; the indicator renders its text for a border row", "@earendil-works/pi-coding-agent/dist/modes/interactive/components/custom-editor.js", [/this\.embedWorkingStatus = options\?\.embedWorkingStatus \?\? false/, /setWorkingStatusIndicator\(indicator\) \{\s*this\.workingStatusIndicator = indicator;/]],
   ["the working indicator renders its text for a border row", "@earendil-works/pi-coding-agent/dist/modes/interactive/components/status-indicator.js", [/class WorkingStatusIndicator extends StatusIndicator/, /renderInBorder\(width\) \{/]],
+  ["Tab inside a command's arguments asks for forced file completion", "@earendil-works/pi-tui/dist/components/editor.js", [/handleTabCompletion\(\) \{/, /this\.forceFileAutocomplete\(true\);/]],
+  ["accepting an item with Tab closes the menu without re-opening it", "@earendil-works/pi-tui/dist/components/editor.js", [/kb\.matches\(data, "tui\.input\.tab"\)\) \{\s*const selected = this\.autocompleteList\.getSelectedItem\(\);[\s\S]{0,600}?this\.cancelAutocomplete\(\);/]],
+  ["the built-in provider skips its slash branch when the request is forced", "@earendil-works/pi-tui/dist/autocomplete.js", [/if \(!options\.force && textBeforeCursor\.startsWith\("\/"\)\)/, /command\.getArgumentCompletions\(argumentText\)/]],
+  ["pi clears the stacked autocomplete providers when a session is invalidated", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/this\.autocompleteProviderWrappers = \[\];/]],
   ["result statuses are completed, failed, partial, paused, stopped or detached", "pi-subagents/src/shared/types.ts", [/ExecutionProjectionStatus = "completed" \| "failed" \| "partial" \| "paused" \| "stopped" \| "detached"/]],
 ];
 for (const [claim, file, patterns] of pins) {
@@ -144,7 +148,7 @@ for (const [claim, file, patterns] of pins) {
 }
 
 // API calls that are not events: each must stay documented.
-const documentedApis = ["pi.sendMessage(", "ctx.ui.select(", "getArgumentCompletions", "pi.appendEntry(", "pi.registerEntryRenderer("];
+const documentedApis = ["pi.sendMessage(", "ctx.ui.select(", "getArgumentCompletions", "ctx.ui.addAutocompleteProvider(", "pi.appendEntry(", "pi.registerEntryRenderer("];
 for (const api of documentedApis) {
   test(`${api} is documented in pi-coding-agent/docs/extensions.md`, () => {
     const docs = readFileSync(join(nodeModules, "@earendil-works", "pi-coding-agent", "docs", "extensions.md"), "utf8");

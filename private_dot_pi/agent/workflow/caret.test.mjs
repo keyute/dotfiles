@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CaretEditor } from "./index.mjs";
+import { CombinedAutocompleteProvider } from "@earendil-works/pi-tui";
+import { CaretEditor, argumentCompletions } from "./index.mjs";
 
-const keybindings = { matches: (data, id) => ({ "tui.editor.cursorDown": "\x1b[B", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b" })[id] === data };
+const keybindings = { matches: (data, id) => ({ "tui.editor.cursorDown": "\x1b[B", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b", "tui.input.tab": "\t" })[id] === data };
 // The host hands the editor factory an EditorTheme; the full palette arrives
 // separately, so the mocks stay split or the test stops matching the runtime.
-const editorTheme = { borderColor: text => `<border>${text}`, selectList: {} };
+const editorTheme = { borderColor: text => `<border>${text}`, selectList: { selectedText: text => text, unselectedText: text => text, description: text => text, noMatch: text => text, scrollInfo: text => text } };
 const BG = "\x1b[48;5;1m";
 const palette = { fg: (color, text) => `<${color}>${text}`, bg: (_color, text) => `${BG}${text}\x1b[49m` };
 const editor = options => new CaretEditor({ terminal: { rows: 24 }, requestRender: () => {} }, editorTheme, keybindings, { palette, ...options });
@@ -60,4 +61,53 @@ test("down enters fleet navigation only when the editor could not move, and othe
   assert.deepEqual(actions, ["enter", "down", "confirm", "other"]);
   assert.equal(caret.getText(), "one\ntwox");
   assert.equal(editor().getText(), "");
+});
+
+// The real provider, so the command lookup, the prefix it returns and the
+// insertion its applyCompletion performs are pi's own.
+const dirs = { "": ["../one/", "../two/"], "../one/": ["../one/a/", "../one/b/"] };
+const commands = [
+  { name: "add-dir", description: "Add a directory", getArgumentCompletions: prefix => (dirs[prefix] ?? []).map(value => ({ value, label: value })) },
+  { name: "remove-dir", description: "Remove a directory", getArgumentCompletions: prefix => ["/tmp/added", "/tmp/other"].filter(root => root.startsWith(prefix)).map(value => ({ value, label: value })) },
+];
+const completing = () => {
+  const caret = editor();
+  caret.setAutocompleteProvider(argumentCompletions(new CombinedAutocompleteProvider(commands, process.cwd()), ["add-dir", "remove-dir"]));
+  return caret;
+};
+// The request runs off the keystroke, and a re-issued tab queues behind the one
+// before it.
+const tab = async caret => { caret.handleInput("\t"); for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
+// The rows under the composer, without the highlight marker.
+const menu = caret => caret.render(40).slice(3).map(line => line.replace(/\x1b\[[0-9;]*m/g, "").trim().replace(/^→ /, "")).filter(Boolean);
+
+test("tab offers the command's own completions and, after accepting, the next level", async t => {
+  const caret = completing();
+  caret.setText("/add-d");
+  await tab(caret);
+  assert.deepEqual(menu(caret), ["add-dir"]);
+  await tab(caret);
+  assert.equal(caret.getText(), "/add-dir ");
+  assert.deepEqual(menu(caret), ["../one/", "../two/"]);
+  await tab(caret);
+  assert.equal(caret.getText(), "/add-dir ../one/");
+  assert.deepEqual(menu(caret), ["../one/a/", "../one/b/"]);
+});
+
+test("accepting a value that is not a directory ends the walk", async () => {
+  const caret = completing();
+  caret.setText("/remove-dir /tmp");
+  await tab(caret);
+  assert.deepEqual(menu(caret), ["/tmp/added", "/tmp/other"]);
+  await tab(caret);
+  assert.equal(caret.getText(), "/remove-dir /tmp/added");
+  assert.deepEqual(menu(caret), []);
+});
+
+test("a single candidate completes on the tab that asked for it", async () => {
+  const caret = completing();
+  caret.setText("/remove-dir /tmp/o");
+  await tab(caret);
+  assert.equal(caret.getText(), "/remove-dir /tmp/other");
+  assert.deepEqual(menu(caret), []);
 });

@@ -62,6 +62,37 @@ export function pluginApi(pi, renderersFor) {
   });
 }
 
+// pi routes Tab inside a command's arguments to forced file completion, and its
+// built-in provider guards the whole slash branch on `!options.force`, so the
+// command's own getArgumentCompletions never runs and Tab offers raw paths. The
+// forced request asked again unforced is the command's candidates. `filtered`
+// names the commands whose candidates the policy narrows, where the fallback to
+// paths would put back exactly what the command refuses.
+const WRAPPED = Symbol.for("pi-workflow:argument-completions");
+// The command an argument belongs to; one registered twice carries a `:N`
+// invocation suffix.
+const commandArgument = (lines, cursorLine, cursorCol) => (lines[cursorLine] ?? "").slice(0, cursorCol).match(/^\/(\S+) /)?.[1].split(":")[0];
+export function argumentCompletions(current, filtered = []) {
+  // pi keeps stacked providers across /reload, where session_start runs again
+  // without the invalidation that clears them.
+  if (current[WRAPPED]) return current;
+  return {
+    [WRAPPED]: true,
+    async getSuggestions(lines, cursorLine, cursorCol, options) {
+      const name = options.force && commandArgument(lines, cursorLine, cursorCol);
+      if (!name) return current.getSuggestions(lines, cursorLine, cursorCol, options);
+      const suggestions = await current.getSuggestions(lines, cursorLine, cursorCol, { ...options, force: false });
+      if (suggestions || filtered.includes(name)) return suggestions;
+      return current.getSuggestions(lines, cursorLine, cursorCol, options);
+    },
+    applyCompletion: (...args) => current.applyCompletion(...args),
+    // pi refuses a forced request while a slash command is being typed, and an
+    // argument that is still only the command's trailing space trims to one.
+    shouldTriggerFileCompletion: (lines, cursorLine, cursorCol) => Boolean(commandArgument(lines, cursorLine, cursorCol))
+      || (current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true),
+  };
+}
+
 const padRow = (text, width) => truncateToWidth(text, width, "", true);
 
 // The composer takes the user box's shape (docs/pi-design.md rule 5): pi's rule
@@ -100,6 +131,17 @@ export class CaretEditor extends sdk.CustomEditor {
       const before = JSON.stringify([this.getCursor(), this.getLines()]);
       super.handleInput(data);
       if (JSON.stringify([this.getCursor(), this.getLines()]) === before) fleet.handleKey("enter");
+      return;
+    }
+    // Accepting an item with Tab closes the menu and nothing re-opens it, so the
+    // command's arguments show nothing until a character is typed (and `~` and
+    // `/`, where an added directory starts, are not pi's natural triggers). An
+    // accept that left the cursor on the command's space or on a directory
+    // separator has a next level to show, so the key is asked again.
+    if (this.keybindings.matches(data, "tui.input.tab") && this.isShowingAutocomplete()) {
+      super.handleInput(data);
+      const { line, col } = this.getCursor();
+      if (!this.isShowingAutocomplete() && /^\/\S+ (.*[ /])?$/.test((this.getLines()[line] ?? "").slice(0, col))) super.handleInput(data);
       return;
     }
     super.handleInput(data);
@@ -295,6 +337,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       installHeader(ctx);
       surfaces.footer.attach(ctx);
       ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet: surfaces.fleet, palette: ctx.ui.theme }));
+      // The directory commands below are the policy-filtered ones.
+      ctx.ui.addAutocompleteProvider(current => argumentCompletions(current, ["add-dir", "remove-dir"]));
     }
     pi.setActiveTools(pi.getAllTools().map(tool => tool.name).filter(permitted));
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
@@ -352,8 +396,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     pi.registerCommand("remove-dir", { description: "Remove an added directory from the workspace", getArgumentCompletions: prefix => completions([...broker.policy.roots.keys()].filter(root => root.startsWith(prefix))), handler: async (args, ctx) => {
       if (!broker.policy.roots.size) return ctx.ui.notify("No added directories", "info");
       const input = args?.trim();
-      const dir = input ? canonical(expand(input, broker.policy.cwd)) : await ctx.ui.select("Directory to remove", [...broker.policy.roots.keys()]);
-      if (!dir) return;
+      if (!input) return ctx.ui.notify("Type a directory after /remove-dir", "info");
+      const dir = canonical(expand(input, broker.policy.cwd));
       try { broker.policy.removeRoot(dir); } catch (error) { return ctx.ui.notify(error.message, "error"); }
       extraDirs.delete(dir);
       // Narrowing stops running processes, as a mode change does.

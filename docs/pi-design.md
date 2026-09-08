@@ -96,7 +96,12 @@ pi's own glyphs. Each rule carries the why that earned it.
    going to do the background thing for user messages in the chat, the input
    should be the same". pi's user box hardcodes its blank row above and
    below, so the composer carries the same two; the standard is the user box,
-   not either reference.
+   not either reference. *2026-09-08, later:* Tab completes what the command
+   accepts — the command's own candidates in argument position, and the next
+   level after an accept, so Tab walks a directory tree. *Why:* pi opened that
+   menu only on a typed letter and answered Tab with file paths, so `/add-dir`
+   offered directories its policy refuses and never opened at all for a path
+   starting `~` or `/`.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then
    `↓ N more`; Down from the prompt's last line enters the rows, the

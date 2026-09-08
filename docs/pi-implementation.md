@@ -294,6 +294,31 @@ live-tested on the host.
   the double blank line after hidden reasoning is pi#8154. Both recorded as
   residuals with their issue numbers in the design doc and `harness.md`.
 
+- 2026-09-08 (later, Tab completion): `/add-dir` and `/remove-dir` carried
+  `getArgumentCompletions` but pi only opened that menu on a typed letter
+  matching `[a-zA-Z0-9.\-_]`, and Tab bypassed it twice over: in argument
+  position `handleTabCompletion` asks for forced file completion, whose
+  `force` flag is the very flag the built-in provider's slash branch is
+  guarded on, and accepting an item with Tab cancels the menu with nothing to
+  re-open it. So Tab offered files and policy-refused directories, and never
+  opened for a path starting `~` or `/`. Fixed on the documented
+  `ctx.ui.addAutocompleteProvider`: the wrapper re-issues a forced request in
+  `/<cmd> <args>` position unforced, for every command (pi's own `/model`,
+  `/thinking` and `/login` had the same bug), falling back to the forced path
+  request when a command has no completions — never for `add-dir`/`remove-dir`,
+  where the fallback would put back exactly what `rootRejection` filters out.
+  It answers `shouldTriggerFileCompletion` itself, since `/cmd ` trims to a
+  slash command pi refuses to force-complete, and it is idempotent because
+  `addAutocompleteProvider` pushes rather than sets and `/reload` re-emits
+  `session_start` without the reset that clears the stack. `CaretEditor` feeds
+  the key back to the base editor after a Tab accept that lands on the
+  command's space or a directory separator, which is what makes Tab walk the
+  tree; the guard is deliberately not "any argument", or accepting a
+  `/remove-dir` root would re-apply itself and cost an undo step. `/remove-dir`
+  lost its `ctx.ui.select` picker in the same change: with the menu listing the
+  added roots on an empty argument, the picker was a second mechanism for one
+  job, and the flat one-shot list is the worse of the two.
+
 - 2026-09-08 (evening, catalog review): the pi.dev gallery (~5,450 listed,
   9,328 npm packages tagged `pi-package`) was ranked by npm weekly and gallery
   monthly downloads and ~70 candidates read for documented-API use, in-host

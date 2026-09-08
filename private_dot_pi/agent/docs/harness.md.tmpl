@@ -82,14 +82,17 @@ lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
   reads the output so far or stops it. Output is kept in memory, tail-capped
   at 256 KiB. `/plan` and `/remove-dir` stop running tasks like any sandbox
   process (they end as `stopped`); so does exiting pi.
-- `/add-dir <path>` (or `/add-dir` for a prompt) adds a directory to the
-  editable workspace, as Claude Code's does: edits inside it are allowed once
-  execution is approved, its `.git`, `.pi` and every relative deny entry
-  (`.env`) are protected there as under cwd, and its `AGENTS.md` (or
+- `/add-dir <path>` adds a directory to the editable workspace, as Claude
+  Code's does: edits inside it are allowed once execution is approved, its
+  `.git`, `.pi` and every relative deny entry (`.env`) are protected there as
+  under cwd, and its `AGENTS.md` (or
   `CLAUDE.md`) is appended to the system prompt after passing the read policy
   (a symlink out of the directory or onto a denied path refuses the add).
   Home, its ancestors, denied paths and directories already in scope are
-  refused with the reason. `/remove-dir` picks one to drop. State is per session; skills
+  refused with the reason. `/remove-dir <path>` drops one. Both take their
+  argument inline; Tab lists what each accepts (the addable directories, the
+  added ones) and, once accepted, lists the next level down, so Tab walks the
+  tree. State is per session; skills
   under an added directory need a restart with `--skill <path>`, since pi
   discovers resources only at startup and `/reload`. Reads were never
   confined to the workspace; only the deny list applies.
@@ -187,7 +190,10 @@ placeholder; those two are the only backgrounds. Arrow-down from the last line o
 prompt moves a `›` cursor into the rows; up/down move it, Enter shows the
 highlighted child's transcript tail and model in an overlay (Esc closes; a
 child with no transcript yet says so), Esc or up past the first row returns
-to the prompt, any other key returns and types. `Ctrl+Alt+F` (⌃⌥F on macOS)
+to the prompt, any other key returns and types. Tab completes: on a command
+name it offers the matching commands, on a command's argument the command's
+own candidates (pi offers file paths there instead), and after an accept that
+lands on a directory it offers that directory's contents. `Ctrl+Alt+F` (⌃⌥F on macOS)
 opens pi-subagents' inspector (steer, stop, full transcripts). On exit pi
 restores the screen and prints only the resume command
 (`fullscreenExitOutput: resume-hint`).
@@ -218,6 +224,19 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
 - Session surfaces: pi's `resetExtensionUI` (on `/new`, `/resume`) clears the
   header, footer and custom editor, so `session_start` re-applies them every
   time; pinned in `stability.test.mjs`.
+- Tab completion: the documented `addAutocompleteProvider` wrapper
+  (`index.mjs` `argumentCompletions`, re-added on every `session_start` and
+  self-idempotent, since pi stacks providers and `/reload` re-emits
+  `session_start` without the reset that clears them) re-issues a forced
+  request unforced, because pi routes Tab in a command's arguments to forced
+  file completion (`handleTabCompletion`) and its provider guards the whole
+  slash branch on `!options.force`; it also answers
+  `shouldTriggerFileCompletion` itself, as `/cmd ` trims to a slash command pi
+  refuses to force-complete. `CaretEditor` re-issues the key after a Tab accept
+  that lands on the command's space or a directory separator, since the accept
+  cancels the menu and nothing re-opens it. All three behaviours pinned in
+  `stability.test.mjs`; `caret.test.mjs` drives the walk through pi's own
+  provider.
 - Exported but undocumented: `renderDiff`, `keyHint`, `getMarkdownTheme`,
   `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
   render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
