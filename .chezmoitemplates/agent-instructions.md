@@ -5,6 +5,11 @@
        input: dict "self" <agent name> "root" <template data> */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
+{{- $ag := index $root.agents $self -}}
+{{- /* rules the harness's own system prompt already carries; see
+       .chezmoidata/agents.yaml native_coverage */ -}}
+{{- $native := list -}}
+{{- if hasKey $ag "native_coverage" -}}{{ $native = $ag.native_coverage }}{{- end -}}
 {{- /* the sensitive-path prose reuses agent-sandbox's denyRead so it can never
        drift from the sandbox policy actually enforced for this agent */ -}}
 {{- $sb := includeTemplate "agent-sandbox" (dict "self" $self "root" $root) | fromJson -}}
@@ -26,7 +31,7 @@
   in your context.
 - Spawn independent strands together, scaled to the task's breadth; never hand
   one worker the whole problem.
-{{ if not (and (hasKey (index $root.agents $self) "native_delegation_wait") (index $root.agents $self).native_delegation_wait) -}}
+{{ if not (has "delegation_wait" $native) -}}
 - Once you have launched subagents, their scope is off-limits: do only work
   outside it, then end the turn or wait for their results; read a report before
   deciding whether a finding needs your own check.
@@ -60,9 +65,9 @@
   when the change needs it.
 - Deliver code whose comments carry only what a reader can't reconstruct from
   it — non-obvious rationale, constraints, invariants, units, protocol/API
-  contracts, hazards; strip narration of what the code does, and reason in
-  scratch, not the source. Leave unrelated existing comments alone; drop a
-  pre-existing one only when your change made it wrong or redundant.
+  contracts, hazards; reason in scratch, not the source. Leave unrelated
+  existing comments alone; drop a pre-existing one only when your change made
+  it wrong or redundant.
 - Bugfix where tests are wired up: learn the project's test style; if a repro
   test is simple and meaningful, write it, see it fail, fix, see it pass. No
   unnecessary cases.
@@ -78,6 +83,24 @@
 - Claims about actions taken, state, and verification rest on a tool result
   from this session: failing tests with the relevant output, skipped steps by
   name, unverified work labelled as such.
+{{ if not (has "initiative" $native) -}}
+- Act on the request rather than checking back: carry the requested work to
+  done, continuing under a stated, in-scope assumption instead of asking about
+  a step the request already covers; pause only for a clearly destructive or
+  irreversible action, or input only I can give.
+{{ end -}}
+{{ if not (has "partial_delivery" $native) -}}
+- If one part of the work is blocked, finish every other part and say what you
+  left out and why.
+{{ end -}}
+{{ if not (has "call_batching" $native) -}}
+- Issue independent tool calls together in one message; keep dependent work
+  sequential.
+{{ end -}}
+{{ if not (has "long_running_work" $native) -}}
+- Start a long command in the background and collect its result once, rather
+  than re-checking it turn after turn.
+{{ end -}}
 - When asked to review code, gate only on what makes the change unshippable
   now; an edge case worth fixing only once a real user hits it gets a
   mention in the review — no code comment, no fix until that bug report is

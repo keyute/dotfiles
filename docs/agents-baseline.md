@@ -120,6 +120,29 @@ when my actual intent changes, never to track harness churn.
   self-reports drift from what ran — audits found claimed verifications that
   never executed and edited files left out of summaries — and a false "done"
   costs more than an honest "blocked".*
+- **Initiative**: act on the request rather than checking back — carry the
+  requested work to done, continuing under a stated, in-scope assumption
+  instead of asking about a step the request already covers; pause only for a
+  clearly destructive or irreversible action, or for input only I can give.
+  *Why: OpenAI documents the current generation stopping to ask where the user
+  expects it to assume and persist, and ships an initiative/follow-through
+  clause as the fix (GPT-6 Astra guide); Anthropic documents the same
+  stop-and-describe failure for Fable 5.1. Stated once and in the positive
+  direction, because OpenAI's GPT-5.6 guide finds that repeating "ask first"
+  wording increases the pausing it is meant to prevent. Sources verified
+  2026-09-08.*
+- **Partial delivery**: when one part of the work is blocked, finish every
+  other part and say what you left out and why. *Why: scaling the work down is
+  my call, not the agent's — my intent, not a vendor finding.*
+- **Call batching**: issue independent tool calls together in one message, and
+  keep dependent work sequential. *Why: OpenAI's GPT-5.6 guidance still
+  addresses parallelization to the prompt author rather than asserting it as a
+  default, and Anthropic documents Fable 5.1 issuing implied independent calls
+  one per turn in coding loops.*
+- **Long-running work**: start a long command in the background and collect its
+  result once, rather than re-checking it turn after turn. *Why: nothing in the
+  current generation removes polling — the model keeps working only where the
+  harness is told to background it.*
 - **Review focus**: when asked to review, gate ship/no-ship on what makes
   the change unshippable now; an edge case worth fixing only once a real
   user hits it gets a mention in the review — no code comment, no fix until

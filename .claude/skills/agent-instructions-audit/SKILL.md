@@ -38,15 +38,19 @@ every step below; never enumerate harness names. Tier pins are
 
 2. **Coverage probes — one per harness, by `audit.probe`.** For each principle
    applicable to the harness (agnostic + its tag), judge whether the harness's
-   own prompt already covers it: covered / partial / absent, with the covering
-   passage paraphrased in one line as evidence. Exclude anything sourced from
-   the projection, memory, or this repo.
+   own prompt already covers it: covered / partial / absent / contradicted,
+   with the covering — or opposing — passage quoted in one line as evidence.
+   `contradicted` means the harness's own prompt instructs the opposite of the
+   principle, not merely that it omits it; quote the opposing passage verbatim,
+   since the adjudication turns on its exact wording. Exclude anything sourced
+   from the projection, memory, or this repo.
    - `session+pin`: self-probe from your own system prompt (always runs).
      Then read the pin (`.agents.<h>.defaults.model`), compare model families
      (strip decorations like `[1m]`) against the session model; if they differ,
      spawn one general-purpose subagent with `model` overridden to the pin's
      family, no tools, returning compact JSON
-     `{"<principle>": {"coverage": "covered|partial|absent", "evidence": "…"}}`.
+     `{"<principle>": {"coverage": "covered|partial|absent|contradicted",
+     "evidence": "…"}}`.
      Both probes matter: the same projection serves the class running now and
      the class the pin starts next session on. Subagent prompts differ from the
      main loop's (MCP server instructions, for one), so treat verdicts as
@@ -69,6 +73,12 @@ every step below; never enumerate harness names. Tier pins are
      the projection renders to (unanimity) → propose **SHAVE**
    - classes disagree, or coverage partial → **KEEP**, recording which lacks it
    - projection contradicts baseline intent or observed behaviour → **CONFLICT**
+   - any probed class reports `contradicted` → **HARNESS-CONFLICT**: the
+     projection and that harness's own prompt pull opposite ways. Coverage and
+     opposition are different axes — a contradicted rule is never a SHAVE
+     candidate, however well covered it looks elsewhere. Resolution is never
+     automatic: either the projected line states its precedence explicitly, or
+     the intent changes, and both are my call.
    Every new or reworded principle gets its own matrix row across all classes
    before its tag is chosen: a tag encodes intent intrinsic to one harness,
    never the harness where the failure was observed — an agnostic principle
@@ -164,11 +174,16 @@ every step below; never enumerate harness names. Tier pins are
    doctrine in the repo-root `AGENTS.md` — against the source templates
    (`.chezmoitemplates/agent-instructions.md`, each harness's
    `audit.instructions` template, the subagent/skill bodies, the harness docs
-   — never the rendered targets, never the generated sensitive-path prose). A
-   fleet change (a new subagent) is six files: the `subagents` entry in
-   `.chezmoidata/agents.yaml`, the shared body, one render file per harness,
-   and pi's `policy-roles` shim (its agent's `extensions:` line points at it),
-   as the existing entries show. On confirmation, apply to the working tree and
+   — never the rendered targets, never the generated sensitive-path prose).
+   A SHAVE is recorded by adding the rule's key to that harness's
+   `native_coverage` list in `.chezmoidata/agents.yaml`, never by deleting the
+   guarded bullet — the bullet still serves the harnesses that lack coverage.
+   Report every HARNESS-CONFLICT with both passages quoted in full side by
+   side, the projected line against the opposing harness passage, never
+   summarised. A fleet change (a new subagent) is six files: the `subagents`
+   entry in `.chezmoidata/agents.yaml`, the shared body, one render file per
+   harness, and pi's `policy-roles` shim (its agent's `extensions:` line points
+   at it), as the existing entries show. On confirmation, apply to the working tree and
    verify with `chezmoi cat` for every rendered target the change reaches
    (whole-tree `chezmoi diff` reads denied paths and fails in a session), then
    stop. Never commit, stage, or run `chezmoi apply`.
