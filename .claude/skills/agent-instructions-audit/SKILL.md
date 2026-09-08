@@ -106,7 +106,7 @@ every step below; never enumerate harness names. Tier pins are
 5. **Behavioural sweep.** Only with the user's explicit authorization for the
    session stores, which are sandbox-denied: run with
    `dangerouslyDisableSandbox: true`, absolute paths, one `find … -print0 |
-   xargs -0 jq -r '…' | @tsv` pipeline per question returning only metadata
+   xargs -0 jq -r '… | @tsv'` pipeline per question returning only metadata
    (date, session, tool, agent, model, skill) — never `cat`/`head` on a
    transcript, never file contents. `$TMPDIR` differs between sandboxed and
    unsandboxed shells: write scratch to an absolute path. The permission gate
@@ -166,7 +166,8 @@ every step below; never enumerate harness names. Tier pins are
    `audit.instructions` template, the subagent/skill bodies, the harness docs
    — never the rendered targets, never the generated sensitive-path prose). A
    fleet change (a new subagent) is six files: the `subagents` entry in
-   `.chezmoidata/agents.yaml`, the shared body, and one render file per harness
+   `.chezmoidata/agents.yaml`, the shared body, one render file per harness,
+   and pi's `policy-roles` shim (its agent's `extensions:` line points at it),
    as the existing entries show. On confirmation, apply to the working tree and
    verify with `chezmoi cat` for every rendered target the change reaches
    (whole-tree `chezmoi diff` reads denied paths and fails in a session), then

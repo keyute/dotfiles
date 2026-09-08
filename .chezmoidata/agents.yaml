@@ -10,6 +10,9 @@ agents:
       docs: private_dot_claude/docs
       sessions: { path: "~/.claude/projects/**/*.jsonl", shape: claude-projects }
       probe: session+pin
+    # the harness prompt already carries the delegation-wait rule; the shared
+    # template skips projecting it here
+    native_delegation_wait: true
     defaults:
       # explicit ID: bare aliases float across CLI releases (observed: `haiku`
       # resolving to sonnet-5); [1m] forces the 1M-context variant

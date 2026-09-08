@@ -26,9 +26,11 @@
   in your context.
 - Spawn independent strands together, scaled to the task's breadth; never hand
   one worker the whole problem.
+{{ if not (and (hasKey (index $root.agents $self) "native_delegation_wait") (index $root.agents $self).native_delegation_wait) -}}
 - Once you have launched subagents, their scope is off-limits: do only work
   outside it, then end the turn or wait for their results; read a report before
   deciding whether a finding needs your own check.
+{{ end -}}
 - For unpinned subagents, pick the lowest tier likely to one-shot the task —
   small for bounded mechanical/read-heavy work, mid for routine implementation
   and review, top for hard synthesis or expensive-to-reverse calls; escalate on

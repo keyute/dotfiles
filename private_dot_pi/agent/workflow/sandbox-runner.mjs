@@ -259,7 +259,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
     child = spawnChild("bash", ["-c", command], {
       cwd: response.cwd,
       detached: true,
-      env: sandboxed ? safeEnvironment(response.env) : hostEnvironment(),
+      env: sandboxed ? safeEnvironment(response.env) : hostEnvironment(environment),
       stdio: "inherit",
     });
     state.child = child;

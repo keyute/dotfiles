@@ -64,7 +64,7 @@ test("a null profile skips the sandbox and strips workflow variables from the ho
   let spawnOptions;
   let spawnArgs;
   await main(["tool", "bash"], {
-    environment: { PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token" },
+    environment: { PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token", PATH: "/fixture/bin" },
     requestLease: async () => activeLease,
     sandboxManager: { async initialize() { throw new Error("sandbox must not start"); } },
     spawnChild(command, args, options) {
@@ -82,7 +82,7 @@ test("a null profile skips the sandbox and strips workflow variables from the ho
   assert.match(spawnArgs[2], /ops-worker\.mjs' 'bash'$/);
   assert.equal(spawnOptions.detached, true);
   assert.equal(spawnOptions.env.PI_WORKFLOW_TOKEN, undefined);
-  assert.equal(spawnOptions.env.PATH, process.env.PATH);
+  assert.equal(spawnOptions.env.PATH, "/fixture/bin");
 });
 
 test("a stop during sandbox initialization prevents spawning", async () => {
