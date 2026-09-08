@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, matchesGlob, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 
@@ -103,14 +103,44 @@ export class Policy {
   // confined to cwd.
   addRoot(input) {
     const root = canonical(expand(input, this.cwd));
-    if (!statSync(root, { throwIfNoEntry: false })?.isDirectory()) throw new Error("Directory not found");
-    if (inside(canonical(homedir()), root)) throw new Error("Your home directory and its ancestors cannot be added");
-    if (denied(root, this.denyWrite) || inside(root, this.cwd) || this.roots.has(root)) throw new Error("Directory is already in scope or denied by managed policy");
+    const rejection = this.rootRejection(root);
+    if (rejection) throw new Error(rejection);
     const relative = paths => paths.filter(p => !p.startsWith("/") && !p.startsWith("~"));
     const read = this.resolvePaths(relative(this.config.filesystem.denyRead), root);
     const write = [...read, ...this.resolvePaths([...relative(this.config.filesystem.denyWrite), join(root, ".git"), join(root, ".pi")], root)];
     this.roots.set(root, { read, write });
     return root;
+  }
+
+  // Why a canonical path cannot become a root; null when it can. Shared with
+  // the argument completions so the menu never offers a path addRoot refuses.
+  rootRejection(root) {
+    if (!statSync(root, { throwIfNoEntry: false })?.isDirectory()) return "Directory not found";
+    if (inside(canonical(homedir()), root)) return "Your home directory and its ancestors cannot be added";
+    if (denied(root, this.denyWrite) || inside(root, this.cwd) || this.roots.has(root)) return "Directory is already in scope or denied by managed policy";
+    return null;
+  }
+
+  // /add-dir's argument completions. pi hands the whole argument text as the
+  // prefix and replaces all of it, so a candidate is the typed directory part
+  // verbatim (relative, `~/` and absolute prefixes all round-trip) plus the
+  // entry name. A prefix with no separator lists the siblings of cwd: nothing
+  // under cwd can be added, so siblings are the only useful starting point.
+  addableDirs(prefix) {
+    const cut = prefix.lastIndexOf("/") + 1;
+    const head = cut ? prefix.slice(0, cut) : "../";
+    const base = prefix.slice(cut);
+    let entries;
+    try { entries = readdirSync(expand(head, this.cwd), { withFileTypes: true }); } catch { return []; }
+    return entries
+      .map(entry => entry.name)
+      .filter(name => name.startsWith(base) && (base.startsWith(".") || !name.startsWith(".")))
+      // An entry that cannot be canonicalized (symlink loop, unreadable parent)
+      // is skipped rather than thrown: pi fires completion requests unawaited,
+      // so a rejection here is an unhandled one that takes the TUI down.
+      .filter(name => { try { return !this.rootRejection(canonical(expand(head + name, this.cwd))); } catch { return false; } })
+      .sort()
+      .map(name => `${head}${name}/`);
   }
 
   removeRoot(root) {

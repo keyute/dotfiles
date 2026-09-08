@@ -144,7 +144,7 @@ for (const [claim, file, patterns] of pins) {
 }
 
 // API calls that are not events: each must stay documented.
-const documentedApis = ["pi.sendMessage(", "ctx.ui.input(", "ctx.ui.select(", "pi.appendEntry(", "pi.registerEntryRenderer("];
+const documentedApis = ["pi.sendMessage(", "ctx.ui.select(", "getArgumentCompletions", "pi.appendEntry(", "pi.registerEntryRenderer("];
 for (const api of documentedApis) {
   test(`${api} is documented in pi-coding-agent/docs/extensions.md`, () => {
     const docs = readFileSync(join(nodeModules, "@earendil-works", "pi-coding-agent", "docs", "extensions.md"), "utf8");

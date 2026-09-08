@@ -82,6 +82,26 @@ test("an added directory widens edits and the sandbox write list; home, denied a
   assert.throws(() => q.inspect("root", "read", { path: "../other/.env" }), /denied/);
 });
 
+test("/add-dir completions offer the addable siblings and nothing addRoot refuses", t => {
+  const p = fixture(t);
+  mkdirSync(join(p.cwd, "..", "other"));
+  mkdirSync(join(p.cwd, "..", ".hidden"));
+  assert.deepEqual(p.addableDirs(""), ["../cache/", "../other/", "../scratch/"]);
+  assert.throws(() => p.addRoot("../control"), /denied/);
+  // A prefix without a separator still means a sibling; a dotted one opts hidden entries back in.
+  assert.deepEqual(p.addableDirs("oth"), ["../other/"]);
+  assert.deepEqual(p.addableDirs("../oth"), ["../other/"]);
+  assert.deepEqual(p.addableDirs(".hi"), ["../.hidden/"]);
+  assert.deepEqual(p.addableDirs("../nope"), []);
+  // A sibling that cannot be canonicalized is skipped, not thrown out of.
+  symlinkSync(join(p.cwd, "..", "loop-b"), join(p.cwd, "..", "loop-a"));
+  symlinkSync(join(p.cwd, "..", "loop-a"), join(p.cwd, "..", "loop-b"));
+  assert.deepEqual(p.addableDirs("loop"), []);
+  for (const value of p.addableDirs("")) assert.doesNotThrow(() => p.addRoot(value));
+  // cwd, the denied sibling and the roots just added are all gone from the menu.
+  assert.deepEqual(p.addableDirs(""), []);
+});
+
 test("an added directory's instructions are read through the read policy", t => {
   const p = fixture(t);
   const other = join(p.cwd, "..", "other");

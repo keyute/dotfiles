@@ -7,7 +7,7 @@ import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, acquireChild } from "./broker.mjs";
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
-import { rootTools, canonical, publicToolName } from "./policy.mjs";
+import { rootTools, canonical, expand, publicToolName } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
@@ -331,9 +331,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
       if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); ctx.ui.setStatus("workflow", broker.policy.mode); }
     } });
-    pi.registerCommand("add-dir", { description: "Add a directory to the editable workspace and load its AGENTS.md", handler: async (args, ctx) => {
-      const input = args?.trim() || (ctx.hasUI ? await ctx.ui.input("Directory to add", "../other-project") : "");
-      if (!input) return;
+    const completions = values => values.map(value => ({ value, label: value }));
+    pi.registerCommand("add-dir", { description: "Add a directory to the editable workspace and load its AGENTS.md", getArgumentCompletions: prefix => completions(broker.policy.addableDirs(prefix)), handler: async (args, ctx) => {
+      const input = args?.trim();
+      if (!input) return ctx.ui.notify("Type a directory after /add-dir", "info");
       let dir;
       let text;
       try {
@@ -348,11 +349,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       publishEpoch();
       pi.appendEntry("workflow-note", { text: `Added ${dir} to the workspace${extraDirs.get(dir) ? " with its instructions" : ""}` });
     } });
-    pi.registerCommand("remove-dir", { description: "Remove an added directory from the workspace", handler: async (_args, ctx) => {
+    pi.registerCommand("remove-dir", { description: "Remove an added directory from the workspace", getArgumentCompletions: prefix => completions([...broker.policy.roots.keys()].filter(root => root.startsWith(prefix))), handler: async (args, ctx) => {
       if (!broker.policy.roots.size) return ctx.ui.notify("No added directories", "info");
-      const dir = await ctx.ui.select("Directory to remove", [...broker.policy.roots.keys()]);
+      const input = args?.trim();
+      const dir = input ? canonical(expand(input, broker.policy.cwd)) : await ctx.ui.select("Directory to remove", [...broker.policy.roots.keys()]);
       if (!dir) return;
-      broker.policy.removeRoot(dir);
+      try { broker.policy.removeRoot(dir); } catch (error) { return ctx.ui.notify(error.message, "error"); }
       extraDirs.delete(dir);
       // Narrowing stops running processes, as a mode change does.
       await setMode(broker.policy.mode, ctx);
