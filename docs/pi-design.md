@@ -180,10 +180,19 @@ pi's own glyphs. Each rule carries the why that earned it.
    delegating; pi's own says yes to everything but a half-typed slash command,
    which put a file menu under every Tab. Only the forced path consults that
    gate, so `@path` and the command-name menu, both unforced, are untouched.
-   Accepted residual: a line opening with an absolute path and a space
-   (`/tmp/x `) parses as a command argument and still offers paths — the match
-   is anchored at the line start, so it costs nothing mid-sentence, and
-   completing a path you are already typing is the useful reading.
+   *2026-09-09, later:* Tab offers only what a command declares, and nothing
+   where it declares none. The wrapper used to fall back to a raw path request
+   for a command with no candidates, and pi appends a space when it accepts a
+   command name, so the walk's replay read `/new ` as an argument position and
+   put a file menu under every command-name accept — the owner's "every command
+   i mid-type and press tab the autosuggestions pop out". Typing `/new ` and
+   pressing Tab reached it without any accept, which is why the fallback went
+   rather than the replay. This also retired the residual the fallback carried:
+   a line opening with an absolute path and a space (`/tmp/x `) parses as a
+   command argument, and now offers nothing rather than paths. Chosen over an
+   allowlist of the commands that may complete: pi's own `/model`, `/thinking`
+   and `/login` declare candidates and get them for free, where a list of
+   command names would take them away and rot besides.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then
    `↓ N more`; Down from the prompt's last line enters the rows, the

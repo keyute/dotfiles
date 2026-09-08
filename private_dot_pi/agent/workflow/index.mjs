@@ -86,14 +86,11 @@ export function pluginApi(pi, renderersFor) {
 // pi routes Tab inside a command's arguments to forced file completion, and its
 // built-in provider guards the whole slash branch on `!options.force`, so the
 // command's own getArgumentCompletions never runs and Tab offers raw paths. The
-// forced request asked again unforced is the command's candidates. `filtered`
-// names the commands whose candidates the policy narrows, where the fallback to
-// paths would put back exactly what the command refuses.
+// forced request asked again unforced is the command's candidates.
 const WRAPPED = Symbol.for("pi-workflow:argument-completions");
-// The command an argument belongs to; one registered twice carries a `:N`
-// invocation suffix.
-const commandArgument = (lines, cursorLine, cursorCol) => (lines[cursorLine] ?? "").slice(0, cursorCol).match(/^\/(\S+) /)?.[1].split(":")[0];
-export function argumentCompletions(current, filtered = []) {
+// Whether the cursor sits in a command's arguments, and which command's.
+const commandArgument = (lines, cursorLine, cursorCol) => (lines[cursorLine] ?? "").slice(0, cursorCol).match(/^\/(\S+) /)?.[1];
+export function argumentCompletions(current) {
   // pi keeps stacked providers across /reload, where session_start runs again
   // without the invalidation that clears them.
   if (current[WRAPPED]) return current;
@@ -102,9 +99,10 @@ export function argumentCompletions(current, filtered = []) {
     async getSuggestions(lines, cursorLine, cursorCol, options) {
       const name = options.force && commandArgument(lines, cursorLine, cursorCol);
       if (!name) return current.getSuggestions(lines, cursorLine, cursorCol, options);
-      const suggestions = await current.getSuggestions(lines, cursorLine, cursorCol, { ...options, force: false });
-      if (suggestions || filtered.includes(name)) return suggestions;
-      return current.getSuggestions(lines, cursorLine, cursorCol, options);
+      // Unforced answers with the command's own candidates, and with null where
+      // it declares none. That null is the answer: Tab offers what a command
+      // accepts, never a file path it never asked for.
+      return current.getSuggestions(lines, cursorLine, cursorCol, { ...options, force: false });
     },
     applyCompletion: (...args) => current.applyCompletion(...args),
     // Tab forces completion, and this gate is the only thing consulted on that
@@ -371,8 +369,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       installHeader(ctx);
       surfaces.footer.attach(ctx);
       ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet: surfaces.fleet, palette: ctx.ui.theme }));
-      // The directory commands below are the policy-filtered ones.
-      ctx.ui.addAutocompleteProvider(current => argumentCompletions(current, ["add-dir", "remove-dir"]));
+      ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
     pi.setActiveTools(pi.getAllTools().map(tool => tool.name).filter(permitted));
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");

@@ -69,10 +69,11 @@ const dirs = { "": ["../one/", "../two/"], "../one/": ["../one/a/", "../one/b/"]
 const commands = [
   { name: "add-dir", description: "Add a directory", getArgumentCompletions: prefix => (dirs[prefix] ?? []).map(value => ({ value, label: value })) },
   { name: "remove-dir", description: "Remove a directory", getArgumentCompletions: prefix => ["/tmp/added", "/tmp/other"].filter(root => root.startsWith(prefix)).map(value => ({ value, label: value })) },
+  { name: "new", description: "Start a new session" },
 ];
 const completing = () => {
   const caret = editor();
-  caret.setAutocompleteProvider(argumentCompletions(new CombinedAutocompleteProvider(commands, process.cwd()), ["add-dir", "remove-dir"]));
+  caret.setAutocompleteProvider(argumentCompletions(new CombinedAutocompleteProvider(commands, process.cwd())));
   return caret;
 };
 // The request runs off the keystroke, and a re-issued tab queues behind the one
@@ -109,5 +110,17 @@ test("a single candidate completes on the tab that asked for it", async () => {
   caret.setText("/remove-dir /tmp/o");
   await tab(caret);
   assert.equal(caret.getText(), "/remove-dir /tmp/other");
+  assert.deepEqual(menu(caret), []);
+});
+
+test("a command that takes no argument opens nothing, so accepting its name ends there", async () => {
+  const caret = completing();
+  caret.setText("/ne");
+  await tab(caret);
+  assert.deepEqual(menu(caret), ["new"]);
+  // Accepting a name appends a space, which the walk's replay reads as an
+  // argument position; the command declares no candidates, so nothing opens.
+  await tab(caret);
+  assert.equal(caret.getText(), "/new ");
   assert.deepEqual(menu(caret), []);
 });

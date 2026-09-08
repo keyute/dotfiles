@@ -1,6 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-09 (Tab scope, fold caret, questionnaire notes; earlier
+Last updated: 2026-09-09 (Tab offers only declared candidates, harness.md
+trigger; earlier the same day: Tab scope, fold caret, questionnaire notes; earlier
 the same day: classifier evidence and stages; earlier: 2026-09-08
 unsandboxed shell flag; earlier the same day: dot form everywhere; earlier: 2026-09-07 evening
 transcript redesign and lean pass; guard parity: applied workflow copy and
@@ -595,6 +596,40 @@ live-tested on the host.
   decision written rather than picked reached neither `userTask` nor the
   transcript. Both are carried now.
   Not applied or live-tested on the host; `npm run test:pi` is green (212 pass,
+  0 fail).
+
+- 2026-09-09 (later, one owner report on Tab): "every command i mid-type and
+  press tab the autosuggestions pop out". The 09-08 wrapper fell back to the
+  forced path request for a command with no `getArgumentCompletions`, and pi's
+  `applyCompletion` appends a space when it accepts a command name
+  (`pi-tui/dist/autocomplete.js`), so accepting `/new` left `/new `, the walk's
+  replay read that as an argument position and forced a path request, and the
+  fallback answered it with the working directory. Typing `/new ` and pressing
+  Tab reached the same place with no accept at all, so the fix is the fallback,
+  not the replay predicate: an unforced ask now returns the command's own
+  candidates or null, and null is the answer. The replay is left alone — it is
+  inert where nothing triggers, since `editor.js` returns from Tab without
+  inserting a character. The `filtered` parameter went with the fallback it
+  existed to suppress, and `completions.test.mjs` lost the case that asserted
+  `notes.md` for an unfiltered command: it encoded the removed behaviour.
+  Codex's cross-model read reproduced the same path and found the no-accept
+  entry point; three of its recommendations were dropped — an
+  `["add-dir", "remove-dir"]` allowlist (it would take working completions away
+  from pi's own `/model`, `/thinking` and `/login`, and is a command roster to
+  keep), restricting the replay to `/add-dir` (no behavioural change), and
+  restoring `/remove-dir`'s `ctx.ui.select` picker (the 09-08 entry above
+  records that removal as deliberate: one job, one mechanism). Accepted cost,
+  Codex's own strongest counter: ~40 lines stay coupled to pi's undocumented
+  `force` and cancel behaviour for one command, pinned by
+  `stability.test.mjs`. Regression added at both entry points; the caret case
+  fails on the pre-fix wrapper with the directory listing it produced.
+  Also: pi's `AGENTS.md` told the agent to read `docs/harness.md` "before
+  changing models, launching subagents, or troubleshooting …" and the owner saw
+  it read every session. Nothing injects the doc — the pointer's trigger was
+  simply routine work. Subagent launching moved into the troubleshooting list
+  and "changing models" narrowed to "changing model tiers", the decision the
+  doc's pricing tables actually serve.
+  Not applied or live-tested on the host; `npm run test:pi` is green (214 pass,
   0 fail).
 
 ## Verification and remaining gates
