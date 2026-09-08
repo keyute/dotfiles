@@ -28,6 +28,9 @@ export async function reviewAction(ctx, config, task, request) {
   if (decision === "deny" || !ctx.hasUI) return false;
   const action = JSON.stringify({ tool: request.tool, server: request.server, args: request.args });
   const escalated = unsandboxed(request.tool, request.args);
+  // The dialog is the only gate left on an unsandboxed command and shows at
+  // most 12k characters of it; a command it cannot show in full is not approvable.
+  if (escalated && action.length > 12_000) return false;
   // The dialog can sit behind an unattended terminal; make the pending state visible.
   ctx.ui.notify?.(`Awaiting approval${escalated ? " (unsandboxed)" : ""}: ${action.slice(0, 80)}`, "warning");
   return ctx.ui.confirm(`Approve this ${escalated ? "unsandboxed " : ""}action once?`, action.slice(0, 12_000));

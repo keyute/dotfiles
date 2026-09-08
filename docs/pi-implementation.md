@@ -418,6 +418,16 @@ live-tested on the host.
   without review. The row title carries `· unsandboxed` so a
   classifier-approved escalation stays visible; `!` commands stay sandboxed.
   The null-profile lease runs for real only in the opt-in live test.
+  Ship-check the same night (Codex pass) closed two gaps the path exposed: a
+  worker that receives the runner's SIGTERM now SIGKILLs its live command
+  groups at once — the runner KILLs the worker's own group one second after
+  TERM, before the abort's TERM→KILL on the command's separate group could
+  finish, so a TERM-ignoring command outlived a lease the runner then proved
+  terminated — and an unsandboxed request whose serialized action exceeds the
+  12k characters the confirm dialog shows is refused instead of prompting on
+  a prefix. `exec` also runs one termination per child (abort starts it, the
+  close handler awaits it) and the footer reuses the runner's
+  `hostEnvironment` for its own subprocess env.
 
 ## Verification and remaining gates
 

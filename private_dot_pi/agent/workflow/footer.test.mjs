@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import { buildSegments, footerEnv, formatReset, installFooter, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
+import { buildSegments, formatReset, installFooter, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
 import { createTurnClock } from "./rows.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
@@ -20,11 +20,6 @@ function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
   const fire = (name, event = {}) => handlers[name]?.(event, { cwd: "." });
   return { fire, entries, messages, fleet, tasks, done: () => fire("session_shutdown") };
 }
-
-test("footer subprocesses never inherit workflow broker credentials", () => {
-  const clean = footerEnv({ PATH: "/bin", PI_WORKFLOW_SOCKET: "/tmp/s", PI_WORKFLOW_TOKEN: "secret" });
-  assert.deepEqual(clean, { PATH: "/bin" });
-});
 
 test("rate limits key only on stable window fields", () => {
   const parsed = parseRateLimits({

@@ -31,3 +31,10 @@ test("an unsandboxed request is named as such in the notice and the dialog", asy
   assert.match(seen[2], /^Awaiting approval: /);
   assert.equal(seen[3], "Approve this action once?");
 });
+
+test("an unsandboxed request the dialog cannot show in full is refused without prompting", async () => {
+  const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => { throw new Error("must not notify"); }, confirm: async () => { throw new Error("must not prompt"); } } };
+  const config = { models: { provider: "openai-codex", classifier: "fixture" } };
+  const command = `printf ok # ${"x".repeat(12_000)}`;
+  assert.equal(await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command, dangerouslyDisableSandbox: true } }), false);
+});

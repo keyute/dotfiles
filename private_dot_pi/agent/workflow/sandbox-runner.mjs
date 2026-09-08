@@ -34,8 +34,9 @@ export const safeEnvironment = (approved = {}) => {
   return environment;
 };
 
-// An unsandboxed lease runs with the host's own environment; the broker
-// socket, token and ticket the runner was handed must not reach that shell.
+// An unsandboxed lease and the footer's subprocesses run with the host's own
+// environment; the broker socket, token, epoch and ticket the root workflow
+// exported into process.env must not reach them.
 export const hostEnvironment = (environment = process.env) =>
   Object.fromEntries(Object.entries(environment).filter(([key]) => !key.startsWith("PI_WORKFLOW_")));
 
@@ -88,7 +89,7 @@ const parseInvocation = (argv) => {
   return { kind, name };
 };
 
-const validateLease = (value, kind) => {
+export const validateLease = (value, kind) => {
   if (
     !isRecord(value) ||
     value.ok !== true ||

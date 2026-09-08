@@ -62,6 +62,7 @@ test("pinned upstream packages register against the managed extension and prefli
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   });
   const configPath = join(config.agentDir, "workflow.json");
+  config.agents["fixture-shell"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "workspace_bash"] };
   writeFileSync(configPath, JSON.stringify(config));
   const handlers = new Map();
   const tools = new Map();
@@ -83,6 +84,13 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(!tools.has("ask_user"));
   assert.ok(!tools.has("read"));
   await assert.rejects(tools.get("workspace_read").execute("test", { path: "fixture" }), /not ready/);
+  // The unsandboxed flag is offered to root and withheld from a read-only role (policy refuses it regardless).
+  assert.ok(tools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox);
+  const childHandlers = new Map();
+  const childTools = new Map();
+  await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); }, registerTool(tool) { childTools.set(tool.name, tool); } }, configPath, "fixture-shell", { startBroker, requestBroker });
+  assert.equal(childTools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox, undefined);
+  await childHandlers.get("session_shutdown").at(-1)();
   const jiti = createJiti(import.meta.url);
   const { resolveSubagentLaunchContract } = await jiti.import("pi-subagents/preflight");
   const ctx = { cwd: process.cwd(), modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [{ provider: "openai-codex", id: "gpt-5.6-luna" }] } };

@@ -26,6 +26,7 @@ if (!workerTools.includes(name) || !TOOL_OPS[name]) throw new Error("Unregistere
 const allowedOps = TOOL_OPS[name];
 const cwd = process.cwd();
 const active = new Map();
+const children = new Set();
 
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 const errorPayload = error => ({ message: error?.message || String(error), ...(error?.code ? { code: error.code } : {}) });
@@ -35,8 +36,12 @@ const killGroup = child => void terminateProcessGroup(child).catch(() => {});
 function exec({ command, cwd: dir, timeout }, { signal, onChunk }) {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn("bash", ["-c", command], { cwd: dir || cwd, env: process.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    children.add(child);
     let timedOut = false;
-    const abort = () => killGroup(child);
+    // One termination per child: abort starts it, close awaits the same run.
+    let termination;
+    const terminate = () => (termination ??= terminateProcessGroup(child));
+    const abort = () => void terminate().catch(() => {});
     const timer = timeout > 0 ? setTimeout(() => { timedOut = true; abort(); }, timeout * 1000) : undefined;
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
@@ -51,9 +56,11 @@ function exec({ command, cwd: dir, timeout }, { signal, onChunk }) {
       // (run_in_background is the supported way to keep a process). A group
       // the worker cannot signal (another user's process) is reported, not
       // hidden: the proof still cannot reach it.
-      try { await terminateProcessGroup(child); } catch (error) {
+      // Tracked until the group is gone, not until the shell is: a SIGTERM
+      // arriving during this wait must still find the descendants.
+      try { await terminate(); } catch (error) {
         return rejectPromise(new Error(`command ended but its background processes could not be terminated: ${error.message}`));
-      }
+      } finally { children.delete(child); }
       // Match the official tool-routing example's failure contract.
       if (signal.aborted && !timedOut) return rejectPromise(new Error("aborted"));
       if (timedOut) return rejectPromise(new Error(`timeout:${timeout}`));
@@ -214,6 +221,11 @@ const handlers = {
 
 process.on("SIGTERM", () => {
   for (const controller of active.values()) controller.abort();
+  // The runner SIGKILLs this worker's group one second after its SIGTERM,
+  // before the abort's own TERM→KILL on the command's separate group can
+  // finish; a command that ignores TERM would outlive the lease the runner
+  // then proves terminated (a free host process on the unsandboxed path).
+  for (const child of children) try { process.kill(-child.pid, "SIGKILL"); } catch {}
   setTimeout(() => process.exit(1), 1500).unref();
 });
 

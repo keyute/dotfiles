@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { hostEnvironment, main, quoteArg, safeEnvironment, terminateProcessGroup } from "./sandbox-runner.mjs";
+import { hostEnvironment, main, quoteArg, safeEnvironment, terminateProcessGroup, validateLease } from "./sandbox-runner.mjs";
 
 const lease = () => ({
   socket: { destroy() {}, end(callback) { callback?.(); }, write() {}, once() {} },
@@ -55,6 +55,10 @@ test("safeEnvironment keeps only approved inherited values and broker server val
 
 test("a null profile skips the sandbox and strips workflow variables from the host environment", async () => {
   assert.deepEqual(hostEnvironment({ PATH: "/bin", PI_WORKFLOW_TOKEN: "secret", PI_WORKFLOW_TICKET: "t" }), { PATH: "/bin" });
+  // Only a tool lease may run unsandboxed; an MCP server lease with no profile is malformed.
+  const unsandboxedLease = { ok: true, profile: null, cwd: process.cwd(), env: {} };
+  assert.equal(validateLease(unsandboxedLease, "tool"), unsandboxedLease);
+  assert.throws(() => validateLease(unsandboxedLease, "server"));
   const activeLease = lease();
   activeLease.response.profile = null;
   let spawnOptions;
@@ -273,6 +277,29 @@ test("ops worker ends a command's backgrounded descendants before reporting it d
   const pid = Number(frames.filter((frame) => frame.chunk).map((frame) => Buffer.from(frame.chunk, "base64").toString()).join(""));
   assert.ok(pid > 0);
   assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+});
+
+test("ops worker kills a TERM-ignoring descendant at once when it is itself terminated, even after the shell exited", async () => {
+  const worker = spawn(process.execPath, [fileURLToPath(new URL("./ops-worker.mjs", import.meta.url)), "bash"], { stdio: ["pipe", "pipe", "pipe"] });
+  worker.stderr.resume();
+  const closed = new Promise((resolve) => worker.on("close", resolve));
+  const pid = await new Promise((resolve) => {
+    worker.stdout.once("data", (chunk) => resolve(Number(Buffer.from(JSON.parse(chunk.toString().split("\n")[0]).chunk, "base64").toString())));
+    worker.stdin.write(`${JSON.stringify({ id: "op0", op: "exec", params: { command: "trap '' TERM; (while :; do sleep 1; done) </dev/null >/dev/null 2>&1 & printf %s $!" } })}\n`);
+  });
+  assert.ok(pid > 0);
+  // Let the shell exit first: the worker is now inside its group-termination wait.
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  worker.kill("SIGTERM");
+  // The abort's own TERM→KILL takes a full second; the runner would have killed the worker by then.
+  const deadline = Date.now() + 500;
+  let gone = false;
+  while (!gone && Date.now() < deadline) {
+    try { process.kill(pid, 0); await new Promise((resolve) => setTimeout(resolve, 20)); } catch (error) { gone = error.code === "ESRCH"; }
+  }
+  worker.stdin.end();
+  await closed;
+  assert.ok(gone);
 });
 
 test("ops worker refuses operations outside the leased tool's set", async () => {

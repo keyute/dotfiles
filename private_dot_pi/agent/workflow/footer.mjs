@@ -2,15 +2,7 @@ import { spawn } from "node:child_process";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { readLines, sendLine } from "./lines.mjs";
 import { PAD, closeFolds, createTurnClock, defaultFolds, formatTurn } from "./rows.mjs";
-
-// The root workflow exports the broker socket and bearer token into
-// process.env for child sessions; footer subprocesses sit outside that
-// boundary and must not inherit them.
-export function footerEnv(env = process.env) {
-  const clean = { ...env };
-  for (const key of Object.keys(clean)) if (key.startsWith("PI_WORKFLOW_")) delete clean[key];
-  return clean;
-}
+import { hostEnvironment } from "./sandbox-runner.mjs";
 
 // Usage comes from codex's own app-server (JSONL JSON-RPC, `jsonrpc` header
 // omitted on the wire) rather than the ChatGPT backend directly: codex owns
@@ -23,7 +15,7 @@ export function readRateLimits({ timeoutMs = 10_000, spawnImpl = spawn } = {}) {
     let child;
     try {
       child = spawnImpl("codex", ["-s", "read-only", "-a", "never", "app-server"], {
-        env: footerEnv(),
+        env: hostEnvironment(),
         stdio: ["pipe", "pipe", "ignore"],
       });
     } catch {
@@ -107,7 +99,7 @@ function readGitChanges(cwd) {
     try {
       child = spawn("git", ["diff", "HEAD", "--shortstat"], {
         cwd,
-        env: footerEnv(),
+        env: hostEnvironment(),
         stdio: ["ignore", "pipe", "ignore"],
       });
     } catch {
