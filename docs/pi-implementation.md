@@ -275,6 +275,25 @@ live-tested on the host.
   delete a stale copy; workflow display-name renames vs GitHub required
   checks; repo-global `legacy-peer-deps`.
 
+- 2026-09-08 (afternoon, standardising the day's oscillation): a git read of
+  84ab0e1 → 78cd978 showed the composer shade off→on→off, its prompt padding
+  2→4→2, the inset rule none→"one inset"→"glyph at the edge", and the fleet
+  row losing its agent name; the owner settled each with a dated decision in
+  `docs/pi-design.md`. Composer = the user box (shaded block, blank shaded row
+  above and below, `❯` at column 0), with pi's working spinner in the top row
+  via the documented `embedWorkingStatus` — the standalone spinner row is
+  pi's, one column in with a blank line above (pi-tui `Loader` hardcodes
+  both). Folds now close on anything that stays visible (subagent and other
+  plugin rows, failed rows, completion and turn lines, the next run) instead
+  of only on assistant text, so each contiguous run of foldable rows gets its
+  own handle. Fleet rows are `○ agent › title · tokens · model` again. A
+  reply that opens with a heading renders it bold on the bullet line.
+  Researched and dropped: assistant text at Claude Code's text column —
+  `outputPad` is 0/1 by design (pi#6168, #6757), no assistant renderer hook
+  (#6747, #6876, #5834), no maintained package, so only a pi patch reaches it;
+  the double blank line after hidden reasoning is pi#8154. Both recorded as
+  residuals with their issue numbers in the design doc and `harness.md`.
+
 ## Verification and remaining gates
 
 - Automated tests cover pinned package registration, real child launch preflight,

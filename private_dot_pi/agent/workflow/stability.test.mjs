@@ -124,6 +124,9 @@ const pins = [
   ["an async launch answers with asyncId", "pi-subagents/src/runs/background/async-execution.ts", [/asyncId: id/]],
   ["a completion spreads the result file (agent, success, state, durationMs) plus runId and each result's resolved status", "pi-subagents/src/runs/background/result-watcher.ts", [/emit\(SUBAGENT_ASYNC_COMPLETE_EVENT, \{\s*\.\.\.data,\s*runId,/, /data\.success/, /data\.state === "stopped"/, /status: child\.status,/]],
   ["the result file's durationMs runs from launch to end", "pi-subagents/src/runs/background/subagent-runner.ts", [/durationMs: runEndedAt - overallStartTime/]],
+  ["a custom editor opting into embedWorkingStatus is handed pi's working indicator, and only that one", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/editor\.embedWorkingStatus === true/, /indicator instanceof WorkingStatusIndicator && this\.setEditorWorkingStatusIndicator\(indicator\)/]],
+  ["the editor keeps the indicator it is handed; the indicator renders its text for a border row", "@earendil-works/pi-coding-agent/dist/modes/interactive/components/custom-editor.js", [/this\.embedWorkingStatus = options\?\.embedWorkingStatus \?\? false/, /setWorkingStatusIndicator\(indicator\) \{\s*this\.workingStatusIndicator = indicator;/]],
+  ["the working indicator renders its text for a border row", "@earendil-works/pi-coding-agent/dist/modes/interactive/components/status-indicator.js", [/class WorkingStatusIndicator extends StatusIndicator/, /renderInBorder\(width\) \{/]],
   ["result statuses are completed, failed, partial, paused, stopped or detached", "pi-subagents/src/shared/types.ts", [/ExecutionProjectionStatus = "completed" \| "failed" \| "partial" \| "paused" \| "stopped" \| "detached"/]],
 ];
 for (const [claim, file, patterns] of pins) {

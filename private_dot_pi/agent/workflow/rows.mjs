@@ -156,14 +156,17 @@ function renderBody(name, result, options, theme, context) {
   return new Text(lines.map(indent).join("\n"), 0, 0);
 }
 
-// Fold-on-speak, as Claude Code does it: the workspace and MCP rows since the
-// last assistant text form a group; when the assistant speaks again the group
-// collapses to one line ("Read 3 files, ran 2 shell commands") and clicking it
-// or ctrl+o brings the rows back. State is per process — a resumed session
-// renders its old rows unfolded.
+// Folding, as Claude Code does it: the workspace and MCP rows between two
+// things that stay visible form a group. Whatever stays visible — assistant
+// text, a subagent or other plugin row, a failed row, a child's completion
+// line, the turn line, the next run — closes the group, which collapses to one
+// line ("Read 3 files, ran 2 shell commands"); clicking it or ctrl+o brings the
+// rows back. State is per process — a resumed session renders its old rows
+// unfolded.
 const WORDS = { read: ["read", "file"], bash: ["ran", "shell command"], grep: ["searched for", "pattern"], edit: ["edited", "file"], write: ["wrote", "file"], list: ["listed", "path"], mcp: ["called", "MCP tool"] };
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
 const isMcp = name => name === "mcp" || name.startsWith("mcp__");
+const foldKey = name => (name.startsWith("workspace_") ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null);
 
 // `toolsExpanded` reads pi's global ctrl+o flag (ctx.ui.getToolsExpanded);
 // a closed group reopens when that flag changes.
@@ -199,9 +202,17 @@ const speaks = event => event.message?.role === "assistant" && (event.message.co
 export function installFolding(pi, ctx, folds = defaultFolds) {
   folds.toolsExpanded = () => ctx.ui.getToolsExpanded();
   pi.on("tool_execution_start", event => {
-    if (event.toolName.startsWith("workspace_")) addFold(folds, event.toolCallId, event.toolName.slice("workspace_".length));
-    else if (isMcp(event.toolName)) addFold(folds, event.toolCallId, "mcp");
+    const key = foldKey(event.toolName);
+    if (key) addFold(folds, event.toolCallId, key);
+    else closeFolds(folds);
   });
+  // A failed row stays visible as its group's last row (the adapter reports
+  // some failures in details.error without isError). Parallel tools end in
+  // completion order, so only a failure in the group still forming closes it.
+  pi.on("tool_execution_end", event => {
+    if ((event.isError || event.result?.details?.error) && folds.byId.get(event.toolCallId) === folds.current) closeFolds(folds);
+  });
+  pi.on("agent_start", () => closeFolds(folds));
   // Streaming replies announce their text in updates; non-streaming ones only at the end.
   pi.on("message_update", event => { if (speaks(event)) closeFolds(folds); });
   pi.on("message_end", event => { if (speaks(event)) closeFolds(folds); });
@@ -322,10 +333,11 @@ export const planRenderers = {
 };
 
 // Assistant text gets the bullet as a plain prefix (pi-tui's list marker is a
-// fixed dash, so a list item would not give this glyph). A block-level start
-// keeps its syntax by taking the bullet as the paragraph before it; lists,
-// headings, fences, quotes and tables all interrupt that paragraph, so no
-// blank line is needed between them. Reasoning renders as nothing at all:
+// fixed dash, so a list item would not give this glyph). A leading heading
+// rides the bullet line as bold, the way Claude Code shows headings; any other
+// block-level start keeps its syntax by taking the bullet as the paragraph
+// before it (lists, fences, quotes and tables all interrupt that paragraph, so
+// no blank line is needed between them). Reasoning renders as nothing at all:
 // pi's own hidden-thinking label is wrapped in colour codes, so even an empty
 // label leaves an invisible, clickable line.
 export function bulletMarkdown(markdown, { messageType }) {
@@ -333,7 +345,10 @@ export function bulletMarkdown(markdown, { messageType }) {
   if (messageType !== "assistant") return markdown;
   const body = markdown.trimStart();
   if (!body) return markdown;
-  return /^(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? `${BULLET}\n${body}` : `${BULLET} ${body}`;
+  const [first, ...rest] = body.split("\n");
+  const heading = first.match(/^#{1,6}\s+(.*?)\s*$/);
+  if (heading) return [`${BULLET} **${heading[1]}**`, ...(rest[0]?.trim() ? [""] : []), ...rest].join("\n");
+  return /^(```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? `${BULLET}\n${body}` : `${BULLET} ${body}`;
 }
 
 export function answerLines(answers, theme) {

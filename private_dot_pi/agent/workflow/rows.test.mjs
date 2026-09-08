@@ -134,23 +134,46 @@ test("summary wording", () => {
   assert.equal(summarise({}), "");
 });
 
-test("folding closes on the first non-empty assistant text, streaming or not; MCP rows fold, subagent rows never", () => {
+test("folding closes on assistant text, streaming or not, and on anything that stays visible; MCP rows fold, subagent rows never", () => {
   const folds = createFolds();
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
   handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "r1" });
   handlers.tool_execution_start({ toolName: "mcp__exa_web_search_exa", toolCallId: "m1" });
-  handlers.tool_execution_start({ toolName: "subagent", toolCallId: "s1" });
   handlers.message_update({ message: { role: "assistant", content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: " " }] } });
   handlers.message_update({ message: { role: "user", content: [{ type: "text", text: "hi" }] } });
   assert.equal(folds.byId.get("r1").collapsed, false);
   assert.deepEqual(folds.byId.get("m1").counts, { read: 1, mcp: 1 });
+  // A subagent row stays visible: it closes the group, and the next foldable row opens a new one.
+  handlers.tool_execution_start({ toolName: "subagent", toolCallId: "s1" });
   assert.equal(folds.byId.has("s1"), false);
-  handlers.message_update({ message: { role: "assistant", content: [{ type: "text", text: "Done" }] } });
   assert.equal(folds.byId.get("r1").collapsed, true);
   handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "b1" });
-  handlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "Ok" }] } });
+  assert.notEqual(folds.byId.get("b1"), folds.byId.get("r1"));
+  assert.deepEqual(folds.byId.get("b1").counts, { bash: 1 });
+  handlers.message_update({ message: { role: "assistant", content: [{ type: "text", text: "Done" }] } });
   assert.equal(folds.byId.get("b1").collapsed, true);
+  // A failure (pi's isError or the adapter's details.error) closes its group as the last row.
+  handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "b2" });
+  handlers.tool_execution_end({ toolName: "workspace_bash", toolCallId: "b2", isError: true, result: {} });
+  assert.equal(folds.byId.get("b2").collapsed, true);
+  handlers.tool_execution_start({ toolName: "mcp__exa_web_search_exa", toolCallId: "m2" });
+  handlers.tool_execution_end({ toolName: "mcp__exa_web_search_exa", toolCallId: "m2", isError: false, result: { details: { error: "auth_required" } } });
+  assert.equal(folds.byId.get("m2").collapsed, true);
+  handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "r2" });
+  handlers.tool_execution_end({ toolName: "workspace_read", toolCallId: "r2", isError: false, result: { details: {} } });
+  assert.equal(folds.byId.get("r2").collapsed, false);
+  // Parallel tools end in completion order: a failure from an earlier, already
+  // closed group (or a non-foldable tool) leaves the group still forming alone.
+  handlers.tool_execution_end({ toolName: "workspace_bash", toolCallId: "b1", isError: true, result: {} });
+  handlers.tool_execution_end({ toolName: "subagent", toolCallId: "s1", isError: true, result: {} });
+  assert.equal(folds.byId.get("r2").collapsed, false);
+  // A new run closes whatever is open; a non-streaming reply closes at its end.
+  handlers.agent_start({});
+  assert.equal(folds.byId.get("r2").collapsed, true);
+  handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "r3" });
+  handlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "Ok" }] } });
+  assert.equal(folds.byId.get("r3").collapsed, true);
 });
 
 test("plugin rows: MCP failures reported in details turn the row red after the render; a launch reads as launched", async () => {
@@ -184,17 +207,19 @@ test("plugin rows: MCP failures reported in details turn the row red after the r
   assert.deepEqual(rendered(ask.renderResult(result("answered"), { expanded: false }, theme, context())), []);
 });
 
-test("assistant bullets sit at column 0, block starts follow the bullet directly, reasoning renders nothing", () => {
+test("assistant bullets sit at column 0, a leading heading rides the bullet line, other block starts follow it, reasoning renders nothing", () => {
   assert.equal(bulletMarkdown("Done.", { messageType: "assistant" }), "• Done.");
-  assert.equal(bulletMarkdown("# Title\nbody", { messageType: "assistant" }), "•\n# Title\nbody");
+  assert.equal(bulletMarkdown("# Title\nbody", { messageType: "assistant" }), "• **Title**\n\nbody");
+  assert.equal(bulletMarkdown("- one\n- two", { messageType: "assistant" }), "•\n- one\n- two");
   assert.equal(bulletMarkdown("plain", { messageType: "user" }), "plain");
   assert.equal(bulletMarkdown("  ", { messageType: "assistant" }), "  ");
   assert.equal(bulletMarkdown("Let me think.", { messageType: "assistant-thinking" }), "");
   const lines = md => new Markdown(bulletMarkdown(md, { messageType: "assistant" }), 0, 0, getMarkdownTheme()).render(40).map(line => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
   assert.equal(lines("Done.")[0], "• Done.");
-  // A list interrupts the bullet paragraph without a blank line; a heading keeps its own.
+  // A list interrupts the bullet paragraph without a blank line; a heading is bold on the bullet line.
   assert.deepEqual(lines("- one\n- two"), ["•", "- one", "- two"]);
-  assert.deepEqual(lines("## Title"), ["•", "", "Title"]);
+  assert.deepEqual(lines("## Title"), ["• Title"]);
+  assert.deepEqual(lines("## Title\n\nbody"), ["• Title", "", "body"]);
   assert.deepEqual(new Markdown(bulletMarkdown("hm", { messageType: "assistant-thinking" }), 0, 0, getMarkdownTheme()).render(40), []);
 });
 

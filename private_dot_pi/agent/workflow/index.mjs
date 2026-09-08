@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { Type } from "typebox";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, acquireChild } from "./broker.mjs";
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
@@ -61,18 +61,31 @@ export function pluginApi(pi, renderersFor) {
   });
 }
 
-// Claude Code's composer: pi's rule lines with a "❯ " prompt in the padding
-// columns of the first content line. Rendered lines carry their cursor marker
-// inline, so replacing the padding shifts the cursor correctly; if the render
-// shape ever changes, the prompt silently disappears instead of corrupting
-// the editor.
+const padRow = (text, width) => truncateToWidth(text, width, "", true);
+
+// The composer takes the user box's shape (docs/pi-design.md rule 5): pi's rule
+// lines become blank shaded rows, the content rows between them are shaded,
+// and "❯ " sits in the padding columns of the first content line. pi's working
+// spinner rides the top row (embedWorkingStatus routes it to the editor; its
+// standalone row is one column in with a blank line above). Rendered lines
+// carry their cursor marker inline, so replacing the padding shifts the cursor
+// correctly; if the render shape ever changes, the prompt silently disappears
+// instead of corrupting the editor.
 export class CaretEditor extends sdk.CustomEditor {
   // The editor factory is handed an EditorTheme (borders and autocomplete only),
-  // so the palette for the caret arrives separately.
+  // so the palette for the shade and the caret arrives separately.
   constructor(tui, theme, keybindings, { fleet, palette } = {}) {
-    super(tui, theme, keybindings, { paddingX: PROMPT_PADDING });
+    super(tui, theme, keybindings, { paddingX: PROMPT_PADDING, embedWorkingStatus: true });
     this.fleet = fleet;
     this.palette = palette;
+  }
+  // The editor's fake cursor ends in a full SGR reset, which also drops the
+  // background; re-open it after every reset so the shade spans the line. The
+  // palette is pi's live theme (a theme switch invalidates this editor rather
+  // than rebuilding it), so the sequence is read per render, never cached.
+  shade(line) {
+    const open = this.palette.bg("userMessageBg", "").replace(/\x1b\[49m$/, "");
+    return this.palette.bg("userMessageBg", line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
   }
   // Fleet navigation is an editor-owned mode (widgets cannot take focus). Down
   // enters it only when the editor itself had nothing left to do with the key,
@@ -96,9 +109,24 @@ export class CaretEditor extends sdk.CustomEditor {
   setPaddingX(padding) {
     super.setPaddingX(Math.max(PROMPT_PADDING, padding));
   }
+  // The rule lines become shaded rows (the working status on top while a turn
+  // runs, a scroll count when clipped, blank otherwise), so the block keeps
+  // its line count and pi's mouse and autocomplete row offsets stay valid.
+  renderTopBorder(width, hidden) {
+    const status = this.workingStatusIndicator?.renderInBorder(width) ?? "";
+    return this.shade(padRow(status || (hidden ? `${PAD}↑ ${hidden} more` : ""), width));
+  }
+  renderBottomBorder(width, hidden) {
+    this.bottomRow = this.shade(padRow(hidden ? `${PAD}↓ ${hidden} more` : "", width));
+    return this.bottomRow;
+  }
   render(width) {
     const lines = super.render(width);
-    if (lines[1]?.startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = this.palette.fg("accent", "❯ ") + lines[1].slice(PROMPT_PADDING);
+    // Content sits between the two shaded rows; autocomplete follows the
+    // bottom one and stays unshaded.
+    const end = lines.lastIndexOf(this.bottomRow);
+    if (end > 1 && lines[1].startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = this.palette.fg("accent", "❯ ") + lines[1].slice(PROMPT_PADDING);
+    for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
     return lines;
   }
 }

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { readLines, sendLine } from "./lines.mjs";
-import { PAD, createTurnClock, formatTurn } from "./rows.mjs";
+import { PAD, closeFolds, createTurnClock, defaultFolds, formatTurn } from "./rows.mjs";
 
 // The root workflow exports the broker socket and bearer token into
 // process.env for child sessions; footer subprocesses sit outside that
@@ -158,7 +158,7 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickM
     state.waiting = false;
     ctx.ui.setWorkingMessage();
     const turn = clock.stop(Date.now(), options);
-    if (turn) pi.appendEntry("workflow-turn", turn);
+    if (turn) { closeFolds(defaultFolds); pi.appendEntry("workflow-turn", turn); }
   };
   pi.on("agent_start", () => {
     clock.start();

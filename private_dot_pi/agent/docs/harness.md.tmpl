@@ -128,32 +128,43 @@ a tool row is `• title` plus one `↳` summary line (`+12 −4`, `4 matches`,
 web_search_exa "query"`), a subagent launch is `• agent › task` with
 `↳ launched`, and any other plugin tool (`bg_wait`, the questionnaire's
 answers entry) takes the same row; a failed shell command shows its first two
-and last two lines with `… N more lines` between. When the assistant speaks,
-the `workspace_*` and MCP rows since its last words fold to one dim line
-above them ("Read 3 files, ran 9 shell commands, called 2 MCP tools");
-clicking that line opens or closes the group, Ctrl+O opens it. An async child
+and last two lines with `… N more lines` between. The `workspace_*` and MCP
+rows between two things that stay visible fold to one dim line above them
+("Read 3 files, ran 9 shell commands, called 2 MCP tools"); clicking that
+line opens or closes the group, Ctrl+O opens it. Whatever stays visible
+closes the group — assistant text, a subagent or other plugin row, a failed
+row (its group's last), a completion line, the turn line, the next run — and
+the next foldable row starts a new one. An async child
 that ends prints `• agent finished · task · 2m 14s`, or its status word
 (`failed`/`stopped` red, `paused`/`partial`/`detached` amber). Reasoning
 never renders (the markdown transformer empties `assistant-thinking`;
 `hideThinkingBlock` stays off), though pi's assistant component still adds
 its one spacer line per message that carried reasoning, and one more between
 reasoning and text — the component reads the raw content, and no documented
-API reaches it. Lines that open with a glyph (`•`, `π`, `❯`)
-start at column 0, lines without one (`↳`, the fold line, the status line,
-the fleet rows) two columns in; pi's `outputPad` is 0 so its own lines match.
+API reaches it (earendil-works/pi#8154); with every tool row's own leading
+blank that makes two blank lines wherever the model reasoned between tool
+calls. Lines that open with a glyph (`•`, `π`, `❯`) start at column 0, lines
+without one (`↳`, the fold line, the status line, the fleet rows) two columns
+in; pi's `outputPad` is 0 so its own lines match, and assistant text
+therefore sits at column 0 under its bullet rather than at Claude Code's
+text column (`outputPad` is 0/1 by design, pi#6168/#6757; no assistant
+renderer hook, pi#6747/#6876 — re-check if any of these closes). A reply
+that opens with a heading renders it bold on the bullet line.
 While a turn runs the working spinner reads
-`Interpolating… 1m 12s` (a random π-flavoured verb from `rows.mjs`); when it
+`Interpolating… 1m 12s` (a random π-flavoured verb from `rows.mjs`) in the
+composer's top shaded row; when it
 ends a `π Interpolated for 3m 34s · done 9:04 pm` line is appended — only once
 no background child is live, otherwise after the child's follow-up run settles
 (or the user types); ctrl+c prints `π Interrupted after …`. The status line
 carries model · context · usage · branch on the left and the workflow mode on
 the right.
 
-Running children hang under the status line as `○ title · tokens · model`
-rows (title cut at a word boundary to 36 columns; five rows, then `↓ N more`;
-queued children dim). The composer is pi's rule-lined editor with a `❯`
-prompt at column 0, no shade and no placeholder; the only background in the
-transcript is pi's box around the user's own messages. Arrow-down from the last line of the
+Running children hang under the status line as `○ agent › title · tokens ·
+model` rows (title cut at a word boundary to 36 columns; five rows, then
+`↓ N more`; queued children dim). The composer is the user box's shape: a
+block in `userMessageBg` with a blank shaded row above (the spinner while a
+turn runs) and below, a `❯` prompt at column 0, no rule lines, no
+placeholder; those two are the only backgrounds. Arrow-down from the last line of the
 prompt moves a `›` cursor into the rows; up/down move it, Enter shows the
 highlighted child's transcript tail and model in an overlay (Esc closes; a
 child with no transcript yet says so), Esc or up past the first row returns
@@ -189,8 +200,12 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
   time; pinned in `stability.test.mjs`.
 - Exported but undocumented: `renderDiff`, `keyHint`, `getMarkdownTheme`,
   `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
-  render shape the prompt relies on — the rule lines, `setPaddingX`, the
-  first content line's padding columns).
+  render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
+  `setPaddingX`, the first content line's padding columns). The spinner in
+  the top row rests on the documented `embedWorkingStatus` option plus two
+  undocumented pieces: pi handing a `WorkingStatusIndicator` to the editor's
+  `setWorkingStatusIndicator` (and only that kind), and that indicator's
+  `renderInBorder(width)`; both pinned in `stability.test.mjs`.
 - Mouse: the fold handle answers clicks on its summary line from its own
   `handleMouse`; rests on pi-tui's `MouseRegion` asking the child before its
   own handler and on `ToolExecutionComponent` forwarding self-shell mouse
