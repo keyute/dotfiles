@@ -1,3 +1,5 @@
+{{- /* align-sibling: shared skill body.
+       input: dict "instructions_file" <the harness's instruction filename> */ -}}
 ---
 name: align-sibling
 description: "Align this repo with recent changes made in a sibling repo (e.g. backend → dashboard, API → client). Use when asked to review changes in another repo and reflect, surface, or align them here. Args: sibling repo path; optional ref range (e.g. main@{1.week.ago}..main) or feature description."
@@ -26,7 +28,7 @@ Align the current repo with contract changes made in a sibling repo.
    `sibling change → affected files here → action (add/update/remove/none)`.
 
 4. **Report, then implement.** Show the gap table first. Follow the applicable
-   project instruction files (`AGENTS.md`/`CLAUDE.md`), implement each gap with
+   project instruction files (`{{ .instructions_file }}`), implement each gap with
    this repo's existing patterns — invent none. Remove consumers of contracts
    that no longer exist.
 

@@ -153,6 +153,12 @@ silently; workflow scripts, task lists and chains are refused. Status (fleet or
 transcript view), stop, interrupt and non-recovering steer are enabled;
 project role overrides, revival and mutating management are not. Results
 arrive as notifications — `bg_wait` only when the current turn depends on them.
+Launched children's scope is off-limits to the parent (AGENTS.md): in every
+same-prompt run on 2026-09-07/08 the parent redid its reviewers' work while they
+ran (four reviewers, then ~60 own calls on the same files), doubling tokens and
+wall-clock; the next audit sweep re-checks this, and if the projection still
+under-steers the rule moves into the `Workflow mode:` system-prompt suffix in
+`workflow/index.mjs`.
 
 Display follows `docs/pi-design.md` in the repository. Reasoning never shows;
 a tool row is `• title` plus one `↳` summary line (`+12 −4`, `4 matches`,

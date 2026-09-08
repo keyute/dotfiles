@@ -46,14 +46,23 @@ verify with that agent and update this file.
   spec-complete mechanical write work. Rationale is weighted metering plus
   grown-context re-metering — a bounded edit delegated out of a grown `[1m]`
   session avoids re-sending the whole context at Opus rates, independent of
-  sub-limit structure. 2026-09-07 sweep: 8 dispatches in its first week, one
-  with a haiku override that silently undid the mid pin; rework signal not
-  measurable from metadata. Revisit trigger: next `agent-instructions-audit`
-  transcript sweep re-checks uptake and any redo pattern.
-- Roster gap flagged 2026-09-07: 113 of 183 `general-purpose` dispatches in 30
-  days carried a hand-picked `sonnet` model, mostly web research — the
-  friction signal for a scoped mid-tier `researcher` subagent (read-only,
-  web + Exa + context7). Decision deferred; revisit at the next audit.
+  sub-limit structure. Uptake by ISO week: 1 (W35), 7 (W36), 16 (W37, two
+  days) — growing; rework signal still not measurable from metadata.
+- `researcher` subagent (added 2026-09-08): the 2026-09-07 roster gap (113 of
+  183 `general-purpose` dispatches in 30 days carrying a hand-picked `sonnet`,
+  mostly web research) had grown to 133 of 217 by 09-08 — a scoped mid-tier
+  read-only preset with web + Exa + context7. Revisit trigger: next sweep
+  checks that `general-purpose`+`sonnet` research dispatches moved to it.
+- Self-review vs codex-review (decision 2026-09-08): both rules fired on the
+  same high-stakes set from 2026-08-27, and the transcript sweep showed the
+  Codex review displacing the fresh-eyes subagent pass — reviewer-subagent
+  dispatch in editing sessions fell 56% → 30% → 35% (W35–W37) as codex-review
+  rose 37% → 61% → 85%, ~70% of codex-review sessions dispatching no reviewer.
+  Web research (sources verified, listed in the baseline why) found the
+  fresh-context same-model pass is the measured lever and cross-model review
+  additive but unmeasured, so the projection now says "in addition to,
+  launched alongside". Revisit trigger: next sweep expects the reviewer-subagent
+  rate back near 50% of editing sessions.
 - If Codex is available, `codex-review` / `codex-advisor` are read-only Codex
   consultation for high-risk diffs or stuck calls; Claude and Codex meter on
   independent windows, so read-work can offload to Codex — write-work means driving
@@ -65,13 +74,18 @@ verify with that agent and update this file.
   (2/265), with ~2/3 of reviews returning zero-finding "approve"; every
   surviving catch sat in a high-stakes category (auth, data loss, migration
   safety). External practitioner consensus and Anthropic's yield-by-size data
-  agree: gate on risk first, breadth second, never blanket. 2026-09-07 sweep:
-  firings fell from 13–28/day to ~1/day once the recalibration applied
-  (09-05 onward); hit rate not yet measurable (5 verdict mentions). Revisit
-  trigger: next `agent-instructions-audit` transcript sweep, with at least two
-  weeks of post-apply data, re-measures both — expect single-digit weekly
-  firings and a hit rate back above ~3%; if volume stays high or the rate
-  stays under ~2%, tighten further or drop the unprompted clause.
+  agree: gate on risk first, breadth second, never blanket. 2026-09-08
+  re-measure (the 09-07 "~1/day" reading was an activity artifact — 9–10
+  sessions/day on 09-05/06): among sessions with 3+ edits, codex-review fired
+  in 37% (W35), 61% (W36), 85% (W37, 2 days: 22 firings across 21–23 active
+  sessions/day); 17 completed reviews that week, ~15 returning P1/P2-labelled
+  findings. The bridge returns prose, not a JSON verdict, so the old
+  needs-attention regex measures nothing; the survived-findings rate (findings
+  the session actually fixed) is the yield measure and is not yet counted.
+  Decision 2026-09-08: keep the trigger (Codex itself objected that labels are
+  not survivals). Revisit trigger: next `agent-instructions-audit` sweep counts
+  survived findings per review from the adjudication text; if under ~2 in 10
+  reviews, tighten the breadth clause or drop the unprompted clause.
 
 ## Codex transport: owned MCP bridge (decision 2026-09-05)
 
@@ -122,6 +136,8 @@ verify with that agent and update this file.
 - Trial decision trigger: revisit at the next `agent-instructions-audit`, or
   sooner once one harness clearly owns all interactive GPT sessions — then
   demote or drop the loser (codex keeps the review-backend role regardless).
-  2026-09-07 audit: two days in, not measurable from Claude transcripts (pi and
-  codex session stores are out of the sweep's scope) — decide from your own
-  usage at the next audit.
+  2026-09-07 audit: two days in, not measurable from Claude transcripts.
+  2026-09-08 audit: the pi store is now in the sweep (15 sessions in three days,
+  all in this repo — self-development, not a usage signal); the Codex store
+  was denied at the permission gate. Trigger fired, decision still yours: not
+  decidable from transcripts while pi is only used to build pi.

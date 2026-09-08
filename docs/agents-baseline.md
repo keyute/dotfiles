@@ -45,6 +45,13 @@ when my actual intent changes, never to track harness churn.
 - **Fan-out**: spawn independent strands together, scaled to task breadth;
   never hand a worker the whole problem. *Why: serial spawning wastes
   wall-clock; unbounded scope wastes workers.*
+- **Delegation wait**: once children are launched, their scope is off-limits:
+  do only work outside it, then end the turn or wait for their results; read a
+  child's report before deciding whether a finding needs your own check.
+  *Why: in every same-prompt pi run (2026-09-07/08) the parent redid its
+  children's review while they ran — four reviewers launched, then ~60 own
+  calls on the same files — doubling tokens and wall-clock; a tool-description
+  hint under-steers, and only Claude's harness prompt carries the rule natively.*
 - **State persistence** *(conditional)*: where the harness lacks reliable
   auto-compaction, persist plan, decisions, and open threads to a durable
   file before nearing the window. *Why: a fresh session should resume with
@@ -118,14 +125,23 @@ when my actual intent changes, never to track harness churn.
   user hits it gets a mention in the review — no code comment, no fix until
   that bug report is itself the task. *Why: speculative edge-case work
   crowds out the blocking signal and stalls shipping.*
-- **Self-review**: after a high-stakes or expensive-to-reverse change — auth,
-  security, data, concurrency, migrations — check the artifact against the
-  requirements with a fresh set of eyes before calling it done: hand a subagent
-  both, not your own reasoning trace; skip trivial, easily-reverted changes.
-  *Why: a producing context endorses its own output — same model, same diff,
-  a self-review passed what a fresh-context reviewer failed — and the bias is
-  structural rather than a capability gap; the high-stakes scope keeps it from
-  doubling the verification current models already do unprompted.*
+- **Self-review**: before calling a change done that no deterministic check
+  (tests, build) gates and that will be merged or applied — always for a
+  high-stakes or expensive-to-reverse surface: auth, security, data,
+  concurrency, migrations — check the artifact against the requirements with a
+  fresh set of eyes: hand a fresh-context subagent both, not your own reasoning
+  trace, in one pass with no follow-up rounds; a cross-model review does not
+  replace it. Skip trivial, easily-reverted changes.
+  *Why: a producing context endorses its own output and the bias is
+  structural, not a capability gap — models fix an identical bug when told it
+  is someone else's but not their own (64.5% blind spot, arXiv 2507.02778,
+  COLM 2026), self-review silently endorses ~32% of its own behaviour-changing
+  output (arXiv 2605.21537, preprint), and a fresh-context pass beats
+  same-session self-review (F1 28.6% vs 24.6%, arXiv 2603.12123, preprint)
+  while reviewing twice in the same session does not; iterated follow-up
+  rounds add false positives faster than catches. The deterministic-gate
+  clause keeps it from doubling verification the tests already do. Sources
+  verified 2026-09-08.*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*
@@ -166,13 +182,19 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
   `codex-review` skill once, unprompted: Codex proposes, you stay the
   implementer and adjudicate — substantiate each finding independently, fix
   only what survives, and say which you dropped and why. Once per body of work
-  even when it spans sessions — not per session, not per edit; everything else
-  belongs to `self_review`. *Why: review yield tracks risk and breadth, not
-  change count — a size-only trigger measured over my transcripts fired ~20x
+  even when it spans sessions — not per session, not per edit — and in addition
+  to the fresh-context subagent pass of `self_review`: launch both as
+  independent single passes and adjudicate them together. *Why: review yield
+  tracks risk and breadth, not change count — a size-only trigger measured over my transcripts fired ~20x
   more often while its hit rate fell from ~4% to under 1%, and every surviving
   catch sat in a high-stakes category; an unadjudicated cross-model reviewer
   can degrade stronger work, so findings stay hypotheses, never a verdict to
-  apply; extends `self_review`.* (The trigger and adjudication guard project
+  apply. It adds a second model family on top of `self_review`; that increment
+  is unmeasured — practitioner consensus only as of 2026-09, no head-to-head
+  study — and stands on the transcript record until a survived-findings count
+  confirms it. Both rules fired on the same high-stakes set from 2026-08-27,
+  and by 2026-09 the Codex review had displaced the subagent pass in ~70% of
+  its sessions, which the "in addition to" clause exists to stop.* (The trigger and adjudication guard project
   with this rule and `cross_model_advice` — both must be present when the
   model decides whether to fire; the skill bodies hold only the execution
   procedure, which loads after that decision.)

@@ -62,7 +62,12 @@ erodes compliance across the whole set, not just the new rule's.*
   audit adjudicates it like any baseline principle. Only non-intent harness
   mechanics (doc pointers) live solely in the consumer template.
 - Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
-  from it, never hand-write what it already encodes.
+  from it, never hand-write what it already encodes. The harness roster and
+  each harness's audit paths (`agents.<name>.audit`) live there too: skills
+  iterate it, never enumerate harness names.
+- A harness tag encodes intent intrinsic to that harness; a failure observed
+  on one harness still gets the full coverage matrix, and projects wherever
+  coverage is not native.
 - Environment facts and decision records → on-demand docs; give every doc
   pointer an explicit trigger ("read X before Y") — discretionary loading
   under-triggers.
@@ -101,3 +106,5 @@ erodes compliance across the whole set, not just the new rule's.*
   need for a run instead of attempting one.
 - Expect projections to steer, not bind: guarantees belong in the
   environment (sandbox, hooks, tests); prose only biases behavior.
+- Agent memory holds only what this repo cannot record — session-side
+  gotchas; a method belongs in the skill and a measurement in a dated doc.

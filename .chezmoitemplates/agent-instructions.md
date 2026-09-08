@@ -26,6 +26,9 @@
   in your context.
 - Spawn independent strands together, scaled to the task's breadth; never hand
   one worker the whole problem.
+- Once you have launched subagents, their scope is off-limits: do only work
+  outside it, then end the turn or wait for their results; read a report before
+  deciding whether a finding needs your own check.
 - For unpinned subagents, pick the lowest tier likely to one-shot the task —
   small for bounded mechanical/read-heavy work, mid for routine implementation
   and review, top for hard synthesis or expensive-to-reverse calls; escalate on
@@ -78,10 +81,13 @@
   mention in the review — no code comment, no fix until that bug report is
   the task at hand.
 {{ if hasKey $root.subagent_tiers $self -}}
-- After a high-stakes or expensive-to-reverse change — auth, security, data,
-  concurrency, migrations — check the artifact against the requirements with a
-  fresh set of eyes before calling it done: hand a subagent both, not your
-  reasoning trace. Skip trivial, easily-reverted changes.
+- Before calling a change done that no deterministic check (tests, build) gates
+  and that will be merged or applied — always for a high-stakes or
+  expensive-to-reverse surface: auth, security, data, concurrency, migrations —
+  check the artifact against the requirements with a fresh set of eyes: hand a
+  fresh-context subagent both, not your reasoning trace, in one pass with no
+  follow-up rounds; a cross-model review does not replace it. Skip trivial,
+  easily-reverted changes.
 {{ end -}}
 - When I correct your approach or re-explain a convention, offer to record it in
   the project's instruction file (AGENTS.md/CLAUDE.md) or your memory.

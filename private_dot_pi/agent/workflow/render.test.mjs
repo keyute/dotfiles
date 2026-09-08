@@ -57,7 +57,7 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.equal(workflow.version, 1);
   assert.equal(workflow.models.default, "gpt-5.6-sol");
   assert.equal(workflow.models.tiers.frontier, "gpt-6-astra");
-  assert.equal(Object.keys(workflow.agents).length, 12);
+  assert.equal(Object.keys(workflow.agents).length, 13);
   assert.equal(workflow.agents.implementer.tools.includes("workspace_write"), true);
   assert.equal(workflow.agents.explorer.tools.includes("read"), false);
   // Only general-purpose delegates, as Claude Code's roster implies.

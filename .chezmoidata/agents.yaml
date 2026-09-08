@@ -1,6 +1,15 @@
+# `audit` per harness is what the agent-instructions-audit skill iterates: where
+# the consumer template and on-demand docs live in this repo, where the session
+# store is and which record shape it has, and how native coverage is probed. A
+# new harness is one block here plus (if new) a shape paragraph in the skill.
 agents:
   claude:
     home: "~/.claude"
+    audit:
+      instructions: private_dot_claude/CLAUDE.md.tmpl
+      docs: private_dot_claude/docs
+      sessions: { path: "~/.claude/projects/**/*.jsonl", shape: claude-projects }
+      probe: session+pin
     defaults:
       # explicit ID: bare aliases float across CLI releases (observed: `haiku`
       # resolving to sonnet-5); [1m] forces the 1M-context variant
@@ -34,6 +43,11 @@ agents:
     marketplaces: {}
   codex:
     home: "~/.codex"
+    audit:
+      instructions: private_dot_codex/AGENTS.md.tmpl
+      docs: private_dot_codex/docs
+      sessions: { path: "~/.codex/sessions/*/*/*/rollout-*.jsonl", shape: codex-rollout }
+      probe: mcp
     defaults:
       model: gpt-5.6-sol
       model_reasoning_effort: &codex_reasoning_effort high
@@ -59,6 +73,16 @@ agents:
   # authentication and session state remain unmanaged.
   pi:
     home: "~/.pi"
+    audit:
+      instructions: private_dot_pi/agent/AGENTS.md.tmpl
+      docs: private_dot_pi/agent/docs
+      sessions: { path: "~/.pi/agent/sessions/*/*.jsonl", shape: pi-session }
+      # pi's system prompt is static: coverage is read from these files, no live call
+      probe: static
+      prompt_sources:
+        - node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js
+        - private_dot_pi/agent/workflow/index.mjs
+        - private_dot_pi/agent/subagent-tool-description.md.tmpl
     # pi-web-search: OpenAI's server-side web_search tool through the same
     # Codex Responses endpoint and token as model calls; search_model keeps it
     # off the default model's quota (the plugin's ~/.pi/agent/web-search.json).
@@ -166,6 +190,15 @@ subagents:
     readonly: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
+  researcher:
+    # the 2026-09-07/08 sweeps found 133 of 217 general-purpose dispatches in 30
+    # days carrying a hand-picked mid model for web/docs research: that friction is
+    # this preset. No Bash for the same reason as dep-researcher.
+    tier: mid
+    reasoning_effort: medium
+    readonly: true
+    tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
+    description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
   implementer:
     # the only write-capable entry: executor for spec-complete leaf work. Mid,
     # not small — small-tier executors regress on anything needing judgment,
