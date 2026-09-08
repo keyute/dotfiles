@@ -153,8 +153,9 @@ when my actual intent changes, never to track harness churn.
   high-stakes or expensive-to-reverse surface: auth, security, data,
   concurrency, migrations — check the artifact against the requirements with a
   fresh set of eyes: hand a fresh-context subagent both, not your own reasoning
-  trace, in one pass with no follow-up rounds; a cross-model review does not
-  replace it. Skip trivial, easily-reverted changes.
+  trace, in one pass with no follow-up rounds. This pass is required even when
+  the checks pass; a cross-model review does not replace it. Skip trivial,
+  easily-reverted changes.
   *Why: a producing context endorses its own output and the bias is
   structural, not a capability gap — models fix an identical bug when told it
   is someone else's but not their own (64.5% blind spot, arXiv 2507.02778,
@@ -163,8 +164,13 @@ when my actual intent changes, never to track harness churn.
   same-session self-review (F1 28.6% vs 24.6%, arXiv 2603.12123, preprint)
   while reviewing twice in the same session does not; iterated follow-up
   rounds add false positives faster than catches. The deterministic-gate
-  clause keeps it from doubling verification the tests already do. Sources
-  verified 2026-09-08.*
+  clause keeps it from doubling verification the tests already do. The
+  precedence clause answers a harness conflict: both harnesses discourage
+  further verification once the checks pass — Claude Code explicitly, Codex
+  more weakly (both prompts probed 2026-09-09; re-probe at the next audit) —
+  which would otherwise silence this rule in exactly the high-stakes cell it
+  exists for. Sources verified 2026-09-08; conflict resolved 2026-09-09 by
+  stating precedence rather than narrowing the trigger.*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*

@@ -58,7 +58,11 @@ every step below; never enumerate harness names. Tier pins are
    - `mcp`: load the harness's advise tool if needed (for Codex:
      `ToolSearch select:mcp__codex__advise,mcp__codex__reply`), one call with
      `cwd` = repo root and the same probe shape, instructing it to judge only its
-     built-in harness instructions. Keep the `threadId` for step 6.
+     built-in harness instructions. Keep the `threadId` for step 6. A model that
+     refuses to quote its own prompt returns an empty row that reads as
+     `absent`: re-ask on the same thread for a paraphrased self-report of its
+     defaults, naming false positives as the failure mode you care about, and
+     label from that (observed on the frontier tier, 2026-09-09).
    - `static`: the harness prompt is on disk — read every file in
      `audit.prompt_sources` (the SDK default prompt, the workflow's
      system-prompt additions and tool descriptions) and judge coverage from

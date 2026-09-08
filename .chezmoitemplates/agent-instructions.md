@@ -111,8 +111,9 @@
   expensive-to-reverse surface: auth, security, data, concurrency, migrations —
   check the artifact against the requirements with a fresh set of eyes: hand a
   fresh-context subagent both, not your reasoning trace, in one pass with no
-  follow-up rounds; a cross-model review does not replace it. Skip trivial,
-  easily-reverted changes.
+  follow-up rounds. This pass is required even when the checks pass; a
+  cross-model review does not replace it. Skip trivial, easily-reverted
+  changes.
 {{ end -}}
 - When I correct your approach or re-explain a convention, offer to record it in
   the project's instruction file (AGENTS.md/CLAUDE.md) or your memory.

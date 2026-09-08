@@ -12,10 +12,13 @@ agents:
       probe: session+pin
     # rules this harness's own system prompt already carries; the shared template
     # skips projecting them. Recomputed by the agent-instructions-audit skill.
-    # initiative/partial_delivery are NOT listed: the main-loop prompt carries
-    # them but the haiku/sonnet subagent prompts do not, and children inherit
-    # this file (probed 2026-09-08)
-    native_coverage: [delegation_wait, call_batching, long_running_work]
+    # Empty as of 2026-09-09: the opus main-loop prompt carries all five of
+    # initiative, partial_delivery, delegation_wait, call_batching and
+    # long_running_work, but the haiku/sonnet/fable subagent prompts each lack
+    # at least one and children inherit this file. One projection serves every
+    # class, so the weakest class decides. call_batching's absence from the
+    # sonnet child prompt was confirmed by direct re-ask, not inferred.
+    native_coverage: []
     defaults:
       # explicit ID: bare aliases float across CLI releases (observed: `haiku`
       # resolving to sonnet-5); [1m] forces the 1M-context variant
@@ -54,7 +57,11 @@ agents:
       docs: private_dot_codex/docs
       sessions: { path: "~/.codex/sessions/*/*/*/rollout-*.jsonl", shape: codex-rollout }
       probe: mcp
-    native_coverage: [initiative, call_batching]
+    # call_batching dropped 2026-09-09: re-probed `partial` on both sol and
+    # astra — the prompt recommends parallelising "when possible" but never
+    # states the invariant (batch independent calls, keep dependent ones
+    # sequential)
+    native_coverage: [initiative]
     defaults:
       model: gpt-5.6-sol
       model_reasoning_effort: &codex_reasoning_effort high
