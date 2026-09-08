@@ -107,10 +107,12 @@ export function argumentCompletions(current, filtered = []) {
       return current.getSuggestions(lines, cursorLine, cursorCol, options);
     },
     applyCompletion: (...args) => current.applyCompletion(...args),
-    // pi refuses a forced request while a slash command is being typed, and an
-    // argument that is still only the command's trailing space trims to one.
-    shouldTriggerFileCompletion: (lines, cursorLine, cursorCol) => Boolean(commandArgument(lines, cursorLine, cursorCol))
-      || (current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true),
+    // Tab forces completion, and this gate is the only thing consulted on that
+    // path, so answering it narrows Tab to a command's arguments. pi's own
+    // provider says yes to everything but a half-typed slash command, which put
+    // a file menu under Tab in ordinary prose; `@path` and the command-name
+    // menu are unaffected, both being unforced.
+    shouldTriggerFileCompletion: (lines, cursorLine, cursorCol) => Boolean(commandArgument(lines, cursorLine, cursorCol)),
   };
 }
 
@@ -445,12 +447,18 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       // A cancelled questionnaire keeps its partial answers in details; they
       // are not decisions.
       if (event.toolName !== "ask_user_question" || event.result?.details?.cancelled) return;
-      const answers = (event.result?.details?.answers ?? []).map(entry => ({ question: entry.question, answer: entry.answer ?? entry.selected?.join(", ") ?? "" })).filter(entry => entry.answer);
-      if (!answers.length) return;
-      userTask = `${userTask}\n${answers.map(entry => `User decision: ${entry.question} → ${entry.answer}`).join("\n")}`.slice(-8000);
-      pi.appendEntry("workflow-answers", { answers });
+      // A multi-select answers in `selected` with a null `answer`, and either
+      // kind can carry notes instead of a choice — the whole decision, when the
+      // user writes rather than picks.
+      const answers = (event.result?.details?.answers ?? []).map(entry => ({ question: entry.question, answer: entry.answer ?? entry.selected?.join(", ") ?? "", notes: entry.notes ?? "" })).filter(entry => entry.answer || entry.notes);
+      const globalNote = event.result?.details?.globalNote;
+      if (!answers.length && !globalNote) return;
+      const decisions = answers.map(entry => `User decision: ${entry.question} → ${[entry.answer, entry.notes].filter(Boolean).join(" — ")}`);
+      if (globalNote) decisions.push(`User note: ${globalNote}`);
+      userTask = `${userTask}\n${decisions.join("\n")}`.slice(-8000);
+      pi.appendEntry("workflow-answers", { answers, ...(globalNote ? { globalNote } : {}) });
     });
-    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
+    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme, entry.data.globalNote).join("\n"), 0, 0));
     pi.registerMarkdownTransformer(bulletMarkdown);
     // Reasoning leaves the settled message as well as the transcript; the
     // markdown transformer only reaches the render, and pi spaces the message

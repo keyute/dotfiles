@@ -188,16 +188,17 @@ test("an interrupted run closes immediately", () => {
   h.done();
 });
 
-test("the working row sits above the composer at column 0, with no row between turns", () => {
+test("the working row sits above the composer at column 0 with a blank line under it, and no row between turns", () => {
   const h = harness();
   assert.deepEqual(h.visible, [false], "pi's own working row is switched off");
   assert.equal(h.widget.key, "workflow-working");
   assert.deepEqual(h.widget.row.render(40), [], "no turn, no row");
   h.fire("agent_start");
   const lines = h.widget.row.render(40);
-  assert.equal(lines.length, 1, "one line, and none of pi's leading blank");
+  assert.equal(lines.length, 2, "the row and its trailing blank, none of pi's leading one");
   assert.match(lines[0], /^\S/, "the spinner glyph sits at column 0");
   assert.match(lines[0], /Iterating…/);
+  assert.equal(lines[1], "", "a blank line stands the row off the composer");
   h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
   h.fire("agent_settled");
   assert.deepEqual(h.widget.row.render(40), []);

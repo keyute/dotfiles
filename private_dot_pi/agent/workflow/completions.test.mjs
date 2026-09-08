@@ -48,14 +48,15 @@ test("everything outside a forced request in a command's arguments is delegated 
   await suggest(wrapped, "@../pro");
   assert.deepEqual(current.calls, [{ text: "/add-dir ../pro", force: false }, { text: "/add-d", force: true }, { text: "@../pro", force: true }]);
   assert.deepEqual(wrapped.applyCompletion(1, 2), { applied: [1, 2] });
-  assert.equal(wrapped.shouldTriggerFileCompletion(["see ../pro"], 0, 10), "asked");
+  // Prose is not a command argument, so Tab forces nothing there.
+  assert.equal(wrapped.shouldTriggerFileCompletion(["see ../pro"], 0, 10), false);
 });
 
 test("a command's argument is a forced request pi would otherwise refuse", () => {
   const wrapped = argumentCompletions(base({}), []);
   // "/add-dir " trims to a slash command, which pi refuses to force-complete.
   assert.equal(wrapped.shouldTriggerFileCompletion(["/add-dir "], 0, 9), true);
-  assert.equal(wrapped.shouldTriggerFileCompletion(["/add-d"], 0, 6), "asked");
+  assert.equal(wrapped.shouldTriggerFileCompletion(["/add-d"], 0, 6), false);
 });
 
 test("wrapping an already wrapped provider returns it, so /reload cannot stack copies", () => {

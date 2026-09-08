@@ -123,9 +123,11 @@ class WorkingRow extends Loader {
     this.paddingX = 0;
     this.stop();
   }
-  // Loader prefixes a blank line of its own; between turns the row is nothing.
+  // Loader prefixes a blank line of its own; the row takes a trailing one
+  // instead, so it stands off the composer. Between turns the row is nothing,
+  // so no gap opens where the spinner is not running.
   render(width) {
-    return this.message ? super.render(width).slice(1) : [];
+    return this.message ? [...super.render(width).slice(1), ""] : [];
   }
   dispose() {
     this.stop();

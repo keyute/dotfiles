@@ -1,6 +1,6 @@
 # Pi TUI design language
 
-Last verified 2026-09-08, evening (pi 0.85.1). Read this before editing
+Last verified 2026-09-09 (pi 0.85.1). Read this before editing
 `private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`; change a rule
 only with a dated decision here, never by re-wording.
 
@@ -12,7 +12,8 @@ pi's own glyphs. Each rule carries the why that earned it.
    state for every row (tool calls, subagent launches and actions, child
    completion lines), `○` only on a fleet row, `↳` for the line under a row,
    `π` for anything the harness says in its own voice (turn line), `›` for the
-   fleet cursor, `❯` for the prompt and for the message it sent (rule 5). No
+   fleet cursor, `❯` for the prompt and for the message it sent (rule 5),
+   `▸`/`▾` for a fold handle's state (rule 2). No
    `⏺`/`✻`/`◯` (Claude's signatures), no Codex `Called`/`Explored` headers.
    *Why:* a borrowed signature reads as a
    clone; a glyph set that is ours reads as pi. *2026-09-08:* the owner chose
@@ -24,15 +25,17 @@ pi's own glyphs. Each rule carries the why that earned it.
    for `assistant-thinking` while the stream runs, so the block has no lines
    and no click region (ctrl+t is moot); the settled message's thinking text
    is blanked, which takes pi's own spacer with it (below). A tool row is its
-   title and one `↳` summary line (`+12 −4`,
-   `4 matches`, `31 lines · ctrl+o to expand`, `no output`), never output. A
+   title and one `↳` summary line (`+12 −4`, the counts in the theme's own
+   success/error pair, `4 matches`, `31 lines`, `no output`), never output. A
    failed shell command shows its first two and last two lines with `… N more
    lines` between and the exit status last; other errors show in full. The
    `workspace_*` and MCP rows between two things that stay visible fold to
    one dim, dotless line at the text column ("Read 3 files, ran 9 shell
    commands, called 2 MCP tools"); that line is the group's handle in both
-   states — it sits above the group, a click on it opens or closes the group,
-   ctrl+o opens a closed one. Whatever stays visible closes the group:
+   states — it sits above the group and opens with `▸` closed, `▾` open, and a
+   click on it opens or closes the group. ctrl+o drives every group to match
+   it, so a group clicked open against the flag follows it again at the next
+   press. Whatever stays visible closes the group:
    assistant text, a subagent or other plugin row, a failed row (it renders as
    its group's last row), a child's completion line, the turn line, the next
    run. *Why:* Codex's per-step reasoning
@@ -82,7 +85,26 @@ pi's own glyphs. Each rule carries the why that earned it.
    and the owner holds that the human-language summary is not the load-bearing
    part. The
    transformer stays: it covers the live stream, which runs before the message
-   settles.
+   settles. *2026-09-09:* an open group was indistinguishable from a closed
+   one, and the `· ctrl+o to expand` hints rendered without their key — pi's
+   `keyText` resolves through a module global that falls back to the pi-tui
+   bindings, which do not define `app.tools.expand`. The hints went (the owner:
+   "dont need the ctrl+o hint"), taking the broken lookup with them, and the
+   caret carries the state instead. Chosen over a flipping label, a brightened
+   handle alone and a background: both reference CLIs use only a flipping label
+   and their users report exactly the confusion that predicts, NN/g's 2020
+   accordion study measured the caret as the one signifier that beats no icon,
+   and WCAG 1.4.1 plus rule 9 ruled out colour or background as the sole
+   carrier. The handle also undims when open, a second cue that is not
+   colour-alone. The same day ctrl+o was found one-way — the flag change only
+   ever opened a group, so a second press left it open and only a click
+   collapsed it. Residual: pi announces its own `Tool output: expanded` in the
+   chat from `setToolsExpanded`, which pushes a Spacer and a Text straight onto
+   its chat container; no documented surface reaches it (`extensions.md` offers
+   `setStatus`, `notify`, `setWidget`, `setFooter`, `custom`, all elsewhere)
+   and the container is not exposed to an extension at all, so not even an
+   undocumented reach is available. The caret carries the state regardless;
+   worth an upstream request for a settings switch.
 3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the
@@ -104,7 +126,12 @@ pi's own glyphs. Each rule carries the why that earned it.
    which draws in that same status container. Residual: pi's auto-retry
    countdown draws there too and has no documented event, so a retry shows two
    spinners — an undocumented `auto_retry_start` subscription is the only
-   reach, and rule 7 prices that above the cost.
+   reach, and rule 7 prices that above the cost. *2026-09-09:* the row takes a
+   trailing blank line instead of `Loader`'s leading one, so it stands off the
+   composer's shaded block rather than sitting flush against it; between turns
+   the row is still nothing, so no gap opens where the spinner is not running.
+   The expand state stays off the status line: every caret already follows
+   pi's flag, and a copy there would state one fact twice.
 4. **A turn ends when nothing is running.** The turn line prints at
    `agent_settled` only when no background child or task is live; with either
    running it waits for the follow-up run to settle (or the user to type) and
@@ -147,7 +174,16 @@ pi's own glyphs. Each rule carries the why that earned it.
    level after an accept, so Tab walks a directory tree. *Why:* pi opened that
    menu only on a typed letter and answered Tab with file paths, so `/add-dir`
    offered directories its policy refuses and never opened at all for a path
-   starting `~` or `/`.
+   starting `~` or `/`. *2026-09-09:* Tab opens nothing on a line that does
+   not start with `/`.
+   The wrapper answers pi's `shouldTriggerFileCompletion` itself instead of
+   delegating; pi's own says yes to everything but a half-typed slash command,
+   which put a file menu under every Tab. Only the forced path consults that
+   gate, so `@path` and the command-name menu, both unforced, are untouched.
+   Accepted residual: a line opening with an absolute path and a space
+   (`/tmp/x `) parses as a command argument and still offers paths — the match
+   is anchored at the line start, so it costs nothing mid-sentence, and
+   completing a path you are already typing is the useful reading.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then
    `↓ N more`; Down from the prompt's last line enters the rows, the
@@ -165,8 +201,8 @@ pi's own glyphs. Each rule carries the why that earned it.
    pins the source text every heuristic assumes. *Why:* pi breaks extension
    APIs across 0.x releases; prose fails silently, tests fail loudly.
 8. **Glyph at the edge, text two in.** A line that opens with a glyph (`•`,
-   `π`, `❯`) starts at column 0; a line without one (`↳`, the fold summary,
-   the status line, the fleet rows) starts two columns in. pi's `outputPad`
+   `π`, `❯`, `▸`/`▾`) starts at column 0; a line without one (`↳`, the status
+   line, the fleet rows) starts two columns in. pi's `outputPad`
    is 0 so its own lines (assistant text, the user box, "Operation aborted")
    share column 0; pi allows only 0 or 1 there. Pi's own surfaces are
    re-applied on every `session_start` because `/new` and `/resume` reset the
@@ -183,6 +219,9 @@ pi's own glyphs. Each rule carries the why that earned it.
    it, which the owner ruled out on 2026-09-08 as not worth the maintenance
    for a cosmetic gain. A leading heading renders bold on the bullet line
    instead of leaving the bullet on a line of its own (same day).
+   *2026-09-09:* the fold handle stopped being dotless — its caret takes the
+   dot column so the handle lines up with the `•` rows it owns and reads as
+   their header, which is the rule rather than an exception to it.
 9. **Background = the user's sent messages and the composer.** pi's user
    box keeps its background and the composer takes the same one (rule 5);
    nothing else the extension draws has one: no tool card (every plugin

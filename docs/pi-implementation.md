@@ -1,6 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-09 (classifier evidence and stages; earlier: 2026-09-08
+Last updated: 2026-09-09 (Tab scope, fold caret, questionnaire notes; earlier
+the same day: classifier evidence and stages; earlier: 2026-09-08
 unsandboxed shell flag; earlier the same day: dot form everywhere; earlier: 2026-09-07 evening
 transcript redesign and lean pass; guard parity: applied workflow copy and
 node_modules symlink, relayed policy messages, Claude-shaped transcript rows,
@@ -537,6 +538,64 @@ live-tested on the host.
   new network hosts are never reviewed (Claude Code classifies them); no
   per-rule allow/ask list; whether `codex-auto-review` is reachable on the
   subscription endpoint is unprobed.
+
+- 2026-09-09 (from four owner reports on the live TUI): six changes.
+  (1) Tab opened a file menu in ordinary prose. Not a regression: pi's own
+  `shouldTriggerFileCompletion` says yes to everything but a half-typed slash
+  command, and `editor.js` treats a missing hook as yes too, so the wrapper
+  added for `/add-dir` had only ever widened the argument case. It now answers
+  that gate itself and Tab is scoped to a command's arguments; only the forced
+  path consults it, so `@path` and the command-name menu are untouched.
+  (2) The working row takes a trailing blank instead of `Loader`'s leading one,
+  standing it off the composer.
+  (3) The fold handle carries `▸`/`▾` in the dot column and undims when open;
+  the `ctrl+o to expand` hints went with the owner's "dont need the ctrl+o
+  hint", which also removed a real defect — they rendered without their key,
+  since pi's `keyText` reads a module global that falls back to the pi-tui
+  bindings and those do not define `app.tools.expand`. The caret was chosen on
+  the research: both reference CLIs mark state with only a flipping label
+  (Claude Code `Read 31 lines (ctrl+o to expand)`, Codex CLI v0.149.0+
+  `Ran N commands · ctrl+t to view transcript`) and their users report the
+  confusion that predicts; NN/g's 2020 accordion-icon study is the one measured
+  result and it favours the caret; WCAG 1.4.1 and rule 9 ruled out background
+  or brightening as the sole carrier. Recorded residual: pi's own
+  `Tool output: expanded` line comes from `setToolsExpanded` pushing a Spacer
+  and Text onto its chat container, which no documented surface reaches and
+  which is not exposed to extensions at all — so it stays, and the caret
+  carries the state.
+  (4) ctrl+o was one-way: the flag change ran `if (!group.open) toggleFold(…)`,
+  so a second press updated `expandedAt` and left the group open, and only a
+  click collapsed it. The flag is now authoritative
+  (`if (group.open !== toolsExpanded)`); a group clicked open against it
+  follows it again at the next press. The test that asserted "ctrl+o again
+  while open expands bodies only; the group stays open" encoded the defect and
+  was rewritten with it.
+  (5) The edit/write `+N −N` counts take the theme's `success`/`error` pair
+  (pi defines no diff-specific keys; all four catppuccin flavours define these).
+  Only that summary splits its colouring — every other `↳` line keeps its
+  single muted wrapper, whose reset would otherwise end the colour for the rest
+  of the line.
+  (6) `ask_user_question` was registered, permitted and unused: the owner had
+  to type an answer to a question the model asked in prose. Wiring is correct
+  (`rootTools`, the `tool_execution_end` guard, the stability and integration
+  pins all match the plugin's own `ask-user-question.ts`). A `question_form`
+  rule was drafted for the baseline and then withdrawn on the cross-model
+  review: the plugin registers `promptSnippet` and `promptGuidelines`
+  ("Use ask_user_question whenever the user's request is underspecified and you
+  cannot proceed without concrete decisions") and pi's `buildSystemPrompt`
+  injects a selected tool's guidelines, so the guidance was already in the
+  prompt and the miss is a one-off despite it — failing the baseline's
+  observed-recurring and non-inferable gates. The first rationale claimed pi
+  carried no equivalent; that was checked against this repository only, never
+  against the plugin. If it recurs, the lever is the plugin's own
+  `guidance.promptSnippet`/`promptGuidelines` config, not an always-loaded
+  rule. Reading the result was also lossy: `QuestionAnswer.notes`
+  and `QuestionnaireResult.globalNote` were dropped, and an answer that was
+  only a note (`answer: null`, no `selected`) was filtered out entirely, so a
+  decision written rather than picked reached neither `userTask` nor the
+  transcript. Both are carried now.
+  Not applied or live-tested on the host; `npm run test:pi` is green (212 pass,
+  0 fail).
 
 ## Verification and remaining gates
 

@@ -4,7 +4,7 @@ import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
 import { addFold, answerLines, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, formatDuration, formatTurn, glyph, installFolding, pluginRenderers, pluginTitle, resultSummary, summarise, toolRenderers } from "./rows.mjs";
 
-// keyHint and the markdown theme read pi's theme; the default one is enough.
+// The markdown theme reads pi's theme; the default one is enough.
 initTheme();
 
 const theme = { fg: (color, text) => `<${color}>${text}`, bold: text => text };
@@ -77,17 +77,17 @@ test("bodies show nothing until expanded; shell errors show head and tail, other
 test("a row is a title at column 0 and one ↳ line at the text column; the hint appears only over a body", () => {
   const renderers = toolRenderers("edit", createFolds());
   assert.deepEqual(rendered(renderers.renderCall({ path: "f" }, theme, context())), ["<success>• <toolTitle>Edited f"]);
-  assert.deepEqual(rendered(renderers.renderResult(result("ok", { diff: "+  1 a" }), { expanded: false }, theme, context())), ["  <muted>↳ +1 −0"]);
+  assert.deepEqual(rendered(renderers.renderResult(result("ok", { diff: "+  1 a" }), { expanded: false }, theme, context())), ["  <muted>↳ <success>+1 <error>−0"]);
   const bash = toolRenderers("bash", createFolds());
   assert.deepEqual(rendered(bash.renderResult(result("(no output)"), { expanded: false }, theme, context())), ["  <muted>↳ no output"]);
-  assert.match(rendered(bash.renderResult(result("a\nb"), { expanded: false }, theme, context()))[0], /^  <muted>↳ 2 lines · .*to expand/);
+  assert.deepEqual(rendered(bash.renderResult(result("a\nb"), { expanded: false }, theme, context())), ["  <muted>↳ 2 lines"]);
   const failed = rendered(bash.renderResult(result("l1\nl2\nl3\nl4\nl5\nl6\n\nCommand exited with code 1"), { expanded: false }, theme, context({ isError: true })));
   assert.deepEqual(failed.slice(0, 2), ["  <error>l1", "  <error>l2"]);
-  assert.match(failed[2], /^  <muted>… 2 more lines · .*to expand/);
+  assert.equal(failed[2], "  <muted>… 2 more lines");
   assert.equal(failed.at(-1), "  <error>Command exited with code 1");
 });
 
-test("folded rows render nothing; the first row carries the summary at the text column and is the handle in both states", () => {
+test("folded rows render nothing; the first row carries the caret handle in both states, and ctrl+o drives it both ways", () => {
   let toolsExpanded = false;
   const folds = createFolds(() => toolsExpanded);
   const rows = [["read", "a"], ["read", "b"], ["bash", "c"]].map(([tool, id]) => ({ tool, id, renderers: toolRenderers(tool, folds), invalidated: 0 }));
@@ -100,7 +100,7 @@ test("folded rows render nothing; the first row carries the summary at the text 
   closeFolds(folds);
   assert.deepEqual(rows.map(row => row.invalidated), [1, 1, 1]);
   const handle = rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0]));
-  assert.deepEqual(rendered(handle), ["  <muted>Read 2 files, ran 1 shell command"]);
+  assert.deepEqual(rendered(handle), ["<muted>▸ Read 2 files, ran 1 shell command"]);
   assert.deepEqual(rendered(rows[0].renderers.renderResult(result("x"), { expanded: false }, theme, contextFor(rows[0]))), []);
   assert.deepEqual(rendered(rows[2].renderers.renderCall({ command: "c" }, theme, contextFor(rows[2]))), []);
   // Only the summary line answers clicks; anything else is pi's own toggle.
@@ -109,11 +109,11 @@ test("folded rows render nothing; the first row carries the summary at the text 
   assert.deepEqual(handle.handleMouse(click(0)), { handled: true });
   assert.deepEqual(rows.map(row => row.invalidated), [2, 2, 2]);
   const open = rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0]));
-  assert.deepEqual(rendered(open), ["  <muted>Read 2 files, ran 1 shell command", "<success>• <toolTitle>Read a"]);
+  assert.deepEqual(rendered(open), ["<toolTitle>▾ Read 2 files, ran 1 shell command", "<success>• <toolTitle>Read a"]);
   assert.deepEqual(rendered(rows[2].renderers.renderCall({ command: "c" }, theme, contextFor(rows[2]))), ["<success>• <toolTitle>Ran c"]);
-  assert.match(rendered(rows[2].renderers.renderResult(result("x"), { expanded: false }, theme, contextFor(rows[2])))[0], /^  <muted>↳ 1 line · /);
+  assert.equal(rendered(rows[2].renderers.renderResult(result("x"), { expanded: false }, theme, contextFor(rows[2])))[0], "  <muted>↳ 1 line");
   // Expanding a row inside an open group is pi's toggle for its body; the group stays open.
-  assert.deepEqual(rendered(rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0], true))), ["  <muted>Read 2 files, ran 1 shell command", "<success>• <toolTitle>Read a"]);
+  assert.deepEqual(rendered(rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0], true))), ["<toolTitle>▾ Read 2 files, ran 1 shell command", "<success>• <toolTitle>Read a"]);
   assert.deepEqual(rows.map(row => row.invalidated), [2, 2, 2]);
   open.handleMouse(click(0));
   assert.deepEqual(rows.map(row => row.invalidated), [3, 3, 3]);
@@ -121,19 +121,30 @@ test("folded rows render nothing; the first row carries the summary at the text 
   // A row's own flag (left true by the click above) says nothing about the
   // group; ctrl+o is pi's global flag, and its change opens the closed group
   // from whichever row renders first (siblings woken, that row not re-entered).
-  assert.deepEqual(rendered(rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0], true))), ["  <muted>Read 2 files, ran 1 shell command"]);
+  assert.deepEqual(rendered(rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0], true))), ["<muted>▸ Read 2 files, ran 1 shell command"]);
   toolsExpanded = true;
   assert.deepEqual(rendered(rows[2].renderers.renderCall({ command: "c" }, theme, contextFor(rows[2], true))), ["<success>• <toolTitle>Ran c"]);
   assert.deepEqual(rows.map(row => row.invalidated), [4, 4, 3]);
-  // ctrl+o again while open expands bodies only; the group stays open.
+  // ctrl+o off drives every group back to collapsed, as the handle does.
   toolsExpanded = false;
-  assert.deepEqual(rendered(rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0]))), ["  <muted>Read 2 files, ran 1 shell command", "<success>• <toolTitle>Read a"]);
-  assert.deepEqual(rows.map(row => row.invalidated), [4, 4, 3]);
+  assert.deepEqual(rendered(rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0]))), ["<muted>▸ Read 2 files, ran 1 shell command"]);
+  assert.deepEqual(rows.map(row => row.invalidated), [4, 5, 4]);
   closeFolds(folds); // nothing open: no re-invalidation
-  assert.deepEqual(rows.map(row => row.invalidated), [4, 4, 3]);
+  assert.deepEqual(rows.map(row => row.invalidated), [4, 5, 4]);
   addFold(folds, "d", "grep");
   assert.equal(folds.byId.get("d").collapsed, false);
   assert.equal(folds.byId.get("a").collapsed, true);
+});
+
+test("a group that forms while ctrl+o is on opens with it", () => {
+  const folds = createFolds(() => true);
+  const renderers = toolRenderers("read", folds);
+  const ctx = () => context({ toolCallId: "g1" });
+  renderers.renderCall({ path: "a" }, theme, ctx());
+  addFold(folds, "g1", "read");
+  closeFolds(folds);
+  // The flag was already true at close, so no transition is left to react to.
+  assert.deepEqual(rendered(renderers.renderCall({ path: "a" }, theme, ctx())), ["<toolTitle>▾ Read 1 file", "<success>• <toolTitle>Read a"]);
 });
 
 test("summary wording", () => {
@@ -188,7 +199,7 @@ test("plugin rows: MCP failures reported in details turn the row red after the r
   const mcp = pluginRenderers("mcp__exa_web_search_exa", { servers: ["exa"], folds: createFolds() });
   assert.equal(mcp.renderShell, "self");
   assert.deepEqual(rendered(mcp.renderCall({ query: "npm pi" }, theme, context())), ['<success>• <toolTitle>exa › web_search_exa "npm pi"']);
-  assert.match(rendered(mcp.renderResult(result("a\nb\nc"), { expanded: false }, theme, context()))[0], /^  <muted>↳ 3 lines · .*to expand/);
+  assert.deepEqual(rendered(mcp.renderResult(result("a\nb\nc"), { expanded: false }, theme, context())), ["  <muted>↳ 3 lines"]);
   let invalidated = 0;
   const shared = context({ invalidate: () => invalidated++ });
   assert.deepEqual(rendered(mcp.renderResult(result("boom", { error: "auth_required" }), { expanded: false }, theme, shared)), ["  <error>boom"]);
@@ -203,7 +214,7 @@ test("plugin rows: MCP failures reported in details turn the row red after the r
   const subagent = pluginRenderers("subagent", { folds: createFolds() });
   assert.deepEqual(rendered(subagent.renderCall({ agent: "explore-deep", task: "Audit the last commits" }, theme, context())), ["<success>• <toolTitle>explore-deep › Audit the last commits"]);
   assert.deepEqual(rendered(subagent.renderResult(result("Async run r1", { asyncId: "r1" }), { expanded: false }, theme, context())), ["  <muted>↳ launched"]);
-  assert.match(rendered(subagent.renderResult(result("done\nall good"), { expanded: false }, theme, context()))[0], /^  <muted>↳ 2 lines · /);
+  assert.equal(rendered(subagent.renderResult(result("done\nall good"), { expanded: false }, theme, context()))[0], "  <muted>↳ 2 lines");
   // Any other plugin tool is a row too: its title is its name and its summary its answer.
   const wait = pluginRenderers("bg_wait", { folds: createFolds() });
   assert.equal(wait.renderShell, "self");
@@ -256,6 +267,14 @@ test("answers, completion and turn lines format", () => {
     "<success>• <toolTitle>User answered pi's question",
     "  <muted>↳ Pad both sides? <muted>→ yes",
   ]);
+  // A note is the whole answer when the user writes instead of picking, and
+  // the submit-tab note rides the end.
+  assert.deepEqual(answerLines([{ question: "Which marker?", answer: "", notes: "or use the background" }, { question: "Pad?", answer: "yes", notes: "both sides" }], theme, "research this first"), [
+    "<success>• <toolTitle>User answered pi's questions",
+    "  <muted>↳ Which marker? <muted>→ or use the background",
+    "  <muted>↳ Pad? <muted>→ yes — both sides",
+    "  <muted>↳ Note <muted>→ research this first",
+  ]);
   assert.equal(completionLine({ agent: "explore-deep", task: "Audit the\n last commits", status: "completed", durationMs: 134_000 }, theme), "<success>• <toolTitle>explore-deep finished<muted> · Audit the last commits · 2m 14s");
   assert.equal(completionLine({ agent: "explore-deep", task: "Audit", status: "completed" }, theme), "<success>• <toolTitle>explore-deep finished<muted> · Audit");
   assert.equal(completionLine({ agent: "ts-reviewer", task: "", status: "failed", durationMs: 4_000 }, theme), "<error>• <toolTitle>ts-reviewer failed<muted> · 4s");
@@ -288,6 +307,6 @@ test("a failed row stays visible inside a fold, under the summary when it is the
   renderers.renderCall({ command: "false" }, theme, failed);
   addFold(folds, "e1", "bash");
   closeFolds(folds);
-  assert.deepEqual(rendered(renderers.renderCall({ command: "false" }, theme, failed)), ["  <muted>Ran 1 shell command", "<error>• <toolTitle>Ran false"]);
+  assert.deepEqual(rendered(renderers.renderCall({ command: "false" }, theme, failed)), ["<muted>▸ Ran 1 shell command", "<error>• <toolTitle>Ran false"]);
   assert.deepEqual(rendered(renderers.renderResult(result("boom"), { expanded: false }, theme, failed)), ["  <error>boom"]);
 });

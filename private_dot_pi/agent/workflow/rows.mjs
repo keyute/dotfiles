@@ -1,14 +1,17 @@
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
-import { getMarkdownTheme, keyHint, renderDiff } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
 // line under a row, π for anything the harness says in its own voice, the
-// hollow circle only on fleet rows. A line that opens with a glyph starts at
-// column 0; a line without one (↳, the fold summary) sits at the text column.
+// hollow circle only on fleet rows, a caret for a fold handle's state. A line
+// that opens with a glyph starts at column 0; a line without one (↳) sits at
+// the text column, and so the caret puts the handle's text there too.
 export const BULLET = "•";
 export const CHILD = "○";
 export const TURN_GLYPH = "π";
 export const SUB = "↳";
+export const FOLD_OPEN = "▾";
+export const FOLD_CLOSED = "▸";
 export const PROMPT = "❯";
 export const PAD = "  ";
 export const TITLE_WIDTH = 36;
@@ -35,8 +38,6 @@ export const TURN_VERBS = [
 const NO_OUTPUT = "(no output)";
 const EXIT_STATUS = /^Command exited with code \d+$/;
 const ELIDED = /^… \d+ more lines$/;
-// Tools whose collapsed row hides a body worth expanding.
-const HINTED = new Set(["bash", "read", "mcp", "subagent"]);
 
 const firstLine = value => String(value ?? "").split("\n")[0];
 const resultText = result => {
@@ -146,14 +147,22 @@ export function bodyLines(name, result, { expanded = false, isError = false } = 
   return text ? text.split("\n") : [];
 }
 
+// The diff counts are the one summary a colour can carry, so they take the
+// theme's own success/error pair. Each segment is coloured on its own rather
+// than nested inside one muted wrapper, whose reset would end the muted colour
+// for the rest of the line (the hazard design rule 5 records for the user box).
+function summaryLine(name, summary, theme) {
+  const counts = name === "edit" || name === "write" ? summary.split(" ") : null;
+  if (counts?.length !== 2) return theme.fg("muted", `${SUB} ${summary}`);
+  return `${theme.fg("muted", SUB)} ${theme.fg("success", counts[0])} ${theme.fg("error", counts[1])}`;
+}
+
 function renderBody(name, result, options, theme, context) {
   const lines = [];
   const summary = context.isError ? "" : resultSummary(name, result);
-  const expandable = !options.expanded && HINTED.has(name) && bodyLines(name, result, { expanded: true, isError: context.isError }).length > 0;
-  const hint = ` · ${keyHint("app.tools.expand", "to expand")}`;
-  if (summary) lines.push(theme.fg("muted", `${SUB} ${summary}${expandable ? hint : ""}`));
+  if (summary) lines.push(summaryLine(name, summary, theme));
   for (const line of bodyLines(name, result, { expanded: options.expanded, isError: context.isError })) {
-    if (context.isError && ELIDED.test(line)) lines.push(theme.fg("muted", `${line}${hint}`));
+    if (context.isError && ELIDED.test(line)) lines.push(theme.fg("muted", line));
     else lines.push(name === "edit" && !context.isError ? line : theme.fg(context.isError ? "error" : "toolOutput", line));
   }
   return new Text(lines.map(indent).join("\n"), 0, 0);
@@ -191,6 +200,9 @@ export function closeFolds(folds) {
   if (!group) return;
   group.collapsed = true;
   group.expandedAt = folds.toolsExpanded();
+  // A group that forms while ctrl+o is on joins it: it records the flag as
+  // already seen, so the render's transition guard would never fire for it.
+  group.open = group.expandedAt === true;
   folds.current = null;
   for (const id of group.ids) folds.invalidate.get(id)?.();
 }
@@ -224,9 +236,9 @@ export function installFolding(pi, ctx, folds = defaultFolds) {
 // The group's first row draws the summary line whether the group is open or
 // closed, so the handle never moves. The handle answers its own clicks (pi's
 // MouseRegion asks the child before its own toggle), so a row's `expanded`
-// flag only ever expands its body; the group opens on the handle or when
-// pi's global ctrl+o flag changes while it is closed, and closes on the
-// handle.
+// flag only ever expands its body. The handle toggles its own group; pi's
+// global ctrl+o flag drives every group to match it, so a group clicked open
+// against the flag follows it again at the next press.
 class FoldHandle extends Text {
   constructor(text, toggle) {
     super(text, 0, 0);
@@ -238,6 +250,12 @@ class FoldHandle extends Text {
     return { handled: true };
   }
 }
+
+// The caret is the handle's state (docs/pi-design.md rule 2). It sits in the
+// dot column so the handle lines up with the rows it owns, and the text undims
+// when open so a stacked run of groups shows which one is expanded.
+const handleLine = (group, theme) =>
+  theme.fg(group.open ? "toolTitle" : "muted", `${group.open ? FOLD_OPEN : FOLD_CLOSED} ${summarise(group.counts)}`);
 
 const closedFold = (folds, id) => {
   const group = folds.byId.get(id);
@@ -268,10 +286,10 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
       const toolsExpanded = folds.toolsExpanded();
       if (toolsExpanded !== group.expandedAt) {
         group.expandedAt = toolsExpanded;
-        if (!group.open) toggleFold(folds, group, id);
+        if (group.open !== toolsExpanded) toggleFold(folds, group, id);
       }
       const lines = [];
-      if (first) lines.push(indent(theme.fg("muted", summarise(group.counts))));
+      if (first) lines.push(handleLine(group, theme));
       if (group.open || context.isError) lines.push(line);
       return first ? new FoldHandle(lines.join("\n"), () => toggleFold(folds, group)) : new Text(lines.join("\n"), 0, 0);
     },
@@ -389,9 +407,10 @@ export function blankReasoning(message) {
   return blanked ? message : undefined;
 }
 
-export function answerLines(answers, theme) {
+export function answerLines(answers, theme, globalNote = "") {
   const head = `${theme.fg("success", BULLET)} ${theme.fg("toolTitle", `User answered pi's ${answers.length === 1 ? "question" : "questions"}`)}`;
-  return [head, ...answers.map(({ question, answer }) => indent(`${theme.fg("muted", SUB)} ${question} ${theme.fg("muted", "→")} ${answer}`))];
+  const line = (label, text) => indent(`${theme.fg("muted", SUB)} ${label} ${theme.fg("muted", "→")} ${text}`);
+  return [head, ...answers.map(({ question, answer, notes }) => line(question, [answer, notes].filter(Boolean).join(" — "))), ...(globalNote ? [line("Note", globalNote)] : [])];
 }
 
 // One line when an async child ends; pi-subagents' own notice shows only for
