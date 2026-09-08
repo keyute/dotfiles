@@ -20,6 +20,7 @@ export function renderHeader(theme, version = VERSION) {
     leg,
     "",
     `  ${theme.bold(pi("pi"))}${theme.fg("dim", ` v${version}`)}`,
+    "",
   ];
 }
 

@@ -13,7 +13,7 @@ import { checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
-import { answerLines, bulletMarkdown, installFolding, planRenderers, toolRenderers } from "./rows.mjs";
+import { PAD, answerLines, bulletMarkdown, installFolding, planRenderers, pluginRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
@@ -44,6 +44,23 @@ export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.
 const isDirectMcpTool = name => name.startsWith("mcp__");
 
 const padRow = (text, width) => text.slice(0, width).padEnd(width);
+// The prompt glyph sits at the transcript's inset with its own trailing space.
+const PROMPT_PADDING = PAD.length * 2;
+
+// Plugins register their tools through the API they are handed and pi keeps the
+// definition object, so a Proxy that decorates matching registrations gives
+// their rows the transcript's shape without touching schema or execution. Only
+// `registerTool` is intercepted; everything else (events included) is the
+// original, and the raw function is called on the raw API because the adapter
+// extracts it.
+export function pluginApi(pi, renderersFor, matches = name => name === "subagent" || name === "mcp" || name.startsWith("mcp__")) {
+  return new Proxy(pi, {
+    get(target, key, receiver) {
+      if (key !== "registerTool") return Reflect.get(target, key, receiver);
+      return tool => target.registerTool(matches(tool.name) ? { ...tool, ...renderersFor(tool.name) } : tool);
+    },
+  });
+}
 
 // Codex-style composer: a shaded block with a "❯ " prompt instead of rule
 // lines. Rendered lines carry their cursor marker inline, so replacing the
@@ -54,7 +71,7 @@ export class CaretEditor extends sdk.CustomEditor {
   // The editor factory is handed an EditorTheme (borders and autocomplete only),
   // so the full palette for shading and the caret arrives separately.
   constructor(tui, theme, keybindings, { fleet, palette } = {}) {
-    super(tui, theme, keybindings, { paddingX: 2 });
+    super(tui, theme, keybindings, { paddingX: PROMPT_PADDING });
     this.fleet = fleet;
     this.palette = palette;
     // The editor's fake cursor ends in a full SGR reset, which also drops the
@@ -80,9 +97,9 @@ export class CaretEditor extends sdk.CustomEditor {
   }
   // The host copies the settings editorPaddingX (default 0) onto custom
   // editors right after construction and on settings reloads; the caret
-  // needs its two padding columns.
+  // needs its padding columns.
   setPaddingX(padding) {
-    super.setPaddingX(Math.max(2, padding));
+    super.setPaddingX(Math.max(PROMPT_PADDING, padding));
   }
   // The rule lines become blank shaded rows (a scroll count when clipped), so
   // the block keeps its line count and pi's mouse and autocomplete row
@@ -99,7 +116,7 @@ export class CaretEditor extends sdk.CustomEditor {
     // Content sits between the two shaded rows; autocomplete follows the
     // bottom one and stays unshaded.
     const end = lines.lastIndexOf(this.bottomRow);
-    if (end > 1 && lines[1].startsWith("  ")) lines[1] = this.palette.fg("accent", "❯ ") + lines[1].slice(2);
+    if (end > 1 && lines[1].startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = PAD + this.palette.fg("accent", "❯ ") + lines[1].slice(PROMPT_PADDING);
     for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
     return lines;
   }
@@ -115,7 +132,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let ready = false;
   let installed = false;
   let ceiling;
-  let footerInstalled = false;
+  let surfaces;
   let releaseChild;
   let childRevoked = false;
   let broker;
@@ -224,16 +241,20 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       ready = !childRevoked;
     }
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
-    if (isRoot && ctx.hasUI && !footerInstalled) {
-      footerInstalled = true;
-      // Reasoning stays out of the transcript (docs/pi-design.md); an empty
-      // label renders no row at all.
+    if (isRoot && ctx.hasUI) {
+      if (!surfaces) {
+        installFolding(pi);
+        const fleet = installFleet(pi, ctx);
+        surfaces = { fleet, footer: installFooter(pi, ctx, { fleet }) };
+      }
+      // pi resets every extension surface when a session is invalidated
+      // (/new, /resume), so these are applied on each session start. Reasoning
+      // stays out of the transcript (docs/pi-design.md); an empty label
+      // renders no row at all.
       ctx.ui.setHiddenThinkingLabel("");
-      installFolding(pi);
-      const fleet = installFleet(pi, ctx);
       installHeader(ctx);
-      installFooter(pi, ctx, { fleet });
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme }));
+      surfaces.footer.attach(ctx);
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet: surfaces.fleet, palette: ctx.ui.theme }));
     }
     pi.setActiveTools(pi.getAllTools().map(tool => tool.name).filter(permitted));
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
@@ -251,6 +272,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     return { systemPrompt: `${event.systemPrompt}\n\nWorkflow mode: ${state.mode}. ${state.readonly ? "Investigate only; source edits and external mutations are disabled. Submit the plan for explicit approval before implementation." : "Execute only the user-approved task."}` };
   });
 
+  // Plugin rows take the transcript's shape (docs/pi-design.md); the
+  // registrations themselves are the plugins' own.
+  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }));
   if (isRoot) {
     pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", handler: (_args, ctx) => setMode("plan", ctx) });
     pi.registerCommand("execute", { description: "Approve the current plan and enable scoped execution", handler: async (_args, ctx) => {
@@ -273,7 +297,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       userTask = `${userTask}\n${answers.map(entry => `User decision: ${entry.question} → ${entry.answer}`).join("\n")}`.slice(-8000);
       pi.appendEntry("workflow-answers", { answers });
     });
-    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
+    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), PAD.length, 0));
     pi.registerMarkdownTransformer(bulletMarkdown);
     pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present the implementation plan for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), ...planRenderers, async execute(_id, args) {
       const ctx = currentContext;
@@ -287,12 +311,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     // ceiling bounds every launch path, and the broker's child leases enforce
     // capacity and runtime role.
     const subagents = await jiti.import("pi-subagents", { default: true });
-    await subagents(pi);
+    await subagents(styled);
   }
 
   if (permittedTools.includes("mcp")) {
     const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
-    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, toolResultRendering: "compact", collapsedResultLines: 1, autoAuth: false, sampling: false, elicitation: false } } })(pi);
+    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false } } })(styled);
   }
   pi.on("session_shutdown", async () => {
     ready = false;

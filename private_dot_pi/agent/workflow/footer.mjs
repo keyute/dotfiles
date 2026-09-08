@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { readLines, sendLine } from "./lines.mjs";
-import { createTurnClock, formatTurn } from "./rows.mjs";
+import { PAD, createTurnClock, formatTurn } from "./rows.mjs";
 
 // The root workflow exports the broker socket and bearer token into
 // process.env for child sessions; footer subprocesses sit outside that
@@ -120,8 +120,6 @@ function readGitChanges(cwd) {
   });
 }
 
-// The status line shares the composer's two-column inset.
-const PAD = "  ";
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
@@ -182,12 +180,14 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickM
   pi.on("ui_prompt_start", () => { state.prompting = true; showLabel(); });
   pi.on("ui_prompt_end", () => { state.prompting = false; showLabel(); });
   pi.on("session_shutdown", () => { clearInterval(state.tick); state.tick = null; });
-  pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
+  pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), PAD.length, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
   void refreshUsage();
   void refreshGit(ctx.cwd);
 
-  ctx.ui.setFooter((tui, theme, footerData) => {
+  // pi drops the extension footer on every session invalidate (/new, /resume),
+  // so the surface is re-attached at each session start; events are wired once.
+  const attach = uiCtx => uiCtx.ui.setFooter((tui, theme, footerData) => {
     state.tui = tui;
     fleet?.attach(tui);
     const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
@@ -197,9 +197,9 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickM
       invalidate() {},
       render(width) {
         const segments = buildSegments({
-          modelId: ctx.model?.id,
-          thinkingLevel: ctx.thinkingLevel,
-          contextPercent: ctx.getContextUsage()?.percent ?? null,
+          modelId: uiCtx.model?.id,
+          thinkingLevel: uiCtx.thinkingLevel,
+          contextPercent: uiCtx.getContextUsage()?.percent ?? null,
           limits: state.limits,
           branch: footerData.getGitBranch(),
           changes: state.changes,
@@ -214,4 +214,6 @@ export function installFooter(pi, ctx, { fleet, clock = createTurnClock(), tickM
       },
     };
   });
+  attach(ctx);
+  return { attach };
 }

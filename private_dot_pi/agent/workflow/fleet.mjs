@@ -1,17 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { CHILD, PAD, TITLE_WIDTH, completionLine, shortTitle } from "./rows.mjs";
 
 // Rows hang under the status line as Claude Code's subagent statusline does
-// (docs/pi-design.md): a `π main` root row, then `⊙ title · tokens · model`
-// per child, the cursor row marked `›`. The title is cut at a word boundary.
-export const ROOT = "π";
-export const CHILD = "⊙";
+// (docs/pi-design.md): `○ title · tokens · model` per child, the cursor row
+// marked `›`. The title is cut at a word boundary.
+export { CHILD, TITLE_WIDTH, shortTitle };
 export const CURSOR = "›";
+// Worst child status wins a multi-result completion (single runs carry one).
+const STATUS_ORDER = ["failed", "stopped", "paused", "partial", "detached", "completed"];
 const SEP = " · ";
 const NAME_SEP = " › ";
 const TOK_FMT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1, minimumFractionDigits: 1 });
 export const VISIBLE_ROWS = 5;
-export const TITLE_WIDTH = 36;
 // The fleet DTO's `model` is the launch string (provider/model:thinking) and
 // `effort` repeats the thinking level, so the suffix is dropped before the
 // effort is appended once — the footer's own spelling.
@@ -30,14 +31,6 @@ export function modelLabel(model, effort) {
 }
 
 const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
-
-export function shortTitle(text, width = TITLE_WIDTH) {
-  const title = oneLine(text);
-  if (title.length <= width) return title;
-  const cut = title.slice(0, width - 1);
-  const space = cut.lastIndexOf(" ");
-  return `${space > width / 2 ? cut.slice(0, space) : cut}…`;
-}
 
 export function buildRow({ agent, goal, tokens, model, effort }) {
   const total = formatTokens(tokens?.total ?? tokens);
@@ -100,7 +93,7 @@ export function rowFor(state, entry) {
 export function renderFleet(state, width, theme) {
   if (!state.entries.length) return [];
   const dim = text => theme.fg("dim", text);
-  const lines = [`  ${theme.fg("accent", ROOT)} main`];
+  const lines = [];
   const start = Math.max(0, state.cursor - (VISIBLE_ROWS - 1));
   const shown = state.entries.slice(start, start + VISIBLE_ROWS);
   if (start > 0) lines.push(dim(`  ↑ ${start} more`));
@@ -175,7 +168,21 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
   // poll lags agent_settled, where the footer asks whether a turn is over.
   pi.events.on("subagents:rpc:v1:ready", wake);
   pi.events.on("subagent:async-started", payload => { if (payload?.id) state.active.add(payload.id); wake(); });
-  pi.events.on("subagent:async-complete", payload => { state.active.delete(payload?.id ?? payload?.runId); wake(); });
+  // The completion payload spreads the result file (`success`, `state`,
+  // `agent`) plus `runId` and, per result, pi-subagents' resolved `status`
+  // (completed, failed, partial, paused, stopped, detached); the task comes
+  // from the launch recorded above.
+  pi.events.on("subagent:async-complete", payload => {
+    const id = payload?.runId ?? payload?.id;
+    state.active.delete(id);
+    const launch = state.launches.get(id);
+    const statuses = (payload?.results ?? []).map(result => result?.status).filter(Boolean);
+    const status = (statuses.length ? STATUS_ORDER.find(s => statuses.includes(s)) ?? statuses[0] : null)
+      ?? (payload?.state === "paused" || payload?.state === "stopped" ? payload.state : payload?.success === true ? "completed" : "failed");
+    pi.appendEntry("workflow-child", { agent: launch?.agent ?? payload?.agent ?? "subagent", task: launch?.task ?? "", status });
+    wake();
+  });
+  pi.registerEntryRenderer("workflow-child", (entry, _options, theme) => new Text(completionLine(entry.data, theme), PAD.length, 0));
   pi.on("session_shutdown", () => {
     state.stopped = true;
     clearTimeout(state.timer);

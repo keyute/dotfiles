@@ -21,27 +21,26 @@ test("rows are a word-boundary title, compact tokens and the model; the agent na
 // dim → ~text~, accent → *text*, so the assertions show which parts are styled.
 const theme = { fg: (color, text) => (color === "dim" ? `~${text}~` : color === "accent" ? `*${text}*` : text) };
 
-test("panel: root row, child marker, dim queued rows, cursor row, and overflow markers", () => {
+test("panel: child marker, dim queued rows, cursor row, and overflow markers", () => {
   const state = createFleetState();
   const entries = Array.from({ length: 7 }, (_, i) => ({ agent: `a${i}`, goal: `task ${i}`, tokens: { total: 1000 * (i + 1) }, model: "gpt-5.6-terra", effort: "high" }));
   setEntries(state, { entries: [entries[0], { ...entries[1], agent: "long-name", status: "pending" }], totalActive: 2 });
   assert.deepEqual(renderFleet(state, 80, theme), [
-    "  *π* main",
-    "  ⊙ task 0 · 1k tokens · gpt-5.6-terra high",
-    "  ⊙ ~task 1 · 2k tokens · gpt-5.6-terra high~",
+    "  ○ task 0 · 1k tokens · gpt-5.6-terra high",
+    "  ○ ~task 1 · 2k tokens · gpt-5.6-terra high~",
   ]);
   setEntries(state, { entries, totalActive: 9 });
   assert.equal(navigate(state, "enter"), true);
   state.cursor = 1;
   const rows = renderFleet(state, 80, theme);
-  assert.equal(rows.length, 7);
-  assert.equal(rows[1], "  ⊙ task 0 · 1k tokens · gpt-5.6-terra high");
-  assert.equal(rows[2], "  *›* task 1 · 2k tokens · gpt-5.6-terra high");
+  assert.equal(rows.length, 6);
+  assert.equal(rows[0], "  ○ task 0 · 1k tokens · gpt-5.6-terra high");
+  assert.equal(rows[1], "  *›* task 1 · 2k tokens · gpt-5.6-terra high");
   assert.equal(rows.at(-1), "~  ↓ 4 more~");
   state.cursor = 6;
   const tail = renderFleet(state, 80, theme);
-  assert.deepEqual([tail[1], tail.at(-1)], ["~  ↑ 2 more~", "~  ↓ 2 more~"]);
-  assert.equal(tail[6], "  *›* task 6 · 7k tokens · gpt-5.6-terra high");
+  assert.deepEqual([tail[0], tail.at(-1)], ["~  ↑ 2 more~", "~  ↓ 2 more~"]);
+  assert.equal(tail[5], "  *›* task 6 · 7k tokens · gpt-5.6-terra high");
   assert.deepEqual(renderFleet(createFleetState(), 80, theme), []);
 });
 
@@ -114,7 +113,8 @@ function fakeBus() {
 test("rows poll while children run, name the task from the launch, peek each sibling, and stop on shutdown", async () => {
   const bus = fakeBus();
   const events = {};
-  const pi = { events: bus, on: (name, handler) => { events[name] = handler; } };
+  const entries = [];
+  const pi = { events: bus, on: (name, handler) => { events[name] = handler; }, appendEntry: (kind, data) => entries.push({ kind, data }), registerEntryRenderer() {} };
   const overlays = [];
   const notices = [];
   const ctx = { hasUI: true, ui: {
@@ -127,7 +127,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   fleet.attach({ requestRender: () => renders.push(1) });
   await sleep(20);
   assert.deepEqual(bus.requests.slice(0, 2), ["ping", "status"]);
-  assert.deepEqual(fleet.render(80, theme), ["  *π* main", "  ⊙ restored"]);
+  assert.deepEqual(fleet.render(80, theme), ["  ○ restored"]);
   assert.ok(renders.length);
 
   // The DTO never carries the task; the launch's start/end events do, keyed by the run id.
@@ -138,11 +138,11 @@ test("rows poll while children run, name the task from the launch, peek each sib
   bus.runs = [{ id: "run-a-old", label: "a", startedAt: 900_000 }, { id: "run-a", label: "a", startedAt: 1200 }, { id: "run-b", label: "b", startedAt: 5000 }];
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { mode: "async", runId: "run-b" } } });
   await sleep(20);
-  assert.deepEqual(fleet.render(60, theme), ["  *π* main", "  ⊙ one · 2k tokens · m high", "  ⊙ Review the diff for correctness"]);
+  assert.deepEqual(fleet.render(60, theme), ["  ○ one · 2k tokens · m high", "  ○ Review the diff for correctness"]);
   assert.equal(fleet.handleKey("enter"), true);
-  assert.equal(fleet.render(60, theme)[1], "  *›* one · 2k tokens · m high");
+  assert.equal(fleet.render(60, theme)[0], "  *›* one · 2k tokens · m high");
   assert.equal(fleet.handleKey("down"), true);
-  assert.equal(fleet.render(60, theme)[2], "  *›* Review the diff for correctness");
+  assert.equal(fleet.render(60, theme)[1], "  *›* Review the diff for correctness");
   // Enter peeks at the highlighted child's transcript, not the first child's.
   assert.equal(fleet.handleKey("confirm"), true);
   await sleep(10);
@@ -172,7 +172,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
 
   bus.silent = true;
   await sleep(20);
-  assert.equal(fleet.render(60, theme).length, 3);
+  assert.equal(fleet.render(60, theme).length, 2);
   bus.silent = false;
 
   bus.entries = [];
@@ -186,13 +186,28 @@ test("rows poll while children run, name the task from the launch, peek each sib
   bus.entries = [{ agent: "late", tokens: { total: 0 } }];
   bus.emit("subagent:async-started", { id: "late-1" });
   await sleep(20);
-  assert.equal(fleet.render(60, theme).length, 2);
+  assert.equal(fleet.render(60, theme).length, 1);
   // Live children: the launch/complete events lead, the poll (which also
   // covers runs restored with the session) catches up within an interval.
   assert.equal(fleet.activeCount(), 1);
-  bus.emit("subagent:async-complete", { id: "unknown" });
+  // Completions print a transcript line: the launch names the child and task,
+  // an unknown run falls back to the payload.
+  bus.emit("subagent:async-complete", { id: "unknown", agent: "stray", success: true });
   assert.equal(fleet.activeCount(), 1);
-  bus.emit("subagent:async-complete", { runId: "late-1" });
+  bus.emit("subagent:async-complete", { runId: "run-b", success: false, state: "stopped" });
+  // An interrupted but resumable child is paused, not failed: the resolved
+  // per-result status leads, the file's own fields are the fallback.
+  bus.emit("subagent:async-complete", { runId: "run-b", success: false, interrupted: true, state: "partial", results: [{ agent: "b", status: "paused" }] });
+  bus.emit("subagent:async-complete", { runId: "run-b", success: false, state: "failed", results: [{ status: "completed" }, { status: "failed" }] });
+  bus.emit("subagent:async-complete", { runId: "late-1", success: true });
+  assert.deepEqual(entries.map(entry => [entry.kind, entry.data.agent, entry.data.status]), [
+    ["workflow-child", "stray", "completed"],
+    ["workflow-child", "b", "stopped"],
+    ["workflow-child", "b", "paused"],
+    ["workflow-child", "b", "failed"],
+    ["workflow-child", "subagent", "completed"],
+  ]);
+  assert.equal(entries[1].data.task, "Review the diff\n  for correctness");
   bus.entries = [];
   await sleep(20);
   assert.equal(fleet.activeCount(), 0);

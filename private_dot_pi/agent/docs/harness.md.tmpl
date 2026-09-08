@@ -101,7 +101,7 @@ Extensions are trusted host code. Per-tool SRT is not containment against a
 malicious extension. No fallback to unsandboxed execution exists in the managed
 tools. Linux needs bubblewrap, socat and ripgrep; macOS needs sandbox-exec.
 
-## Specialists, skills and display (last verified 2026-09-07, transcript redesign; unapplied)
+## Specialists, skills and display (last verified 2026-09-08, dot form; unapplied)
 
 Specialists under `~/.pi/agent/agents` render from the shared roster. Each has an
 explicit OpenAI model, tool list and mandatory child policy extension. Native
@@ -124,10 +124,16 @@ arrive as notifications — `bg_wait` only when the current turn depends on them
 
 Display follows `docs/pi-design.md` in the repository. Reasoning never shows;
 a tool row is `• title` plus one `↳` summary line (`+12 −4`, `4 matches`,
-`31 lines · ctrl+o to expand`); when the assistant speaks, the `workspace_*`
-rows since its last words fold to one dim line ("Read 3 files, ran 9 shell
-commands"); Ctrl+O brings every row back. MCP results keep pi-mcp-adapter's
-compact one-line rendering. While a turn runs the working spinner reads
+`31 lines · ctrl+o to expand`, `no output`), MCP calls included (`• exa ›
+web_search_exa "query"`), and a subagent launch is `○ agent › task` with
+`↳ launched`; a failed shell command shows its first two and last two lines
+with `… N more lines` between. When the assistant speaks, the `workspace_*`
+and MCP rows since its last words fold to one dim line ("Read 3 files, ran 9
+shell commands, called 2 MCP tools"); clicking it or Ctrl+O brings every row
+back. An async child that ends prints `○ agent finished · task`, or its status
+word (`failed`/`stopped` red, `paused`/`partial`/`detached` amber).
+Everything sits two columns in, the `❯` prompt and status line included.
+While a turn runs the working spinner reads
 `Interpolating… 1m 12s` (a random π-flavoured verb from `rows.mjs`); when it
 ends a `π Interpolated for 3m 34s · done 9:04 pm` line is appended — only once
 no background child is live, otherwise after the child's follow-up run settles
@@ -135,9 +141,9 @@ no background child is live, otherwise after the child's follow-up run settles
 carries model · context · usage · branch on the left and the workflow mode on
 the right.
 
-Running children hang under the status line: a `π main` row, then `⊙ title ·
-tokens · model` per child (title cut at a word boundary to 36 columns; five
-rows, then `↓ N more`; queued children dim). The composer is a shaded block
+Running children hang under the status line as `○ title · tokens · model`
+rows (title cut at a word boundary to 36 columns; five rows, then `↓ N more`;
+queued children dim). The composer is a shaded block
 with a `❯` prompt and no placeholder. Arrow-down from the last line of the
 prompt moves a `›` cursor into the rows; up/down move it, Enter shows the
 highlighted child's transcript tail and model in an overlay (Esc closes; a
@@ -150,7 +156,7 @@ restores the screen and prints only the resume command
 Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
 
 - Documented pi surfaces: tool renderers (`renderShell: "self"`,
-  `context.expanded/toolCallId/invalidate`), `registerMarkdownTransformer`,
+  `context.expanded/toolCallId/invalidate/state`), `registerMarkdownTransformer`,
   `appendEntry`/`registerEntryRenderer`, `setFooter`, `setHeader`,
   `setEditorComponent`, `setWorkingMessage`, `setHiddenThinkingLabel`, the
   `agent_start/agent_end/agent_settled`, `message_update/message_end`,
@@ -158,6 +164,18 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
   `subagents:rpc:v1` status reply and `subagent:async-started/complete`
   events. `stability.test.mjs` checks every import and event name against the
   package exports and docs.
+- Plugin rows: pi-subagents and pi-mcp-adapter receive a Proxy of the
+  extension API whose `registerTool` swaps `renderShell`/`renderCall`/
+  `renderResult` on `subagent`, `mcp` and `mcp__*` (`index.mjs` `pluginApi`);
+  rests on both plugins registering through the API they are handed and pi
+  keeping the definition object (`loader.js`). Rows read `args` and the result
+  text; the two `details` reads are the adapter's `error` (failures it reports
+  without `isError`) and pi-subagents' `asyncId` (a launch). No upstream
+  override API exists (earendil-works/pi#3541); `stability.test.mjs` pins the
+  registrations and both fields.
+- Session surfaces: pi's `resetExtensionUI` (on `/new`, `/resume`) clears the
+  header, footer, custom editor and hidden-thinking label, so `session_start`
+  re-applies them every time; pinned in `stability.test.mjs`.
 - Exported but undocumented: `renderDiff`, `keyHint`, `getMarkdownTheme`,
   `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
   render shape the shaded composer relies on — `renderTopBorder`,
@@ -165,7 +183,14 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
 - Heuristic: fleet rows pair with async runs by agent label, a 30 s start
   window and sibling rank (`fleet.mjs` `runIdFor`); the DTO's keys are opaque
   and its `goal` is never filled in 0.66.0. `fleet.test.mjs` pins it; the
-  upstream fix is a `goal`-populating DTO.
+  upstream fix is a `goal`-populating DTO. Completion lines take each result's
+  resolved `status` from the `subagent:async-complete` payload (the result
+  file spread plus `runId`), falling back to `state`, `success` and `agent`, and the task from the launch's own
+  tool events, since `async-started` redacts it. Row text assumes the bash
+  tool's `(no output)` stand-in and `Command exited with code N` trailer,
+  pi's per-row click toggling one row's `expanded` (the fold's last row shares
+  its flag with the group), and marked keeping one leading space (the
+  assistant bullet's column). All pinned in `stability.test.mjs`.
 - Outside the npm pin: the status line's usage segments come from `codex
   app-server` JSON-RPC (`account/rateLimits/read`), a codex-cli surface with no
   published contract: re-verify after every codex-cli bump (last verified

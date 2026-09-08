@@ -1,6 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-07 evening (transcript redesign and lean pass; earlier: guard parity: applied workflow copy and
+Last updated: 2026-09-08 (dot form everywhere; earlier: 2026-09-07 evening
+transcript redesign and lean pass; guard parity: applied workflow copy and
 node_modules symlink, relayed policy messages, Claude-shaped transcript rows,
 ask-user plugin; earlier: fourth comparison run: footer-hosted fleet rows, launch-
 sourced task text, sibling rank pairing; third run: one-turn launches, Claude
@@ -239,6 +240,40 @@ live-tested on the host.
   login` all three harnesses share), the codex app-server usage read
   (annotated, outside the npm pin), per-invocation SRT workers (a pool per
   role and epoch is the follow-up).
+
+- 2026-09-08 (dot form everywhere, from four screenshots and a Claude Code
+  reference): plugin rows join the transcript's shape — pi-subagents and
+  pi-mcp-adapter get a Proxy of the extension API whose `registerTool` swaps
+  only `renderShell`/`renderCall`/`renderResult` on `subagent`, `mcp` and
+  `mcp__*` (`index.mjs` `pluginApi`). This supersedes the "registers
+  unwrapped" decision above for presentation only: that Proxy intercepted
+  policy, this one never touches schema or execution, and pi has no
+  renderer-override API (earendil-works/pi#3541; `pi-tool-display` does the
+  same interception with its own look and declares pi ≤ 0.80). Codex advisor
+  concurred and added the adapter's `details.error` (failures without
+  `isError`), read as the one `details` exception. Subagent rows use `○`
+  (owner's pick) and never fold; MCP rows fold ("called 2 MCP tools"). Fixes
+  from the review of `84ab0e1`/`64a3e06`: clicking a folded summary restored
+  one row (pi's MouseRegion flips that row's `expanded` only — the last row now
+  shares its flag with the group and wakes its siblings); `(no output)` was
+  counted as a line; and pi's `resetExtensionUI` on `/new`/`/resume` cleared
+  the header, composer and hidden-thinking label while the once-only guard
+  never re-applied them — the likely reason the screenshots showed reasoning
+  lines and a plain `>` prompt. Also: shell errors preview 2+2 lines with
+  `… N more lines`, a blank line under the header, one two-column inset for
+  rows, `↳` lines, turn line and `❯` prompt, the fold summary dotless at the
+  text column, `○ agent finished · task` completion lines from
+  `subagent:async-complete` (pi-subagents notifies only failures), and the
+  `π main` fleet row dropped. `stability.test.mjs` pins every source string
+  these rely on. Codex review (one round) found two real defects, both fixed:
+  the details-derived failure invalidated the row inside its own render (pi's
+  `invalidate` rebuilds synchronously, duplicating the body — now a microtask)
+  and a paused, resumable child printed as failed (the payload's resolved
+  per-result `status` now leads, worst status wins). Follow-ups left alone: `ops-worker.mjs` SIGTERM force-exit
+  racing the graceful drain; `lint.yml` comments naming `verify.yml`;
+  `.chezmoiignore` for `memory-transport.mjs` where `.chezmoiremove` would
+  delete a stale copy; workflow display-name renames vs GitHub required
+  checks; repo-global `legacy-peer-deps`.
 
 ## Verification and remaining gates
 

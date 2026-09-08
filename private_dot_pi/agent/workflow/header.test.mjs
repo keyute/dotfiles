@@ -9,7 +9,8 @@ test("the header is the mascot over a version line, coloured through the theme",
   assert.equal(lines[1], "     <text>█<dim>▌  <text>█<dim>▌");
   assert.equal(lines[2], `  <accent>${"█".repeat(14)}`);
   assert.equal(lines[3], "     <accent>██    <accent>██");
-  assert.equal(lines.at(-1), "  *<accent>pi<dim> v1.2.3");
+  assert.equal(lines.at(-2), "  *<accent>pi<dim> v1.2.3");
+  assert.equal(lines.at(-1), "");
 });
 
 test("installHeader gives pi a component rendering the mascot", () => {

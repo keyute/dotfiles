@@ -1,11 +1,16 @@
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, keyHint, renderDiff } from "@earendil-works/pi-coding-agent";
 
-// Transcript glyphs (docs/pi-design.md): Codex's bullet for rows, ↳ for the
-// line under a row, π for anything the harness says in its own voice.
+// Transcript glyphs (docs/pi-design.md): Codex's bullet for rows, a hollow
+// circle for subagents, ↳ for the line under a row, π for anything the
+// harness says in its own voice. Every row sits at the shared two-column inset.
 export const BULLET = "•";
+export const CHILD = "○";
 export const TURN_GLYPH = "π";
 export const SUB = "↳";
+export const PAD = "  ";
+export const TITLE_WIDTH = 36;
+const PREVIEW_WIDTH = 48;
 
 // [running, done] pairs for the turn line; pi/circle/maths flavoured. Edit freely.
 export const TURN_VERBS = [
@@ -23,17 +28,36 @@ export const TURN_VERBS = [
   ["Transcending", "Transcended"],
 ];
 
+// The SDK bash tool substitutes this text for empty output.
+const NO_OUTPUT = "(no output)";
+const EXIT_STATUS = /^Command exited with code \d+$/;
+const ELIDED = /^… \d+ more lines$/;
+// Tools whose collapsed row hides a body worth expanding.
+const HINTED = new Set(["bash", "read", "mcp", "subagent"]);
+
 const firstLine = value => String(value ?? "").split("\n")[0];
-const resultText = result => (result?.content ?? []).filter(c => c.type === "text").map(c => c.text ?? "").join("\n").trim();
+const resultText = result => {
+  const text = (result?.content ?? []).filter(c => c.type === "text").map(c => c.text ?? "").join("\n").trim();
+  return text === NO_OUTPUT ? "" : text;
+};
 const nonEmpty = text => text.split("\n").filter(line => line.trim());
 const plural = (n, noun, nouns = `${noun}s`) => `${n} ${n === 1 ? noun : nouns}`;
-const indent = line => `  ${line}`;
+const indent = line => `${PAD}${line}`;
+const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
+
+export function shortTitle(text, width = TITLE_WIDTH) {
+  const title = oneLine(text);
+  if (title.length <= width) return title;
+  const cut = title.slice(0, width - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${space > width / 2 ? cut.slice(0, space) : cut}…`;
+}
 
 // The glyph carries the row's state, as Claude Code's does: plain while the
 // call is running, then success or error.
-export function glyph(theme, { isPartial, isError }) {
-  if (isPartial) return BULLET;
-  return theme.fg(isError ? "error" : "success", BULLET);
+export function glyph(theme, { isPartial, isError }, mark = BULLET) {
+  if (isPartial) return mark;
+  return theme.fg(isError ? "error" : "success", mark);
 }
 
 export function callTitle(name, args = {}) {
@@ -50,6 +74,33 @@ export function callTitle(name, args = {}) {
   }
 }
 
+// Plugin rows: pi-mcp-adapter's direct tools are `mcp__<server>_<tool>` and its
+// proxy takes the same server-prefixed name in `tool`; pi-subagents' launch
+// carries `agent` and `task`, its other actions an `action`.
+const mcpName = (raw, servers) => {
+  const server = servers.filter(s => raw.startsWith(`${s}_`)).sort((a, b) => b.length - a.length)[0];
+  return server ? `${server} › ${raw.slice(server.length + 1)}` : raw.replace("_", " › ");
+};
+const preview = args => {
+  const value = Object.values(args ?? {}).find(v => typeof v === "string" && v.trim());
+  return value ? ` "${shortTitle(value, PREVIEW_WIDTH)}"` : "";
+};
+
+export function pluginTitle(name, args = {}, servers = []) {
+  if (name === "subagent") {
+    if (args.action) return `subagent ${args.action}${args.id ? ` ${args.id}` : ""}`;
+    const task = shortTitle(args.task, PREVIEW_WIDTH);
+    return `${args.agent ?? "subagent"}${task ? ` › ${task}` : ""}`;
+  }
+  if (name === "mcp") {
+    if (args.tool) return `${mcpName(args.tool, servers)}${preview(args.args)}`;
+    if (args.search) return `mcp search "${shortTitle(args.search, PREVIEW_WIDTH)}"`;
+    if (args.describe) return `mcp describe ${args.describe}`;
+    return "mcp";
+  }
+  return `${mcpName(name.slice("mcp__".length), servers)}${preview(args)}`;
+}
+
 // The one line under a collapsed row: what the result was, never what it said.
 export function resultSummary(name, result) {
   if (!result) return "";
@@ -63,14 +114,22 @@ export function resultSummary(name, result) {
   const text = resultText(result);
   if (name === "grep") return plural(text.split("\n").filter(line => /^[^:\n]+:\d+: /.test(line)).length, "match", "matches");
   if (name === "find" || name === "ls") return !text || /^No /.test(text) ? "" : plural(nonEmpty(text).length, "entry", "entries");
-  return text ? plural(text.split("\n").length, "line") : "";
+  if (text) return plural(text.split("\n").length, "line");
+  return name === "read" ? "" : "no output";
 }
 
-// Errors always show in full; everything else waits for ctrl+o.
+// Everything waits for ctrl+o except errors, which show head and tail with
+// the exit status last (a shell error), or in full (anything else).
 export function bodyLines(name, result, { expanded = false, isError = false } = {}) {
   if (!result) return [];
   const text = resultText(result);
-  if (isError) return nonEmpty(text);
+  if (isError) {
+    const lines = nonEmpty(text);
+    if (expanded || name !== "bash") return lines;
+    const status = EXIT_STATUS.test(lines.at(-1) ?? "") ? [lines.pop()] : [];
+    if (lines.length <= 5) return [...lines, ...status];
+    return [...lines.slice(0, 2), `… ${lines.length - 4} more lines`, ...lines.slice(-2), ...status];
+  }
   if (!expanded) return [];
   if (name === "edit") return typeof result.details?.diff === "string" ? renderDiff(result.details.diff).split("\n") : [];
   if (name === "write") return [];
@@ -80,21 +139,24 @@ export function bodyLines(name, result, { expanded = false, isError = false } = 
 function renderBody(name, result, options, theme, context) {
   const lines = [];
   const summary = context.isError ? "" : resultSummary(name, result);
-  const hint = summary && !options.expanded && (name === "bash" || name === "read") ? ` · ${keyHint("app.tools.expand", "to expand")}` : "";
-  if (summary) lines.push(theme.fg("muted", `${SUB} ${summary}${hint}`));
+  const expandable = !options.expanded && HINTED.has(name) && bodyLines(name, result, { expanded: true, isError: context.isError }).length > 0;
+  const hint = ` · ${keyHint("app.tools.expand", "to expand")}`;
+  if (summary) lines.push(theme.fg("muted", `${SUB} ${summary}${expandable ? hint : ""}`));
   for (const line of bodyLines(name, result, { expanded: options.expanded, isError: context.isError })) {
-    lines.push(name === "edit" && !context.isError ? line : theme.fg(context.isError ? "error" : "toolOutput", line));
+    if (context.isError && ELIDED.test(line)) lines.push(theme.fg("muted", `${line}${hint}`));
+    else lines.push(name === "edit" && !context.isError ? line : theme.fg(context.isError ? "error" : "toolOutput", line));
   }
-  return new Text(lines.map(indent).join("\n"), 0, 0);
+  return new Text(lines.map(indent).join("\n"), PAD.length, 0);
 }
 
-// Fold-on-speak, as Claude Code does it: the workspace rows since the last
-// assistant text form a group; when the assistant speaks again the group
-// collapses to one line ("Read 3 files, ran 2 shell commands") and ctrl+o
-// brings the rows back. State is per process — a resumed session renders its
-// old rows unfolded.
-const WORDS = { read: ["read", "file"], bash: ["ran", "shell command"], grep: ["searched for", "pattern"], edit: ["edited", "file"], write: ["wrote", "file"], list: ["listed", "path"] };
+// Fold-on-speak, as Claude Code does it: the workspace and MCP rows since the
+// last assistant text form a group; when the assistant speaks again the group
+// collapses to one line ("Read 3 files, ran 2 shell commands") and clicking it
+// or ctrl+o brings the rows back. State is per process — a resumed session
+// renders its old rows unfolded.
+const WORDS = { read: ["read", "file"], bash: ["ran", "shell command"], grep: ["searched for", "pattern"], edit: ["edited", "file"], write: ["wrote", "file"], list: ["listed", "path"], mcp: ["called", "MCP tool"] };
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
+const isMcp = name => name === "mcp" || name.startsWith("mcp__");
 
 export function createFolds() {
   return { current: null, byId: new Map(), invalidate: new Map() };
@@ -102,7 +164,7 @@ export function createFolds() {
 export const defaultFolds = createFolds();
 
 export function addFold(folds, id, tool) {
-  folds.current ??= { ids: [], counts: {}, collapsed: false };
+  folds.current ??= { ids: [], counts: {}, collapsed: false, open: false };
   folds.current.ids.push(id);
   const key = countKey(tool);
   folds.current.counts[key] = (folds.current.counts[key] ?? 0) + 1;
@@ -127,33 +189,83 @@ const speaks = event => event.message?.role === "assistant" && (event.message.co
 export function installFolding(pi, folds = defaultFolds) {
   pi.on("tool_execution_start", event => {
     if (event.toolName.startsWith("workspace_")) addFold(folds, event.toolCallId, event.toolName.slice("workspace_".length));
+    else if (isMcp(event.toolName)) addFold(folds, event.toolCallId, "mcp");
   });
   // Streaming replies announce their text in updates; non-streaming ones only at the end.
   pi.on("message_update", event => { if (speaks(event)) closeFolds(folds); });
   pi.on("message_end", event => { if (speaks(event)) closeFolds(folds); });
 }
 
-// Renderers for the sandboxed workspace tools. A folded row renders nothing;
-// the group's last row carries the summary instead of its title. A failed row
-// stays visible in full even inside a fold.
-export function toolRenderers(name, folds = defaultFolds) {
-  const folded = context => { const group = folds.byId.get(context.toolCallId); return group?.collapsed && !context.expanded ? group : null; };
+// The collapsed group's only surface is its last row, and pi's click flips
+// that one row's `expanded`; the row shares the flag with the group and wakes
+// its siblings, so a click (or ctrl+o) opens and closes every row together.
+function foldedGroup(folds, context) {
+  const group = folds.byId.get(context.toolCallId);
+  if (!group?.collapsed) return null;
+  const open = Boolean(context.expanded);
+  if (group.ids.at(-1) === context.toolCallId && group.open !== open) {
+    group.open = open;
+    for (const id of group.ids) if (id !== context.toolCallId) folds.invalidate.get(id)?.();
+  }
+  return group.open || open ? null : group;
+}
+
+// A row is `glyph title` and one ↳ line; a folded row renders nothing while the
+// group's last row carries the summary at the text column. A failed row stays
+// visible in full even inside a fold.
+function rowRenderers({ name, title, mark = BULLET, folds = defaultFolds, failed = (_result, context) => context.isError }) {
+  const status = context => (context.state?.failed ? { ...context, isError: true } : context);
   return {
     renderShell: "self",
-    renderCall(args, theme, context) {
+    renderCall(args, theme, rawContext) {
       // The first render precedes tool_execution_start, so every render records the invalidator.
-      folds.invalidate.set(context.toolCallId, context.invalidate);
-      const title = `${glyph(theme, context)} ${theme.fg("toolTitle", callTitle(name, args))}`;
-      const group = folded(context);
-      if (!group) return new Text(title, 0, 0);
+      folds.invalidate.set(rawContext.toolCallId, rawContext.invalidate);
+      const context = status(rawContext);
+      const line = `${glyph(theme, context, mark)} ${theme.fg("toolTitle", title(args))}`;
+      const group = foldedGroup(folds, context);
+      if (!group) return new Text(line, PAD.length, 0);
       const lines = [];
-      if (group.ids.at(-1) === context.toolCallId) lines.push(theme.fg("muted", summarise(group.counts)));
-      if (context.isError) lines.push(title);
-      return new Text(lines.join("\n"), 0, 0);
+      if (group.ids.at(-1) === context.toolCallId) lines.push(indent(theme.fg("muted", summarise(group.counts))));
+      if (context.isError) lines.push(line);
+      return new Text(lines.join("\n"), PAD.length, 0);
     },
-    renderResult(result, options, theme, context) {
-      if (folded(context) && !context.isError) return new Text("", 0, 0);
+    renderResult(result, options, theme, rawContext) {
+      // The call slot only sees pi's isError; a failure known from the result
+      // is shared through the row's state so the glyph turns too. pi's
+      // invalidate rebuilds the row synchronously, so it runs after this render
+      // or the result would be appended twice.
+      if (rawContext.state && !rawContext.isError && !rawContext.state.failed && failed(result, rawContext)) {
+        rawContext.state.failed = true;
+        queueMicrotask(() => rawContext.invalidate?.());
+      }
+      const context = status(rawContext);
+      if (foldedGroup(folds, context) && !context.isError) return new Text("", 0, 0);
       return renderBody(name, result, options, theme, context);
+    },
+  };
+}
+
+export function toolRenderers(name, folds = defaultFolds) {
+  return rowRenderers({ name, title: args => callTitle(name, args), folds });
+}
+
+// pi-mcp-adapter reports init, auth and server failures in details.error
+// without isError; a subagent launch answers with its run id and finishes later.
+export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {}) {
+  const subagent = name === "subagent";
+  const renderers = rowRenderers({
+    name: subagent ? "subagent" : "mcp",
+    title: args => pluginTitle(name, args, servers),
+    mark: subagent ? CHILD : BULLET,
+    folds,
+    failed: (result, context) => context.isError || Boolean(result?.details?.error),
+  });
+  if (!subagent) return renderers;
+  return {
+    ...renderers,
+    renderResult(result, options, theme, context) {
+      if (result?.details?.asyncId && !context.isError) return new Text(indent(theme.fg("muted", `${SUB} launched`)), PAD.length, 0);
+      return renderers.renderResult(result, options, theme, context);
     },
   };
 }
@@ -161,30 +273,41 @@ export function toolRenderers(name, folds = defaultFolds) {
 export const planRenderers = {
   renderShell: "self",
   renderCall(_args, theme, context) {
-    return new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Updated plan")}`, 0, 0);
+    return new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Updated plan")}`, PAD.length, 0);
   },
   renderResult(result, options, theme, context) {
     const approved = /approved;/.test(resultText(result));
     const container = new Container();
-    container.addChild(new Text(indent(`${theme.fg("muted", SUB)} ${theme.fg(approved ? "success" : "warning", approved ? "approved" : "not approved")}`), 0, 0));
-    if (options.expanded && context.args?.plan) container.addChild(new Markdown(context.args.plan, 2, 0, getMarkdownTheme()));
+    container.addChild(new Text(indent(`${theme.fg("muted", SUB)} ${theme.fg(approved ? "success" : "warning", approved ? "approved" : "not approved")}`), PAD.length, 0));
+    if (options.expanded && context.args?.plan) container.addChild(new Markdown(context.args.plan, PAD.length * 2, 0, getMarkdownTheme()));
     return container;
   },
 };
 
 // Assistant text gets the bullet as a plain prefix (pi-tui's list marker is a
-// fixed dash, so a list item would not give this glyph). Block-level starts
-// keep their syntax by taking the bullet as their own paragraph.
+// fixed dash, so a list item would not give this glyph). pi renders assistant
+// text one column in; the leading space, which marked keeps, lands the bullet
+// on the rows' column. Block-level starts keep their syntax by taking the
+// bullet as their own paragraph.
 export function bulletMarkdown(markdown, { messageType }) {
   if (messageType !== "assistant") return markdown;
   const body = markdown.trimStart();
   if (!body) return markdown;
-  return /^(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? `${BULLET}\n\n${body}` : `${BULLET} ${body}`;
+  return /^(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? ` ${BULLET}\n\n${body}` : ` ${BULLET} ${body}`;
 }
 
 export function answerLines(answers, theme) {
   const head = `${theme.fg("success", BULLET)} ${theme.fg("toolTitle", `User answered pi's ${answers.length === 1 ? "question" : "questions"}`)}`;
   return [head, ...answers.map(({ question, answer }) => indent(`${theme.fg("muted", SUB)} ${question} ${theme.fg("muted", "→")} ${answer}`))];
+}
+
+// One line when an async child ends; pi-subagents' own notice shows only for
+// failures, so this is the transcript's record of a finished child.
+export function completionLine({ agent, task, status }, theme) {
+  const ok = status === "completed";
+  const colour = ok ? "success" : status === "failed" || status === "stopped" ? "error" : "warning";
+  const title = `${agent} ${ok ? "finished" : status}`;
+  return `${theme.fg(colour, CHILD)} ${theme.fg("toolTitle", title)}${task ? theme.fg("muted", ` · ${shortTitle(task, 60)}`) : ""}`;
 }
 
 export function formatDuration(ms) {

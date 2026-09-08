@@ -14,7 +14,7 @@ test("composer is a shaded block: blank shaded rows instead of rules, a prompt, 
   const lines = editor().render(40);
   assert.equal(lines[0], `${BG}${" ".repeat(40)}\x1b[49m`);
   assert.equal(lines.at(-1), lines[0]);
-  assert.ok(lines[1].startsWith(`${BG}❯ `), lines[1]);
+  assert.ok(lines[1].startsWith(`${BG}  ❯ `), lines[1]);
   assert.match(lines[1], /\x1b\[0m\x1b\[48;5;1m/);
   assert.ok(lines[1].endsWith("\x1b[49m"));
 });
@@ -22,14 +22,14 @@ test("composer is a shaded block: blank shaded rows instead of rules, a prompt, 
 test("prompt survives the host copying the default editor's paddingX onto the custom editor", () => {
   const caret = editor();
   caret.setPaddingX(0);
-  assert.ok(caret.render(40)[1].startsWith(`${BG}❯ `));
+  assert.ok(caret.render(40)[1].startsWith(`${BG}  ❯ `));
 });
 
 test("padding clamp still honours a larger configured padding", () => {
   const caret = editor();
-  caret.setPaddingX(3);
-  assert.equal(caret.getPaddingX(), 3);
-  assert.ok(caret.render(40)[1].startsWith(`${BG}❯ `));
+  caret.setPaddingX(5);
+  assert.equal(caret.getPaddingX(), 5);
+  assert.ok(caret.render(40)[1].startsWith(`${BG}  ❯ `));
 });
 
 test("down enters fleet navigation only when the editor could not move, and other keys fall back to typing", () => {
