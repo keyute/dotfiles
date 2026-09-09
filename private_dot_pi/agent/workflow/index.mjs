@@ -14,7 +14,7 @@ import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createTasks } from "./tasks.mjs";
-import { PAD, PROMPT, answerLines, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { PAD, PROMPT, answerLines, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 // The classifier's only evidence source: a shell command's record (command,
@@ -68,17 +68,36 @@ const isDirectMcpTool = name => name.startsWith("mcp__");
 // The prompt glyph and its trailing space take the editor's padding columns.
 const PROMPT_PADDING = PAD.length;
 
-// Plugins register their tools through the API they are handed and pi keeps the
-// definition object, so a Proxy that decorates every registration gives their
-// rows the transcript's shape without touching schema or execution. Only
-// `registerTool` is intercepted; everything else (events included) is the
-// original, and the raw function is called on the raw API because the adapter
-// extracts it.
-export function pluginApi(pi, renderersFor) {
+// pi-subagents' control notice: a message whose content is the model's
+// instructions (run id, four subagent({…}) calls) and whose own renderer draws
+// all of it in a box. The content is left alone — the model acts on it — and
+// only the row is ours. A payload missing the fields the row needs is the
+// plugin's to draw, so the guard is total and never throws: pi drops a throwing
+// renderer to its own box, which is the notice in full.
+const CONTROL_NOTICE = "subagent_control_notice";
+export const controlNotice = (message, _options, theme) => {
+  const event = message?.details?.event;
+  if (!event?.agent || !event.message) return undefined;
+  return new Text(noticeLine({ agent: event.agent, failed: event.reason === "completion_guard", message: event.message }, theme), 0, 0);
+};
+
+// Plugins register their tools and their custom message renderers through the
+// API they are handed and pi keeps what they pass, so a Proxy that decorates
+// every registration gives their rows the transcript's shape without touching
+// schema, execution or message content. A message renderer we own is composed
+// over the plugin's, which stays as the fallback: ours answers undefined for a
+// payload it does not recognise, so a plugin that changes its details shape
+// renders its own way again rather than losing its notice. Everything else
+// (events included) is the original, and the raw function is called on the raw
+// API because the adapter extracts it.
+export function pluginApi(pi, renderersFor, messageRenderers = {}) {
   return new Proxy(pi, {
     get(target, key, receiver) {
-      if (key !== "registerTool") return Reflect.get(target, key, receiver);
-      return tool => target.registerTool({ ...tool, ...renderersFor(tool.name) });
+      if (key === "registerTool") return tool => target.registerTool({ ...tool, ...renderersFor(tool.name) });
+      if (key !== "registerMessageRenderer") return Reflect.get(target, key, receiver);
+      return (type, renderer) => target.registerMessageRenderer(type, Object.hasOwn(messageRenderers, type)
+        ? (message, options, theme) => messageRenderers[type](message, options, theme) ?? renderer(message, options, theme)
+        : renderer);
     },
   });
 }
@@ -88,8 +107,12 @@ export function pluginApi(pi, renderersFor) {
 // command's own getArgumentCompletions never runs and Tab offers raw paths. The
 // forced request asked again unforced is the command's candidates.
 const WRAPPED = Symbol.for("pi-workflow:argument-completions");
+// The path separators pi does not treat as typing.
+const SEPARATORS = [" ", "/", "~"];
 // Whether the cursor sits in a command's arguments, and which command's.
-const commandArgument = (lines, cursorLine, cursorCol) => (lines[cursorLine] ?? "").slice(0, cursorCol).match(/^\/(\S+) /)?.[1];
+// pi runs a slash command from the first line only (`isSlashMenuAllowed`), so a
+// later line opening with one is prose.
+const commandArgument = (lines, cursorLine, cursorCol) => cursorLine === 0 && (lines[0] ?? "").slice(0, cursorCol).match(/^\/(\S+) /)?.[1];
 export function argumentCompletions(current) {
   // pi keeps stacked providers across /reload, where session_start runs again
   // without the invalidation that clears them.
@@ -166,7 +189,24 @@ export class CaretEditor extends sdk.CustomEditor {
       if (!this.isShowingAutocomplete() && /^\/\S+ (.*[ /])?$/.test((this.getLines()[line] ?? "").slice(0, col))) super.handleInput(data);
       return;
     }
+    const at = this.getCursor();
+    const was = (this.getLines()[at.line] ?? "").length;
     super.handleInput(data);
+    // pi opens the argument menu while typing on [A-Za-z0-9.\-_] only, so the
+    // characters a path is typed with — the command's space, `/` and `~` — left
+    // it closed. The same unforced request a letter makes is made for them,
+    // through the gate the completion wrapper uses so the two cannot drift. The
+    // character pi inserted is read back instead of matching `data`: a terminal
+    // negotiating kitty or modifyOtherKeys sends a printable as an escape
+    // sequence, and pi decodes it. The line has to have grown by that one
+    // character too: moving the cursor right across a `/` advances it just the
+    // same, and history recall replaces the whole line. An open menu has
+    // already re-asked itself for the character; asking again would cancel that
+    // request and start it over.
+    const { line, col } = this.getCursor();
+    const text = this.getLines()[line] ?? "";
+    if (line !== at.line || col !== at.col + 1 || text.length !== was + 1 || this.isShowingAutocomplete()) return;
+    if (SEPARATORS.includes(text[col - 1]) && commandArgument(this.getLines(), line, col)) this.tryTriggerAutocomplete();
   }
   // The host copies the settings editorPaddingX (default 0) onto custom
   // editors right after construction and on settings reloads; the caret
@@ -396,7 +436,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
-  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }));
+  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice });
   if (isRoot) {
     pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", handler: (_args, ctx) => setMode("plan", ctx) });
     pi.registerCommand("execute", { description: "Approve the current plan and enable scoped execution", handler: async (_args, ctx) => {

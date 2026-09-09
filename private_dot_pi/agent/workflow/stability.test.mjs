@@ -129,6 +129,12 @@ const pins = [
   ["a completion spreads the result file (agent, success, state, durationMs) plus runId and each result's resolved status", "pi-subagents/src/runs/background/result-watcher.ts", [/emit\(SUBAGENT_ASYNC_COMPLETE_EVENT, \{\s*\.\.\.data,\s*runId,/, /data\.success/, /data\.state === "stopped"/, /status: child\.status,/]],
   ["the result file's durationMs runs from launch to end", "pi-subagents/src/runs/background/subagent-runner.ts", [/durationMs: runEndedAt - overallStartTime/]],
   ["Tab inside a command's arguments asks for forced file completion", "@earendil-works/pi-tui/dist/components/editor.js", [/handleTabCompletion\(\) \{/, /this\.forceFileAutocomplete\(true\);/]],
+  ["Tab on a command name with no argument yet is pi's own unforced slash menu, ahead of the forced branch", "@earendil-works/pi-tui/dist/components/editor.js", [/if \(this\.isInSlashCommandContext\(beforeCursor\) && !beforeCursor\.trimStart\(\)\.includes\(" "\)\) \{\s*this\.handleSlashCommandCompletion\(\);/, /handleSlashCommandCompletion\(\) \{\s*this\.requestAutocomplete\(\{ force: false, explicitTab: true \}\);/]],
+  ["typing opens the menu on [A-Za-z0-9.\\-_] only, and an open one re-asks itself", "@earendil-works/pi-tui/dist/components/editor.js", [/else if \(\/\[a-zA-Z0-9\.\\-_\]\/\.test\(char\)\) \{/, /updateAutocomplete\(\) \{[\s\S]{0,200}?this\.requestAutocomplete\(\{ force: this\.autocompleteState === "force", explicitTab: false \}\);/]],
+  ["tryTriggerAutocomplete is the unforced request a typed character makes", "@earendil-works/pi-tui/dist/components/editor.js", [/tryTriggerAutocomplete\(explicitTab = false\) \{\s*this\.requestAutocomplete\(\{ force: false, explicitTab \}\);/]],
+  ["pi-subagents renders its control notice through a registered message renderer, and the notice names the agent", "pi-subagents/src/extension/index.ts", [/registerMessageRenderer<SubagentControlMessageDetails>\(SUBAGENT_CONTROL_MESSAGE_TYPE,/]],
+  ["the control notice's details carry the event the row is built from", "pi-subagents/src/runs/shared/subagent-control.ts", [/`Subagent needs attention: \$\{event\.agent\}`/, /`Subagent failed: \$\{event\.agent\}`/, /`Signal: \$\{event\.message\}`/]],
+  ["a renderer that throws or answers nothing falls back to pi's own custom-message box", "@earendil-works/pi-coding-agent/dist/modes/interactive/components/custom-message.js", [/if \(this\.customRenderer\) \{\s*try \{[\s\S]{0,600}?catch \{/]],
   ["accepting an item with Tab closes the menu without re-opening it", "@earendil-works/pi-tui/dist/components/editor.js", [/kb\.matches\(data, "tui\.input\.tab"\)\) \{\s*const selected = this\.autocompleteList\.getSelectedItem\(\);[\s\S]{0,600}?this\.cancelAutocomplete\(\);/]],
   ["the built-in provider skips its slash branch when the request is forced", "@earendil-works/pi-tui/dist/autocomplete.js", [/if \(!options\.force && textBeforeCursor\.startsWith\("\/"\)\)/, /command\.getArgumentCompletions\(argumentText\)/]],
   ["pi clears the stacked autocomplete providers when a session is invalidated", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/this\.autocompleteProviderWrappers = \[\];/]],
@@ -149,7 +155,7 @@ for (const [claim, file, patterns] of pins) {
 }
 
 // API calls that are not events: each must stay documented.
-const documentedApis = ["pi.sendMessage(", "ctx.ui.select(", "getArgumentCompletions", "ctx.ui.addAutocompleteProvider(", "pi.appendEntry(", "pi.registerEntryRenderer(", "ctx.ui.setWidget(", "setWorkingVisible", "placement"];
+const documentedApis = ["pi.sendMessage(", "ctx.ui.select(", "getArgumentCompletions", "ctx.ui.addAutocompleteProvider(", "pi.appendEntry(", "pi.registerEntryRenderer(", "pi.registerMessageRenderer(", "ctx.ui.setWidget(", "setWorkingVisible", "placement"];
 for (const api of documentedApis) {
   test(`${api} is documented in pi-coding-agent/docs/extensions.md`, () => {
     const docs = readFileSync(join(nodeModules, "@earendil-works", "pi-coding-agent", "docs", "extensions.md"), "utf8");

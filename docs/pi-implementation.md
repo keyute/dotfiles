@@ -1,7 +1,8 @@
 # Pi implementation working record
 
-Last updated: 2026-09-09 (Tab offers only declared candidates, harness.md
-trigger; earlier the same day: Tab scope, fold caret, questionnaire notes; earlier
+Last updated: 2026-09-09 (compact subagent-notice row, `/add-dir` as-you-type
+completion and `..`; earlier the same day: Tab offers only declared candidates,
+harness.md trigger; earlier the same day: Tab scope, fold caret, questionnaire notes; earlier
 the same day: classifier evidence and stages; earlier: 2026-09-08
 unsandboxed shell flag; earlier the same day: dot form everywhere; earlier: 2026-09-07 evening
 transcript redesign and lean pass; guard parity: applied workflow copy and
@@ -631,6 +632,60 @@ live-tested on the host.
   doc's pricing tables actually serve.
   Not applied or live-tested on the host; `npm run test:pi` is green (214 pass,
   0 fail).
+
+- 2026-09-09 (later, from a screenshot and three `/add-dir` reports): the
+  2026-09-08 Proxy above now also intercepts `registerMessageRenderer`, on the
+  same terms — presentation only, message content untouched. pi-subagents drew
+  its control notice as a twelve-line box holding a run UUID, a `Facts:` line
+  and four literal `subagent({ action: … })` calls; that text is the model's
+  instructions and stays in the message's `content`, while the chat gets the
+  completion line's shape (`rows.mjs` `noticeLine`). Ours is composed over the
+  plugin's (`ours(…) ?? theirs(…)`) and is a total shape guard that never
+  throws: `??` does not reach the fallback on a throw, and pi's own catch
+  (`custom-message.js`) would then draw its default box holding the whole
+  notice. Registering ours after `subagents(styled)` would also work today —
+  both land in this extension's one `messageRenderers` map and `Map.set` is
+  last-write-wins — but the Proxy keeps the plugin's renderer as the fallback
+  and does not depend on who registers last.
+  `/add-dir` also completes as you type past a separator: pi opens the menu
+  while typing on `[A-Za-z0-9.\-_]` only, so the command's space, `/` and `~`
+  left it closed, and `CaretEditor` makes the same unforced request
+  (`tryTriggerAutocomplete`, TS-private and pinned) behind the wrapper's own
+  gate, skipped while a menu is open because pi's `updateAutocomplete` has
+  already re-asked for the inserted character. `addableDirs` offers `..`, so
+  the walk goes up as well as down; `rootRejection` polices it for free. The
+  third report — Tab while mid-typing a command name — needed no change:
+  `handleTabCompletion` routes a slash line with no space to
+  `handleSlashCommandCompletion`, an unforced request, ahead of the forced
+  branch the wrapper gates; `caret.test.mjs` already covered it.
+  Codex advisor (`01a0835a-3018-7ed2-abe1-73cfab54cdb4`) agreed on both hooks
+  and supplied the throw case and the open-menu guard; it also argued
+  `super.handleInput("\t")` is the worse trigger — the editor still treats it
+  as forced, so it consults `shouldTriggerFileCompletion`, skips debounce and
+  auto-applies a lone suggestion, and a synthesized `"\t"` only matches a user
+  who has not rebound `tui.input.tab`.
+  Review round (Codex `01a08369-d6ab-7223-ad60-5081c12cac7d` plus a fresh-eyes
+  pass) found three real defects, all fixed: the trigger matched the raw input
+  chunk, so a terminal negotiating kitty CSI-u or modifyOtherKeys — where a
+  printable arrives as an escape sequence pi decodes (`decodePrintableKey`) —
+  never opened the menu at all; the gate did not carry pi's own
+  `isSlashMenuAllowed` (`cursorLine === 0`), so `/add-dir ~` typed on a later
+  line of a multiline message opened a directory menu for a line that cannot
+  run, and `commandArgument` now carries that rule for the Tab path too; and
+  the row repeated itself on the notice it exists for, since
+  `buildControlEvent`'s default idle signal is
+  `"<agent> needs attention (no observed activity for Ns)"` — the row now drops
+  the state phrase and the wrapping brackets as well as the name. Also taken:
+  `Object.hasOwn` for the renderer lookup, since the key is a plugin's string.
+  The re-review round caught the fix's own defect: a forward cursor delta is not
+  an insertion — pressing Right across the `/` in `/add-dir ~/` advanced the
+  cursor exactly as typing it does and opened the menu — so the trigger now
+  requires the line to have grown by that one character, which also excludes
+  history recall replacing the whole line.
+  Left as a follow-up: `handlePaste` cancels the menu and nothing re-opens it,
+  so a pasted path into `/add-dir` completes only after a further keystroke.
+  Not applied or live-tested on the host; `npm run test:pi` is green
+  (230 pass, 7 skipped, 0 fail).
 
 ## Verification and remaining gates
 

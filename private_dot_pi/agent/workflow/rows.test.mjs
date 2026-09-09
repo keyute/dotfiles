@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, formatDuration, formatTurn, glyph, installFolding, pluginRenderers, pluginTitle, resultSummary, summarise, toolRenderers } from "./rows.mjs";
+import { addFold, answerLines, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, formatDuration, formatTurn, glyph, installFolding, noticeLine, pluginRenderers, pluginTitle, resultSummary, summarise, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -309,4 +309,21 @@ test("a failed row stays visible inside a fold, under the summary when it is the
   closeFolds(folds);
   assert.deepEqual(rendered(renderers.renderCall({ command: "false" }, theme, failed)), ["<muted>▸ Ran 1 shell command", "<error>• <toolTitle>Ran false"]);
   assert.deepEqual(rendered(renderers.renderResult(result("boom"), { expanded: false }, theme, failed)), ["  <error>boom"]);
+});
+
+test("a control notice is one row: the state, and the signal without what the title already carries", () => {
+  assert.equal(noticeLine({ agent: "researcher", message: "researcher is waiting for a supervisor reply" }, theme),
+    "<warning>• <toolTitle>researcher needs attention<muted> · is waiting for a supervisor reply");
+  // buildControlEvent's default idle signal repeats the state and parenthesizes the reason.
+  assert.equal(noticeLine({ agent: "researcher", message: "researcher needs attention (no observed activity for 300s)" }, theme),
+    "<warning>• <toolTitle>researcher needs attention<muted> · no observed activity for 300s");
+  assert.equal(noticeLine({ agent: "researcher", message: "researcher needs attention after repeated mutating tool failures" }, theme),
+    "<warning>• <toolTitle>researcher needs attention<muted> · after repeated mutating tool failures");
+  // The completion guard's own signal names neither state, so it survives whole.
+  assert.equal(noticeLine({ agent: "ts-reviewer", failed: true, message: "ts-reviewer completed without making edits for an implementation task" }, theme),
+    "<error>• <toolTitle>ts-reviewer failed<muted> · completed without making edits for an implementation task");
+  // A trailing bracket that does not wrap the whole reason stays put.
+  assert.equal(noticeLine({ agent: "ts-reviewer", failed: true, message: "ts-reviewer failed timing out (soft)" }, theme),
+    "<error>• <toolTitle>ts-reviewer failed<muted> · timing out (soft)");
+  assert.equal(noticeLine({ agent: "researcher", message: "" }, theme), "<warning>• <toolTitle>researcher needs attention");
 });

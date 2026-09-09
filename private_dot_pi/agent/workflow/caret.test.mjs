@@ -65,7 +65,7 @@ test("down enters fleet navigation only when the editor could not move, and othe
 
 // The real provider, so the command lookup, the prefix it returns and the
 // insertion its applyCompletion performs are pi's own.
-const dirs = { "": ["../one/", "../two/"], "../one/": ["../one/a/", "../one/b/"] };
+const dirs = { "": ["../one/", "../two/"], "../one/": ["../one/a/", "../one/b/"], "~/": ["~/p/", "~/q/"] };
 const commands = [
   { name: "add-dir", description: "Add a directory", getArgumentCompletions: prefix => (dirs[prefix] ?? []).map(value => ({ value, label: value })) },
   { name: "remove-dir", description: "Remove a directory", getArgumentCompletions: prefix => ["/tmp/added", "/tmp/other"].filter(root => root.startsWith(prefix)).map(value => ({ value, label: value })) },
@@ -79,6 +79,9 @@ const completing = () => {
 // The request runs off the keystroke, and a re-issued tab queues behind the one
 // before it.
 const tab = async caret => { caret.handleInput("\t"); for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
+const type = async (caret, text) => { for (const char of text) caret.handleInput(char); for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
+// One chunk, as a terminal sends an encoded key.
+const keys = async (caret, data) => { caret.handleInput(data); for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
 // The rows under the composer, without the highlight marker.
 const menu = caret => caret.render(40).slice(3).map(line => line.replace(/\x1b\[[0-9;]*m/g, "").trim().replace(/^→ /, "")).filter(Boolean);
 
@@ -122,5 +125,58 @@ test("a command that takes no argument opens nothing, so accepting its name ends
   // argument position; the command declares no candidates, so nothing opens.
   await tab(caret);
   assert.equal(caret.getText(), "/new ");
+  assert.deepEqual(menu(caret), []);
+});
+
+test("typing a path separator opens the argument menu pi leaves closed", async () => {
+  const caret = completing();
+  // pi asks on the letters, and `~` answers with nothing, which closes the menu.
+  await type(caret, "/add-dir ~");
+  assert.deepEqual(menu(caret), []);
+  await type(caret, "/");
+  assert.deepEqual(menu(caret), ["~/p/", "~/q/"]);
+});
+
+test("a separator outside a command's arguments opens nothing", async () => {
+  const caret = completing();
+  await type(caret, "see ~/one and / or ../two");
+  assert.deepEqual(menu(caret), []);
+});
+
+test("a separator under an open menu is pi's own update, not a second request", async () => {
+  let calls = 0;
+  const caret = editor();
+  const provider = argumentCompletions(new CombinedAutocompleteProvider(commands, process.cwd()));
+  caret.setAutocompleteProvider({ ...provider, getSuggestions: (...args) => { calls++; return provider.getSuggestions(...args); } });
+  await type(caret, "/add-dir");
+  const asked = calls;
+  await type(caret, " ");
+  assert.deepEqual(menu(caret), ["../one/", "../two/"]);
+  assert.equal(calls - asked, 1);
+});
+
+test("a separator reaches the menu through the character pi inserted, not the bytes that carried it", async () => {
+  const caret = completing();
+  await type(caret, "/add-dir ~");
+  // kitty's encoding of "/", as one chunk: pi decodes it before inserting, so
+  // matching the sequence would miss the keystroke entirely.
+  await keys(caret, "\x1b[47;1u");
+  assert.deepEqual(menu(caret), ["~/p/", "~/q/"]);
+});
+
+test("a slash command is the first line's, so a separator on a later line opens nothing", async () => {
+  const caret = completing();
+  await type(caret, "look at");
+  await keys(caret, "\x1b\r"); // pi's newline
+  await type(caret, "/add-dir ~/");
+  assert.equal(caret.getLines().length, 2);
+  assert.deepEqual(menu(caret), []);
+});
+
+test("moving the cursor across a separator is not typing one", async () => {
+  const caret = completing();
+  caret.setText("/add-dir ~/");
+  await keys(caret, "\x1b[D"); // left, back over the "/"
+  await keys(caret, "\x1b[C"); // right, across it again
   assert.deepEqual(menu(caret), []);
 });

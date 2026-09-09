@@ -90,7 +90,10 @@ test("/add-dir completions offer the addable siblings and nothing addRoot refuse
   const p = fixture(t);
   mkdirSync(join(p.cwd, "..", "other"));
   mkdirSync(join(p.cwd, "..", ".hidden"));
-  assert.deepEqual(p.addableDirs(""), ["../cache/", "../other/", "../scratch/"]);
+  assert.deepEqual(p.addableDirs(""), ["../../", "../cache/", "../other/", "../scratch/"]);
+  // `..` is offered so the walk goes up as well as down, and a separator-ended
+  // prefix is the same list.
+  assert.deepEqual(p.addableDirs("../"), ["../../", "../cache/", "../other/", "../scratch/"]);
   assert.throws(() => p.addRoot("../control"), /denied/);
   // A prefix without a separator still means a sibling; a dotted one opts hidden entries back in.
   assert.deepEqual(p.addableDirs("oth"), ["../other/"]);

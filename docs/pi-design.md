@@ -150,6 +150,17 @@ pi's own glyphs. Each rule carries the why that earned it.
    `• Started cmd in background` with `↳ task t1 · running`, the end is the
    completion line above, and the in-progress bullet stays static — the
    owner kept the composer spinner as the one moving element.
+   *2026-09-09:* pi-subagents' control notice takes the same line —
+   `• researcher needs attention · is waiting for a supervisor reply`, the
+   warning colour for attention and the error colour for a failed run — and
+   the message's own content, which the model acts on, is untouched. *Why:*
+   the plugin drew a twelve-line box in the chat holding a run UUID, a
+   `Facts:` line and four literal `subagent({ action: … })` calls: the
+   model's instructions, printed at the reader. Claude Code draws the same
+   line, keeping steer and resume payloads in the model's context and giving
+   the transcript a status. The row is composed over the plugin's renderer
+   rather than replacing it, so a payload the row does not recognise is the
+   plugin's box again.
 5. **Composer = the user box, and the user box = the composer.** A shaded
    block in pi's `userMessageBg`: one blank shaded row above and below the
    content, `❯` at column 0 on the first content line, no rule lines, no
@@ -193,6 +204,18 @@ pi's own glyphs. Each rule carries the why that earned it.
    allowlist of the commands that may complete: pi's own `/model`, `/thinking`
    and `/login` declare candidates and get them for free, where a list of
    command names would take them away and rot besides.
+   *2026-09-09, later still:* the menu also opens on the characters a path is
+   typed with — the command's own space, `/` and `~` — which is the
+   typed-character counterpart to the Tab walk above, and `..` is offered as a
+   candidate so the walk goes up as well as down. Both are the first line's
+   only, as pi runs a slash command from there and nowhere else. *Why:* pi opens the menu
+   while typing on `[A-Za-z0-9.\-_]` only, so a path left it closed at exactly
+   the separator that had just named a new directory to list; and `readdirSync`
+   never returns `..`, so `/add-dir ../` could only descend. `rootRejection`
+   already polices the new candidate: from `~/`, `..` is home's ancestor and
+   drops out with no case for it. Tab on a command name with no argument yet
+   was pi's own unforced slash menu all along, ahead of the forced branch the
+   wrapper gates — nothing was needed for it.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then
    `↓ N more`; Down from the prompt's last line enters the rows, the

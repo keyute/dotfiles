@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pluginApi, recordingExec, trimHistory } from "./index.mjs";
+import { controlNotice, pluginApi, recordingExec, trimHistory } from "./index.mjs";
 
 test("the plugin API decorates every registration and forwards everything else untouched", () => {
   const tools = new Map();
@@ -17,6 +17,31 @@ test("the plugin API decorates every registration and forwards everything else u
   assert.equal(tools.get("bg_wait").renderCall, "ours:bg_wait");
   assert.equal(styled.events, events);
   assert.equal(styled.on, pi.on);
+});
+
+test("a message renderer we own is composed over the plugin's, which stays as the fallback", () => {
+  const registered = new Map();
+  const pi = { registerMessageRenderer(type, renderer) { registered.set(type, renderer); } };
+  const styled = pluginApi(pi, () => ({}), { ours: message => (message.details ? "row" : undefined) });
+  const { registerMessageRenderer } = styled;
+  registerMessageRenderer("ours", () => "box");
+  registerMessageRenderer("theirs", () => "box");
+  assert.equal(registered.get("ours")({ details: { event: {} } }), "row");
+  // A payload the row does not recognise is the plugin's to draw.
+  assert.equal(registered.get("ours")({}), "box");
+  // A type we do not own is registered as the plugin wrote it.
+  assert.equal(registered.get("theirs")({ details: {} }), "box");
+});
+
+test("the control notice row is built from the event pi-subagents puts in details", () => {
+  const theme = { fg: (color, text) => `<${color}>${text}` };
+  const notice = event => controlNotice({ content: "Subagent needs attention: researcher\nRun: …", details: { event } }, {}, theme)?.render(200)[0].trimEnd();
+  assert.equal(notice({ agent: "researcher", message: "researcher is waiting for a supervisor reply", reason: "supervisor_request" }),
+    "<warning>• <toolTitle>researcher needs attention<muted> · is waiting for a supervisor reply");
+  assert.equal(notice({ agent: "ts-reviewer", message: "ts-reviewer failed", reason: "completion_guard" }), "<error>• <toolTitle>ts-reviewer failed");
+  // A payload the row cannot read is the plugin's to draw.
+  assert.equal(controlNotice({ details: { event: { agent: "researcher" } } }, {}, theme), undefined);
+  assert.equal(controlNotice({}, {}, theme), undefined);
 });
 
 test("the exec recorder passes the call through and records command, sandbox flag and exit code, twenty deep", async () => {

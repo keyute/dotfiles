@@ -137,9 +137,11 @@ export class Policy {
     const base = prefix.slice(cut);
     let entries;
     try { entries = readdirSync(expand(head, this.cwd), { withFileTypes: true }); } catch { return []; }
-    return entries
-      .map(entry => entry.name)
-      .filter(name => name.startsWith(base) && (base.startsWith(".") || !name.startsWith(".")))
+    // `..` is navigation, not a hidden entry, and readdir never returns it: it
+    // is what makes the walk go up as well as down. rootRejection still polices
+    // it, so `~/..` drops out as home's ancestor without a case here.
+    return ["..", ...entries.map(entry => entry.name)]
+      .filter(name => name.startsWith(base) && (name === ".." || base.startsWith(".") || !name.startsWith(".")))
       // An entry that cannot be canonicalized (symlink loop, unreadable parent)
       // is skipped rather than thrown: pi fires completion requests unawaited,
       // so a rejection here is an unhandled one that takes the TUI down.

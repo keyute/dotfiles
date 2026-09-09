@@ -424,6 +424,21 @@ export function completionLine({ agent, task, status, durationMs }, theme) {
   return `${theme.fg(colour, BULLET)} ${theme.fg("toolTitle", title)}${tail ? theme.fg("muted", tail) : ""}`;
 }
 
+const behind = (text, head) => (text.startsWith(head) ? text.slice(head.length).trimStart() : text);
+
+// pi-subagents' control notice carries the run id and the four subagent({…})
+// calls the model answers it with; the reader gets the completion line's shape
+// instead, and the message's own content reaches the model untouched. The
+// signal opens by naming the agent and, on the idle and tool-failure notices,
+// its state too — both of which the title has said, and the default idle
+// signal parenthesizes what is left of it.
+export function noticeLine({ agent, failed, message }, theme) {
+  const state = failed ? "failed" : "needs attention";
+  const reason = behind(behind(oneLine(message), `${agent} `), state);
+  const tail = shortTitle(reason.startsWith("(") && reason.endsWith(")") ? reason.slice(1, -1) : reason, SUMMARY_WIDTH);
+  return `${theme.fg(failed ? "error" : "warning", BULLET)} ${theme.fg("toolTitle", `${agent} ${state}`)}${tail ? theme.fg("muted", ` · ${tail}`) : ""}`;
+}
+
 export function formatDuration(ms) {
   const total = Math.max(0, Math.round(ms / 1000));
   const hours = Math.floor(total / 3600);
