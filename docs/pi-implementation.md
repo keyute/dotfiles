@@ -682,10 +682,18 @@ live-tested on the host.
   cursor exactly as typing it does and opened the menu — so the trigger now
   requires the line to have grown by that one character, which also excludes
   history recall replacing the whole line.
+  Two more owner reports the same day, both fixed: `..` was offered under a
+  named directory, where it only undoes the step that got there, and is now
+  offered only while the head is still all `../`; and the accept replay pressed
+  Tab again, which `editor.js` applies outright when the next level holds a
+  single candidate (`options.force && options.explicitTab && items.length === 1`),
+  so one keypress descended two levels — the replay now makes the unforced
+  request a typed character makes, and the level the accept reached is shown
+  rather than walked into. The user's own Tab still completes a lone candidate.
   Left as a follow-up: `handlePaste` cancels the menu and nothing re-opens it,
   so a pasted path into `/add-dir` completes only after a further keystroke.
   Not applied or live-tested on the host; `npm run test:pi` is green
-  (230 pass, 7 skipped, 0 fail).
+  (231 pass, 7 skipped, 0 fail).
 
 ## Verification and remaining gates
 

@@ -65,7 +65,7 @@ test("down enters fleet navigation only when the editor could not move, and othe
 
 // The real provider, so the command lookup, the prefix it returns and the
 // insertion its applyCompletion performs are pi's own.
-const dirs = { "": ["../one/", "../two/"], "../one/": ["../one/a/", "../one/b/"], "~/": ["~/p/", "~/q/"] };
+const dirs = { "": ["../one/", "../two/"], "../one/": ["../one/a/", "../one/b/"], "../two/": ["../two/only/"], "~/": ["~/p/", "~/q/"] };
 const commands = [
   { name: "add-dir", description: "Add a directory", getArgumentCompletions: prefix => (dirs[prefix] ?? []).map(value => ({ value, label: value })) },
   { name: "remove-dir", description: "Remove a directory", getArgumentCompletions: prefix => ["/tmp/added", "/tmp/other"].filter(root => root.startsWith(prefix)).map(value => ({ value, label: value })) },
@@ -179,4 +179,15 @@ test("moving the cursor across a separator is not typing one", async () => {
   await keys(caret, "\x1b[D"); // left, back over the "/"
   await keys(caret, "\x1b[C"); // right, across it again
   assert.deepEqual(menu(caret), []);
+});
+
+test("an accept shows the next level and stops there, even when that level holds one entry", async () => {
+  const caret = completing();
+  caret.setText("/add-dir ");
+  await tab(caret);
+  assert.deepEqual(menu(caret), ["../one/", "../two/"]);
+  caret.handleInput("\x1b[B"); // highlight ../two/
+  await tab(caret);
+  assert.equal(caret.getText(), "/add-dir ../two/");
+  assert.deepEqual(menu(caret), ["../two/only/"]);
 });

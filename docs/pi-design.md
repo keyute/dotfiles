@@ -207,8 +207,14 @@ pi's own glyphs. Each rule carries the why that earned it.
    *2026-09-09, later still:* the menu also opens on the characters a path is
    typed with — the command's own space, `/` and `~` — which is the
    typed-character counterpart to the Tab walk above, and `..` is offered as a
-   candidate so the walk goes up as well as down. Both are the first line's
-   only, as pi runs a slash command from there and nowhere else. *Why:* pi opens the menu
+   candidate so the walk goes up as well as down — while it is still going
+   up, since under a named directory `..` only undoes the step that got
+   there. Both are the first line's only, as pi runs a slash command from
+   there and nowhere else. An accept shows the next level and stops at it:
+   the replay asks for that level as a typed character does, because pi
+   applies a lone candidate outright on an explicit Tab and a directory
+   holding one entry was being walked into as well — the owner's
+   "pressing tab at `../../../` walks down two levels". *Why:* pi opens the menu
    while typing on `[A-Za-z0-9.\-_]` only, so a path left it closed at exactly
    the separator that had just named a new directory to list; and `readdirSync`
    never returns `..`, so `/add-dir ../` could only descend. `rootRejection`

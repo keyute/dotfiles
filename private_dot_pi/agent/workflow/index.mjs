@@ -182,11 +182,14 @@ export class CaretEditor extends sdk.CustomEditor {
     // command's arguments show nothing until a character is typed (and `~` and
     // `/`, where an added directory starts, are not pi's natural triggers). An
     // accept that left the cursor on the command's space or on a directory
-    // separator has a next level to show, so the key is asked again.
+    // separator has a next level to show, so that level is asked for — as the
+    // request a typed character makes, not as another Tab: pi applies a lone
+    // candidate outright on an explicit Tab, so a level holding one entry would
+    // be walked into as well, descending twice on the one keypress.
     if (this.keybindings.matches(data, "tui.input.tab") && this.isShowingAutocomplete()) {
       super.handleInput(data);
       const { line, col } = this.getCursor();
-      if (!this.isShowingAutocomplete() && /^\/\S+ (.*[ /])?$/.test((this.getLines()[line] ?? "").slice(0, col))) super.handleInput(data);
+      if (!this.isShowingAutocomplete() && /^\/\S+ (.*[ /])?$/.test((this.getLines()[line] ?? "").slice(0, col))) this.tryTriggerAutocomplete();
       return;
     }
     const at = this.getCursor();

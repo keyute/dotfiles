@@ -94,6 +94,8 @@ test("/add-dir completions offer the addable siblings and nothing addRoot refuse
   // `..` is offered so the walk goes up as well as down, and a separator-ended
   // prefix is the same list.
   assert.deepEqual(p.addableDirs("../"), ["../../", "../cache/", "../other/", "../scratch/"]);
+  // Under a named directory the walk is going down, where `..` only undoes it.
+  assert.ok(!p.addableDirs("../other/").includes("../other/../"));
   assert.throws(() => p.addRoot("../control"), /denied/);
   // A prefix without a separator still means a sibling; a dotted one opts hidden entries back in.
   assert.deepEqual(p.addableDirs("oth"), ["../other/"]);
