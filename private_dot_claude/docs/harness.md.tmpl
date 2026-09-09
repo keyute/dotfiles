@@ -61,8 +61,28 @@ verify with that agent and update this file.
   Web research (sources verified, listed in the baseline why) found the
   fresh-context same-model pass is the measured lever and cross-model review
   additive but unmeasured, so the projection now says "in addition to,
-  launched alongside". Revisit trigger: next sweep expects the reviewer-subagent
-  rate back near 50% of editing sessions.
+  launched alongside".
+- Fresh-eyes sweep (2026-09-09, 30 days, 341 Claude sessions with >=3 writes):
+  the 09-08 revisit trigger fired and failed — reviewer-subagent dispatch is
+  29%, flat against the 30%/35% it was set from, while `codex-review` ran in
+  43% of editing sessions and **41% had no review pass of any kind**. The
+  fresh-eyes rule itself fired in only 20 dispatches (~6%): 10 to
+  `general-purpose` (write-capable; 4 carrying a hand-picked `sonnet`, 4
+  inheriting, 1 opus, 1 fable), 8 to diff/language reviewers whose contract
+  cannot report an omission, 2 to `Explore`/`researcher`. That is what
+  `spec-reviewer` (added 2026-09-09, `tier: inherit` as a capability floor)
+  answers. Note it fixes the shape of the ~6% that fire, not the firing rate —
+  the low fire rate is the larger open defect and belongs to the trigger, not
+  the fleet. Revisit trigger: `spec-reviewer` dispatch count is now a direct
+  measure of the rule (no more reviewer-rate proxy) — next sweep expects it
+  above the 20/30d the unnamed pass managed, and re-checks the 41% no-review
+  figure.
+- Codex pin caveat for pinned reviewers (2026-09-09): the Codex subagent
+  section in `private_dot_codex/docs/harness.md.tmpl` is expired and
+  openai/codex#32587 is still open — a spawned child can silently inherit the
+  parent's model/effort instead of its pinned config. `tier: inherit` is the
+  one setting that regression cannot break, which is a second reason the
+  fresh-eyes floor is expressed as inherit rather than a fixed tier.
 - If Codex is available, `codex-review` / `codex-advisor` are read-only Codex
   consultation for high-risk diffs or stuck calls; Claude and Codex meter on
   independent windows, so read-work can offload to Codex — write-work means driving

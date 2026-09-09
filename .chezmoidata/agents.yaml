@@ -197,7 +197,21 @@ subagents:
     reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the ship-check skill."
+    description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them — a conformance pass over requirements-plus-artifact goes to spec-reviewer."
+  # the fresh-eyes self-review pass. A 30-day sweep (2026-09-09) found its 20
+  # dispatches split across general-purpose (10, write-capable), the diff and
+  # language reviewers (8, whose contract cannot report an omission) and
+  # Explore/researcher (2) — this preset is that gap.
+  spec-reviewer:
+    # inherit is the floor invariant (reviewer >= producer), not an omission:
+    # a weaker reviewer measurably degrades a stronger producer's work
+    # (91.4% -> 82.8%, arXiv 2607.21656). A mid pin breaks the floor on every
+    # default session; a top pin breaks it on a Fable one. Do not fix to a tier.
+    tier: inherit
+    reasoning_effort: high
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Judge one finished artifact against the requirements it was built from, in one pass — dispatched for the fresh-eyes self-review before work is called done, not for ordinary diff review. Reports requirements that went unimplemented as readily as defects in what was written; read-only. Reviewing the changed lines under one lens is diff-reviewer's job."
   log-triager:
     tier: small
     reasoning_effort: low

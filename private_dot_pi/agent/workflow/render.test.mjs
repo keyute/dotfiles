@@ -57,12 +57,14 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.equal(workflow.version, 1);
   assert.equal(workflow.models.default, "gpt-5.6-sol");
   assert.equal(workflow.models.tiers.frontier, "gpt-6-astra");
-  assert.equal(Object.keys(workflow.agents).length, 13);
+  assert.equal(Object.keys(workflow.agents).length, 14);
   assert.equal(workflow.agents.implementer.tools.includes("workspace_write"), true);
   assert.equal(workflow.agents.explorer.tools.includes("read"), false);
   // Only general-purpose delegates, as Claude Code's roster implies.
   assert.equal(workflow.agents.explorer.tools.includes("subagent"), false);
   assert.deepEqual([workflow.agents["general-purpose"].model, workflow.agents["general-purpose"].nests], ["inherit", true]);
+  // spec-reviewer inherits as a floor (reviewer >= producer), and stays a leaf.
+  assert.deepEqual([workflow.agents["spec-reviewer"].model, workflow.agents["spec-reviewer"].readonly], ["inherit", true]);
   assert.ok(["workspace_write", "mcp", "subagent"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
   assert.equal(workflow.mcp.exa.policy.direct_tools, true);
   assert.equal(workflow.mcp.playwright.policy.direct_tools, false);

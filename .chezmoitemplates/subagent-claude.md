@@ -9,7 +9,8 @@
 name: {{ $name }}
 description: {{ $meta.description }}
 tools: {{ $meta.tools }}
-model: {{ index $root.subagent_tiers.claude $meta.tier }}
+{{ if ne $meta.tier "inherit" }}model: {{ index $root.subagent_tiers.claude $meta.tier }}
+{{ end -}}
 effort: {{ $meta.reasoning_effort }}
 ---
 
