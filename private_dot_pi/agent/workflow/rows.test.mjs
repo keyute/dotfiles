@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, formatDuration, formatTurn, glyph, installFolding, noticeLine, pluginRenderers, pluginTitle, resultSummary, summarise, toolRenderers } from "./rows.mjs";
+import { addFold, answerLines, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, formatDuration, formatTurn, glyph, installFolding, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, summarise, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -147,13 +147,23 @@ test("a group that forms while ctrl+o is on opens with it", () => {
   assert.deepEqual(rendered(renderers.renderCall({ path: "a" }, theme, ctx())), ["<toolTitle>▾ Read 1 file", "<success>• <toolTitle>Read a"]);
 });
 
+test("the plan row carries the tool's approval label", () => {
+  assert.deepEqual(rendered(planRenderers.renderCall({}, theme, context())), ["<success>• <toolTitle>Plan approval"]);
+});
+
+test("diff counts take the theme's success/error pair, whichever minus the surface spells", () => {
+  assert.equal(paintCounts("+3 -1", theme), "<success>+3 <error>-1");
+  assert.equal(paintCounts("+2 −1", theme), "<success>+2 <error>−1");
+  assert.equal(paintCounts("-5", theme), "<error>-5");
+});
+
 test("summary wording", () => {
   assert.equal(summarise({ read: 3, bash: 9, grep: 1, edit: 2, list: 1, mcp: 2 }), "Read 3 files, ran 9 shell commands, searched for 1 pattern, edited 2 files, listed 1 path, called 2 MCP tools");
   assert.equal(summarise({ write: 1 }), "Wrote 1 file");
   assert.equal(summarise({}), "");
 });
 
-test("folding closes on assistant text, streaming or not, and on anything that stays visible; MCP rows fold, subagent rows never", () => {
+test("folding closes on assistant text, streaming or not, and on anything that stays visible; MCP rows fold, subagent and background-task rows never", () => {
   const folds = createFolds();
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
@@ -167,6 +177,11 @@ test("folding closes on assistant text, streaming or not, and on anything that s
   handlers.tool_execution_start({ toolName: "subagent", toolCallId: "s1" });
   assert.equal(folds.byId.has("s1"), false);
   assert.equal(folds.byId.get("r1").collapsed, true);
+  // A background task is running work, not housekeeping: its row stays visible too.
+  handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "r4" });
+  handlers.tool_execution_start({ toolName: "workspace_task", toolCallId: "t1" });
+  assert.equal(folds.byId.has("t1"), false);
+  assert.equal(folds.byId.get("r4").collapsed, true);
   handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "b1" });
   assert.notEqual(folds.byId.get("b1"), folds.byId.get("r1"));
   assert.deepEqual(folds.byId.get("b1").counts, { bash: 1 });

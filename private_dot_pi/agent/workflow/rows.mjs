@@ -148,13 +148,18 @@ export function bodyLines(name, result, { expanded = false, isError = false } = 
 }
 
 // The diff counts are the one summary a colour can carry, so they take the
-// theme's own success/error pair. Each segment is coloured on its own rather
-// than nested inside one muted wrapper, whose reset would end the muted colour
-// for the rest of the line (the hazard design rule 5 records for the user box).
+// theme's own success/error pair, here and on the status line. Each part is
+// coloured on its own rather than nested inside one muted wrapper, whose reset
+// would end the muted colour for the rest of the line (the hazard design
+// rule 5 records for the user box). The sign carries the meaning as well as
+// the colour, and the two surfaces spell the minus differently.
+export const paintCounts = (counts, theme) =>
+  counts.split(" ").map(part => theme.fg(part.startsWith("+") ? "success" : "error", part)).join(" ");
+
 function summaryLine(name, summary, theme) {
   const counts = name === "edit" || name === "write" ? summary.split(" ") : null;
   if (counts?.length !== 2) return theme.fg("muted", `${SUB} ${summary}`);
-  return `${theme.fg("muted", SUB)} ${theme.fg("success", counts[0])} ${theme.fg("error", counts[1])}`;
+  return `${theme.fg("muted", SUB)} ${paintCounts(summary, theme)}`;
 }
 
 function renderBody(name, result, options, theme, context) {
@@ -178,7 +183,10 @@ function renderBody(name, result, options, theme, context) {
 const WORDS = { read: ["read", "file"], bash: ["ran", "shell command"], grep: ["searched for", "pattern"], edit: ["edited", "file"], write: ["wrote", "file"], list: ["listed", "path"], mcp: ["called", "MCP tool"] };
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
 const isMcp = name => name === "mcp" || name.startsWith("mcp__");
-const foldKey = name => (name.startsWith("workspace_") ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null);
+// `workspace_task` stays out: a background task is running work (rule 4), its
+// output is the thing that was asked for, and its completion line refers back
+// to the row's title — the reason rule 2 exempts subagent rows too.
+const foldKey = name => (name.startsWith("workspace_") && name !== "workspace_task" ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null);
 
 // `toolsExpanded` reads pi's global ctrl+o flag (ctx.ui.getToolsExpanded);
 // a closed group reopens when that flag changes.
@@ -345,7 +353,7 @@ export const taskRenderers = rowRenderers({ name: "plugin", title: args => (args
 export const planRenderers = {
   renderShell: "self",
   renderCall(_args, theme, context) {
-    return new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Updated plan")}`, 0, 0);
+    return new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Plan approval")}`, 0, 0);
   },
   renderResult(result, options, theme, context) {
     const approved = /approved;/.test(resultText(result));

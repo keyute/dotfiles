@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { readLines, sendLine } from "./lines.mjs";
-import { PAD, closeFolds, createTurnClock, defaultFolds, formatTurn } from "./rows.mjs";
+import { PAD, closeFolds, createTurnClock, defaultFolds, formatTurn, paintCounts } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 
 // Usage comes from codex's own app-server (JSONL JSON-RPC, `jsonrpc` header
@@ -82,9 +82,16 @@ export function buildSegments({ modelId, thinkingLevel, contextPercent, limits, 
     const reset = formatReset(window.resetsAt, { weekday });
     segments.push({ text: `${windowLabel(window.windowMins)} ${window.usedPercent}%${reset ? ` ${reset}` : ""}`, color: "dim" });
   }
-  if (branch) segments.push({ text: changes ? `${branch} ${changes}` : branch, color: "accent" });
+  // The counts ride the branch segment rather than joining its text: they take
+  // the success/error pair the transcript's own diff counts take.
+  if (branch) segments.push({ text: branch, color: "accent", changes });
   return segments;
 }
+
+export const paintSegment = (segment, theme) => {
+  const text = segment.color ? theme.fg(segment.color, segment.text) : segment.text;
+  return segment.changes ? `${text} ${paintCounts(segment.changes, theme)}` : text;
+};
 
 export function parseGitChanges(shortstat) {
   const insertions = shortstat.match(/(\d+) insertion/)?.[1];
@@ -242,7 +249,7 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
             branch: footerData.getGitBranch(),
             changes: state.changes,
           });
-          const left = segments.map(s => (s.color ? theme.fg(s.color, s.text) : s.text)).join(separator);
+          const left = segments.map(s => paintSegment(s, theme)).join(separator);
           // The workflow mode; other extensions keep their own surfaces.
           const right = footerData.getExtensionStatuses().get("workflow") ?? "";
           const pad = " ".repeat(Math.max(1, width - PAD.length * 2 - visibleWidth(left) - visibleWidth(right)));

@@ -104,7 +104,15 @@ pi's own glyphs. Each rule carries the why that earned it.
    `setStatus`, `notify`, `setWidget`, `setFooter`, `custom`, all elsewhere)
    and the container is not exposed to an extension at all, so not even an
    undocumented reach is available. The caret carries the state regardless;
-   worth an upstream request for a settings switch.
+   worth an upstream request for a settings switch. *2026-09-09, later:*
+   `workspace_task` left the fold set. It had folded on its `workspace_` prefix
+   while the summary dictionary had no word for it, so the group's handle drew a
+   caret with an empty label; the word was not added, because a background task
+   is running work under rule 4 — its output is what was asked for and its
+   completion line refers back to the row's title, the reason subagent rows are
+   exempt. The plan row took the tool's own label, `Plan approval`: `Updated
+   plan` is Codex's `update_plan` phrase, and the row announces a plan submitted
+   for approval, not one revised step by step.
 3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the
@@ -131,7 +139,13 @@ pi's own glyphs. Each rule carries the why that earned it.
    composer's shaded block rather than sitting flush against it; between turns
    the row is still nothing, so no gap opens where the spinner is not running.
    The expand state stays off the status line: every caret already follows
-   pi's flag, and a copy there would state one fact twice.
+   pi's flag, and a copy there would state one fact twice. *2026-09-09, later:*
+   the branch's diff counts take the theme's success/error pair, the colour rule
+   2 gives the transcript's own `+12 −4`; one fact now has one encoding on both
+   surfaces, the rest of the segment stays accent, and the sign carries the
+   meaning as well as the colour, so nothing rests on colour alone. The two
+   surfaces spell the minus differently (`resultSummary`'s `−`, `git
+   --shortstat`'s `-`), so the shared painter keys on the `+`.
 4. **A turn ends when nothing is running.** The turn line prints at
    `agent_settled` only when no background child or task is live; with either
    running it waits for the follow-up run to settle (or the user to type) and

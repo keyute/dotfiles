@@ -695,6 +695,68 @@ live-tested on the host.
   Not applied or live-tested on the host; `npm run test:pi` is green
   (231 pass, 7 skipped, 0 fail).
 
+- 2026-09-09 (screenshot pass, live session `01a0848e`): three rendering
+  changes and one prompt change. (1) The status line's branch counts take the
+  theme's success/error pair through a `paintCounts` exported from `rows.mjs`.
+  They had been joined into the branch segment's own text and so inherited its
+  accent, while the transcript's `↳ +12 −4` had taken the pair since `1b75013`
+  the same day; one fact now has one encoding on both surfaces. The painter keys
+  on the `+`, since the surfaces spell the minus differently (`resultSummary`'s
+  `−` against `git --shortstat`'s `-`). (2) `workspace_task` left the fold set: it
+  folded on its `workspace_` prefix while `WORDS` had no word for it, so
+  `summarise()` returned "" and the handle drew a caret with an empty label.
+  Adding the word was rejected — a background task is running work under design
+  rule 4. (3) The plan row takes the tool's own `Plan approval` label; `Updated
+  plan` is Codex's `update_plan` phrase. (4) Plan mode's system-prompt suffix
+  said only what was forbidden ("Investigate only; …"), and the owner's report
+  was that pi "required more steering in my input prompt to get it to present
+  the plan" where Claude Code does the checks, asks the questions and presents
+  the plan. It now carries the behaviour too: research to the point of a plan
+  unprompted, delegate the independent exploration, ask with `ask_user_question`
+  where different readings would lead to materially different work, then submit
+  the plan. It sits at the injection point rather than in the always-loaded projection,
+  where it would be dead text in execute mode, and is gated on the root in plan
+  mode: the branch's own condition is `state.readonly`, which `policy.mjs` also
+  returns for every read-only role in execute mode, and a child has neither
+  `submit_plan` nor `ask_user_question`. `npm run test:pi` is
+  green (233 pass, 7 skipped, 0 fail); `fleet.test.mjs`'s poll assertion flakes
+  under full-suite load and passes alone. Not applied on the host.
+- 2026-09-09 (plan-mode plugin re-adjudication): `@narumitw/pi-plan-mode`
+  (4.5k dl/wk, MIT, actively pushed), `@janvitos/pi-plan-build` (819 dl/wk) and
+  pi's own bundled `examples/extensions/plan-mode/` all gate at the plugin's
+  tool layer — they block `edit`/`write` while the mode is on. Ours is a broker
+  policy mode (`policy.mjs`) governing the tool list, the inherited role scope,
+  child sessions and MCP approvals together, and `/plan` revokes running
+  children and sandbox processes. A plugin sees none of that, so it would
+  double-govern rather than replace, at the price of a third-party 0.x pin
+  (design rule 7) and its own surfaces (rules 2, 9, 10). The 2026-09-07
+  rejection stands, now for a stated reason. Claude Code's documented contract
+  (code.claude.com/docs/en/permission-modes) is matched on mechanics; the gap
+  was the behaviour above, and it sits at our own injection point, so no plugin
+  would have supplied it.
+- 2026-09-09 (cost read, session `01a0848e`, 05:05–05:28Z, from its own
+  `usage.cost` records): 192.9k uncached input, 2.26M cache reads, 10.5k output,
+  $4.71 (≈118 credits) over 23 minutes, 40 assistant turns, 10 children, peak
+  root context 99.9k. Every turn ran `gpt-6-astra`; the same trajectory at the
+  `agents.yaml` default of `gpt-5.6-sol` is ~$1.88, so the tier choice moves
+  cost 2.5× before any harness difference does. Pi and Codex share the provider
+  and the endpoint, so a harness can differ only in tokens spent per finished
+  task: controlled run 4 was 0.87× Codex at time parity, run 5 3.9× at more than
+  twice the wall clock, on identical source text — the variable is child count
+  (3 vs 8), not the harness. No context bloat: 13k → 99k, with one 35k step
+  where eight child reports landed at once, which is what fresh-context
+  delegation buys. Of 23 Codex sessions that day ~20 were `codex_exec` (the
+  review and advisor skills) and four interactive, all under five minutes:
+  Codex is the reviewer now, pi and Claude Code the drivers.
+- 2026-09-09 (two frictions, recorded not fixed): `subagent {action:"list"}`
+  still fired twice in that session although the roster is rendered into the
+  tool description — the run-3 change reduced the tax, upstream's appended
+  guidance keeps it, and answering `list` from the hook waits for it to recur.
+  `task test` was launched three times in 30 s (sandboxed, sandboxed, then
+  `dangerouslyDisableSandbox: true`) because the suite needs a live Postgres:
+  the escalation path worked as designed, and the waste belongs to the target
+  repo's own AGENTS.md rather than to this one.
+
 ## Verification and remaining gates
 
 - Automated tests cover pinned package registration, real child launch preflight,

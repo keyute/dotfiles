@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import { buildSegments, formatReset, installFooter, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { buildSegments, formatReset, installFooter, paintSegment, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
 import { createTurnClock } from "./rows.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
@@ -62,25 +63,35 @@ test("windows label by duration, not position", () => {
 
 test("segments follow the ccstatusline order and omit missing data", () => {
   const texts = segments => segments.map(s => s.text);
-  assert.deepEqual(
-    texts(
-      buildSegments({
-        modelId: "gpt-5.6-sol",
-        thinkingLevel: "high",
-        contextPercent: 12.34,
-        limits: [
-          { usedPercent: 7, resetsAt: null, windowMins: 300 },
-          { usedPercent: 41, resetsAt: null, windowMins: 10_080 },
-        ],
-        branch: "main",
-        changes: "+3 -1",
-      }),
-    ),
-    ["gpt-5.6-sol high", "12.3%", "ses 7%", "wk 41%", "main +3 -1"],
-  );
+  const segments = buildSegments({
+    modelId: "gpt-5.6-sol",
+    thinkingLevel: "high",
+    contextPercent: 12.34,
+    limits: [
+      { usedPercent: 7, resetsAt: null, windowMins: 300 },
+      { usedPercent: 41, resetsAt: null, windowMins: 10_080 },
+    ],
+    branch: "main",
+    changes: "+3 -1",
+  });
+  assert.deepEqual(texts(segments), ["gpt-5.6-sol high", "12.3%", "ses 7%", "wk 41%", "main"]);
+  // The counts stay a field of their own, so the render can colour them apart
+  // from the branch (rows.mjs paintCounts).
+  assert.deepEqual(segments.at(-1), { text: "main", color: "accent", changes: "+3 -1" });
   assert.deepEqual(texts(buildSegments({ modelId: "gpt-5.6-sol", contextPercent: null, limits: null, branch: null })), [
     "gpt-5.6-sol",
   ]);
+});
+
+test("the branch's counts paint green and red, the rest of the segment does not", () => {
+  const theme = { fg: (color, text) => `<${color}>${text}` };
+  assert.equal(paintSegment({ text: "main", color: "accent", changes: "+14 -2" }, theme), "<accent>main <success>+14 <error>-2");
+  assert.equal(paintSegment({ text: "main", color: "accent", changes: null }, theme), "<accent>main");
+  assert.equal(paintSegment({ text: "12.3%" }, theme), "12.3%");
+  // The status line pads to the terminal width from this string: the three
+  // colour runs and their resets must still measure as the plain text.
+  const ansi = { fg: (_color, text) => `\x1b[32m${text}\x1b[39m` };
+  assert.equal(visibleWidth(paintSegment({ text: "main", color: "accent", changes: "+14 -2" }, ansi)), "main +14 -2".length);
 });
 
 test("reset timestamps format as time, weekly with weekday", () => {

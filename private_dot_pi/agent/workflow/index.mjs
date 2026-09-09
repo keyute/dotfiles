@@ -432,7 +432,11 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (!model || model.provider !== config.models.provider || !Object.values(config.models.tiers).includes(model.id) || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error("Select an available managed OpenAI subscription model; API fallback is disabled");
     const state = await requestBroker(env, role, { action: "state" });
     const added = [...extraDirs].filter(([, text]) => text).map(([dir, text]) => `\n\n# Instructions for ${dir}\n\n${text}`).join("");
-    return { systemPrompt: `${event.systemPrompt}${added}\n\nWorkflow mode: ${state.mode}. ${state.readonly ? "Investigate only; source edits and external mutations are disabled. Submit the plan for explicit approval before implementation." : "Execute only the user-approved task."}` };
+    // `readonly` is also every read-only role's state in execute mode, so the
+    // planning workflow is gated on the root in plan mode: a child has neither
+    // submit_plan nor ask_user_question (policy.mjs rootTools).
+    const planning = isRoot && state.mode === "plan" ? " Research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it." : "";
+    return { systemPrompt: `${event.systemPrompt}${added}\n\nWorkflow mode: ${state.mode}. ${state.readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}` };
   });
 
   // /add-dir, Claude Code's added working directory: the policy widens the
