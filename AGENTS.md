@@ -75,7 +75,9 @@ erodes compliance across the whole set, not just the new rule's.*
 
 ### Style
 
-- One imperative intent line plus a why; the why buys compliance.
+- One imperative intent line plus a why; the why records the tradeoff or
+  failure the rule is meant to protect, so the rule survives cases it never
+  enumerated.
 - State the constraint with its concrete trigger, not a description of the
   preferred world.
 - Say what to do; reserve "never" for absolute boundaries and emphasis

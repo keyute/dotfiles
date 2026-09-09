@@ -76,16 +76,16 @@ when my actual intent changes, never to track harness churn.
   validation without a boundary, invariant, or observed failure to justify it
   (validate at system boundaries, trust internal code), and no feature flags
   or compatibility shims where the code can just change. *Why: unrequested
-  abstraction is debt, and current models add it by default — more at higher
-  effort.*
+  abstraction is debt, and models often add it unasked; reasoning effort does
+  not reliably prevent it — it worsens over-editing on most current models but
+  measurably reduces it on some, so the rule cannot lean on effort.*
 - **Style matching**: match the surrounding code's style, design language,
   and colocation; when project rules don't settle it, derive the pattern
   from the codebase before writing. *Why: consistency outlives preference.*
 - **Targeted edits**: edit a file surgically when the result is the same;
-  rewrite a whole file only when the change needs it. *Why: rewrites cost
-  output tokens and wall-clock — the current generation was measured at ~3×
-  more whole-file writes for the same result — and bury the real change in a
-  full-file diff.*
+  rewrite a whole file only when the change needs it. *Why: whole-file
+  rewrites spend tokens and wall-clock on unchanged content and bury the real
+  change in a full-file diff.*
 - **Comment discipline**: do your reasoning in scratch space, not the source;
   deliver code whose comments carry only what a reader can't reconstruct from
   it — non-obvious rationale, constraints, invariants, units, protocol/format
@@ -98,7 +98,8 @@ when my actual intent changes, never to track harness churn.
   churn just buries the real diff.*
 - **Test discipline**: where tests are wired up, write a simple meaningful
   repro test — see it fail, fix, see it pass; no unnecessary cases.
-  *Why: a failing repro proves both bug and fix.*
+  *Why: a witnessed red-to-green transition shows the test detects the changed
+  behaviour and leaves an executable regression guard.*
 - **Scope of extras**: a pre-existing bug, performance concern, or adjacent
   cleanup found while working goes in the summary as a follow-up, not into
   the change, unless the requested behaviour cannot work without it; keep
@@ -128,17 +129,23 @@ when my actual intent changes, never to track harness churn.
   expects it to assume and persist, and ships an initiative/follow-through
   clause as the fix (GPT-6 Astra guide); Anthropic documents the same
   stop-and-describe failure for Fable 5.1. Stated once and in the positive
-  direction, because OpenAI's GPT-5.6 guide finds that repeating "ask first"
-  wording increases the pausing it is meant to prevent. Sources verified
-  2026-09-08.*
+  direction, because OpenAI's GPT-5.6 guide finds that repeating approval
+  wording causes approval requests for actions that were already expected.
+  Sources verified 2026-09-08, re-verified 2026-09-09 against the
+  model-qualified guide URLs — the bare `latest-model` alias is mutable and
+  served two different model generations minutes apart, so cite the qualified
+  form and keep a dated snapshot.*
 - **Partial delivery**: when one part of the work is blocked, finish every
   other part and say what you left out and why. *Why: scaling the work down is
   my call, not the agent's — my intent, not a vendor finding.*
 - **Call batching**: issue independent tool calls together in one message, and
   keep dependent work sequential. *Why: OpenAI's GPT-5.6 guidance still
-  addresses parallelization to the prompt author rather than asserting it as a
-  default, and Anthropic documents Fable 5.1 issuing implied independent calls
-  one per turn in coding loops.*
+  addresses parallelization to the prompt author — telling them to state
+  concurrency limits and to instruct independent calls to run together — rather
+  than asserting it as a default, and Anthropic documents Fable 5.1 issuing
+  implied independent calls one per turn in coding loops. Re-probed 2026-09-09:
+  gpt-6-astra carries the invariant natively, gpt-5.6-sol only partially, so
+  the rule stays projected for the weaker class.*
 - **Long-running work**: start a long command in the background and collect its
   result once, rather than re-checking it turn after turn. *Why: nothing in the
   current generation removes polling — the model keeps working only where the
@@ -165,7 +172,8 @@ when my actual intent changes, never to track harness churn.
   output (arXiv 2605.21537, preprint), and a fresh-context pass beats
   same-session self-review (F1 28.6% vs 24.6%, arXiv 2603.12123, preprint)
   while reviewing twice in the same session does not; iterated follow-up
-  rounds add false positives faster than catches. The deterministic-gate
+  rounds add false positives faster than catches (false positives +62%,
+  precision 0.30 to 0.20, arXiv 2603.16244, preprint). The deterministic-gate
   clause keeps it from doubling verification the tests already do. The named
   role, the history-free launch and the capability floor all answer the
   2026-09-09 sweep: the pass had no defined target, so half its dispatches went
@@ -175,12 +183,14 @@ when my actual intent changes, never to track harness churn.
   (91.4% to 82.8%, arXiv 2607.21656), which is why the floor beats the
   lowest-tier default here. Freshness is the launch mechanism's property, not
   the role name's: a fork inherits the producing context and voids the rule.
-  The precedence clause answers a harness conflict: both harnesses discourage
-  further verification once the checks pass — Claude Code explicitly, Codex
-  more weakly (both prompts probed 2026-09-09; re-probe at the next audit) —
+  The precedence clause answers a Claude-only harness conflict: Claude Code
+  explicitly tells the model to stop adding review passes once the checks pass,
   which would otherwise silence this rule in exactly the high-stakes cell it
-  exists for. Sources verified 2026-09-08; conflict resolved 2026-09-09 by
-  stating precedence rather than narrowing the trigger.*
+  exists for. Codex does not: re-probed 2026-09-09 on both gpt-5.6-sol and
+  gpt-6-astra, neither prompt discourages a fresh-eyes pass after tests pass,
+  and astra states its limits on repeated testing do not prohibit one — so the
+  clause is precedence over one harness, not both. Sources verified 2026-09-08;
+  conflict re-scoped 2026-09-09; re-probe both at the next audit.*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*
@@ -226,14 +236,20 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
   independent single passes and adjudicate them together. *Why: review yield
   tracks risk and breadth, not change count — a size-only trigger measured over my transcripts fired ~20x
   more often while its hit rate fell from ~4% to under 1%, and every surviving
-  catch sat in a high-stakes category; an unadjudicated cross-model reviewer
-  can degrade stronger work, so findings stay hypotheses, never a verdict to
-  apply. It adds a second model family on top of `self_review`; that increment
-  is unmeasured — practitioner consensus only as of 2026-09, no head-to-head
-  study — and stands on the transcript record until a survived-findings count
-  confirms it. Both rules fired on the same high-stakes set from 2026-08-27,
+  catch sat in a high-stakes category. Direct Codex revision of Claude drafts
+  degraded one controlled static-review benchmark (91.4% to 82.8%, arXiv
+  2607.21656) — there the reviewer emitted the replacement program and could
+  not run tests, which is the treatment "propose, never apply" exists to
+  exclude; adjudication avoids that failure but does not by itself establish a
+  gain, since a false finding can still anchor the implementer. So findings
+  stay hypotheses, never a verdict to apply, and the increment this adds on top
+  of `self_review` remains unmeasured — it stands on the transcript record
+  until a survived-findings count confirms it. Both rules fired on the same high-stakes set from 2026-08-27,
   and by 2026-09 the Codex review had displaced the subagent pass in ~70% of
-  its sessions, which the "in addition to" clause exists to stop.* (The trigger and adjudication guard project
+  its sessions, which the "in addition to" clause exists to stop — still 68%
+  (101 of the 149 sessions that fired it) when re-measured 2026-09-09, though
+  the named `spec-reviewer` target landed that same day and had fired twice, so
+  that is the pre-fix baseline rather than a verdict on the clause.* (The trigger and adjudication guard project
   with this rule and `cross_model_advice` — both must be present when the
   model decides whether to fire; the skill bodies hold only the execution
   procedure, which loads after that decision.)

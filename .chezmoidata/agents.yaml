@@ -17,7 +17,10 @@ agents:
     # long_running_work, but the haiku/sonnet/fable subagent prompts each lack
     # at least one and children inherit this file. One projection serves every
     # class, so the weakest class decides. call_batching's absence from the
-    # sonnet child prompt was confirmed by direct re-ask, not inferred.
+    # sonnet child prompt was confirmed by direct re-ask, not inferred; the
+    # fable subagent prompt was probed 2026-09-09 and lacks partial_delivery
+    # outright, carrying initiative, delegation_wait and long_running_work only
+    # partially.
     native_coverage: []
     defaults:
       # explicit ID: bare aliases float across CLI releases (observed: `haiku`
@@ -57,10 +60,11 @@ agents:
       docs: private_dot_codex/docs
       sessions: { path: "~/.codex/sessions/*/*/*/rollout-*.jsonl", shape: codex-rollout }
       probe: mcp
-    # call_batching dropped 2026-09-09: re-probed `partial` on both sol and
-    # astra — the prompt recommends parallelising "when possible" but never
-    # states the invariant (batch independent calls, keep dependent ones
-    # sequential)
+    # call_batching stays projected: re-probed 2026-09-09 on both classes and
+    # they disagree — sol is `partial` (the prompt recommends parallelising
+    # "when possible" but never states the invariant: batch independent calls,
+    # keep dependent ones sequential) while astra carries it natively. Not
+    # unanimous, so the weakest class decides. initiative is `covered` on both.
     native_coverage: [initiative]
     defaults:
       model: gpt-5.6-sol
@@ -97,6 +101,13 @@ agents:
         - node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js
         - private_dot_pi/agent/workflow/index.mjs
         - private_dot_pi/agent/subagent-tool-description.md.tmpl
+    # Empty as of 2026-09-09 despite the static prompt reading as covered for
+    # four rules: initiative sits inside the plan-mode-only addendum, so it does
+    # not load in execute mode; call_batching's sentence batches subagent
+    # launches, not independent tool calls; and delegation_wait and
+    # long_running_work live in a tool description, which the sweep shows
+    # under-steers — after its first launch a parent still made a median of ~34
+    # of its own calls (max 76) across 18 sessions. Text present is not coverage.
     native_coverage: []
     # pi-web-search: OpenAI's server-side web_search tool through the same
     # Codex Responses endpoint and token as model calls; search_model keeps it
@@ -203,6 +214,10 @@ subagents:
   # language reviewers (8, whose contract cannot report an omission) and
   # Explore/researcher (2) — this preset is that gap.
   spec-reviewer:
+    # the `self_review` rule names this agent; the projection reads the name
+    # from here so a rename cannot leave the always-loaded line pointing at a
+    # role that no longer exists. Exactly one subagent carries this flag.
+    self_review: true
     # inherit is the floor invariant (reviewer >= producer), not an omission:
     # a weaker reviewer measurably degrades a stronger producer's work
     # (91.4% -> 82.8%, arXiv 2607.21656). A mid pin breaks the floor on every

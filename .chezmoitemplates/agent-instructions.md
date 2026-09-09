@@ -8,6 +8,14 @@
 {{- $ag := index $root.agents $self -}}
 {{- /* rules the harness's own system prompt already carries; see
        .chezmoidata/agents.yaml native_coverage */ -}}
+{{- /* the self_review rule names a subagent; take the name from the roster so a
+       rename cannot leave this always-loaded line pointing at a missing role */ -}}
+{{- $reviewer := "" -}}
+{{- range $n, $m := $root.subagents -}}
+{{- if get $m "self_review" -}}{{- $reviewer = $n -}}{{- end -}}
+{{- end -}}
+{{- /* a missing marker must break the render, not silently drop the rule */ -}}
+{{- if not $reviewer -}}{{- fail "no subagent in .chezmoidata/agents.yaml carries `self_review: true`, so the self-review rule cannot name its reviewer" -}}{{- end -}}
 {{- $native := list -}}
 {{- if hasKey $ag "native_coverage" -}}{{ $native = $ag.native_coverage }}{{- end -}}
 {{- /* the sensitive-path prose reuses agent-sandbox's denyRead so it can never
@@ -110,7 +118,7 @@
   and that will be merged or applied — always for a high-stakes or
   expensive-to-reverse surface: auth, security, data, concurrency, migrations —
   check the artifact against the requirements with a fresh set of eyes: hand
-  `spec-reviewer` both, not your reasoning trace, naming the snapshot to judge,
+  `{{ $reviewer }}` both, not your reasoning trace, naming the snapshot to judge,
   in one pass with no follow-up rounds. Launch it history-free — never a
   context-inheriting fork — and never below the model that produced the work.
   This pass is required even when the checks pass; a cross-model review does not

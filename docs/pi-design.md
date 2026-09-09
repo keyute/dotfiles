@@ -175,6 +175,15 @@ pi's own glyphs. Each rule carries the why that earned it.
    the transcript a status. The row is composed over the plugin's renderer
    rather than replacing it, so a payload the row does not recognise is the
    plugin's box again.
+   *2026-09-09, later:* the row is also declined by source, not only by
+   missing fields. A goal mission's notice carries every field the row reads
+   but its body is several lines opening `Goal mission needs attention: …`,
+   which the row's case-sensitive `<agent> <state>` strip cannot take apart,
+   so the whole block landed in the tail truncated mid-word. Goal notices go
+   back to the plugin's box whole. *Why:* the strip assumes one producer's
+   wording; a second producer with its own wording is the plugin's to draw,
+   and `stability.test.mjs` pins both that wording and the delivery path that
+   makes goal notices reach the renderer at all.
 5. **Composer = the user box, and the user box = the composer.** A shaded
    block in pi's `userMessageBg`: one blank shaded row above and below the
    content, `❯` at column 0 on the first content line, no rule lines, no

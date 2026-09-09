@@ -31,7 +31,7 @@
 - Attached MCP servers reload their full tool schemas every turn — an accepted
   cost here; revisit the server list if the weekly limit starts binding.
 
-## Subagents (last verified 2026-07-31; expired 2026-09-08 — re-verify the pin behaviour from a Codex session, the Claude-side audit cannot read this store)
+## Subagents (last verified 2026-07-31; expiry fired 2026-09-08 and is still open — re-verify the pin behaviour from a Codex session. The 2026-09-09 Claude-side audit confirmed it cannot close this: the permission gate denied `~/.codex/sessions` on two attempts, so the store stays unreadable from that side. Next trigger: the first Codex session after a Codex CLI update.)
 
 - Named specialists under `~/.codex/agents` stay pinned to their configured model tier,
   even after `/model` changes the parent session.

@@ -24,6 +24,15 @@ verify with that agent and update this file.
   subagents inherit the session model; a subagent naming an unavailable model
   silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
   (lowest tier likely to one-shot the task).
+- Subagent model resolution, in order (verified 2026-09-09 against
+  `docs.claude.com/en/docs/claude-code/sub-agents.md`): the per-invocation
+  `model` parameter, then the definition's `model` frontmatter (where
+  `inherit` selects the main conversation's model), then
+  `CLAUDE_CODE_SUBAGENT_MODEL`, then the main conversation's model. Omitting
+  `model:` is therefore NOT equivalent to `model: inherit` — omission lets that
+  env var win. `subagent-claude.md` emits the literal `inherit` so an
+  inherit-tier reviewer cannot drop below the model that produced the work.
+  Revisit trigger: next audit re-checks the documented order.
 - Subscription limits (Max plan; re-checked 2026-09-07 against the costs doc):
   a rolling 5-hour session window plus a shared weekly pool, "shared across all
   models"; the errors doc still names Opus and Sonnet family sub-limit messages.
@@ -51,13 +60,24 @@ verify with that agent and update this file.
 - `researcher` subagent (added 2026-09-08): the 2026-09-07 roster gap (113 of
   183 `general-purpose` dispatches in 30 days carrying a hand-picked `sonnet`,
   mostly web research) had grown to 133 of 217 by 09-08 — a scoped mid-tier
-  read-only preset with web + Exa + context7. Revisit trigger: next sweep
-  checks that `general-purpose`+`sonnet` research dispatches moved to it.
+  read-only preset with web + Exa + context7. Trigger fired 2026-09-09: over
+  30 days, 1790 `Agent` dispatches carried 274 model overrides (15.3%) — the
+  override rate is the roster-friction signal and is still high, but the sweep
+  did not split it by target, so whether research moved to `researcher` is
+  still uncounted. Revisit trigger: next sweep counts overrides per
+  subagent_type, not just in total.
 - Self-review vs codex-review (decision 2026-09-08): both rules fired on the
   same high-stakes set from 2026-08-27, and the transcript sweep showed the
   Codex review displacing the fresh-eyes subagent pass — reviewer-subagent
   dispatch in editing sessions fell 56% → 30% → 35% (W35–W37) as codex-review
   rose 37% → 61% → 85%, ~70% of codex-review sessions dispatching no reviewer.
+  Re-measured 2026-09-09: 338 editing sessions in 30 days (distinct sessionId,
+  not transcript file — counting files inflates this by ~8%, since a subagent
+  transcript is its own file), 149 firing codex-review, 103 dispatching any
+  reviewer, 48 both — 101 of the 149 (68%) still ran the cross-model review
+  with no fresh-eyes pass. The named `spec-reviewer` target landed the same
+  day and had fired twice, so 68% is the pre-fix baseline, not a verdict on
+  the "in addition to" clause. Re-measure next audit.
   Web research (sources verified, listed in the baseline why) found the
   fresh-context same-model pass is the measured lever and cross-model review
   additive but unmeasured, so the projection now says "in addition to,
@@ -103,9 +123,12 @@ verify with that agent and update this file.
   needs-attention regex measures nothing; the survived-findings rate (findings
   the session actually fixed) is the yield measure and is not yet counted.
   Decision 2026-09-08: keep the trigger (Codex itself objected that labels are
-  not survivals). Revisit trigger: next `agent-instructions-audit` sweep counts
-  survived findings per review from the adjudication text; if under ~2 in 10
-  reviews, tighten the breadth clause or drop the unprompted clause.
+  not survivals). Trigger fired 2026-09-09, first data point: the audit's own
+  ship-check review returned 1 Codex finding and 0 survived it (an
+  `active_long_running` mislabel that the upstream source disproved — the event
+  type is filtered before delivery). One review is far short of the ~2-in-10
+  test. Revisit trigger: next sweep accumulates survived findings across
+  reviews; decide once there are ten.
 
 ## Codex transport: owned MCP bridge (decision 2026-09-05)
 

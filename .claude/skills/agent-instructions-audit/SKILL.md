@@ -118,7 +118,10 @@ every step below; never enumerate harness names. Tier pins are
    sensitive-path prose (computed from `agent-sandbox`).
 
 5. **Behavioural sweep.** Only with the user's explicit authorization for the
-   session stores, which are sandbox-denied: run with
+   session stores, which are sandbox-denied. Run it yourself, in the session
+   holding that authorization — never delegate it: a subagent cannot verify the
+   user's consent, so a worker handed this step correctly refuses and the sweep
+   comes back empty. Run with
    `dangerouslyDisableSandbox: true`, absolute paths, one `find … -print0 |
    xargs -0 jq -r '… | @tsv'` pipeline per question returning only metadata
    (date, session, tool, agent, model, skill) — never `cat`/`head` on a

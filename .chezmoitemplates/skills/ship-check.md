@@ -51,9 +51,7 @@ synthesis.
    trims, or a matter-of-taste alternative to a choice the diff already made: the
    bar is what lets a pass over already-reviewed code come back empty and say "ship"
    instead of restarting the churn. If a large set survives, pre-validate with a
-   pinned `diff-reviewer` rather than reopening it all yourself. Add a cross-model
-   review pass before presenting, per your standing cross-model review rule; skip it
-   if no decorrelated model is available.
+   pinned `diff-reviewer` rather than reopening it all yourself.
 
 5. **Present for approval.** Rank survivors by severity and present an actionable
    checklist — `severity | lens | file:line | issue | proposed fix` — plus a one-line

@@ -166,9 +166,14 @@ arrive as notifications — `bg_wait` only when the current turn depends on them
 Launched children's scope is off-limits to the parent (AGENTS.md): in every
 same-prompt run on 2026-09-07/08 the parent redid its reviewers' work while they
 ran (four reviewers, then ~60 own calls on the same files), doubling tokens and
-wall-clock; the next audit sweep re-checks this, and if the projection still
-under-steers the rule moves into the `Workflow mode:` system-prompt suffix in
-`workflow/index.mjs`.
+wall-clock. Re-checked 2026-09-09 across 18 sessions and 137 launches: after its
+first launch a parent still made a median of ~34 of its own calls (max 76), so
+the tool-description hint and the projection together still under-steer — the
+approximate measure counts out-of-scope and post-synthesis work too, so treat it
+as an upper bound on duplication. `delegation_wait` therefore stays projected
+(`native_coverage: []`). Next step if the next sweep repeats this: move the rule
+into the `Workflow mode:` system-prompt suffix in `workflow/index.mjs` and
+measure again — the suffix is a different placement, not a demonstrated fix.
 
 Display follows `docs/pi-design.md` in the repository. Reasoning never shows;
 a tool row is `• title` plus one `↳` summary line (`+12 −4`, `4 matches`,

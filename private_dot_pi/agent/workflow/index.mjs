@@ -78,6 +78,9 @@ const CONTROL_NOTICE = "subagent_control_notice";
 export const controlNotice = (message, _options, theme) => {
   const event = message?.details?.event;
   if (!event?.agent || !event.message) return undefined;
+  // A goal mission's body is several lines opening "Goal mission needs attention:",
+  // which the row's "<agent> <state>" strip cannot read; the plugin's box draws it.
+  if (message.details.source === "goal") return undefined;
   return new Text(noticeLine({ agent: event.agent, failed: event.reason === "completion_guard", message: event.message }, theme), 0, 0);
 };
 
@@ -240,6 +243,14 @@ export class CaretEditor extends sdk.CustomEditor {
     for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
     return lines;
   }
+}
+
+// `readonly` is also every read-only role's state in execute mode, so the
+// planning workflow is gated on the root in plan mode: a child has neither
+// submit_plan nor ask_user_question (policy.mjs rootTools).
+export function workflowPrompt({ systemPrompt, added = "", mode, readonly, isRoot }) {
+  const planning = isRoot && mode === "plan" ? " Research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it." : "";
+  return `${systemPrompt}${added}\n\nWorkflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}`;
 }
 
 export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "workflow.json"), role = "root", runtime = {}) {
@@ -432,11 +443,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (!model || model.provider !== config.models.provider || !Object.values(config.models.tiers).includes(model.id) || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error("Select an available managed OpenAI subscription model; API fallback is disabled");
     const state = await requestBroker(env, role, { action: "state" });
     const added = [...extraDirs].filter(([, text]) => text).map(([dir, text]) => `\n\n# Instructions for ${dir}\n\n${text}`).join("");
-    // `readonly` is also every read-only role's state in execute mode, so the
-    // planning workflow is gated on the root in plan mode: a child has neither
-    // submit_plan nor ask_user_question (policy.mjs rootTools).
-    const planning = isRoot && state.mode === "plan" ? " Research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it." : "";
-    return { systemPrompt: `${event.systemPrompt}${added}\n\nWorkflow mode: ${state.mode}. ${state.readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}` };
+    return { systemPrompt: workflowPrompt({ systemPrompt: event.systemPrompt, added, mode: state.mode, readonly: state.readonly, isRoot }) };
   });
 
   // /add-dir, Claude Code's added working directory: the policy widens the
