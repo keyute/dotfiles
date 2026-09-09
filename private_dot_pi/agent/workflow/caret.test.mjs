@@ -78,10 +78,11 @@ const completing = () => {
 };
 // The request runs off the keystroke, and a re-issued tab queues behind the one
 // before it.
-const tab = async caret => { caret.handleInput("\t"); for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
-const type = async (caret, text) => { for (const char of text) caret.handleInput(char); for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
+const settle = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
 // One chunk, as a terminal sends an encoded key.
-const keys = async (caret, data) => { caret.handleInput(data); for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
+const keys = async (caret, data) => { caret.handleInput(data); await settle(); };
+const tab = caret => keys(caret, "\t");
+const type = async (caret, text) => { for (const char of text) caret.handleInput(char); await settle(); };
 // The rows under the composer, without the highlight marker.
 const menu = caret => caret.render(40).slice(3).map(line => line.replace(/\x1b\[[0-9;]*m/g, "").trim().replace(/^→ /, "")).filter(Boolean);
 

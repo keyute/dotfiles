@@ -188,8 +188,10 @@ export class CaretEditor extends sdk.CustomEditor {
     // be walked into as well, descending twice on the one keypress.
     if (this.keybindings.matches(data, "tui.input.tab") && this.isShowingAutocomplete()) {
       super.handleInput(data);
+      if (this.isShowingAutocomplete()) return;
       const { line, col } = this.getCursor();
-      if (!this.isShowingAutocomplete() && /^\/\S+ (.*[ /])?$/.test((this.getLines()[line] ?? "").slice(0, col))) this.tryTriggerAutocomplete();
+      const lines = this.getLines();
+      if (/[ /]$/.test((lines[line] ?? "").slice(0, col)) && commandArgument(lines, line, col)) this.tryTriggerAutocomplete();
       return;
     }
     const at = this.getCursor();
@@ -207,9 +209,11 @@ export class CaretEditor extends sdk.CustomEditor {
     // already re-asked itself for the character; asking again would cancel that
     // request and start it over.
     const { line, col } = this.getCursor();
-    const text = this.getLines()[line] ?? "";
-    if (line !== at.line || col !== at.col + 1 || text.length !== was + 1 || this.isShowingAutocomplete()) return;
-    if (SEPARATORS.includes(text[col - 1]) && commandArgument(this.getLines(), line, col)) this.tryTriggerAutocomplete();
+    if (line !== at.line || col !== at.col + 1 || this.isShowingAutocomplete()) return;
+    const lines = this.getLines();
+    const text = lines[line] ?? "";
+    if (text.length !== was + 1) return;
+    if (SEPARATORS.includes(text[col - 1]) && commandArgument(lines, line, col)) this.tryTriggerAutocomplete();
   }
   // The host copies the settings editorPaddingX (default 0) onto custom
   // editors right after construction and on settings reloads; the caret
