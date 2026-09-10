@@ -93,6 +93,18 @@ export const paintSegment = (segment, theme) => {
   return segment.changes ? `${text} ${paintCounts(segment.changes, theme)}` : text;
 };
 
+// The mode takes the pair the plan row already gives approved and not approved:
+// scoped execution is success, a plan awaiting approval is warning. The word
+// carries the meaning, so nothing rests on the colour. The approval setting
+// rides beside it dim — /approvals changes what the broker prompts for and had
+// no visible trace anywhere.
+export function paintMode(status, theme) {
+  if (!status) return "";
+  const [mode, approval] = status.split(" ");
+  const painted = theme.fg(mode === "execute" ? "success" : "warning", mode);
+  return approval ? `${painted}${theme.fg("dim", ` · ${approval}`)}` : painted;
+}
+
 export function parseGitChanges(shortstat) {
   const insertions = shortstat.match(/(\d+) insertion/)?.[1];
   const deletions = shortstat.match(/(\d+) deletion/)?.[1];
@@ -249,10 +261,18 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
             branch: footerData.getGitBranch(),
             changes: state.changes,
           });
-          const left = segments.map(s => paintSegment(s, theme)).join(separator);
-          // The workflow mode; other extensions keep their own surfaces.
-          const right = footerData.getExtensionStatuses().get("workflow") ?? "";
-          const pad = " ".repeat(Math.max(1, width - PAD.length * 2 - visibleWidth(left) - visibleWidth(right)));
+          // The workflow mode; other extensions keep their own surfaces. It is
+          // painted here rather than at setStatus so a theme switch repaints it.
+          const right = paintMode(footerData.getExtensionStatuses().get("workflow") ?? "", theme);
+          // The left side yields first. Truncating the composed line instead
+          // eats the mode, and `· auto` and `· ask` clip to the same string —
+          // the mode says what the agent may do to the tree, where a branch and
+          // its counts are one `git status` away. The composed line already
+          // measures the full width; the outer truncate only bounds a terminal
+          // too narrow to hold the mode at all.
+          const rightWidth = visibleWidth(right);
+          const left = truncateToWidth(segments.map(s => paintSegment(s, theme)).join(separator), Math.max(0, width - PAD.length * 2 - rightWidth - 1));
+          const pad = " ".repeat(Math.max(1, width - PAD.length * 2 - visibleWidth(left) - rightWidth));
           // Child rows hang under the status line: pi's dock keeps the footer
           // last, so this is the only slot below it.
           return [truncateToWidth(PAD + left + pad + right + PAD, width), ...(fleet?.render(width, theme) ?? [])];

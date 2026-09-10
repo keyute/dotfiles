@@ -151,6 +151,27 @@ test("the plan row carries the tool's approval label", () => {
   assert.deepEqual(rendered(planRenderers.renderCall({}, theme, context())), ["<success>• <toolTitle>Plan approval"]);
 });
 
+test("the plan renders as markdown while the decision is open, then hands its body to ctrl+o", () => {
+  const plan = "# Context\n\nMove the plan out of the dialog.";
+  const body = rendered(new Markdown(plan, 2, 0, getMarkdownTheme()));
+  assert.ok(body.length > 1, "the body must render, or the assertions below hold vacuously");
+  const title = "• <toolTitle>Plan approval";
+  // Streaming args, and a call still queued behind another in the same batch,
+  // both stay a bare title: the body belongs to the call whose dialog is open.
+  assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, context({ isPartial: true }))), [title]);
+  assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, context({ argsComplete: true, isPartial: true }))), [title]);
+  const pending = context({ executionStarted: true, isPartial: true });
+  assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, pending)), [title, ...body]);
+
+  // A result is what retires the body; pi re-runs the call slot when it lands,
+  // and from there only `expanded` shows the plan.
+  const settled = context({ executionStarted: true, args: { plan } });
+  assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, settled)), [`<success>${title}`]);
+  const approved = result("Plan approved; scoped execution enabled.");
+  assert.deepEqual(rendered(planRenderers.renderResult(approved, { expanded: false }, theme, settled)), ["  <muted>↳ <success>approved"]);
+  assert.deepEqual(rendered(planRenderers.renderResult(approved, { expanded: true }, theme, settled)), ["  <muted>↳ <success>approved", ...body]);
+});
+
 test("diff counts take the theme's success/error pair, whichever minus the surface spells", () => {
   assert.equal(paintCounts("+3 -1", theme), "<success>+3 <error>-1");
   assert.equal(paintCounts("+2 −1", theme), "<success>+2 <error>−1");

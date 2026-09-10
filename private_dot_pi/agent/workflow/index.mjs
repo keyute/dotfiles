@@ -386,6 +386,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     });
   });
 
+  // Mode and approval reach the status line as one string so the two can never
+  // drift; the footer paints it, where the theme is live.
+  const publishStatus = ctx => ctx.ui.setStatus("workflow", `${broker.policy.mode} ${broker.policy.approval}`);
+
   async function setMode(mode, ctx) {
     if (!broker) throw new Error("Only the parent can change workflow mode");
     ready = false;
@@ -396,7 +400,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     publishEpoch();
     ready = true;
     pi.setThinkingLevel(mode === "plan" ? config.models.planEffort : config.models.defaultEffort);
-    ctx.ui.setStatus("workflow", mode);
+    publishStatus(ctx);
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -462,7 +466,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     } });
     pi.registerCommand("approvals", { description: "Choose auto-reviewed or individually prompted approvals", handler: async (_args, ctx) => {
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
-      if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); ctx.ui.setStatus("workflow", broker.policy.mode); }
+      if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); publishStatus(ctx); }
     } });
     const completions = values => values.map(value => ({ value, label: value }));
     pi.registerCommand("add-dir", { description: "Add a directory to the editable workspace and load its AGENTS.md", getArgumentCompletions: prefix => completions(broker.policy.addableDirs(prefix)), handler: async (args, ctx) => {
@@ -524,7 +528,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     });
     pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present the implementation plan for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), ...planRenderers, async execute(_id, args) {
       const ctx = currentContext;
-      if (!ctx.hasUI || !await ctx.ui.confirm("Approve this implementation plan?", args.plan)) return resultText("Plan not approved. Remain in planning mode.");
+      // The plan itself is the row above (planRenderers), not the dialog's body.
+      if (!ctx.hasUI || !await ctx.ui.confirm("Approve the current plan?", "Enable scoped edits and auto-reviewed actions for this task?")) return resultText("Plan not approved. Remain in planning mode.");
       userTask = `${userTask}\nApproved plan: ${args.plan}`.slice(-8000);
       await setMode("execute", ctx);
       return resultText("Plan approved; scoped execution enabled.");

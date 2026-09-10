@@ -123,6 +123,23 @@ pi's own glyphs. Each rule carries the why that earned it.
    exempt. The plan row took the tool's own label, `Plan approval`: `Updated
    plan` is Codex's `update_plan` phrase, and the row announces a plan submitted
    for approval, not one revised step by step.
+   *2026-09-10:* the plan itself moved out of the dialog and into the row. It had
+   been `confirm`'s second argument, which pi concatenates into the selector's
+   title and draws as one bold accent `Text` — no markdown, and the component is a
+   plain `Container`, so a plan taller than the terminal had nowhere to go. It now
+   renders as markdown under the row's title while the decision is open, where the
+   transcript's own scrollback holds it, and the dialog carries only the question.
+   Visible from the call's own `executionStarted` — the moment its dialog opens,
+   not the moment the batch's arguments completed — because nobody can approve
+   what they cannot see and nobody should read a plan whose turn has not come. A
+   result retires it through the row's own `isPartial`, after which `expanded`
+   governs it as it governs every other body. Rejected with it: `ui.custom` holding a subclass of pi's exported
+   `ExtensionSelectorComponent` with its title child swapped for a `Markdown` —
+   about fifteen lines, but `children[2]` is a positional grab at pi's private
+   layout, which rule 7 prices at a coupling entry plus a pin, and the dialog
+   still would not scroll. The plan row does not join the fold set, for
+   `workspace_task`'s reason: `WORDS` has no word for it, so the handle would draw
+   a caret with an empty label.
 3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the
@@ -156,6 +173,23 @@ pi's own glyphs. Each rule carries the why that earned it.
    meaning as well as the colour, so nothing rests on colour alone. The two
    surfaces spell the minus differently (`resultSummary`'s `−`, `git
    --shortstat`'s `-`), so the shared painter keys on the `+`.
+   *2026-09-10:* the mode on the right takes that same argument one step further.
+   It had been the bare word `plan` or `execute` in the terminal's default
+   foreground; it now takes the theme's success/warning pair — the pair the plan
+   row already gives approved and not approved — so an approved plan and the mode
+   it enables read as one fact with one encoding. No glyph: the word carries the
+   meaning, colour only reinforces it, and rule 1's set stays as small as it is.
+   The approval setting joined it as a dim second word, `execute · auto`.
+   *Why:* `/approvals` decides whether the broker prompts per action and had no
+   visible trace anywhere — its own handler re-published the mode string, so the
+   status line never moved. Painted in the footer's render rather than at
+   `setStatus`, as `paintSegment` and `paintCounts` are, so a theme switch
+   repaints it; mode and approval travel as one string so the two cannot drift.
+   The left side is also the side that yields when the line will not fit: the
+   composed line used to be truncated whole, which ate the right first, and
+   `· auto` and `· ask` clip to the same string — two states with one reading, on
+   any terminal under about ninety columns. The mode says what the agent may do
+   to the tree; a branch and its counts are one `git status` away.
 4. **A turn ends when nothing is running.** The turn line prints at
    `agent_settled` only when no background child or task is live; with either
    running it waits for the follow-up run to settle (or the user to type) and

@@ -350,10 +350,27 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 // The background-task tool: its result is a status line and the task's output.
 export const taskRenderers = rowRenderers({ name: "plugin", title: args => (args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`) });
 
+// The plan reads as chat, not as a dialog: pi's `confirm` folds its second
+// argument into the selector's title, which renders bold accent with no
+// markdown and no scroll, so the plan lands in the transcript instead and the
+// dialog asks only the question. It is visible while the decision is open —
+// nobody can approve what they cannot see — and `isPartial` retires it the
+// moment a result lands, after which `expanded` governs it as it governs every
+// other body: pi holds that flag until `updateResult`, which re-runs this slot,
+// and the glyph above already reads it as the row's settled state. The window
+// opens at `executionStarted`, which is the call's own turn rather than the
+// batch's: `argsComplete` fires at `message_end` for every call queued behind
+// this one, so gating on it would draw a plan before its dialog and strand the
+// body of a plan whose batch aborted before reaching it. It is also never set on
+// a non-streaming reply, where pi builds the row at `tool_execution_start` from
+// arguments that are already whole.
 export const planRenderers = {
   renderShell: "self",
-  renderCall(_args, theme, context) {
-    return new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Plan approval")}`, 0, 0);
+  renderCall(args, theme, context) {
+    const container = new Container();
+    container.addChild(new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Plan approval")}`, 0, 0));
+    if (context.executionStarted && context.isPartial && args?.plan) container.addChild(new Markdown(args.plan, PAD.length, 0, getMarkdownTheme()));
+    return container;
   },
   renderResult(result, options, theme, context) {
     const approved = /approved;/.test(resultText(result));

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { buildSegments, formatReset, installFooter, paintSegment, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
+import { buildSegments, formatReset, installFooter, paintMode, paintSegment, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
 import { createTurnClock } from "./rows.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
@@ -94,6 +94,17 @@ test("the branch's counts paint green and red, the rest of the segment does not"
   assert.equal(visibleWidth(paintSegment({ text: "main", color: "accent", changes: "+14 -2" }, ansi)), "main +14 -2".length);
 });
 
+test("the mode takes the plan row's approved/not-approved pair and carries its approval setting", () => {
+  const theme = { fg: (color, text) => `<${color}>${text}` };
+  assert.equal(paintMode("execute auto", theme), "<success>execute<dim> · auto");
+  assert.equal(paintMode("plan ask", theme), "<warning>plan<dim> · ask");
+  assert.equal(paintMode("plan", theme), "<warning>plan");
+  assert.equal(paintMode("", theme), "");
+  // The status line pads from this string too.
+  const ansi = { fg: (_color, text) => `\x1b[32m${text}\x1b[39m` };
+  assert.equal(visibleWidth(paintMode("execute auto", ansi)), "execute · auto".length);
+});
+
 test("reset timestamps format as time, weekly with weekday", () => {
   assert.match(formatReset(1_800_000_000), /^\d{2}:\d{2}$/);
   assert.match(formatReset(1_800_000_000, { weekday: true }), /^[A-Z][a-z]{2} \d{2}:\d{2}$/);
@@ -116,11 +127,23 @@ test("footer renders the status line first and the fleet rows under it", () => {
     const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; }, setWorkingVisible() {}, setWidget() {} } };
     installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet });
     const tui = { requestRender() {} };
-    const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", "plan"]]) };
-    const lines = factory(tui, { fg: (_color, text) => text }, footerData).render(60);
+    let status = "plan auto";
+    const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", status]]) };
+    const render = width => factory(tui, { fg: (_color, text) => text }, footerData).render(width);
+    const lines = render(60);
     assert.deepEqual(attached, [tui]);
-    assert.equal(lines[0], "  gpt-5.6-sol high · 27.2% · main" + " ".repeat(60 - 4 - 31 - 4) + "plan  ");
+    assert.equal(lines[0], "  gpt-5.6-sol high · 27.2% · main" + " ".repeat(60 - 4 - 31 - 11) + "plan · auto  ");
     assert.deepEqual(lines.slice(1), ["rows@60"]);
+    // Too narrow for both: the left gives way, so the mode and its approval
+    // survive whole. Truncating the composed line clipped the right first, and
+    // `· auto` and `· ask` clip to the same string — two states, one reading.
+    const auto = render(30)[0];
+    status = "plan ask";
+    const ask = render(30)[0];
+    assert.ok(auto.endsWith("plan · auto  "), auto);
+    assert.ok(ask.endsWith("plan · ask  "), ask);
+    assert.equal(visibleWidth(auto), 30);
+    assert.equal(visibleWidth(ask), 30);
   } finally {
     process.env.PATH = path;
   }

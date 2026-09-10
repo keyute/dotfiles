@@ -1,6 +1,8 @@
 # Pi implementation working record
 
-Last updated: 2026-09-10 (`/add-dir` completions climb past dead levels;
+Last updated: 2026-09-10 (plan renders as markdown in its row, painted mode and
+approval on the status line; earlier the same day: `/add-dir` completions climb
+past dead levels;
 earlier: 2026-09-09 compact subagent-notice row, `/add-dir` as-you-type
 completion and `..`; earlier the same day: Tab offers only declared candidates,
 harness.md trigger; earlier the same day: Tab scope, fold caret, questionnaire notes; earlier
@@ -775,6 +777,59 @@ live-tested on the host.
   separator — a typed name filters the level it was typed under. Not applied or
   live-tested on the host; `npm run test:pi` is green (237 pass, 7 skipped,
   0 fail).
+
+- 2026-09-10 (owner report on the plan and the status line): two rendering
+  changes. (1) `submit_plan` stopped passing the plan as `confirm`'s second
+  argument. pi's `confirm` is a convenience over `showExtensionSelector`: it
+  concatenates title and message and hands the result to
+  `ExtensionSelectorComponent`, which draws the whole string as one
+  `Text(theme.fg("accent", theme.bold(title)), 1, 0)` — bold accent, no markdown,
+  and the component is a plain `Container`, so nothing scrolls. `planRenderers`
+  now renders the plan as `Markdown` under its own row while the decision is open
+  and the dialog carries only `/execute`'s wording, so the two approval paths ask
+  the same question. The body retires on the row's own `isPartial`: pi initialises
+  it true and clears it only in `updateResult`, which re-runs the call slot, so
+  the flag already means "a result exists" — `glyph()` has read it that way all
+  along. A first pass reinvented this as a `state.settled` flag set from
+  `renderResult` with a queued `invalidate`, by analogy to `state.failed`; the
+  analogy does not hold, because `state.failed` exists only to cover a case pi's
+  `isError` genuinely misses, and the review that caught it is why the microtask,
+  the re-entrancy guard and an extra rebuild are all gone. The window opens at
+  `executionStarted`, after a first pass used `argsComplete`. That was wrong three
+  ways: `setArgsComplete` fires at `message_end` for every call in the batch, so a
+  plan queued behind another drew its body before its dialog, and an abort that
+  broke the batch before reaching it (`executeToolCallsSequential`) left that body
+  stranded for the session, since no `tool_execution_end` follows; and it is never
+  set at all on a non-streaming reply, where `pendingTools` is only ever populated
+  from `message_update` and the row is built at `tool_execution_start` instead —
+  which would have hidden the plan outright on that path. `executionStarted` is
+  per call, implies whole arguments, and is the call's own turn. Considered and declined: `ui.custom`
+  returning a subclass of pi's exported `ExtensionSelectorComponent` with
+  `children[2]` swapped for a `Markdown`. It is about fifteen lines and keeps
+  pi's border, list and key handling, but the index is a positional assumption
+  about a layout pi does not document, so design rule 7 charges it a coupling
+  entry and a `stability.test.mjs` pin — and the dialog would still not scroll,
+  which is the part that actually limits a long plan. (2) The status line's right
+  side takes `paintMode`: `execute` in the theme's success, `plan` in warning —
+  the pair `planRenderers` already gives approved and not approved — with the
+  approval setting beside it in dim. No glyph, since the word carries the meaning
+  and rule 1's set is worth keeping small. The approval word also fixes a dead
+  call: `/approvals` published `broker.policy.mode`, so changing between `auto`
+  and `ask` re-set the string it was already showing; both call sites now go
+  through one `publishStatus` that emits `"<mode> <approval>"`, and the footer
+  splits and paints it at render time, where the theme is live. The composed line
+  was being truncated whole, which clips the right side first: with both usage
+  windows the left is 73 columns on its own, so `execute · auto` needed 92 to
+  survive and an 80-column terminal lost the approval word — leaving `plan · a…`
+  for both settings. The left is now truncated against the space the mode does
+  not need, so the mode and its approval stay whole and the branch gives way. The
+  pre-existing clipping was left alone until this change made two states render
+  alike. Declined from the same review: shedding the two-column margins and the
+  gap so the mode survives between eleven and fifteen columns. The margins are
+  rule 8, the model id alone is longer than that terminal, and no one has run one.
+  Not applied or
+  live-tested on the host — pi is not installed here, so the rendering is
+  test-verified only; `npm run test:pi` is green (239 pass, 7 skipped, 0 fail).
 
 ## Verification and remaining gates
 
