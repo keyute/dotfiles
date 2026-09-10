@@ -1,8 +1,9 @@
 # Pi implementation working record
 
-Last updated: 2026-09-10 (plan renders as markdown in its row, painted mode and
-approval on the status line; earlier the same day: `/add-dir` completions climb
-past dead levels;
+Last updated: 2026-09-10 (fold extent derived from ordered facts, failed rows and
+visible entries as separators; earlier the same day: plan renders as markdown in
+its row, painted mode and approval on the status line; earlier the same day:
+`/add-dir` completions climb past dead levels;
 earlier: 2026-09-09 compact subagent-notice row, `/add-dir` as-you-type
 completion and `..`; earlier the same day: Tab offers only declared candidates,
 harness.md trigger; earlier the same day: Tab scope, fold caret, questionnaire notes; earlier
@@ -759,6 +760,58 @@ live-tested on the host.
   `dangerouslyDisableSandbox: true`) because the suite needs a live Postgres:
   the escalation path worked as designed, and the waste belongs to the target
   repo's own AGENTS.md rather than to this one.
+
+- 2026-09-10 (two screenshots, collapsed and expanded): fold extent is derived,
+  not maintained. `rows.mjs` replaces `{current, byId -> mutable group}` with an
+  ordered `timeline` of facts — `{kind:"tool", id, key, outcome}` and
+  `{kind:"boundary", id}` — plus a `revision`-cached derivation; a run is a
+  maximal stretch of `success` rows, all outcomes settled, with a separator on
+  its right, and under two rows it is not materialised at all. `views` holds
+  open/expandedAt keyed by the run's right-hand boundary (`failed:<id>` or `bN`),
+  the one part fixed when it seals, so ctrl+o and click state survive
+  re-derivation; `refold` diffs membership before and after a fact and wakes only
+  the rows whose group changed, deriving fresh before any invalidate because pi
+  rebuilds a row synchronously. Two defects drove it: four of six
+  `pi.appendEntry` sites never closed the group (`workflow-task`, both
+  `workflow-note`s, `workflow-answers` — `footer.mjs` and `fleet.mjs` did), and a
+  failed row stayed a counted member of the header that force-rendered it, which
+  `rows.test.mjs:339` had pinned. `appendVisible` now carries the boundary with
+  the entry at all six sites and `stability.test.mjs` fails any other route to
+  `pi.appendEntry`. A visible custom message closes the group through
+  `message_end` (`displays`), gated on a truthy `display` to match pi's own draw
+  test. That covers the notices a steered turn delivers and not the ones pi
+  appends outside the agent stream: `_appendCustomMessage` emits to
+  `_eventListeners` only and `_emitExtensionEvent` handles agent-stream types
+  alone, so a goal-mission notice (`triggerTurn: false`) still draws inside a
+  group — the residual now recorded in rule 2, left rather than closed at
+  `pi.sendMessage`, which would fire early for the deferred append and buy a
+  rule 7 coupling on pi's routing. Rejected on the way: dropping the
+  failed row from its group and closing, which Codex and a trace both showed
+  wrong under a parallel batch — pi emits every `tool_execution_start` in
+  call order before executing (`agent-loop.js` `executeToolCallsParallel`), so
+  rows started after the failure remained members of the group above it and
+  rendered hidden under a header sitting above the separator. Codex proposed
+  transactional splitting instead, then changed to this model when shown the
+  recurrence history; splitting was declined as the hardest possible mutation
+  (partitioning a live group while preserving view state under synchronous
+  invalidation) against a mechanism that had already failed three times. Two
+  defects came back from the review round and were fixed: a pending row reset the
+  run instead of holding it, so the rows after it sealed and the group then grew
+  a row and moved its handle when the pending one landed; and a `settleAll` on
+  turn end, written for an abort that leaves rows pending, was removed outright —
+  `emitToolExecutionEnd` runs before the executor's `if (signal?.aborted) break`
+  and the parallel path emits an aborted end of its own, so nothing is ever left
+  pending, and the `success` it wrote would have let `settleFold`'s own guard
+  discard a real failure and fold it as a member. Tests: 254 total, 247 pass,
+  7 skipped, 0 fail — two rewritten (`rows.test.mjs` 187, 339), one amended (90),
+  one widened to two rows (139), and eight added, including ctrl+o both ways
+  across the two groups a failed row splits apart, a failure at either end of a
+  batch, the pending-row hold, and the `pi.appendEntry` source guard.
+  Follow-ups left alone: `folds.timeline`, `folds.invalidate` and `folds.views`
+  all grow for the session's life, as `folds.invalidate` already did; and each
+  fact costs a walk of the timeline in `derive` plus a member-map copy in
+  `refold`, so a session is O(n²) in facts where the old model was O(1) per
+  event — irrelevant at a few thousand rows, worth revisiting if it is not.
 
 - 2026-09-10 (owner report on `/add-dir ../`): `addableDirs` climbs on its own.
   It answered one level at a time, so a cwd at the bottom of a single-child

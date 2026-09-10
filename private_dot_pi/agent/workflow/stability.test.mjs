@@ -163,3 +163,12 @@ for (const api of documentedApis) {
     assert.ok(docs.includes(api), `${api} is not documented`);
   });
 }
+
+// Every line that stays visible ends the run of folded rows above it
+// (docs/pi-design.md rule 2). The boundary rides with `appendVisible` so no
+// call site has to remember one — this holds the rest of them to that path,
+// which prose did not: four of six sites drifted off it before 2026-09-10.
+test("pi.appendEntry is only reached through appendVisible", () => {
+  const offenders = sourceFiles.filter(file => file !== "rows.mjs" && readFileSync(join(dir, file), "utf8").includes("pi.appendEntry("));
+  assert.deepEqual(offenders, [], `these call pi.appendEntry directly instead of appendVisible: ${offenders.join(", ")}`);
+});

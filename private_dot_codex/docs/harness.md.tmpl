@@ -12,7 +12,7 @@
   override.
 - `/fast` is a separate speed toggle, not a model or reasoning-effort profile.
 
-## Limits (last verified 2026-09-06; revisit Sol pricing 2026-11-21)
+## Limits (last verified 2026-09-10; revisit Sol pricing 2026-11-21)
 
 - Subscription metering is token-based credits (since 2026-04): one shared
   credit pool across CLI, IDE extension, cloud tasks, and other ChatGPT agent
@@ -28,6 +28,18 @@
   2.5× Standard. Keep bounded work on the lower tiers and Fast off unless needed.
 - Reasoning effort scales burn directly: drop effort per session via `/model`
   for routine work instead of changing the managed default.
+- Context window is 272,000 input tokens on the ChatGPT-subscription route, and
+  the harness inherits it from the model catalog — nothing here pins it. Do not
+  raise `model_context_window` above it: Codex clamps the value to the catalog's
+  `max_context_window` and then to ~95%, so a larger number is cosmetic
+  (`/status` shows it until the first message, then the real cap) and it
+  miscalibrates auto-compaction, which is sized off the configured window. The
+  1,050,000 window the model pages advertise is real but API-key only, and input
+  above 272,000 bills the whole request at 2x input / 1.5x output. This ceiling
+  moved 272K -> 372K -> 872K -> 272K across 2026 without notice, so read
+  `/status` rather than trusting any number written down — including this one.
+  (Verified 2026-09-10 against the pinned SDK catalog; revisit at the next Codex
+  CLI catalog bump, or if `/status` reports anything but 272K.)
 - Attached MCP servers reload their full tool schemas every turn — an accepted
   cost here; revisit the server list if the weekly limit starts binding.
 

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, formatDuration, formatTurn, glyph, installFolding, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, summarise, toolRenderers } from "./rows.mjs";
+import { addFold, answerLines, appendVisible, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, foldGroup, formatDuration, formatTurn, glyph, installFolding, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, settleFold, summarise, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -97,6 +97,9 @@ test("folded rows render nothing; the first row carries the caret handle in both
     row.renderers.renderCall({}, theme, contextFor(row)); // first render precedes registration
     addFold(folds, row.id, row.tool);
   }
+  // A run seals only once every member has an outcome: until then any of them
+  // could turn out to be a separator rather than a member.
+  for (const row of rows) settleFold(folds, row.id, false);
   closeFolds(folds);
   assert.deepEqual(rows.map(row => row.invalidated), [1, 1, 1]);
   const handle = rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0]));
@@ -129,22 +132,38 @@ test("folded rows render nothing; the first row carries the caret handle in both
   toolsExpanded = false;
   assert.deepEqual(rendered(rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0]))), ["<muted>▸ Read 2 files, ran 1 shell command"]);
   assert.deepEqual(rows.map(row => row.invalidated), [4, 5, 4]);
-  closeFolds(folds); // nothing open: no re-invalidation
+  closeFolds(folds); // the run already ends in a boundary: no second one, no re-invalidation
   assert.deepEqual(rows.map(row => row.invalidated), [4, 5, 4]);
+  // A row still forming belongs to no run; the sealed one above it is untouched.
   addFold(folds, "d", "grep");
-  assert.equal(folds.byId.get("d").collapsed, false);
-  assert.equal(folds.byId.get("a").collapsed, true);
+  assert.equal(foldGroup(folds, "d"), null);
+  assert.equal(foldGroup(folds, "a"), foldGroup(folds, "c"));
 });
 
-test("a group that forms while ctrl+o is on opens with it", () => {
+test("a group that seals while ctrl+o is on opens with it", () => {
   const folds = createFolds(() => true);
   const renderers = toolRenderers("read", folds);
-  const ctx = () => context({ toolCallId: "g1" });
-  renderers.renderCall({ path: "a" }, theme, ctx());
-  addFold(folds, "g1", "read");
+  const ctx = id => context({ toolCallId: id });
+  for (const id of ["g1", "g2"]) {
+    renderers.renderCall({ path: "a" }, theme, ctx(id));
+    addFold(folds, id, "read");
+    settleFold(folds, id, false);
+  }
   closeFolds(folds);
-  // The flag was already true at close, so no transition is left to react to.
-  assert.deepEqual(rendered(renderers.renderCall({ path: "a" }, theme, ctx())), ["<toolTitle>▾ Read 1 file", "<success>• <toolTitle>Read a"]);
+  // The flag was already true when it sealed, so no transition is left to react to.
+  assert.deepEqual(rendered(renderers.renderCall({ path: "a" }, theme, ctx("g1"))), ["<toolTitle>▾ Read 2 files", "<success>• <toolTitle>Read a"]);
+});
+
+test("one row is never a group: a handle that hides a single line saves nothing", () => {
+  const folds = createFolds(() => false);
+  const renderers = toolRenderers("read", folds);
+  const ctx = () => context({ toolCallId: "s1" });
+  renderers.renderCall({ path: "a" }, theme, ctx());
+  addFold(folds, "s1", "read");
+  settleFold(folds, "s1", false);
+  closeFolds(folds);
+  assert.equal(foldGroup(folds, "s1"), null);
+  assert.deepEqual(rendered(renderers.renderCall({ path: "a" }, theme, ctx())), ["<success>• <toolTitle>Read a"]);
 });
 
 test("the plan row carries the tool's approval label", () => {
@@ -188,47 +207,194 @@ test("folding closes on assistant text, streaming or not, and on anything that s
   const folds = createFolds();
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
-  handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "r1" });
-  handlers.tool_execution_start({ toolName: "mcp__exa_web_search_exa", toolCallId: "m1" });
+  const start = (toolName, toolCallId) => handlers.tool_execution_start({ toolName, toolCallId });
+  const ok = toolCallId => handlers.tool_execution_end({ toolCallId, isError: false, result: { details: {} } });
+  const says = text => ({ message: { role: "assistant", content: [{ type: "text", text }] } });
+  start("workspace_read", "r1");
+  start("mcp__exa_web_search_exa", "m1");
+  ok("r1");
+  ok("m1");
+  // Neither thinking, whitespace, nor the user's own message is a boundary.
   handlers.message_update({ message: { role: "assistant", content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: " " }] } });
   handlers.message_update({ message: { role: "user", content: [{ type: "text", text: "hi" }] } });
-  assert.equal(folds.byId.get("r1").collapsed, false);
-  assert.deepEqual(folds.byId.get("m1").counts, { read: 1, mcp: 1 });
-  // A subagent row stays visible: it closes the group, and the next foldable row opens a new one.
-  handlers.tool_execution_start({ toolName: "subagent", toolCallId: "s1" });
-  assert.equal(folds.byId.has("s1"), false);
-  assert.equal(folds.byId.get("r1").collapsed, true);
+  assert.equal(foldGroup(folds, "r1"), null);
+  handlers.message_update(says("Done"));
+  assert.deepEqual(foldGroup(folds, "m1").counts, { read: 1, mcp: 1 });
+  assert.equal(foldGroup(folds, "r1"), foldGroup(folds, "m1"));
+  // A subagent row stays visible: it seals the run above and joins none.
+  start("workspace_read", "r4");
+  start("workspace_read", "r5");
+  ok("r4");
+  ok("r5");
+  start("subagent", "s1");
+  assert.equal(foldGroup(folds, "s1"), null);
+  assert.deepEqual(foldGroup(folds, "r4").counts, { read: 2 });
   // A background task is running work, not housekeeping: its row stays visible too.
-  handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "r4" });
-  handlers.tool_execution_start({ toolName: "workspace_task", toolCallId: "t1" });
-  assert.equal(folds.byId.has("t1"), false);
-  assert.equal(folds.byId.get("r4").collapsed, true);
-  handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "b1" });
-  assert.notEqual(folds.byId.get("b1"), folds.byId.get("r1"));
-  assert.deepEqual(folds.byId.get("b1").counts, { bash: 1 });
-  handlers.message_update({ message: { role: "assistant", content: [{ type: "text", text: "Done" }] } });
-  assert.equal(folds.byId.get("b1").collapsed, true);
-  // A failure (pi's isError or the adapter's details.error) closes its group as the last row.
-  handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "b2" });
-  handlers.tool_execution_end({ toolName: "workspace_bash", toolCallId: "b2", isError: true, result: {} });
-  assert.equal(folds.byId.get("b2").collapsed, true);
-  handlers.tool_execution_start({ toolName: "mcp__exa_web_search_exa", toolCallId: "m2" });
-  handlers.tool_execution_end({ toolName: "mcp__exa_web_search_exa", toolCallId: "m2", isError: false, result: { details: { error: "auth_required" } } });
-  assert.equal(folds.byId.get("m2").collapsed, true);
-  handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "r2" });
-  handlers.tool_execution_end({ toolName: "workspace_read", toolCallId: "r2", isError: false, result: { details: {} } });
-  assert.equal(folds.byId.get("r2").collapsed, false);
-  // Parallel tools end in completion order: a failure from an earlier, already
-  // closed group (or a non-foldable tool) leaves the group still forming alone.
-  handlers.tool_execution_end({ toolName: "workspace_bash", toolCallId: "b1", isError: true, result: {} });
-  handlers.tool_execution_end({ toolName: "subagent", toolCallId: "s1", isError: true, result: {} });
-  assert.equal(folds.byId.get("r2").collapsed, false);
+  start("workspace_read", "r6");
+  start("workspace_read", "r7");
+  ok("r6");
+  ok("r7");
+  start("workspace_task", "t1");
+  assert.equal(foldGroup(folds, "t1"), null);
+  assert.deepEqual(foldGroup(folds, "r6").counts, { read: 2 });
+  assert.notEqual(foldGroup(folds, "r6"), foldGroup(folds, "r4"));
+  // A visible custom message — pi-subagents' control notice — is a line like
+  // any other, and pi appends it at message_end.
+  start("workspace_bash", "b1");
+  start("workspace_bash", "b2");
+  ok("b1");
+  ok("b2");
+  handlers.message_end({ message: { customType: "subagent_control_notice", display: true, content: "researcher needs attention" } });
+  assert.deepEqual(foldGroup(folds, "b1").counts, { bash: 2 });
   // A new run closes whatever is open; a non-streaming reply closes at its end.
+  start("workspace_read", "r2");
+  start("workspace_read", "r3");
+  ok("r2");
+  ok("r3");
   handlers.agent_start({});
-  assert.equal(folds.byId.get("r2").collapsed, true);
-  handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "r3" });
-  handlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "Ok" }] } });
-  assert.equal(folds.byId.get("r3").collapsed, true);
+  assert.deepEqual(foldGroup(folds, "r2").counts, { read: 2 });
+  start("workspace_edit", "d1");
+  start("workspace_edit", "d2");
+  ok("d1");
+  ok("d2");
+  handlers.message_end(says("Ok"));
+  assert.deepEqual(foldGroup(folds, "d1").counts, { edit: 2 });
+});
+
+test("a failed row separates the runs on either side of it, whatever order the batch settles in", () => {
+  const folds = createFolds();
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  // pi emits every start in tool-call order before the batch executes, so the
+  // timeline is transcript order however the ends interleave.
+  for (const [id, tool] of [["r1", "workspace_read"], ["r2", "workspace_read"], ["f", "workspace_bash"], ["e1", "workspace_edit"], ["e2", "workspace_edit"]]) {
+    handlers.tool_execution_start({ toolName: tool, toolCallId: id });
+  }
+  handlers.tool_execution_end({ toolCallId: "f", isError: true, result: {} });
+  // Nothing seals while a member is still pending: its outcome decides whether
+  // it is a member or another separator.
+  assert.equal(foldGroup(folds, "r1"), null);
+  for (const id of ["e1", "r2", "e2", "r1"]) handlers.tool_execution_end({ toolCallId: id, isError: false, result: { details: {} } });
+  handlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } });
+  const above = foldGroup(folds, "r1");
+  const below = foldGroup(folds, "e1");
+  assert.equal(above, foldGroup(folds, "r2"));
+  assert.equal(below, foldGroup(folds, "e2"));
+  assert.notEqual(above, below);
+  // The failure is in neither, and neither summary counts it.
+  assert.equal(foldGroup(folds, "f"), null);
+  assert.equal(summarise(above.counts), "Read 2 files");
+  assert.equal(summarise(below.counts), "Edited 2 files");
+});
+
+test("ctrl+o drives every group both ways, including the two a failed row split apart", () => {
+  let toolsExpanded = false;
+  const folds = createFolds(() => toolsExpanded);
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => toolsExpanded } }, folds);
+  const rows = [["r1", "workspace_read"], ["r2", "workspace_read"], ["f", "workspace_bash"], ["e1", "workspace_edit"], ["e2", "workspace_edit"]];
+  const renderers = Object.fromEntries(rows.map(([id, tool]) => [id, toolRenderers(tool.slice("workspace_".length), folds)]));
+  const invalidated = {};
+  const ctx = id => context({ toolCallId: id, isError: id === "f", invalidate: () => { invalidated[id] = (invalidated[id] ?? 0) + 1; } });
+  const draw = id => rendered(renderers[id].renderCall({ path: id, command: id }, theme, ctx(id)));
+  for (const [id, tool] of rows) {
+    renderers[id].renderCall({ path: id, command: id }, theme, ctx(id)); // first render precedes the start event
+    handlers.tool_execution_start({ toolName: tool, toolCallId: id });
+  }
+  handlers.tool_execution_end({ toolCallId: "f", isError: true, result: {} });
+  for (const id of ["r1", "r2", "e1", "e2"]) handlers.tool_execution_end({ toolCallId: id, isError: false, result: { details: {} } });
+  handlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } });
+  // Two groups, each with its own handle; the failure between them has neither.
+  assert.deepEqual(draw("r1"), ["<muted>▸ Read 2 files"]);
+  assert.deepEqual(draw("r2"), []);
+  assert.deepEqual(draw("e1"), ["<muted>▸ Edited 2 files"]);
+  assert.deepEqual(draw("f"), ["<error>• <toolTitle>Ran f"]);
+  // ctrl+o on opens both, each from whichever of its own rows renders first.
+  toolsExpanded = true;
+  assert.deepEqual(draw("r1"), ["<toolTitle>▾ Read 2 files", "<success>• <toolTitle>Read r1"]);
+  assert.deepEqual(draw("r2"), ["<success>• <toolTitle>Read r2"]);
+  assert.deepEqual(draw("e1"), ["<toolTitle>▾ Edited 2 files", "<success>• <toolTitle>Edited e1"]);
+  assert.deepEqual(draw("e2"), ["<success>• <toolTitle>Edited e2"]);
+  // ctrl+o off collapses both back.
+  toolsExpanded = false;
+  assert.deepEqual(draw("r1"), ["<muted>▸ Read 2 files"]);
+  assert.deepEqual(draw("r2"), []);
+  assert.deepEqual(draw("e1"), ["<muted>▸ Edited 2 files"]);
+  assert.deepEqual(draw("e2"), []);
+  // One group clicked open against the flag follows it again at the next press,
+  // and the other is not disturbed by that click.
+  const handle = renderers.e1.renderCall({ path: "e1" }, theme, ctx("e1"));
+  handle.handleMouse({ type: "click", button: "left", x: 0, y: 0 });
+  assert.deepEqual(draw("e1"), ["<toolTitle>▾ Edited 2 files", "<success>• <toolTitle>Edited e1"]);
+  assert.deepEqual(draw("r1"), ["<muted>▸ Read 2 files"]);
+  toolsExpanded = true;
+  assert.deepEqual(draw("r1"), ["<toolTitle>▾ Read 2 files", "<success>• <toolTitle>Read r1"]);
+  assert.deepEqual(draw("e1"), ["<toolTitle>▾ Edited 2 files", "<success>• <toolTitle>Edited e1"]);
+  toolsExpanded = false;
+  assert.deepEqual(draw("e1"), ["<muted>▸ Edited 2 files"]);
+  assert.deepEqual(draw("r1"), ["<muted>▸ Read 2 files"]);
+});
+
+test("the adapter's details.error is a failure too, and a lone failure leaves no handle behind", () => {
+  const folds = createFolds();
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  handlers.tool_execution_start({ toolName: "mcp__exa_web_search_exa", toolCallId: "m2" });
+  handlers.tool_execution_end({ toolCallId: "m2", isError: false, result: { details: { error: "auth_required" } } });
+  handlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } });
+  assert.equal(foldGroup(folds, "m2"), null);
+});
+
+test("a failure at either end of a batch leaves one run, not two", () => {
+  const drive = order => {
+    const folds = createFolds();
+    const handlers = {};
+    installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+    for (const [id, tool] of order) handlers.tool_execution_start({ toolName: tool, toolCallId: id });
+    for (const [id] of order) handlers.tool_execution_end({ toolCallId: id, isError: id === "f", result: { details: {} } });
+    handlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } });
+    return folds;
+  };
+  // First: nothing above it to seal, one run below.
+  const first = drive([["f", "workspace_bash"], ["e1", "workspace_edit"], ["e2", "workspace_edit"]]);
+  assert.equal(foldGroup(first, "f"), null);
+  assert.equal(summarise(foldGroup(first, "e1").counts), "Edited 2 files");
+  assert.equal(foldGroup(first, "e1"), foldGroup(first, "e2"));
+  // Last: one run above it, and it needs no boundary of its own after it.
+  const last = drive([["r1", "workspace_read"], ["r2", "workspace_read"], ["f", "workspace_bash"]]);
+  assert.equal(foldGroup(last, "f"), null);
+  assert.equal(summarise(foldGroup(last, "r1").counts), "Read 2 files");
+  assert.equal(foldGroup(last, "r1"), foldGroup(last, "r2"));
+});
+
+test("a pending row holds its whole run back, so no handle appears and then moves", () => {
+  const folds = createFolds();
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  for (const id of ["a", "b", "c"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
+  for (const id of ["b", "c"]) handlers.tool_execution_end({ toolCallId: id, isError: false, result: { details: {} } });
+  // A child's completion line can land mid-batch, while `a` is still running.
+  closeFolds(folds);
+  assert.equal(foldGroup(folds, "b"), null);
+  handlers.tool_execution_end({ toolCallId: "a", isError: false, result: { details: {} } });
+  // The run seals once, whole, with its handle on the row that actually leads it.
+  const group = foldGroup(folds, "a");
+  assert.equal(summarise(group.counts), "Read 3 files");
+  assert.equal(group.entries[0].id, "a");
+});
+
+test("appendVisible is the boundary: appending the entry is what draws the line", () => {
+  const folds = createFolds(() => false);
+  const appended = [];
+  const pi = { appendEntry: (type, data) => appended.push([type, data]) };
+  addFold(folds, "v1", "read");
+  addFold(folds, "v2", "read");
+  settleFold(folds, "v1", false);
+  settleFold(folds, "v2", false);
+  assert.equal(foldGroup(folds, "v1"), null);
+  appendVisible(pi, "workflow-task", { id: "t1", status: "failed" }, folds);
+  assert.deepEqual(appended, [["workflow-task", { id: "t1", status: "failed" }]]);
+  assert.deepEqual(foldGroup(folds, "v1").counts, { read: 2 });
 });
 
 test("plugin rows: MCP failures reported in details turn the row red after the render; a launch reads as launched", async () => {
@@ -336,14 +502,16 @@ test("the turn clock draws one verb per turn and ignores nested starts", () => {
   assert.equal(clock.stop(1000, { aborted: true }).aborted, true);
 });
 
-test("a failed row stays visible inside a fold, under the summary when it is the first row", () => {
-  const folds = createFolds();
+test("a failed row is never folded: no handle above it, and its body renders in full", () => {
+  const folds = createFolds(() => false);
   const renderers = toolRenderers("bash", folds);
   const failed = context({ toolCallId: "e1", isError: true });
   renderers.renderCall({ command: "false" }, theme, failed);
   addFold(folds, "e1", "bash");
+  settleFold(folds, "e1", true);
   closeFolds(folds);
-  assert.deepEqual(rendered(renderers.renderCall({ command: "false" }, theme, failed)), ["<muted>▸ Ran 1 shell command", "<error>• <toolTitle>Ran false"]);
+  assert.equal(foldGroup(folds, "e1"), null);
+  assert.deepEqual(rendered(renderers.renderCall({ command: "false" }, theme, failed)), ["<error>• <toolTitle>Ran false"]);
   assert.deepEqual(rendered(renderers.renderResult(result("boom"), { expanded: false }, theme, failed)), ["  <error>boom"]);
 });
 

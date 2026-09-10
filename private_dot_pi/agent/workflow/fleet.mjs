@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
-import { CHILD, TITLE_WIDTH, closeFolds, completionLine, defaultFolds, oneLine, shortTitle } from "./rows.mjs";
+import { CHILD, TITLE_WIDTH, appendVisible, completionLine, oneLine, shortTitle } from "./rows.mjs";
 
 // Rows hang under the status line as Claude Code's subagent statusline does
 // (docs/pi-design.md): `○ title · tokens · model` per child, the cursor row
@@ -180,8 +180,7 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     const status = (statuses.length ? STATUS_ORDER.find(s => statuses.includes(s)) ?? statuses[0] : null)
       ?? (payload?.state === "paused" || payload?.state === "stopped" ? payload.state : payload?.success === true ? "completed" : "failed");
     const durationMs = typeof payload?.durationMs === "number" ? payload.durationMs : undefined;
-    closeFolds(defaultFolds);
-    pi.appendEntry("workflow-child", { agent: launch?.agent ?? payload?.agent ?? "subagent", task: launch?.task ?? "", status, durationMs });
+    appendVisible(pi, "workflow-child", { agent: launch?.agent ?? payload?.agent ?? "subagent", task: launch?.task ?? "", status, durationMs });
     wake();
   });
   pi.registerEntryRenderer("workflow-child", (entry, _options, theme) => new Text(completionLine(entry.data, theme), 0, 0));

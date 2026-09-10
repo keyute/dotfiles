@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { readLines, sendLine } from "./lines.mjs";
-import { PAD, closeFolds, createTurnClock, defaultFolds, formatTurn, paintCounts } from "./rows.mjs";
+import { PAD, appendVisible, createTurnClock, formatTurn, paintCounts } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 
 // Usage comes from codex's own app-server (JSONL JSON-RPC, `jsonrpc` header
@@ -202,7 +202,7 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     state.waiting = false;
     stopWorking();
     const turn = clock.stop(Date.now(), options);
-    if (turn) { closeFolds(defaultFolds); pi.appendEntry("workflow-turn", turn); }
+    if (turn) appendVisible(pi, "workflow-turn", turn);
   };
   pi.on("agent_start", () => {
     clock.start();

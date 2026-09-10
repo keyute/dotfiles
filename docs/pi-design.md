@@ -140,6 +140,49 @@ pi's own glyphs. Each rule carries the why that earned it.
    still would not scroll. The plan row does not join the fold set, for
    `workspace_task`'s reason: `WORDS` has no word for it, so the handle would draw
    a caret with an empty label.
+   *2026-09-10, from two screenshots:* the rule is now stated whole — a group
+   holds hidden rows only, and anything that stays visible is a separator that no
+   summary counts — and the extent is derived rather than maintained. Two
+   symptoms sent it back: one handle spanning nineteen rows straight through two
+   `task … finished` lines, and `▸ Ran 1 shell command` drawn directly above the
+   single visible shell command it claimed to have folded. The first was four of
+   six `pi.appendEntry` sites never closing the group (`workflow-task`, both
+   `workflow-note`s, `workflow-answers`; the turn line and the child completion
+   line did). The second was a failed row counted by the header that could not
+   hide it — the behaviour `rows.test.mjs` had pinned since the rule was written,
+   so it is retired here rather than repaired. A failed row now separates:
+   groupable rows, a failure, groupable rows draws two handles with the failure
+   loose between them. A run of one is no longer a group either — one row behind
+   one header line hides nothing and spends a caret on content that is not there.
+   Rather than a fourth close trigger the extent moved: `rows.mjs` keeps an
+   ordered timeline of facts, a row with its outcome and a boundary per visible
+   line, and reads runs back out of it — a maximal stretch of successful rows,
+   every outcome settled, with a separator on its right. Sealed on those terms a
+   run can never need splitting, which is what the mutable version got wrong
+   under a parallel batch: pi emits every `tool_execution_start` in call order
+   before the batch runs, so membership was fixed while the failure that divided
+   it was known only at `tool_execution_end`, and rows that started after the
+   failure sat inside the group above it. A run is keyed by its right-hand
+   boundary, the one part of it fixed at the moment it seals, so ctrl+o and click
+   state survive re-derivation. `appendVisible` carries the boundary with the
+   entry and `stability.test.mjs` fails any other route to `pi.appendEntry`.
+   Residual: a visible custom message pi appends outside the agent stream
+   registers no boundary and can still be swallowed by a group.
+   `_appendCustomMessage` emits to session listeners only, never to the extension
+   runner, and `_emitExtensionEvent` handles agent-stream types alone, so no
+   documented event reaches it; the notices that arrive through a steered turn
+   are covered by `message_end`. Reaching the rest would mean closing at
+   `pi.sendMessage` on a guess about pi's routing — early for the deferred
+   append — and rule 7 prices that guess above the cost of an uncovered
+   goal-mission notice.
+   *Why:* this is the third recurrence of one defect — 2026-09-08 above is the
+   first — and both earlier fixes added a trigger to a list someone had to keep
+   complete; prose asked six call sites to remember and four did not. Codex,
+   asked for an independent read, proposed the smaller mutable repair first and
+   changed to this on the recurrence evidence. Accepted with it: a run waits for
+   its pending members, so nothing folds mid-batch, and a turn that ends must
+   settle what an abort left pending — pi's executor breaks on the abort signal
+   without emitting the ends those rows wait on — or they would never fold at all.
 3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the

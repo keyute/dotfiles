@@ -14,7 +14,7 @@ import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createTasks } from "./tasks.mjs";
-import { PAD, PROMPT, answerLines, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 // The classifier's only evidence source: a shell command's record (command,
@@ -306,7 +306,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // completion line; the message is not displayed, the line is its record.
   const tasks = createTasks({
     notify: text => pi.sendMessage({ customType: "workflow-task", content: text, display: false }, { deliverAs: "steer", triggerTurn: true }),
-    record: entry => pi.appendEntry("workflow-task", entry),
+    record: entry => appendVisible(pi, "workflow-task", entry),
   });
   pi.registerEntryRenderer("workflow-task", (entry, _options, theme) => new Text(completionLine({ agent: `task ${entry.data.id}`, task: entry.data.command, status: entry.data.status, durationMs: entry.data.durationMs }, theme), 0, 0));
   const background = permittedTools.includes("workspace_task");
@@ -484,7 +484,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       // processes keep their narrower profile until their next lease.
       broker.policy.epoch++;
       publishEpoch();
-      pi.appendEntry("workflow-note", { text: `Added ${dir} to the workspace${extraDirs.get(dir) ? " with its instructions" : ""}` });
+      appendVisible(pi, "workflow-note", { text: `Added ${dir} to the workspace${extraDirs.get(dir) ? " with its instructions" : ""}` });
     } });
     pi.registerCommand("remove-dir", { description: "Remove an added directory from the workspace", getArgumentCompletions: prefix => completions([...broker.policy.roots.keys()].filter(root => root.startsWith(prefix))), handler: async (args, ctx) => {
       if (!broker.policy.roots.size) return ctx.ui.notify("No added directories", "info");
@@ -495,7 +495,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       extraDirs.delete(dir);
       // Narrowing stops running processes, as a mode change does.
       await setMode(broker.policy.mode, ctx);
-      pi.appendEntry("workflow-note", { text: `Removed ${dir} from the workspace` });
+      appendVisible(pi, "workflow-note", { text: `Removed ${dir} from the workspace` });
     } });
     pi.registerEntryRenderer("workflow-note", (entry, _options, theme) => new Text(noteLine(entry.data.text, theme), 0, 0));
     // The questionnaire dialog is the pinned plugin's; the answers feed the
@@ -515,7 +515,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       const decisions = answers.map(entry => `User decision: ${entry.question} → ${[entry.answer, entry.notes].filter(Boolean).join(" — ")}`);
       if (globalNote) decisions.push(`User note: ${globalNote}`);
       userTask = `${userTask}\n${decisions.join("\n")}`.slice(-8000);
-      pi.appendEntry("workflow-answers", { answers, ...(globalNote ? { globalNote } : {}) });
+      appendVisible(pi, "workflow-answers", { answers, ...(globalNote ? { globalNote } : {}) });
     });
     pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme, entry.data.globalNote).join("\n"), 0, 0));
     pi.registerMarkdownTransformer(bulletMarkdown);

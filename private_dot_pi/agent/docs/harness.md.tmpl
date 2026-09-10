@@ -27,7 +27,7 @@ Settings are merged by managed key; unrelated UI/trust preferences survive.
 Authentication and session files remain unmanaged. Sign in through Pi's normal
 OpenAI subscription login; do not import another harness's auth files.
 
-## Models (last verified 2026-09-09; revisit pricing 2026-11-21)
+## Models (last verified 2026-09-10; revisit pricing 2026-11-21)
 
 Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`,
 {{ .agents.pi.defaults.reasoning_effort }} reasoning; planning uses
@@ -54,6 +54,20 @@ depends on task/context/reasoning/caching, not a fixed message count. Compare
 completed-task cost, including retries and delegation. Sol promotional pricing
 lasts at least through 2026-11-21; Astra Fast costs 2.5× its Standard rate.
 [Official rate card](https://learn.chatgpt.com/docs/pricing).
+
+Context window is 272,000 input tokens on the `openai-codex` route, taken from
+the pinned SDK catalog; nothing in this setup overrides it. Raising
+`contextWindow` through `modelOverrides` on that provider does not change what
+`chatgpt.com/backend-api` accepts — it only changes what pi believes, which
+defers compaction and occupancy warnings until the provider starts rejecting
+requests. The 1,050,000 window OpenAI documents is real on the direct `openai`
+(API-key) provider, where input above 272,000 bills the whole request at 2x
+input / 1.5x output. The subscription ceiling moved 272K -> 372K -> 872K -> 272K
+across 2026 without notice, so trust the status line's context segment and
+`/session` over any recorded number, this one included — pi has no `/status`.
+(Verified 2026-09-10 against the pinned SDK catalog; revisit at the next SDK pin
+bump, or if the context segment reports anything but 272K.)
+
 
 ## Planning and permissions (last verified 2026-09-09)
 
