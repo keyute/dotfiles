@@ -1,6 +1,7 @@
 # Pi implementation working record
 
-Last updated: 2026-09-09 (compact subagent-notice row, `/add-dir` as-you-type
+Last updated: 2026-09-10 (`/add-dir` completions climb past dead levels;
+earlier: 2026-09-09 compact subagent-notice row, `/add-dir` as-you-type
 completion and `..`; earlier the same day: Tab offers only declared candidates,
 harness.md trigger; earlier the same day: Tab scope, fold caret, questionnaire notes; earlier
 the same day: classifier evidence and stages; earlier: 2026-09-08
@@ -756,6 +757,24 @@ live-tested on the host.
   `dangerouslyDisableSandbox: true`) because the suite needs a live Postgres:
   the escalation path worked as designed, and the waste belongs to the target
   repo's own AGENTS.md rather than to this one.
+
+- 2026-09-10 (owner report on `/add-dir ../`): `addableDirs` climbs on its own.
+  It answered one level at a time, so a cwd at the bottom of a single-child
+  chain got a menu whose only entry was a further `../`, once per level. The
+  loop keeps going while every candidate at a level is `..` or the directory
+  containing the cwd, and stops on the first level holding an unrelated one. An
+  ancestor of cwd counts as the way back out rather than an offer, since
+  `rootRejection` refuses only roots *inside* cwd: the alternative rule — stop
+  at the first level with anything addable — therefore stops one level short, on
+  a menu offering the directory just left, and was rejected for it. Its one
+  advantage, that nothing ever leaves the menu, buys back only roots that
+  swallow the cwd, typed deliberately if at all. `..` being on offer bounds the
+  climb: it means the level above is one the menu would navigate to, which the
+  filesystem root and home's ancestors never are, so the head strictly ascends
+  and the loop is bounded by path depth. Only with nothing typed after the last
+  separator — a typed name filters the level it was typed under. Not applied or
+  live-tested on the host; `npm run test:pi` is green (237 pass, 7 skipped,
+  0 fail).
 
 ## Verification and remaining gates
 

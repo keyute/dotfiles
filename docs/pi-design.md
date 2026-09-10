@@ -255,6 +255,18 @@ pi's own glyphs. Each rule carries the why that earned it.
    drops out with no case for it. Tab on a command name with no argument yet
    was pi's own unforced slash menu all along, ahead of the forced branch the
    wrapper gates — nothing was needed for it.
+   *2026-09-10:* the walk climbs on its own past a level offering nothing but
+   `..` and the directory it came out of — an offer being what survives
+   `rootRejection`, so a denied or already-added sibling does not hold it
+   there — and the menu opens on the first level with an unrelated directory
+   and that level's own further `..`. *Why:* a cwd
+   at the bottom of a single-child chain made every level on the way up cost a
+   Tab that showed only the way back out, and an ancestor of cwd is that way
+   out rather than something to offer — it is addable, since `rootRejection`
+   refuses only roots inside cwd, so stopping at the first addable entry would
+   have stopped one level short. The skipped levels lose their ancestor from
+   the menu: a root that swallows the cwd is typed deliberately, not tabbed
+   into.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then
    `↓ N more`; Down from the prompt's last line enters the rows, the

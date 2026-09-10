@@ -111,6 +111,23 @@ test("/add-dir completions offer the addable siblings and nothing addRoot refuse
   assert.deepEqual(p.addableDirs(""), []);
 });
 
+test("/add-dir completions climb past levels holding only the way back to cwd", t => {
+  const p = fixture(t);
+  mkdirSync(join(p.cwd, "deep", "a", "b"), { recursive: true });
+  const q = new Policy(p.config, join(p.cwd, "deep", "a", "b"), p.scratch, join(p.cwd, "..", "control"));
+  // `a`, `deep` and `work` each hold nothing but the next step back down to
+  // cwd, so the walk skips all three and lands on the first level holding an
+  // unrelated directory, with a further `..` still on offer.
+  const landed = ["../../../../../", "../../../../cache/", "../../../../scratch/", "../../../../work/"];
+  assert.deepEqual(q.addableDirs(""), landed);
+  assert.deepEqual(q.addableDirs("../"), landed);
+  // A typed name filters the level it was typed under rather than searching
+  // upward — `.` matches the `..` there and stops the climb on it — and a named
+  // head is the walk going down, with no `..` to climb by.
+  assert.deepEqual(q.addableDirs("."), ["../../"]);
+  assert.deepEqual(q.addableDirs("../../../../work/"), ["../../../../work/deep/"]);
+});
+
 test("an added directory's instructions are read through the read policy", t => {
   const p = fixture(t);
   const other = join(p.cwd, "..", "other");

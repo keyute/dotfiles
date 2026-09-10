@@ -129,28 +129,42 @@ export class Policy {
   // /add-dir's argument completions. pi hands the whole argument text as the
   // prefix and replaces all of it, so a candidate is the typed directory part
   // verbatim (relative, `~/` and absolute prefixes all round-trip) plus the
-  // entry name. A prefix with no separator lists the siblings of cwd: nothing
-  // under cwd can be added, so siblings are the only useful starting point.
+  // entry name. A prefix with no separator starts at the siblings of cwd:
+  // nothing under cwd can be added, so they are the only useful starting point.
   addableDirs(prefix) {
     const cut = prefix.lastIndexOf("/") + 1;
-    const head = cut ? prefix.slice(0, cut) : "../";
     const base = prefix.slice(cut);
-    let entries;
-    try { entries = readdirSync(expand(head, this.cwd), { withFileTypes: true }); } catch { return []; }
-    // `..` is navigation, not a hidden entry, and readdir never returns it: it
-    // is what makes the walk go up as well as down. rootRejection still polices
-    // it, so `~/..` drops out as home's ancestor without a case here. It is
-    // offered only while the walk is still going up — under a named directory
-    // it would just undo the step that got there.
-    const up = /^(\.\.\/)+$/.test(head) ? [".."] : [];
-    return [...up, ...entries.map(entry => entry.name)]
-      .filter(name => name.startsWith(base) && (name === ".." || base.startsWith(".") || !name.startsWith(".")))
-      // An entry that cannot be canonicalized (symlink loop, unreadable parent)
-      // is skipped rather than thrown: pi fires completion requests unawaited,
-      // so a rejection here is an unhandled one that takes the TUI down.
-      .filter(name => { try { return !this.rootRejection(canonical(expand(head + name, this.cwd))); } catch { return false; } })
-      .sort()
-      .map(name => `${head}${name}/`);
+    const level = head => {
+      let entries;
+      try { entries = readdirSync(expand(head, this.cwd), { withFileTypes: true }); } catch { return []; }
+      // `..` is navigation, not a hidden entry, and readdir never returns it: it
+      // is what makes the walk go up as well as down. rootRejection still polices
+      // it, so `~/..` drops out as home's ancestor without a case here. It is
+      // offered only while the walk is still going up — under a named directory
+      // it would just undo the step that got there.
+      const up = /^(\.\.\/)+$/.test(head) ? [".."] : [];
+      return [...up, ...entries.map(entry => entry.name)]
+        .filter(name => name.startsWith(base) && (name === ".." || base.startsWith(".") || !name.startsWith(".")))
+        // An entry that cannot be canonicalized (symlink loop, unreadable parent)
+        // is skipped rather than thrown: pi fires completion requests unawaited,
+        // so a rejection here is an unhandled one that takes the TUI down.
+        .filter(name => { try { return !this.rootRejection(canonical(expand(head + name, this.cwd))); } catch { return false; } })
+        .sort();
+    };
+    let head = cut ? prefix.slice(0, cut) : "../";
+    let names = level(head);
+    // A level offering nothing but `..` and the directory the walk came out of
+    // has nothing to add and costs a keystroke round to leave, so the walk
+    // climbs on its own to the first level holding an unrelated directory —
+    // only with nothing typed, since a typed name filters the level it was
+    // typed under rather than searching upward. `..` being on offer is what
+    // bounds the climb: it means the level above is one the menu would
+    // navigate to, which the filesystem root and home's ancestors never are.
+    while (!base && names.includes("..")
+      && names.every(name => name === ".." || inside(this.cwd, canonical(expand(head + name, this.cwd))))) {
+      names = level(head += "../");
+    }
+    return names.map(name => `${head}${name}/`);
   }
 
   removeRoot(root) {
