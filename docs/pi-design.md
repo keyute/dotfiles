@@ -11,7 +11,7 @@ pi's own glyphs. Each rule carries the why that earned it.
 1. **Transcript = Claude Code's shape, pi's glyphs.** `•` rows coloured by
    state for every row (tool calls, subagent launches and actions, child
    completion lines), `○` only on a fleet row, `↳` for the line under a row,
-   `π` for anything the harness says in its own voice (turn line), `›` for the
+   `π` for anything the harness says in its own voice (turn line), `❭` for the
    fleet cursor, `❯` for the prompt and for the message it sent (rule 5),
    `▸`/`▾` for a fold handle's state (rule 2). No
    `⏺`/`✻`/`◯` (Claude's signatures), no Codex `Called`/`Explored` headers.
@@ -20,6 +20,16 @@ pi's own glyphs. Each rule carries the why that earned it.
    `○` over `⊙` for subagents, then the same day retired it from the transcript:
    a launch and a `subagent list` are both tool calls, and one glyph for tool
    calls is simpler than a second one that marked only some of them.
+   *2026-09-10:* the fleet cursor moved `›`→`❭`. `›` was chosen on
+   2026-09-07 in the pass that rejected `>` as too small, and at the accent
+   colour it was too small itself — and it is the glyph the row's own
+   `agent › title` separator already uses, so the selected row drew one mark
+   with two meanings. `❭` is a step up in weight that stays clear of both
+   `❯` — giving the prompt glyph a second meaning is the cost rule 10 records
+   paying to retire for `○` — and the fold caret `▸`. Rejected with it: `❱`,
+   a distinct codepoint that is a visual twin of `❯` in most terminal fonts,
+   and `▶`, which renders double-width where a terminal honours its emoji
+   variant and echoes `▸`, whose meaning is expandable, not selected.
 2. **Quiet while working.** Reasoning renders as nothing and takes no space:
    pi's `hideThinkingBlock` stays off and the markdown transformer returns ""
    for `assistant-thinking` while the stream runs, so the block has no lines
@@ -248,7 +258,7 @@ pi's own glyphs. Each rule carries the why that earned it.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then
    `↓ N more`; Down from the prompt's last line enters the rows, the
-   highlighted row shows `›`, Enter peeks the child's transcript, Esc or up
+   highlighted row shows `❭`, Enter peeks the child's transcript, Esc or up
    returns. *Why:* the owner wants the Claude Code panel with its Enter peek
    and asked for pi-flavoured markers in place of `⏺`/`◯`. *2026-09-08:* the
    `π main` root row went — pi has no thread to switch into, so the row said

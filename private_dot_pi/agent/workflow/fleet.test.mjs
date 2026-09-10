@@ -35,12 +35,12 @@ test("panel: child marker, dim queued rows, cursor row, and overflow markers", (
   const rows = renderFleet(state, 80, theme);
   assert.equal(rows.length, 6);
   assert.equal(rows[0], "  ○ a0 › task 0 · 1k tokens · gpt-5.6-terra high");
-  assert.equal(rows[1], "  *›* a1 › task 1 · 2k tokens · gpt-5.6-terra high");
+  assert.equal(rows[1], "  *❭* a1 › task 1 · 2k tokens · gpt-5.6-terra high");
   assert.equal(rows.at(-1), "~  ↓ 4 more~");
   state.cursor = 6;
   const tail = renderFleet(state, 80, theme);
   assert.deepEqual([tail[0], tail.at(-1)], ["~  ↑ 2 more~", "~  ↓ 2 more~"]);
-  assert.equal(tail[5], "  *›* a6 › task 6 · 7k tokens · gpt-5.6-terra high");
+  assert.equal(tail[5], "  *❭* a6 › task 6 · 7k tokens · gpt-5.6-terra high");
   assert.deepEqual(renderFleet(createFleetState(), 80, theme), []);
 });
 
@@ -140,9 +140,9 @@ test("rows poll while children run, name the task from the launch, peek each sib
   await sleep(20);
   assert.deepEqual(fleet.render(60, theme), ["  ○ a › one · 2k tokens · m high", "  ○ b › Review the diff for correctness"]);
   assert.equal(fleet.handleKey("enter"), true);
-  assert.equal(fleet.render(60, theme)[0], "  *›* a › one · 2k tokens · m high");
+  assert.equal(fleet.render(60, theme)[0], "  *❭* a › one · 2k tokens · m high");
   assert.equal(fleet.handleKey("down"), true);
-  assert.equal(fleet.render(60, theme)[1], "  *›* b › Review the diff for correctness");
+  assert.equal(fleet.render(60, theme)[1], "  *❭* b › Review the diff for correctness");
   // Enter peeks at the highlighted child's transcript, not the first child's.
   assert.equal(fleet.handleKey("confirm"), true);
   await sleep(10);
