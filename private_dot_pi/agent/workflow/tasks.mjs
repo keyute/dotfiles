@@ -44,15 +44,14 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
         // A session replaced while the task ran leaves a stale pi API that throws; the line is lost, not the process.
         try {
           record({ id, command, status, durationMs: now() - task.startedAt });
-          const reason = task.exitCode != null ? `exit ${task.exitCode}` : task.error ?? status;
           const tail = task.output.split("\n").filter(line => line.trim()).slice(-TAIL_LINES).join("\n");
-          notify(`Background task ${id} ${status} (${reason}): ${command}\n${tail || "(no output)"}`);
+          notify(`Background task ${id} ${status} (${reason(task)}): ${command}\n${tail || "(no output)"}`);
         } catch {}
       })();
       return id;
     },
     // Holds the tool call open for up to graceMs: a task that ends inside it is
-    // answered inline (status, reason, output) and never notifies, so a two-second check backgrounded
+    // answered inline (status, exit code or error, output) and never notifies, so a two-second check backgrounded
     // by habit does not cost the model a full-context wake-up turn later.
     // Measured 2026-09-10: 21 of 34 background tasks in one session ended
     // within 10 s, each ending in a steer message the idle parent woke for.
@@ -69,7 +68,7 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
         clearTimeout(timer);
         // Status is set before the claim is read, so a task that ended as the
         // grace ran out is still answered here rather than notified nowhere.
-        if (task.status !== "running") return { status: task.status, reason: reason(task), output: task.output };
+        if (task.status !== "running") return { status: task.status, exitCode: task.exitCode, error: task.error, output: task.output };
         task.claimed = false;
         return null;
       });

@@ -223,24 +223,30 @@ test("a signal keeps the lease open until child closure and group termination", 
 test("the lease's TMPDIR is handed to srt as the directory it exports into the command", async () => {
   const activeLease = lease();
   activeLease.response.env = { TMPDIR: "/scratch/pi-work-1" };
+  const previous = process.env.CLAUDE_CODE_TMPDIR;
   delete process.env.CLAUDE_CODE_TMPDIR;
   let seen;
-  await main(["tool", "read"], {
-    environment: { PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token" },
-    requestLease: async () => activeLease,
-    sandboxManager: {
-      async initialize() {},
-      async wrapWithSandbox() { seen = process.env.CLAUDE_CODE_TMPDIR; return "ignored"; },
-      async reset() {},
-    },
-    spawnChild() { return { pid: 44 }; },
-    waitForClose: async () => ({ code: 0, signal: null }),
-    killProcess() {},
-    setTimer: immediateTimer,
-    clearTimer() {},
-    signals: new EventEmitter(),
-  });
-  assert.equal(seen, "/scratch/pi-work-1");
+  try {
+    await main(["tool", "read"], {
+      environment: { PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token" },
+      requestLease: async () => activeLease,
+      sandboxManager: {
+        async initialize() {},
+        async wrapWithSandbox() { seen = process.env.CLAUDE_CODE_TMPDIR; return "ignored"; },
+        async reset() {},
+      },
+      spawnChild() { return { pid: 44 }; },
+      waitForClose: async () => ({ code: 0, signal: null }),
+      killProcess() {},
+      setTimer: immediateTimer,
+      clearTimer() {},
+      signals: new EventEmitter(),
+    });
+    assert.equal(seen, "/scratch/pi-work-1");
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CODE_TMPDIR;
+    else process.env.CLAUDE_CODE_TMPDIR = previous;
+  }
 });
 
 test("a nonzero child exit status becomes the runner exit status", async () => {

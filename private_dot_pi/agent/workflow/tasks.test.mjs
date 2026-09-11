@@ -26,7 +26,7 @@ test("a task that ends inside the grace is answered inline and neither records n
   const settled = h.tasks.settle(id, 10_000);
   exec.onChunk("1 passed\n");
   exec.resolve({ exitCode: 0 });
-  assert.deepEqual(await settled, { status: "completed", reason: "exit 0", output: "1 passed\n" });
+  assert.deepEqual(await settled, { status: "completed", exitCode: 0, error: null, output: "1 passed\n" });
   await h.settle();
   assert.deepEqual(h.records, []);
   assert.deepEqual(h.notices, []);
@@ -38,15 +38,15 @@ test("a task that fails or is aborted inside the grace reports its reason inline
   const failing = h.start("false");
   const settledFailing = h.tasks.settle(failing.id, 10_000);
   failing.exec.resolve({ exitCode: 1 });
-  assert.deepEqual(await settledFailing, { status: "failed", reason: "exit 1", output: "" });
+  assert.deepEqual(await settledFailing, { status: "failed", exitCode: 1, error: null, output: "" });
   const aborted = h.start("sleep 60");
   const settledAborted = h.tasks.settle(aborted.id, 10_000);
   aborted.exec.reject(new Error("worker aborted"));
-  assert.deepEqual(await settledAborted, { status: "stopped", reason: "worker aborted", output: "" });
+  assert.deepEqual(await settledAborted, { status: "stopped", exitCode: null, error: "worker aborted", output: "" });
   const killed = h.start("kill -9 $$");
   const settledKilled = h.tasks.settle(killed.id, 10_000);
   killed.exec.resolve({ exitCode: null });
-  assert.deepEqual(await settledKilled, { status: "failed", reason: "killed", output: "" });
+  assert.deepEqual(await settledKilled, { status: "failed", exitCode: null, error: null, output: "" });
   assert.deepEqual(h.notices, []);
   assert.equal(h.tasks.output(aborted.id), "stopped (worker aborted)\n(no output)");
 });

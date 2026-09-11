@@ -340,7 +340,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         const settled = await tasks.settle(taskId, TASK_GRACE_MS, signal);
         if (settled !== null) {
           const output = settled.output || "(no output)";
-          if (settled.status !== "completed") throw new Error(`${output}\n${settled.status === "failed" && settled.reason.startsWith("exit ") ? `Command exited with code ${settled.reason.slice(5)}` : `Command ${settled.status}: ${settled.reason}`}`);
+          if (settled.status !== "completed") throw new Error(`${output}\n${settled.exitCode != null ? `Command exited with code ${settled.exitCode}` : `Command ${settled.status}: ${settled.error ?? "killed"}`}`);
           return { content: [{ type: "text", text: output }], details: { settled: taskId } };
         }
         return { content: [{ type: "text", text: `Started background task ${taskId}; its output arrives when it ends. Use workspace_task to read or stop it.` }], details: { taskId } };
