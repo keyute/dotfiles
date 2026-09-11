@@ -6,7 +6,7 @@ After=local-fs.target
 AddDevice=-/dev/accel
 AddDevice=-/dev/dri
 AddDevice=-/dev/kfd
-Image=quay.io/ramalama/ramalama:0.21
+Image=quay.io/ramalama/ramalama:0.24
 RunInit=true
 Environment=HOME=/tmp
 Environment=INTEL_VISIBLE_DEVICES=1
@@ -16,10 +16,10 @@ Exec=llama-server --host :: --port 11434 --model /mnt/models/qwen2.5-coder --cha
 SecurityLabelDisable=true
 DropCapability=all
 NoNewPrivileges=true
-Mount=type=bind,src=/home/keyute/.local/share/ramalama/store/ollama/library/qwen2.5-coder/blobs/sha256-cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f,target=/mnt/models/chat_template_extracted,ro,Z
-Mount=type=bind,src=/home/keyute/.local/share/ramalama/store/ollama/library/qwen2.5-coder/blobs/sha256-de8472199796c9350201ede71400d552d4b0dec33dd6d9254c1e52f45484edf4,target=/mnt/models/qwen2.5-coder,ro,Z
+Mount=type=bind,src=%h/.local/share/ramalama/serve/minuet-qwen/chat_template,target=/mnt/models/chat_template_extracted,ro,Z
+Mount=type=bind,src=%h/.local/share/ramalama/serve/minuet-qwen/model,target=/mnt/models/qwen2.5-coder,ro,Z
 ContainerName=minuet-qwen
-PublishPort=127.0.0.1:11434:11434 
+PublishPort=127.0.0.1:11434:11434
 
 [Install]
 WantedBy=multi-user.target default.target

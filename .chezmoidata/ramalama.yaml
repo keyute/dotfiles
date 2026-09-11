@@ -1,0 +1,15 @@
+# RamaLama has no declarative model management — `ramalama pull` takes one
+# model, nothing lists what should be present — so
+# run_onchange_after_ramalama-models.sh reconciles the store against this file:
+# it pulls what is missing, removes what is not listed, and refreshes the
+# stable paths the quadlets mount (the store itself addresses files by digest,
+# which moves whenever a tag is re-pulled).
+ramalama:
+  models:
+    # `name` is the RamaLama model reference without its `ollama://` scheme;
+    # `serve` names the quadlet under dot_config/containers/systemd that mounts
+    # this model, and the ~/.local/share/ramalama/serve/<serve>/ directory that
+    # carries its stable `model` and `chat_template` links.
+    # minuet-ai.lua requests this model by name on Linux.
+    - name: qwen2.5-coder:1.5b-base-q4_0
+      serve: minuet-qwen

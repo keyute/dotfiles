@@ -36,7 +36,9 @@ jobs:
 
       # Real home, everything included: npm deps + Playwright Chromium, full
       # `brew bundle --global` (formulae, casks incl. mactex, omlx service),
-      # nvim Lazy restore, omlx model downloads/conversions.
+      # nvim Lazy restore. The omlx model script only asserts its Hugging Face
+      # sources under CI=true: the runner's Metal VM times out inside a 12B
+      # conversion, so the fetch/convert path is exercised on real machines.
       # `brew bundle cleanup --force` will uninstall runner-preinstalled
       # formulae not in the Brewfile — harmless on an ephemeral VM, just slow.
       - name: Full apply

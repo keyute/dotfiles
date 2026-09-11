@@ -220,6 +220,29 @@ test("a signal keeps the lease open until child closure and group termination", 
   assert.deepEqual(socketCalls, ["write", "end"]);
 });
 
+test("the lease's TMPDIR is handed to srt as the directory it exports into the command", async () => {
+  const activeLease = lease();
+  activeLease.response.env = { TMPDIR: "/scratch/pi-work-1" };
+  delete process.env.CLAUDE_CODE_TMPDIR;
+  let seen;
+  await main(["tool", "read"], {
+    environment: { PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token" },
+    requestLease: async () => activeLease,
+    sandboxManager: {
+      async initialize() {},
+      async wrapWithSandbox() { seen = process.env.CLAUDE_CODE_TMPDIR; return "ignored"; },
+      async reset() {},
+    },
+    spawnChild() { return { pid: 44 }; },
+    waitForClose: async () => ({ code: 0, signal: null }),
+    killProcess() {},
+    setTimer: immediateTimer,
+    clearTimer() {},
+    signals: new EventEmitter(),
+  });
+  assert.equal(seen, "/scratch/pi-work-1");
+});
+
 test("a nonzero child exit status becomes the runner exit status", async () => {
   const activeLease = lease();
   const child = { pid: 43 };

@@ -180,7 +180,6 @@ live-tested on the host.
   Server workers get `NODE_USE_ENV_PROXY=1`: Node's global fetch ignores the
   proxy variables the sandbox injects, the leading hypothesis for run 3's
   `fetch failed` — unverified until a live call succeeds on the host.
-
 - 2026-09-07 (session `01a07b0e`, padding task): every edit after plan approval
   was refused because the workflow code lived in the repository and was loaded
   from there, so `scripts/pi-workflow`, `private_dot_pi`, the templates,
@@ -214,7 +213,6 @@ live-tested on the host.
   `workspace_*` rows had been falling back to name + raw text.
   `@juicesharp/rpiv-ask-user-question` (48.8k dl/wk) replaces the hand-rolled
   `ask_user`; its answers feed the transcript entry and the classifier task.
-
 - 2026-09-07 (evening, transcript redesign): from a side-by-side of pi, Codex
   and Claude Code the owner asked for Claude Code's presentation of work in
   progress, Codex's composer, pi's own glyphs, and rules that stop the churn.
@@ -248,7 +246,6 @@ live-tested on the host.
   login` all three harnesses share), the codex app-server usage read
   (annotated, outside the npm pin), per-invocation SRT workers (a pool per
   role and epoch is the follow-up).
-
 - 2026-09-08 (dot form everywhere, from four screenshots and a Claude Code
   reference): plugin rows join the transcript's shape — pi-subagents and
   pi-mcp-adapter get a Proxy of the extension API whose `registerTool` swaps
@@ -282,7 +279,6 @@ live-tested on the host.
   `.chezmoiignore` for `memory-transport.mjs` where `.chezmoiremove` would
   delete a stale copy; workflow display-name renames vs GitHub required
   checks; repo-global `legacy-peer-deps`.
-
 - 2026-09-08 (afternoon, standardising the day's oscillation): a git read of
   84ab0e1 → 78cd978 showed the composer shade off→on→off, its prompt padding
   2→4→2, the inset rule none→"one inset"→"glyph at the edge", and the fleet
@@ -301,7 +297,6 @@ live-tested on the host.
   (#6747, #6876, #5834), no maintained package, so only a pi patch reaches it;
   the double blank line after hidden reasoning is pi#8154. Both recorded as
   residuals with their issue numbers in the design doc and `harness.md`.
-
 - 2026-09-08 (later, Tab completion): `/add-dir` and `/remove-dir` carried
   `getArgumentCompletions` but pi only opened that menu on a typed letter
   matching `[a-zA-Z0-9.\-_]`, and Tab bypassed it twice over: in argument
@@ -315,8 +310,8 @@ live-tested on the host.
   `/thinking` and `/login` had the same bug), falling back to the forced path
   request when a command has no completions — never for `add-dir`/`remove-dir`,
   where the fallback would put back exactly what `rootRejection` filters out.
-  It answers `shouldTriggerFileCompletion` itself, since `/cmd ` trims to a
-  slash command pi refuses to force-complete, and it is idempotent because
+  It answers `shouldTriggerFileCompletion` itself, since `/cmd` plus a space trims
+  to a slash command pi refuses to force-complete, and it is idempotent because
   `addAutocompleteProvider` pushes rather than sets and `/reload` re-emits
   `session_start` without the reset that clears the stack. `CaretEditor` feeds
   the key back to the base editor after a Tab accept that lands on the
@@ -326,7 +321,6 @@ live-tested on the host.
   lost its `ctx.ui.select` picker in the same change: with the menu listing the
   added roots on an empty argument, the picker was a second mechanism for one
   job, and the flat one-shot list is the worse of the two.
-
 - 2026-09-08 (evening, catalog review): the pi.dev gallery (~5,450 listed,
   9,328 npm packages tagged `pi-package`) was ranked by npm weekly and gallery
   monthly downloads and ~70 candidates read for documented-API use, in-host
@@ -383,7 +377,6 @@ live-tested on the host.
   `failed` instead of `stopped` — `setMode` now stops tasks first; and a
   refused instructions read left the root added without an epoch bump — the
   add rolls back.
-
 - 2026-09-08 (night, unsandboxed shell): `workspace_bash` takes Claude Code's
   `dangerouslyDisableSandbox` flag, superseding the 2026-09-06 "no fallback
   to unsandboxed execution" line in `harness.md`. The owner's Claude Code
@@ -435,7 +428,6 @@ live-tested on the host.
   a prefix. `exec` also runs one termination per child (abort starts it, the
   close handler awaits it) and the footer reuses the runner's
   `hostEnvironment` for its own subprocess env.
-
 - 2026-09-08 (night, from two screenshots and the follow-ups): four changes.
   (1) The gap under a fold summary was pi's assistant component, not the fold:
   a folded row costs no lines (`Text("")` renders `[]` and a `renderShell:
@@ -479,7 +471,6 @@ live-tested on the host.
   drop the embedded one), so it now stands down on the documented compaction
   events. pi's auto-retry countdown has no documented event and stays a
   recorded residual.
-
 - 2026-09-09 (classifier evidence and stages): a smoke test's read-only `gh`
   failed inside the sandbox and its `dangerouslyDisableSandbox` retry was
   refused. The sandbox half is not pi's: `gh` is a Go binary, Go's TLS
@@ -544,7 +535,6 @@ live-tested on the host.
   new network hosts are never reviewed (Claude Code classifies them); no
   per-rule allow/ask list; whether `codex-auto-review` is reachable on the
   subscription endpoint is unprobed.
-
 - 2026-09-09 (from four owner reports on the live TUI): six changes.
   (1) Tab opened a file menu in ordinary prose. Not a regression: pi's own
   `shouldTriggerFileCompletion` says yes to everything but a half-typed slash
@@ -602,14 +592,13 @@ live-tested on the host.
   transcript. Both are carried now.
   Not applied or live-tested on the host; `npm run test:pi` is green (212 pass,
   0 fail).
-
 - 2026-09-09 (later, one owner report on Tab): "every command i mid-type and
   press tab the autosuggestions pop out". The 09-08 wrapper fell back to the
   forced path request for a command with no `getArgumentCompletions`, and pi's
   `applyCompletion` appends a space when it accepts a command name
   (`pi-tui/dist/autocomplete.js`), so accepting `/new` left `/new `, the walk's
   replay read that as an argument position and forced a path request, and the
-  fallback answered it with the working directory. Typing `/new ` and pressing
+  fallback answered it with the working directory. Typing `/new`, a space, then
   Tab reached the same place with no accept at all, so the fix is the fallback,
   not the replay predicate: an unforced ask now returns the command's own
   candidates or null, and null is the answer. The replay is left alone — it is
@@ -636,7 +625,6 @@ live-tested on the host.
   doc's pricing tables actually serve.
   Not applied or live-tested on the host; `npm run test:pi` is green (214 pass,
   0 fail).
-
 - 2026-09-09 (later, from a screenshot and three `/add-dir` reports): the
   2026-09-08 Proxy above now also intercepts `registerMessageRenderer`, on the
   same terms — presentation only, message content untouched. pi-subagents drew
@@ -698,7 +686,6 @@ live-tested on the host.
   so a pasted path into `/add-dir` completes only after a further keystroke.
   Not applied or live-tested on the host; `npm run test:pi` is green
   (231 pass, 7 skipped, 0 fail).
-
 - 2026-09-09 (screenshot pass, live session `01a0848e`): three rendering
   changes and one prompt change. (1) The status line's branch counts take the
   theme's success/error pair through a `paintCounts` exported from `rows.mjs`.
@@ -760,7 +747,6 @@ live-tested on the host.
   `dangerouslyDisableSandbox: true`) because the suite needs a live Postgres:
   the escalation path worked as designed, and the waste belongs to the target
   repo's own AGENTS.md rather than to this one.
-
 - 2026-09-10 (two screenshots, collapsed and expanded): fold extent is derived,
   not maintained. `rows.mjs` replaces `{current, byId -> mutable group}` with an
   ordered `timeline` of facts — `{kind:"tool", id, key, outcome}` and
@@ -812,7 +798,6 @@ live-tested on the host.
   fact costs a walk of the timeline in `derive` plus a member-map copy in
   `refold`, so a session is O(n²) in facts where the old model was O(1) per
   event — irrelevant at a few thousand rows, worth revisiting if it is not.
-
 - 2026-09-10 (owner report on `/add-dir ../`): `addableDirs` climbs on its own.
   It answered one level at a time, so a cwd at the bottom of a single-child
   chain got a menu whose only entry was a further `../`, once per level. The
@@ -830,7 +815,6 @@ live-tested on the host.
   separator — a typed name filters the level it was typed under. Not applied or
   live-tested on the host; `npm run test:pi` is green (237 pass, 7 skipped,
   0 fail).
-
 - 2026-09-10 (owner report on the plan and the status line): two rendering
   changes. (1) `submit_plan` stopped passing the plan as `confirm`'s second
   argument. pi's `confirm` is a convenience over `showExtensionSelector`: it

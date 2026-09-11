@@ -304,10 +304,10 @@ pi's own glyphs. Each rule carries the why that earned it.
    *2026-09-09, later:* Tab offers only what a command declares, and nothing
    where it declares none. The wrapper used to fall back to a raw path request
    for a command with no candidates, and pi appends a space when it accepts a
-   command name, so the walk's replay read `/new ` as an argument position and
+   command name, so the walk's replay read `/new` plus the appended space as an argument position and
    put a file menu under every command-name accept — the owner's "every command
-   i mid-type and press tab the autosuggestions pop out". Typing `/new ` and
-   pressing Tab reached it without any accept, which is why the fallback went
+   i mid-type and press tab the autosuggestions pop out". Typing `/new`, a
+   space, then Tab reached it without any accept, which is why the fallback went
    rather than the replay. This also retired the residual the fallback carried:
    a line opening with an absolute path and a space (`/tmp/x `) parses as a
    command argument, and now offers nothing rather than paths. Chosen over an

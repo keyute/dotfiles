@@ -1,0 +1,104 @@
+#!/bin/bash
+{{ if eq .chezmoi.os "linux" -}}
+set -euo pipefail
+
+store="$HOME/.local/share/ramalama/store/ollama"
+serve_dir="$HOME/.local/share/ramalama/serve"
+
+# Inlined rather than read from .chezmoidata at runtime: chezmoi re-runs this
+# script when its rendered content changes, so inlining is what makes a manifest
+# edit the trigger. The quadlet hashes do the same for a unit edit, which needs
+# the daemon-reload and restart below.
+manifest="$(
+	cat <<'MANIFEST'
+{{ .ramalama.models | toPrettyJson }}
+MANIFEST
+)"
+{{ range .ramalama.models }}
+# {{ .serve }} quadlet hash: {{ include (printf "dot_config/containers/systemd/%s.container" .serve) | sha256sum }}
+{{- end }}
+
+if [ -z "$(jq -r '.[].name' <<<"$manifest")" ]; then
+	echo "ramalama manifest is empty — refusing to remove every model" >&2
+	exit 1
+fi
+
+# `ramalama ls --json` names carry the store path (`ollama://library/<name>:<tag>`
+# for the default organisation, cli.py `_list_models_from_store`) and a
+# ` (partial)` suffix on an interrupted pull; compare on the manifest's form.
+canon() { sed -E -e 's/ \(partial\)$//' -e 's#^ollama://library/#ollama://#'; }
+listed="$(ramalama ls --json | jq -r '.[].name')"
+complete="$(grep -v ' (partial)$' <<<"$listed" | canon || true)" # no complete model is not an error
+present="$(canon <<<"$listed")"
+while IFS= read -r name; do
+	grep -qxF "$(canon <<<"ollama://$name")" <<<"$complete" && continue
+	echo "Pulling ramalama model ${name}…" # a partial pull resumes
+	ramalama pull "ollama://$name"
+done < <(jq -r '.[].name' <<<"$manifest")
+
+# The store keeps refs/<tag>.json (snapshot hash + typed file list) and
+# snapshots/<hash>/<file> links onto blobs/ (ramalama/model_store, ref format
+# v1.0.1). A quadlet cannot follow that indirection, so each serve dir carries
+# one link per mounted file, refreshed here to the current blob.
+link() { ln -sfn "$(realpath "$2")" "$1"; }
+
+while IFS='|' read -r name serve; do
+	tag="${name##*:}"
+	repo="${name%:*}"
+	[[ "$repo" == */* ]] || repo="library/$repo"
+	model_dir="$store/$repo"
+	ref="$model_dir/refs/$tag.json"
+	[ -f "$ref" ] || { echo "ramalama store has no ref for $name at $ref" >&2; exit 1; }
+	# sanitize_filename in ramalama/common.py: the snapshot dir is the hash with ':' as '-'
+	snapshot="$model_dir/snapshots/$(jq -r '.hash' "$ref" | sed 's/:/-/g')"
+	gguf="$(jq -r '[.files[] | select(.type == "gguf")][0].name // empty' "$ref")"
+	template="$(jq -r '[.files[] | select(.type == "chat_template")][0].name // empty' "$ref")"
+	[ -n "$gguf" ] && [ -n "$template" ] || { echo "ref for $name lists no gguf model or chat template" >&2; exit 1; }
+	mkdir -p "$serve_dir/$serve"
+	link "$serve_dir/$serve/model" "$snapshot/$gguf"
+	link "$serve_dir/$serve/chat_template" "$snapshot/$template"
+done < <(jq -r '.[] | [.name, .serve] | join("|")' <<<"$manifest")
+
+# Only now, with every manifest model pulled and linked, is anything removed:
+# a failed pull or a bad ref above exits with the previous model still served.
+# A container (the fresh-apply CI job) has no user manager: unit work is
+# skipped, not failed.
+manager=0
+case "$(systemctl --user is-system-running 2>/dev/null || true)" in
+running | degraded) manager=1 ;;
+esac
+
+for d in "$serve_dir"/*; do
+	[ -d "$d" ] || continue
+	grep -qxF "${d##*/}" <<<"$(jq -r '.[].serve' <<<"$manifest")" && continue
+	echo "Removing serve links not in the manifest: ${d##*/}"
+	# daemon-reload does not stop a unit whose quadlet went away; it would keep
+	# serving from deleted blobs and hold the port. A stop that fails aborts
+	# the run before anything it serves is removed.
+	if [ "$manager" -eq 1 ] && systemctl --user is-active --quiet "${d##*/}"; then
+		systemctl --user stop "${d##*/}"
+	fi
+	rm -rf "$d"
+done
+
+keep="$(jq -r '.[] | "ollama://" + .name' <<<"$manifest" | canon)"
+while IFS= read -r name; do
+	[ -n "$name" ] || continue
+	grep -qxF "$name" <<<"$keep" && continue
+	echo "Removing ramalama model not in the manifest: $name"
+	ramalama rm "$name"
+done <<<"$present"
+
+if [ "$manager" -eq 0 ]; then
+	echo "No user systemd manager — skipping unit reload"
+	exit 0
+fi
+# Quadlet units cannot be enabled; the generator applies [Install] on
+# daemon-reload, and the unit starts at the next login unless started here.
+# This script runs only when the manifest or a quadlet changed, so every run
+# is a restart, not a conditional one.
+systemctl --user daemon-reload
+while IFS= read -r serve; do
+	systemctl --user restart "$serve"
+done < <(jq -r '.[].serve' <<<"$manifest")
+{{ end -}}

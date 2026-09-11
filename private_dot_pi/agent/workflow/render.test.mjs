@@ -55,6 +55,8 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   const piSettings = JSON.parse(run("cat", target(".pi/agent/settings.json")));
 
   assert.equal(workflow.version, 1);
+  // bash 3.2 here-documents on macOS; see private_workflow.json.tmpl
+  assert.equal(workflow.filesystem.allowWrite.includes("/var/tmp"), process.platform === "darwin");
   assert.equal(workflow.models.default, "gpt-5.6-sol");
   assert.equal(workflow.models.tiers.frontier, "gpt-6-astra");
   assert.equal(Object.keys(workflow.agents).length, 14);

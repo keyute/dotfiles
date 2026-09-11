@@ -310,6 +310,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   });
   pi.registerEntryRenderer("workflow-task", (entry, _options, theme) => new Text(completionLine({ agent: `task ${entry.data.id}`, task: entry.data.command, status: entry.data.status, durationMs: entry.data.durationMs }, theme), 0, 0));
   const background = permittedTools.includes("workspace_task");
+  const TASK_GRACE_MS = 10_000;
 
   function sandboxTool(name) {
     if (!permittedTools.includes(publicToolName(name))) return;
@@ -318,7 +319,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     // where the role has workspace_task, dangerouslyDisableSandbox where the
     // role may write (the policy refuses it for read-only roles regardless).
     const flags = name !== "bash" ? {} : {
-      ...(background ? { run_in_background: { type: "boolean", description: "Start the command as a background task and return at once; its output arrives when it ends, or through workspace_task." } } : {}),
+      ...(background ? { run_in_background: { type: "boolean", description: "Run the command as a background task for work that outlasts this turn (servers, long builds, full test suites): a command that ends within 10 s is answered here like a foreground call; a longer one returns its task id at once and its output arrives when it ends, or through workspace_task." } } : {}),
       ...(isRoot || !config.agents[role].readonly ? { dangerouslyDisableSandbox: { type: "boolean", description: "Run outside the OS sandbox with the full host environment; every such call is reviewed or prompted. Set it only when the user asks, or when this exact command just failed with a sandbox restriction (operation not permitted, denied path, blocked host or socket), and decide per command: an earlier approval does not carry over." } } : {}),
     };
     const parameters = Object.keys(flags).length ? { ...template.parameters, properties: { ...template.parameters.properties, ...flags } } : template.parameters;
@@ -333,6 +334,15 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
           run: (onChunk, taskSignal) => exec({ command: args.command, cwd: currentContext.cwd, timeout: args.timeout }, { signal: taskSignal, onChunk: chunk => onChunk(chunk.toString()) }),
           close: () => client.close(),
         });
+        // Answered like a foreground call: a failure throws with the SDK bash
+        // tool's trailer, and no taskId in details (the row summary keys
+        // "running" on it).
+        const settled = await tasks.settle(taskId, TASK_GRACE_MS, signal);
+        if (settled !== null) {
+          const output = settled.output || "(no output)";
+          if (settled.status !== "completed") throw new Error(`${output}\n${settled.status === "failed" && settled.reason.startsWith("exit ") ? `Command exited with code ${settled.reason.slice(5)}` : `Command ${settled.status}: ${settled.reason}`}`);
+          return { content: [{ type: "text", text: output }], details: { settled: taskId } };
+        }
         return { content: [{ type: "text", text: `Started background task ${taskId}; its output arrives when it ends. Use workspace_task to read or stop it.` }], details: { taskId } };
       }
       const client = startToolWorker(name, { cwd: currentContext.cwd, env: workerEnv, ticket, signal });

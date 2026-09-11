@@ -69,7 +69,7 @@ across 2026 without notice, so trust the status line's context segment and
 bump, or if the context segment reports anything but 272K.)
 
 
-## Planning and permissions (last verified 2026-09-09)
+## Planning and permissions (last verified 2026-09-11)
 
 - New sessions start in plan mode with auto-reviewed approvals. Source writes
   remain disabled; temporary build/cache artifacts use designated writable roots.
@@ -97,7 +97,16 @@ bump, or if the context segment reports anything but 272K.)
   once?`) under ask or on a classifier `ask`. Read-only roles are refused. The
   row reads `Ran … · unsandboxed`. The model sets it only after a
   sandbox-attributable failure of that command or on request, per command;
-  `!` commands stay sandboxed. The classifier also sees the session's recent
+  `!` commands stay sandboxed. The docker socket is one such failure: no
+  `--config` or `DOCKER_HOST` workaround reaches it from inside the profile
+  (2026-09-10: five failed attempts before the session gave up).
+- Temp files inside the profile: `$TMPDIR` is the lease's scratch directory
+  (srt would otherwise export `/tmp/claude`, which the profile never allows),
+  so `mktemp -d "$TMPDIR/x.XXXXXX"` works while a bare `mktemp -d` does not —
+  macOS `mktemp` ignores `TMPDIR` without a template and writes to the
+  per-user `/var/folders` dir, which stays denied. Apple's `/bin/bash` 3.2
+  puts here-document temp files in `/var/tmp` (writable for every role on
+  macOS for exactly this) rather than `$TMPDIR`. Verified 2026-09-11. The classifier also sees the session's recent
   shell commands (the command, whether it ran sandboxed, its exit code; never
   its output), so a retry after a sandboxed failure is judged on that evidence.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
@@ -108,11 +117,15 @@ bump, or if the context segment reports anything but 272K.)
   context. Approval dialogs are once-only; MCP approvals are never cached
   across a mode change.
 - `workspace_bash` with `run_in_background: true` starts a background task
-  (Claude Code's flag): the call returns a task id at once, the worker keeps
-  its lease, and when the command ends the model hears a steer message with
-  the exit status and the last twenty lines (with its next tool result, or
-  as a new turn when idle). `workspace_task` `{ id, action: "output" | "stop" }`
-  reads the output so far or stops it. Output is kept in memory, tail-capped
+  (Claude Code's flag). The call is held open for 10 s first: a command that
+  ends inside that grace is answered like a foreground call and never
+  notifies (2026-09-10: 21 of 34 backgrounded commands in one session ended
+  within 10 s, and each completion woke the idle parent for a ~150k-token
+  turn — $5.92 of that session's $37.85). A longer one returns its task id,
+  the worker keeps its lease, and when the command ends the model hears a
+  steer message with the exit status and the last twenty lines (with its
+  next tool result, or as a new turn when idle). `workspace_task`
+  `{ id, action: "output" | "stop" }` reads the output so far or stops it. Output is kept in memory, tail-capped
   at 256 KiB. `/plan` and `/remove-dir` stop running tasks like any sandbox
   process (they end as `stopped`); so does exiting pi.
 - `/add-dir <path>` adds a directory to the editable workspace, as Claude
@@ -157,7 +170,7 @@ malicious extension. The reviewed `dangerouslyDisableSandbox` flag above is the
 only unsandboxed path in the managed tools. Linux needs bubblewrap, socat and
 ripgrep; macOS needs sandbox-exec.
 
-## Specialists, skills and display (last verified 2026-09-08, dot form; unapplied)
+## Specialists, skills and display (last verified 2026-09-11; dot form unapplied)
 
 Specialists under `~/.pi/agent/agents` render from the shared roster. Each has an
 explicit OpenAI model, tool list and mandatory child policy extension. Native
@@ -177,6 +190,11 @@ silently; workflow scripts, task lists and chains are refused. Status (fleet or
 transcript view), stop, interrupt and non-recovering steer are enabled;
 project role overrides, revival and mutating management are not. Results
 arrive as notifications — `bg_wait` only when the current turn depends on them.
+Children have no channel back: pi-subagents' intercom bridge is off
+(`extensions/subagent/config.json`), since its injected guidance had children
+calling `contact_supervisor`, which no role allowlist grants, four times in one
+session (2026-09-10, all `progress_update`) — an allowed call would only have
+woken the parent for a status line.
 Launched children's scope is off-limits to the parent (AGENTS.md): in every
 same-prompt run on 2026-09-07/08 the parent redid its reviewers' work while they
 ran (four reviewers, then ~60 own calls on the same files), doubling tokens and
@@ -305,6 +323,10 @@ Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
   (a body only; a closed fold reopens when the documented
   `ctx.ui.getToolsExpanded()` value changes, i.e. on Ctrl+O). All pinned in
   `stability.test.mjs`.
+- srt's `CLAUDE_CODE_TMPDIR` environment variable, read when it wraps a
+  command, names the `TMPDIR` it exports into that command; `sandbox-runner.mjs`
+  sets it to the lease's scratch path. Documented only in srt's source comment
+  (`generateProxyEnvVars`, 0.0.75) and pinned in `sandbox-runner.test.mjs`.
 - Plugin data the rows and policy read: pi-web-search's `details.error` and
   its `web_search`/`url_context` names; the SDK bash schema being a plain
   object whose `properties` take the `run_in_background` flag. All pinned in

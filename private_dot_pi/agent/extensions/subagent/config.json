@@ -6,5 +6,8 @@
   "toolDescriptionMode": "custom",
   "inlineToolDisplay": "summary",
   "fleetView": false,
-  "asyncWidget": false
+  "asyncWidget": false,
+  "intercomBridge": {
+    "mode": "off"
+  }
 }

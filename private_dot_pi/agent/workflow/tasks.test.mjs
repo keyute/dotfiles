@@ -7,7 +7,8 @@ function harness() {
   const notices = [];
   const records = [];
   let clock = 1000;
-  const tasks = createTasks({ notify: text => notices.push(text), record: entry => records.push(entry), now: () => clock });
+  const timers = [];
+  const tasks = createTasks({ notify: text => notices.push(text), record: entry => records.push(entry), now: () => clock, setTimer: fn => { timers.push(fn); return { unref() {} }; } });
   const start = command => {
     const exec = {};
     exec.promise = new Promise((resolve, reject) => Object.assign(exec, { resolve, reject }));
@@ -16,8 +17,65 @@ function harness() {
     return { id, exec, closed: () => closed };
   };
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
-  return { tasks, notices, records, start, settle, tick: ms => { clock += ms; } };
+  return { tasks, notices, records, start, settle, tick: ms => { clock += ms; }, expire: () => timers.splice(0).forEach(fn => fn()) };
 }
+
+test("a task that ends inside the grace is answered inline and neither records nor notifies", async () => {
+  const h = harness();
+  const { id, exec } = h.start("npm test -- one.test.ts");
+  const settled = h.tasks.settle(id, 10_000);
+  exec.onChunk("1 passed\n");
+  exec.resolve({ exitCode: 0 });
+  assert.deepEqual(await settled, { status: "completed", reason: "exit 0", output: "1 passed\n" });
+  await h.settle();
+  assert.deepEqual(h.records, []);
+  assert.deepEqual(h.notices, []);
+  assert.equal(h.tasks.live(), 0);
+});
+
+test("a task that fails or is aborted inside the grace reports its reason inline", async () => {
+  const h = harness();
+  const failing = h.start("false");
+  const settledFailing = h.tasks.settle(failing.id, 10_000);
+  failing.exec.resolve({ exitCode: 1 });
+  assert.deepEqual(await settledFailing, { status: "failed", reason: "exit 1", output: "" });
+  const aborted = h.start("sleep 60");
+  const settledAborted = h.tasks.settle(aborted.id, 10_000);
+  aborted.exec.reject(new Error("worker aborted"));
+  assert.deepEqual(await settledAborted, { status: "stopped", reason: "worker aborted", output: "" });
+  const killed = h.start("kill -9 $$");
+  const settledKilled = h.tasks.settle(killed.id, 10_000);
+  killed.exec.resolve({ exitCode: null });
+  assert.deepEqual(await settledKilled, { status: "failed", reason: "killed", output: "" });
+  assert.deepEqual(h.notices, []);
+  assert.equal(h.tasks.output(aborted.id), "stopped (worker aborted)\n(no output)");
+});
+
+test("an aborted turn ends the grace wait and leaves the task running", async () => {
+  const h = harness();
+  const { id, exec } = h.start("npm run dev");
+  const controller = new AbortController();
+  controller.abort(); // already aborted when the wait starts: no event will replay
+  const settled = h.tasks.settle(id, 10_000, controller.signal);
+  assert.equal(await settled, null);
+  assert.equal(h.tasks.live(), 1);
+  exec.resolve({ exitCode: 0 });
+  await h.settle();
+  assert.equal(h.notices.length, 1);
+});
+
+test("a task that outlives the grace returns null and later notifies as before", async () => {
+  const h = harness();
+  const { id, exec } = h.start("npm run dev");
+  const settled = h.tasks.settle(id, 10_000);
+  h.expire();
+  assert.equal(await settled, null);
+  assert.equal(h.tasks.live(), 1);
+  exec.resolve({ exitCode: 0 });
+  await h.settle();
+  assert.equal(h.records.length, 1);
+  assert.match(h.notices[0], /^Background task t1 completed/);
+});
 
 test("a task reports its tail and duration when it ends, and counts as live until then", async () => {
   const h = harness();

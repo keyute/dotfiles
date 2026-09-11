@@ -12,6 +12,13 @@
       (printf "%s/.zshrc" .chezmoi.homeDir)
       (printf "%s/node_modules" $source) -}}
 {{- $domains := concat .agent_sandbox.network.allowed_domains $pi.extras.allowed_domains (list "api.exa.ai") | uniq | sortAlpha -}}
+{{- /* Apple's /bin/bash 3.2 puts here-document temp files in the first writable
+       of /var/tmp, /tmp and the working directory, never $TMPDIR, so a
+       read-only role (or plan mode) lost every heredoc until /var/tmp was
+       writable. Claude Code gets by on the working directory; pi's read-only
+       roles have none. Verified 2026-09-11 under the SRT profile. */ -}}
+{{- $allowWrite := $sandbox.allowWrite -}}
+{{- if eq .chezmoi.os "darwin" -}}{{- $allowWrite = append $allowWrite "/var/tmp" -}}{{- end -}}
 {{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
 {{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 {{- dict
@@ -28,7 +35,7 @@
       "filesystem" (dict
           "denyRead" $denyRead
           "denyWrite" $denyWrite
-          "allowWrite" $sandbox.allowWrite)
+          "allowWrite" $allowWrite)
       "network" (dict "allowedDomains" $domains)
       "agents" $roles
       "mcp" $mcp | toPrettyJson -}}
