@@ -15,6 +15,10 @@ agent_panel_sort = "spaces"
 # telling us nothing; the strip returns as soon as a second tab exists.
 hide_tab_bar_when_single_tab = true
 
+# Adjacent panes share one divider instead of each drawing its own border,
+# which doubled the visible gap at every split.
+pane_gaps = false
+
 # Default rows plus dim $org/$repo tags: repo basenames repeat across orgs and
 # worktree names across repos, so bare auto-labels are ambiguous. Both tokens
 # are custom metadata reported by the _herdr_report_org hook in ~/.zshrc —
