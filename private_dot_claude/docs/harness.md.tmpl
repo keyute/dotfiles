@@ -97,6 +97,23 @@ verify with that agent and update this file.
   measure of the rule (no more reviewer-rate proxy) — next sweep expects it
   above the 20/30d the unnamed pass managed, and re-checks the 41% no-review
   figure.
+- 2026-09-12 audit: the self-review re-probe fired — neither Fable 5 nor
+  Opus 5's harness prompt still carries the "stop adding review passes once
+  checks pass" line, so the precedence clause's Claude conflict has lapsed
+  in both probed classes (clause retained; it still guards the
+  deterministic-gate distinction). Codex Sol's prompt now reads "Do not
+  spawn sub-agents unless the user or applicable AGENTS.md/skill
+  instructions explicitly ask", whose carve-out the projected delegation and
+  self-review lines satisfy — recorded as a resolved harness-conflict, no
+  wording change; Codex concurred. Sweep (user-run pipeline; the store held
+  only 2026-09-11/12 — 19 sessions, no 30-day history): of 13 editing
+  sessions, 12 ran codex-review AND a reviewer dispatch and 1 ran neither —
+  the displacement is absent in this window and the no-review rate is 1/13
+  (was 41%); `spec-reviewer` fired 12 times in two days against the 20/30d
+  bar; Agent model overrides 8/78 (10.3%, was 15.3%; general-purpose 3/3,
+  spec-reviewer 5/12 — capability-floor escalations). Survived-findings
+  count still uncounted (needs transcript content, which the metadata sweep
+  never reads).
 - Codex pin caveat for pinned reviewers (2026-09-09): the Codex subagent
   section in `private_dot_codex/docs/harness.md.tmpl` is expired and
   openai/codex#32587 is still open — a spawned child can silently inherit the
@@ -174,9 +191,9 @@ verify with that agent and update this file.
   `workspace_*` call, its profile rendered from `.chezmoidata/agents.yaml`,
   and the `pi` zsh function launches the pinned CLI with that extension; the
   workflow's own plan mode supplies read-only planning (verified 2026-09-09).
-  `~/.pi/agent/settings.json` is deliberately unmanaged — pi rewrites it
-  itself; wholesale ownership would revert `/settings` and Ctrl+S saves on
-  every apply (revisit with a `modify_` merge script if pi wins).
+  `~/.pi/agent/settings.json` is key-merged by a `modify_` script (since
+  2026-09-06): the managed subset renders from agents.yaml while pi's own
+  trust and UI state survives every apply.
 - Trial decision trigger: revisit at the next `agent-instructions-audit`, or
   sooner once one harness clearly owns all interactive GPT sessions — then
   demote or drop the loser (codex keeps the review-backend role regardless).
@@ -185,3 +202,5 @@ verify with that agent and update this file.
   all in this repo — self-development, not a usage signal); the Codex store
   was denied at the permission gate. Trigger fired, decision still yours: not
   decidable from transcripts while pi is only used to build pi.
+  2026-09-12 audit: Claude store swept via a user-run pipeline (2-day window
+  only), Codex and pi stores unswept — still not decidable.

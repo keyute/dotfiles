@@ -70,7 +70,7 @@ pi's own glyphs. Each rule carries the why that earned it.
    day's spacing complaint has two sources: every tool row draws its own
    leading blank line (pi's tool component), and pi's assistant component adds
    a spacer for any message whose raw content carried reasoning, transformer
-   or not (earendil-works/pi#8154, open). *2026-09-08, night:* a shell row
+   or not (earendil-works/pi#8154, closed not_planned 2026-08-15). *2026-09-08, night:* a shell row
    that ran outside the sandbox (Claude Code's
    `dangerouslyDisableSandbox`) carries `· unsandboxed` on its title, the
    background launch row included: under auto approvals the classifier may

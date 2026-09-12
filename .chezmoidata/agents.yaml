@@ -20,8 +20,10 @@ agents:
     # sonnet child prompt was confirmed by direct re-ask, not inferred; the
     # fable subagent prompt was probed 2026-09-09 and lacks partial_delivery
     # outright, carrying initiative, delegation_wait and long_running_work only
-    # partially.
-    native_coverage: []
+    # partially. call_batching: carried verbatim by the Fable 5 main-loop
+    # prompt and the Opus 5 subagent prompt ("make all of the independent
+    # calls in the same block"), probed 2026-09-12.
+    native_coverage: [call_batching]
     defaults:
       # explicit ID: bare aliases float across CLI releases (observed: `haiku`
       # resolving to sonnet-5); [1m] forces the 1M-context variant

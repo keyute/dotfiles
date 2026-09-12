@@ -48,7 +48,7 @@
 - Named specialists under `~/.codex/agents` stay pinned to their configured model tier,
   even after `/model` changes the parent session.
 - Known upstream regression (openai/codex#32587, MultiAgent V2; verified still
-  open 2026-09-07, last upstream activity 2026-07-12): spawned subagents can silently inherit the parent's
+  open 2026-09-12, last upstream activity 2026-07-12): spawned subagents can silently inherit the parent's
   model/effort instead of their pinned config. After Codex CLI updates, verify
   a specialist actually ran its pin via `/status` or the session log before
   trusting tier economics.

@@ -23,9 +23,10 @@ consumers are sessions editing this repo, not runtime pi sessions.
   registering through the API they are handed and pi keeping the definition
   object (`loader.js`). Rows read `args` and the result text; the two
   `details` reads are the adapter's `error` (failures it reports without
-  `isError`) and pi-subagents' `asyncId` (a launch). No upstream override API
-  exists (earendil-works/pi#3541); `stability.test.mjs` pins the
-  registrations and both fields.
+  `isError`) and pi-subagents' `asyncId` (a launch). earendil-works/pi#3541
+  closed completed 2026-04-22, but the pinned SDK still ships no
+  renderer-override API (checked 2026-09-12; re-check at the next pin bump);
+  `stability.test.mjs` pins the registrations and both fields.
 - The quiet completion notice: the same `pluginApi` Proxy intercepts
   `sendMessage` and sends pi-subagents' completion notice with `display` off
   (`docs/pi-design.md` rule 4, 2026-09-12). Rests on the plugin sending that

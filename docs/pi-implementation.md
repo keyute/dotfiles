@@ -252,8 +252,10 @@ live-tested on the host.
   only `renderShell`/`renderCall`/`renderResult` on `subagent`, `mcp` and
   `mcp__*` (`index.mjs` `pluginApi`). This supersedes the "registers
   unwrapped" decision above for presentation only: that Proxy intercepted
-  policy, this one never touches schema or execution, and pi has no
-  renderer-override API (earendil-works/pi#3541; `pi-tool-display` does the
+  policy, this one never touches schema or execution, and the pinned SDK has
+  no renderer-override API (earendil-works/pi#3541 closed completed
+  2026-04-22 upstream, but nothing shipped in the pin — checked 2026-09-12,
+  re-check at the next pin bump; `pi-tool-display` does the
   same interception with its own look and declares pi ≤ 0.80). Codex advisor
   concurred and added the adapter's `details.error` (failures without
   `isError`), read as the one `details` exception. Subagent rows use `○`
