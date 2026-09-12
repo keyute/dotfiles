@@ -159,9 +159,10 @@ every step below; never enumerate harness names. Tier pins are
    - `pi-session`: main session `<ts>_<id>.jsonl` beside a `<id>/<child>/run-0/session.jsonl`
      per child and `subagent-artifacts/<run>_<agent>_{input,output,meta,transcript}`;
      `type` message, `message.role` assistant/toolResult/user,
-     `message.content[]` with `toolCall` (`name`, `arguments.agent`,
-     `arguments.task`, `arguments.action`); tools are `workspace_*`,
-     `subagent`, `bg_wait`, `mcp`, `mcp__<server>_<tool>`.
+     `message.content[]` entries of `type` `toolCall` carrying `name` and
+     `arguments` at the item level (`arguments.agent`, `arguments.task`,
+     `arguments.action`) — not nested under a `.toolCall` key; tools are
+     `workspace_*`, `subagent`, `bg_wait`, `mcp`, `mcp__<server>_<tool>`.
 
 6. **Cross-model cross-check.** Before reporting, send the proposed ADDs,
    SHAVEs, CONFLICTs and drift findings — verdict, one-line rationale, draft

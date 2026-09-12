@@ -115,15 +115,18 @@
   the task at hand.
 {{ if hasKey $root.subagent_tiers $self -}}
 - Before calling a change done that no deterministic check (tests, build) gates
-  and that will be merged or applied — always for a high-stakes or
-  expensive-to-reverse surface: auth, security, data, concurrency, migrations —
+  and that will be merged or applied — and always, green checks included, for a
+  high-stakes or expensive-to-reverse surface: auth, security, data,
+  concurrency, migrations —
   check the artifact against the requirements with a fresh set of eyes: hand
-  `{{ $reviewer }}` both, not your reasoning trace, naming the snapshot to judge,
-  in one pass with no follow-up rounds. Launch it history-free — never a
-  context-inheriting fork — and never below the model that produced the work.
-  This pass is required even when the checks pass; a cross-model review does not
-  replace it. A re-review after fixes is a new dispatch, not a follow-up round.
-  Skip trivial, easily-reverted changes.
+  `{{ $reviewer }}` both, not your reasoning trace, naming the snapshot to judge
+  and any gates already run green at that snapshot, in one pass with no
+  follow-up rounds. Launch it history-free — never a context-inheriting fork —
+  and never below the model that produced the work.
+  When the gates cover the requirements and the surface is not high-stakes,
+  skip the pass, as with trivial, easily-reverted changes. A cross-model
+  review does not replace this pass. A re-review after fixes is a new dispatch
+  handed the fixed findings; it verifies those, not the whole artifact again.
 {{ end -}}
 - When I correct your approach or re-explain a convention, offer to record it in
   the project's instruction file (AGENTS.md/CLAUDE.md) or your memory.

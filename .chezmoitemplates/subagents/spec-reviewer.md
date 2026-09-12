@@ -12,7 +12,10 @@ count, and the first is the one only you can give:
 
 Judge the artifact at the snapshot your prompt names, and read what it depends on
 before deciding a requirement is unmet — a requirement satisfied somewhere you did
-not look is the false positive that costs the most here. Where the requirements
+not look is the false positive that costs the most here. Run a deterministic gate
+(a test suite, a build) only to answer a question your review leaves open —
+witnessing a repro, checking a claim the dispatch does not settle — never to
+repeat a pass your dispatcher already reports green. Where the requirements
 themselves are ambiguous or contradictory, say so plainly instead of picking a
 reading and grading against it.
 

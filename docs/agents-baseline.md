@@ -156,15 +156,18 @@ when my actual intent changes, never to track harness churn.
   that bug report is itself the task. *Why: speculative edge-case work
   crowds out the blocking signal and stalls shipping.*
 - **Self-review**: before calling a change done that no deterministic check
-  (tests, build) gates and that will be merged or applied — always for a
-  high-stakes or expensive-to-reverse surface: auth, security, data,
-  concurrency, migrations — check the artifact against the requirements with a
-  fresh set of eyes: hand `spec-reviewer` both, not your own reasoning trace,
-  naming the snapshot to judge, in one pass with no follow-up rounds. Launch it
+  (tests, build) gates and that will be merged or applied — and always, green
+  checks included, for a high-stakes or expensive-to-reverse surface: auth,
+  security, data, concurrency, migrations — check the artifact against the
+  requirements with a fresh set of eyes: hand `spec-reviewer` both, not your
+  own reasoning trace, naming the snapshot to judge and any gates already run
+  green at that snapshot, in one pass with no follow-up rounds. Launch it
   history-free — never a context-inheriting fork — and never below the model
-  that produced the work. This pass is required even when the checks pass; a
-  cross-model review does not replace it. A re-review after fixes is a new
-  dispatch, not a follow-up round. Skip trivial, easily-reverted changes.
+  that produced the work. When the gates cover the
+  requirements and the surface is not high-stakes, skip the pass, as with
+  trivial, easily-reverted changes. A cross-model review does not replace this
+  pass. A re-review after fixes is a new dispatch handed the fixed findings;
+  it verifies those, not the whole artifact again.
   *Why: a producing context endorses its own output and the bias is
   structural, not a capability gap — models fix an identical bug when told it
   is someone else's but not their own (64.5% blind spot, arXiv 2507.02778,
@@ -190,7 +193,15 @@ when my actual intent changes, never to track harness churn.
   gpt-6-astra, neither prompt discourages a fresh-eyes pass after tests pass,
   and astra states its limits on repeated testing do not prohibit one — so the
   clause is precedence over one harness, not both. Sources verified 2026-09-08;
-  conflict re-scoped 2026-09-09; re-probe both at the next audit.*
+  conflict re-scoped 2026-09-09; re-probe both at the next audit. The explicit
+  skip and the fix-scoped re-review answer the 2026-09-12 transcript sweep:
+  under the prior wording the pass fired 13 times in 13 distinct sessions in a
+  two-day window, trivial test-gated bodies included — 4–5 of 13 reviews returned zero
+  findings at ~51k top-tier tokens each, one body of work was fully
+  re-reviewed 35 minutes after its first pass, and reviewers re-ran suites the
+  session had already seen green — while every high/medium catch sat on a
+  high-stakes surface: the trigger's risk-shape held and it was the carve-outs
+  that failed to fire.*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*

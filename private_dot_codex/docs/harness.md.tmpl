@@ -28,6 +28,15 @@
   2.5× Standard. Keep bounded work on the lower tiers and Fast off unless needed.
 - Reasoning effort scales burn directly: drop effort per session via `/model`
   for routine work instead of changing the managed default.
+- Child agents draw the same credit pool as the parent, scaling roughly
+  linearly with concurrent subagents at equal model/effort (OpenAI engineer,
+  openai/codex#13179; researched 2026-09-12) — delegation saves credits only
+  when children run cheaper models or lower effort, and the pin-inheritance
+  caveat (openai/codex#32587) can silently void that. Observed 2026-09-12
+  (14-day rollout sweep): 511 `spawn_agent` per ~10.5k `exec` (4.4%
+  delegation), children genuinely on Terra/Luna — 571 cheap-tier
+  turn-contexts against 511 spawns, the excess consistent with multi-turn
+  children — so the pins held in this window.
 - Context window is 272,000 input tokens on the ChatGPT-subscription route, and
   the harness inherits it from the model catalog — nothing here pins it. Do not
   raise `model_context_window` above it: Codex clamps the value to the catalog's

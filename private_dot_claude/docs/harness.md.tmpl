@@ -114,6 +114,54 @@ verify with that agent and update this file.
   spec-reviewer 5/12 — capability-floor escalations). Survived-findings
   count still uncounted (needs transcript content, which the metadata sweep
   never reads).
+- Delegation economics (researched 2026-09-12, delegate-everything question):
+  subagent tokens draw the same Max 5h/weekly pools as the main loop — no
+  subagent discount, `/usage` shows a "subagent" share of the same pool
+  (costs.md/errors.md). Drain is model-weighted: Anthropic's only consumer
+  ratio is "Opus reaches limits ~5x faster than Sonnet" (support article,
+  archived 2025-10-02), which does not match the 2.5x API input-price ratio
+  (Opus 5 $5/$25, Sonnet 5 $2/$10, Haiku $1/$5 per MTok) — unreconciled by
+  Anthropic. Cache reads are 0.1x in API billing (0.025x on Fable/Mythos 5.1)
+  but whether Max metering discounts them is documented nowhere; revisit
+  trigger: check `/usage` behaviour next time a limit binds. Delegation
+  multiplies total tokens (Anthropic's own figures: multi-agent ≈15x chat,
+  single agent ≈4x, agent teams ≈7x; per-spawn CLAUDE.md/system-prompt resend
+  documented but unquantified) — it pays only via tier arbitrage and keeping
+  a grown top-tier context from re-metering, so its value scales with context
+  growth and child-pin correctness (Max routing bug GH #43869 silently billed
+  "sonnet" children at parent Opus rates until ~v2.1.146). Anthropic's
+  cost-optimization guide: delegate when work exceeds one context window or
+  fans out across independent items; on their DeepWideSearch benchmark,
+  lowering reasoning effort beat an orchestrator+workers architecture
+  (matched accuracy, 20% cheaper). Delegate-everything is refuted; the
+  selective gate stands. Sweep corroboration (2026-09-11/12, transcript
+  content read with user authorization): delegation 76/~2,000 tool calls
+  (3.9%), read-heavy; `implementer` 0 dispatches — all 374 Edits ran inline
+  in Fable sessions (unused lever, watch at next audit); token shares over
+  2 days: main-loop output 3.6M, cache-write 9.4M, cache-read 603M raw, all
+  subagents 3.87M/77 runs. Cache reads dominate raw volume by two orders of
+  magnitude, but metered dominance is unknown until the Max cache-weighting
+  question above is answered — at the API's 0.025x Fable factor those reads
+  are ~15M input-equivalent, comparable to the output burn, not 100x it;
+  whether session length or output volume is the primary cost lever waits on
+  the `/usage` check. Codex same-window: spawn rate 4.4%, children genuinely on
+  Terra/Luna — 571 cheap-tier turn-contexts against 511 spawns, the excess
+  consistent with multi-turn children — so the pins held.
+- Fresh-eyes yield, first content-level count (2026-09-12 sweep, closes the
+  "survived-findings uncounted" gap above for spec-reviewer): 13 runs in
+  2 days (the same-day audit's earlier sweep counted 12 — the 13th landed
+  after it ran), one per session, never repeated within a session; 669k subagent
+  tokens total (~51k avg) at Fable rates ≈17% of subagent spend. Yield:
+  1 high + 3 medium + 18 low; 4–5 reviews returned zero findings; every
+  high/medium sat on a high-stakes surface (auth/OAuth/MCP, per-cluster
+  deploy values). Waste modes: firing on trivial test-gated bodies (a
+  styling change drew a 32k zero-finding review), one full re-review of the
+  same body 35 min after the first, reviewers re-running already-green
+  suites. Decision 2026-09-12: carve-outs sharpened in the baseline (explicit
+  skip when gates cover the requirements and the surface is not high-stakes;
+  re-reviews verify the fixed findings only; reviewer body told not to re-run
+  green gates). Revisit: next sweep re-counts zero-finding share and
+  re-review scope under the new wording.
 - Codex pin caveat for pinned reviewers (2026-09-09): the Codex subagent
   section in `private_dot_codex/docs/harness.md.tmpl` is expired and
   openai/codex#32587 is still open — a spawned child can silently inherit the

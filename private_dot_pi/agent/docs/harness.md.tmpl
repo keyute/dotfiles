@@ -110,6 +110,12 @@ as an upper bound on duplication. `delegation_wait` therefore stays projected
 (`native_coverage: []`). Next step if the next sweep repeats this: move the rule
 into the `Workflow mode:` system-prompt suffix in `workflow/index.mjs` and
 measure again — the suffix is a different placement, not a demonstrated fix.
+2026-09-12 sweep (user-run pipeline, ~1 week of sessions, mostly pi
+self-development): 118 launches in ~1,450 tool calls (8.1%) plus 60
+`list`/`status` calls (~0.5 polls per launch — polling overhead persists;
+the roster-in-tool-description change has not removed `list` calls). Fleet
+mix is review-heavy: 59 diff/language reviewers, 36 explorers, 12
+researchers, 9 spec-reviewer, 2 general-purpose.
 
 Transcript and status-line rendering follows `docs/pi-design.md` in the source
 repository; the undocumented surfaces it leans on are inventoried in
