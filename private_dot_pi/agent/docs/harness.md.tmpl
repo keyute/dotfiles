@@ -1,10 +1,12 @@
 # Pi workflow reference
 
-Env-specific facts and decision records only. Generic harness behavior lives
-in the tool descriptions and the workflow's own system-prompt injection — it
-does not belong here. Sandbox, mode and approval questions go to
-`~/.pi/agent/docs/sandbox.md`. If behavior seems changed, verify against the
-source repository and update this file.
+Env-specific facts and decisions only, each at its current state with a dated
+annotation. Generic harness behavior lives in the tool descriptions and the
+workflow's own system-prompt injection — it does not belong here; sweep
+measurements and audit baselines live in the chezmoi repo's
+`docs/agents-audit-log.md`, not here. Sandbox, mode and approval questions go
+to `~/.pi/agent/docs/sandbox.md`. If behavior seems changed, verify against
+the source repository and update this file.
 
 ## Launch and ownership (last verified 2026-09-07)
 
@@ -95,27 +97,14 @@ transcript view), stop, interrupt and non-recovering steer are enabled;
 project role overrides, revival and mutating management are not. Results
 arrive as notifications — `bg_wait` only when the current turn depends on them.
 Children have no channel back: pi-subagents' intercom bridge is off
-(`extensions/subagent/config.json`), since its injected guidance had children
-calling `contact_supervisor`, which no role allowlist grants, four times in one
-session (2026-09-10, all `progress_update`) — an allowed call would only have
-woken the parent for a status line.
-Launched children's scope is off-limits to the parent (AGENTS.md): in every
-same-prompt run on 2026-09-07/08 the parent redid its reviewers' work while they
-ran (four reviewers, then ~60 own calls on the same files), doubling tokens and
-wall-clock. Re-checked 2026-09-09 across 18 sessions and 137 launches: after its
-first launch a parent still made a median of ~34 of its own calls (max 76), so
-the tool-description hint and the projection together still under-steer — the
-approximate measure counts out-of-scope and post-synthesis work too, so treat it
-as an upper bound on duplication. `delegation_wait` therefore stays projected
-(`native_coverage: []`). Next step if the next sweep repeats this: move the rule
-into the `Workflow mode:` system-prompt suffix in `workflow/index.mjs` and
-measure again — the suffix is a different placement, not a demonstrated fix.
-2026-09-12 sweep (user-run pipeline, ~1 week of sessions, mostly pi
-self-development): 118 launches in ~1,450 tool calls (8.1%) plus 60
-`list`/`status` calls (~0.5 polls per launch — polling overhead persists;
-the roster-in-tool-description change has not removed `list` calls). Fleet
-mix is review-heavy: 59 diff/language reviewers, 36 explorers, 12
-researchers, 9 spec-reviewer, 2 general-purpose.
+(`extensions/subagent/config.json`) — its injected guidance had children
+calling `contact_supervisor`, which no role allowlist grants (observed
+2026-09-10), and an allowed call would only have woken the parent for a
+status line.
+Launched children's scope is off-limits to the parent (AGENTS.md): sweeps
+through 2026-09-12 still show parents redoing their children's work while
+they run, so `delegation_wait` stays projected (`native_coverage: []`) —
+measurements and the next step live in the chezmoi repo's audit log.
 
 Transcript and status-line rendering follows `docs/pi-design.md` in the source
 repository; the undocumented surfaces it leans on are inventoried in

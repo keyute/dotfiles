@@ -68,9 +68,17 @@ erodes compliance across the whole set, not just the new rule's.*
 - A harness tag encodes intent intrinsic to that harness; a failure observed
   on one harness still gets the full coverage matrix, and projects wherever
   coverage is not native.
-- Environment facts and decision records → on-demand docs; give every doc
+- Environment facts and decisions → on-demand docs; give every doc
   pointer an explicit trigger ("read X before Y") — discretionary loading
   under-triggers.
+- An on-demand doc loads whole at its trigger, so it carries only what that
+  trigger's question needs: each fact or decision at its current state, with
+  a one-line dated annotation (last-verified or revisit trigger). Sweep
+  measurements, probe results, and superseded history go to
+  `docs/agents-audit-log.md` when they carry a live baseline or open
+  trigger, and are deleted otherwise — git history keeps the rest. *Why: the
+  doc's reader is a session answering one question; audit state's only
+  reader is the audit skill, which runs from this repo.*
 - Occasional workflows → skills.
 
 ### Style
@@ -100,7 +108,7 @@ erodes compliance across the whole set, not just the new rule's.*
 - On-demand docs expire by their own annotations: give every fact there a
   last-verified date or a revisit trigger (a section-level date covers its
   bullets); the audit's doc sweep flags the ones that have fired.
-  Generated content (`sandbox.md`) is exempt.
+  Generated content (Claude's `sandbox.md`) is exempt.
 - Before a novel rule enters the baseline, and whenever a why here or in
   the baseline feels stale, run the `doctrine-refresh` skill — it re-checks
   every empirical claim in both against current practitioner consensus.
@@ -109,4 +117,5 @@ erodes compliance across the whole set, not just the new rule's.*
 - Expect projections to steer, not bind: guarantees belong in the
   environment (sandbox, hooks, tests); prose only biases behavior.
 - Agent memory holds only what this repo cannot record — session-side
-  gotchas; a method belongs in the skill and a measurement in a dated doc.
+  gotchas; a method belongs in the skill and a measurement in the dated
+  audit log.

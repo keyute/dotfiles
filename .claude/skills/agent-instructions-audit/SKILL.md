@@ -7,7 +7,8 @@ description: Audit the chezmoi-managed agent instructions (the per-harness
   anywhere), shaves (rules now covered natively by every probed model class),
   conflicts, and behaviour drift (a projected rule that transcripts show is
   not firing or is displaced). Use when asked to audit, de-drift, or lean-pass
-  the agent instructions. Edits chezmoi source templates only; never commits.
+  the agent instructions. Edits chezmoi source templates and the repo audit
+  log only; never commits.
 ---
 
 Audit = baseline intent × current projections × live harness coverage ×
@@ -27,6 +28,8 @@ every step below; never enumerate harness names. Tier pins are
 ## Steps
 
 1. **Gather inputs.** Read `docs/agents-baseline.md`,
+   `docs/agents-audit-log.md` (the prior runs' open triggers and baselines —
+   they decide what the sweep re-measures),
    `.chezmoitemplates/agent-instructions.md`, every harness's
    `audit.instructions` template and its rendered target via `chezmoi cat
    <home>/<target>`, plus `.chezmoitemplates/subagents/*.md`,
@@ -108,8 +111,11 @@ every step below; never enumerate harness names. Tier pins are
    - On-demand docs (`audit.docs/*.tmpl` per harness): flag a last-verified
      date older than the current model/harness generation, a recorded revisit
      trigger that has fired (a linked issue closed — check with `gh`; "next
-     audit" — that is now), and facts carrying neither. Verify live only where
-     cheap. Generated content (`sandbox.md`) is exempt.
+     audit" — that is now), facts carrying neither, and measurement narrative
+     or superseded history in a doc body — that belongs in
+     `docs/agents-audit-log.md` or git history (AGENTS.md → Placement).
+     Verify live only where cheap. Generated content (Claude's `sandbox.md`)
+     is exempt.
    - Projection rot: flag any always-loaded line naming a mutable roster, an
      environment state, or metering/pricing specifics an on-demand doc already
      owns. Check each flagged line's `git log -p` history; a line re-worded more
@@ -142,8 +148,9 @@ every step below; never enumerate harness names. Tier pins are
      inside the child's scope (duplication); dispatches carrying a model
      override (silent pin fallbacks, roster friction);
    - same-prompt runs across harnesses when the user has made them.
-   Record results as dated facts in the harness docs' decision records, never
-   in a projection and never only in memory.
+   Record results as a dated entry in the repo's `docs/agents-audit-log.md`
+   and update each affected harness-doc fact's one-line annotation, never in
+   a projection and never only in memory.
 
    Store shapes, keyed by `audit.sessions.shape`:
    - `claude-projects`: one JSONL per session, subagent transcripts in
@@ -181,8 +188,9 @@ every step below; never enumerate harness names. Tier pins are
    numbers, and for each proposal a concrete diff — shaped per the authoring
    doctrine in the repo-root `AGENTS.md` — against the source templates
    (`.chezmoitemplates/agent-instructions.md`, each harness's
-   `audit.instructions` template, the subagent/skill bodies, the harness docs
-   — never the rendered targets, never the generated sensitive-path prose).
+   `audit.instructions` template, the subagent/skill bodies, the harness
+   docs, `docs/agents-audit-log.md` — never the rendered targets, never the
+   generated sensitive-path prose).
    A SHAVE is recorded by adding the rule's key to that harness's
    `native_coverage` list in `.chezmoidata/agents.yaml`, never by deleting the
    guarded bullet — the bullet still serves the harnesses that lack coverage.

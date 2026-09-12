@@ -1,18 +1,20 @@
 # Claude Code workflow reference
 
-Env-specific facts and decision records only. Generic harness behavior (commands,
-flags, modes) is injected into every session or answerable live via the
-claude-code-guide agent — it does not belong here. If behavior seems changed,
-verify with that agent and update this file.
+Env-specific facts and decisions only, each at its current state with a dated
+annotation. Generic harness behavior (commands, flags, modes) is injected into
+every session or answerable live via the claude-code-guide agent — it does not
+belong here; sweep measurements and audit baselines live in the chezmoi repo's
+`docs/agents-audit-log.md`, not here. If behavior seems changed, verify with
+that agent and update this file.
 
-## Models (last verified 2026-09-07)
+## Models (last verified 2026-09-12)
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo as
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
   session. The pin exists to hold the current Opus in its long-context variant
-  (`[1m]`); it is not the top tier — Fable 5.1 sits above it, explicit-selection
+  (`[1m]`); it is not the top tier — Fable sits above it, explicit-selection
   only (`/model fable` resolved to Fable 5.1 on 2026-09-07). Pin kept on Opus 5
-  at the 2026-09-07 audit: Anthropic's "low-effort Fable 5.1 beats Opus on cost
+  at the 2026-09-07 audit: Anthropic's "low-effort Fable beats Opus on cost
   per task" claim is API pricing, not Max-plan metering.
 - Pins use explicit model IDs, never bare aliases: aliases re-resolve across
   CLI releases (`opus`/`sonnet` float to the newest generation at v2.1.219+,
@@ -25,175 +27,54 @@ verify with that agent and update this file.
   silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
   (lowest tier likely to one-shot the task).
 - Subagent model resolution, in order (verified 2026-09-09 against
-  `docs.claude.com/en/docs/claude-code/sub-agents.md`): the per-invocation
-  `model` parameter, then the definition's `model` frontmatter (where
-  `inherit` selects the main conversation's model), then
+  `docs.claude.com/en/docs/claude-code/sub-agents.md`; re-check next audit):
+  the per-invocation `model` parameter, then the definition's `model`
+  frontmatter (where `inherit` selects the main conversation's model), then
   `CLAUDE_CODE_SUBAGENT_MODEL`, then the main conversation's model. Omitting
   `model:` is therefore NOT equivalent to `model: inherit` — omission lets that
   env var win. `subagent-claude.md` emits the literal `inherit` so an
   inherit-tier reviewer cannot drop below the model that produced the work.
-  Revisit trigger: next audit re-checks the documented order.
 - Subscription limits (Max plan; re-checked 2026-09-07 against the costs doc):
-  a rolling 5-hour session window plus a shared weekly pool, "shared across all
-  models"; the errors doc still names Opus and Sonnet family sub-limit messages.
-  The earlier notes that Fable draws the shared pool under a 50% ceiling and
-  that "Opus 5 consumes the budget fastest; Haiku barely dents it" are no longer
-  in the costs doc — unverified, re-check against the errors doc or support
-  article next time a limit binds, and reconcile the Sonnet sub-limit against
-  `/usage`. Leaf work on small/mid subagents still spares the pool — provided
-  the pin actually ran the cheap tier.
-- Fable 5.1 is escalation-only (hardest long-horizon architecture/synthesis —
+  a rolling 5-hour session window plus a shared weekly pool, "shared across
+  all models" — yet the errors doc still names Opus and Sonnet family
+  sub-limit messages, an unresolved contradiction. Earlier notes on a Fable
+  50% ceiling and per-model drain rates are no longer in the costs doc —
+  unverified. Next time a limit binds: re-check against the errors doc or
+  support article and reconcile the Sonnet sub-limit against `/usage`.
+- Fable is escalation-only (hardest long-horizon architecture/synthesis —
   current Opus is near-parity on ordinary coding at normal metering): a grown
   session `/model`-bumped into Fable re-meters its whole context against the
-  shared pool at Fable's weight every turn — the rationale behind the CLAUDE.md
-  intake rule. Fable 5.1's own quirks (whole-file rewrites, fewer progress
-  updates, under-batched tool calls) are projected in CLAUDE.md or carried by
-  the harness prompt; Opus 5's (over-delegation, over-verification) showed no
-  signal in the 2026-09-07 sweep — Opus 5 and Fable sessions delegated at the
-  same rate (3.8% vs 3.5% of tool calls) under the model-neutral rule.
-- `implementer` subagent (added 2026-08-28): mid-tier executor for
-  spec-complete mechanical write work. Rationale is weighted metering plus
-  grown-context re-metering — a bounded edit delegated out of a grown `[1m]`
-  session avoids re-sending the whole context at Opus rates, independent of
-  sub-limit structure. Uptake by ISO week: 1 (W35), 7 (W36), 16 (W37, two
-  days) — growing; rework signal still not measurable from metadata.
-- `researcher` subagent (added 2026-09-08): the 2026-09-07 roster gap (113 of
-  183 `general-purpose` dispatches in 30 days carrying a hand-picked `sonnet`,
-  mostly web research) had grown to 133 of 217 by 09-08 — a scoped mid-tier
-  read-only preset with web + Exa + context7. Trigger fired 2026-09-09: over
-  30 days, 1790 `Agent` dispatches carried 274 model overrides (15.3%) — the
-  override rate is the roster-friction signal and is still high, but the sweep
-  did not split it by target, so whether research moved to `researcher` is
-  still uncounted. Revisit trigger: next sweep counts overrides per
-  subagent_type, not just in total.
-- Self-review vs codex-review (decision 2026-09-08): both rules fired on the
-  same high-stakes set from 2026-08-27, and the transcript sweep showed the
-  Codex review displacing the fresh-eyes subagent pass — reviewer-subagent
-  dispatch in editing sessions fell 56% → 30% → 35% (W35–W37) as codex-review
-  rose 37% → 61% → 85%, ~70% of codex-review sessions dispatching no reviewer.
-  Re-measured 2026-09-09: 338 editing sessions in 30 days (distinct sessionId,
-  not transcript file — counting files inflates this by ~8%, since a subagent
-  transcript is its own file), 149 firing codex-review, 103 dispatching any
-  reviewer, 48 both — 101 of the 149 (68%) still ran the cross-model review
-  with no fresh-eyes pass. The named `spec-reviewer` target landed the same
-  day and had fired twice, so 68% is the pre-fix baseline, not a verdict on
-  the "in addition to" clause. Re-measure next audit.
-  Web research (sources verified, listed in the baseline why) found the
-  fresh-context same-model pass is the measured lever and cross-model review
-  additive but unmeasured, so the projection now says "in addition to,
-  launched alongside".
-- Fresh-eyes sweep (2026-09-09, 30 days, 341 Claude sessions with >=3 writes):
-  the 09-08 revisit trigger fired and failed — reviewer-subagent dispatch is
-  29%, flat against the 30%/35% it was set from, while `codex-review` ran in
-  43% of editing sessions and **41% had no review pass of any kind**. The
-  fresh-eyes rule itself fired in only 20 dispatches (~6%): 10 to
-  `general-purpose` (write-capable; 4 carrying a hand-picked `sonnet`, 4
-  inheriting, 1 opus, 1 fable), 8 to diff/language reviewers whose contract
-  cannot report an omission, 2 to `Explore`/`researcher`. That is what
-  `spec-reviewer` (added 2026-09-09, `tier: inherit` as a capability floor)
-  answers. Note it fixes the shape of the ~6% that fire, not the firing rate —
-  the low fire rate is the larger open defect and belongs to the trigger, not
-  the fleet. Revisit trigger: `spec-reviewer` dispatch count is now a direct
-  measure of the rule (no more reviewer-rate proxy) — next sweep expects it
-  above the 20/30d the unnamed pass managed, and re-checks the 41% no-review
-  figure.
-- 2026-09-12 audit: the self-review re-probe fired — neither Fable 5 nor
-  Opus 5's harness prompt still carries the "stop adding review passes once
-  checks pass" line, so the precedence clause's Claude conflict has lapsed
-  in both probed classes (clause retained; it still guards the
-  deterministic-gate distinction). Codex Sol's prompt now reads "Do not
-  spawn sub-agents unless the user or applicable AGENTS.md/skill
-  instructions explicitly ask", whose carve-out the projected delegation and
-  self-review lines satisfy — recorded as a resolved harness-conflict, no
-  wording change; Codex concurred. Sweep (user-run pipeline; the store held
-  only 2026-09-11/12 — 19 sessions, no 30-day history): of 13 editing
-  sessions, 12 ran codex-review AND a reviewer dispatch and 1 ran neither —
-  the displacement is absent in this window and the no-review rate is 1/13
-  (was 41%); `spec-reviewer` fired 12 times in two days against the 20/30d
-  bar; Agent model overrides 8/78 (10.3%, was 15.3%; general-purpose 3/3,
-  spec-reviewer 5/12 — capability-floor escalations). Survived-findings
-  count still uncounted (needs transcript content, which the metadata sweep
-  never reads).
-- Delegation economics (researched 2026-09-12, delegate-everything question):
+  shared pool at Fable's weight every turn — the rationale behind the
+  CLAUDE.md intake rule.
+- Delegation economics (researched 2026-09-12; baselines in the audit log):
   subagent tokens draw the same Max 5h/weekly pools as the main loop — no
-  subagent discount, `/usage` shows a "subagent" share of the same pool
-  (costs.md/errors.md). Drain is model-weighted: Anthropic's only consumer
-  ratio is "Opus reaches limits ~5x faster than Sonnet" (support article,
-  archived 2025-10-02), which does not match the 2.5x API input-price ratio
-  (Opus 5 $5/$25, Sonnet 5 $2/$10, Haiku $1/$5 per MTok) — unreconciled by
-  Anthropic. Cache reads are 0.1x in API billing (0.025x on Fable/Mythos 5.1)
-  but whether Max metering discounts them is documented nowhere; revisit
-  trigger: check `/usage` behaviour next time a limit binds. Delegation
-  multiplies total tokens (Anthropic's own figures: multi-agent ≈15x chat,
-  single agent ≈4x, agent teams ≈7x; per-spawn CLAUDE.md/system-prompt resend
-  documented but unquantified) — it pays only via tier arbitrage and keeping
-  a grown top-tier context from re-metering, so its value scales with context
-  growth and child-pin correctness (Max routing bug GH #43869 silently billed
-  "sonnet" children at parent Opus rates until ~v2.1.146). Anthropic's
-  cost-optimization guide: delegate when work exceeds one context window or
-  fans out across independent items; on their DeepWideSearch benchmark,
-  lowering reasoning effort beat an orchestrator+workers architecture
-  (matched accuracy, 20% cheaper). Delegate-everything is refuted; the
-  selective gate stands. Sweep corroboration (2026-09-11/12, transcript
-  content read with user authorization): delegation 76/~2,000 tool calls
-  (3.9%), read-heavy; `implementer` 0 dispatches — all 374 Edits ran inline
-  in Fable sessions (unused lever, watch at next audit); token shares over
-  2 days: main-loop output 3.6M, cache-write 9.4M, cache-read 603M raw, all
-  subagents 3.87M/77 runs. Cache reads dominate raw volume by two orders of
-  magnitude, but metered dominance is unknown until the Max cache-weighting
-  question above is answered — at the API's 0.025x Fable factor those reads
-  are ~15M input-equivalent, comparable to the output burn, not 100x it;
-  whether session length or output volume is the primary cost lever waits on
-  the `/usage` check. Codex same-window: spawn rate 4.4%, children genuinely on
-  Terra/Luna — 571 cheap-tier turn-contexts against 511 spawns, the excess
-  consistent with multi-turn children — so the pins held.
-- Fresh-eyes yield, first content-level count (2026-09-12 sweep, closes the
-  "survived-findings uncounted" gap above for spec-reviewer): 13 runs in
-  2 days (the same-day audit's earlier sweep counted 12 — the 13th landed
-  after it ran), one per session, never repeated within a session; 669k subagent
-  tokens total (~51k avg) at Fable rates ≈17% of subagent spend. Yield:
-  1 high + 3 medium + 18 low; 4–5 reviews returned zero findings; every
-  high/medium sat on a high-stakes surface (auth/OAuth/MCP, per-cluster
-  deploy values). Waste modes: firing on trivial test-gated bodies (a
-  styling change drew a 32k zero-finding review), one full re-review of the
-  same body 35 min after the first, reviewers re-running already-green
-  suites. Decision 2026-09-12: carve-outs sharpened in the baseline (explicit
-  skip when gates cover the requirements and the surface is not high-stakes;
-  re-reviews verify the fixed findings only; reviewer body told not to re-run
-  green gates). Revisit: next sweep re-counts zero-finding share and
-  re-review scope under the new wording.
-- Codex pin caveat for pinned reviewers (2026-09-09): the Codex subagent
-  section in `private_dot_codex/docs/harness.md.tmpl` is expired and
-  openai/codex#32587 is still open — a spawned child can silently inherit the
-  parent's model/effort instead of its pinned config. `tier: inherit` is the
-  one setting that regression cannot break, which is a second reason the
-  fresh-eyes floor is expressed as inherit rather than a fixed tier.
+  subagent discount — and drain is model-weighted. Delegation multiplies total
+  tokens; it pays only via tier arbitrage and keeping a grown top-tier context
+  from re-metering, so delegate when work exceeds one context window or fans
+  out across independent items, and keep children on the cheap pinned tiers.
+  Whether Max metering discounts cache reads is undocumented — check `/usage`
+  next time a limit binds.
+- `implementer` (added 2026-08-28): mid-tier executor for spec-complete
+  mechanical write work — a bounded edit delegated out of a grown `[1m]`
+  session avoids re-sending the whole context at Opus rates.
+- `researcher` (added 2026-09-08): scoped mid-tier read-only preset with web,
+  Exa and context7, so research dispatches stop hand-picking models on
+  general-purpose.
+- Codex pin caveat for pinned reviewers: openai/codex#32587 (still open as of
+  2026-09-12) — a spawned Codex child can silently inherit the parent's
+  model/effort instead of its pinned config. `tier: inherit` is the one
+  setting that regression cannot break, a second reason the fresh-eyes floor
+  is expressed as inherit rather than a fixed tier.
 - If Codex is available, `codex-review` / `codex-advisor` are read-only Codex
   consultation for high-risk diffs or stuck calls; Claude and Codex meter on
   independent windows, so read-work can offload to Codex — write-work means driving
   the task with Codex yourself. Keep decision ownership in Claude.
-- Codex trigger recalibrated to risk-or-breadth (decision 2026-09-03, from a
-  full transcript sweep): the 2026-08-27 size-based trigger ("3+ files,
-  unprompted") drove `codex-review` from ~3–4 to ~90 firings/week while the
-  needs-attention rate fell from ~4% (11/282 verdict mentions) to ~0.8%
-  (2/265), with ~2/3 of reviews returning zero-finding "approve"; every
-  surviving catch sat in a high-stakes category (auth, data loss, migration
-  safety). External practitioner consensus and Anthropic's yield-by-size data
-  agree: gate on risk first, breadth second, never blanket. 2026-09-08
-  re-measure (the 09-07 "~1/day" reading was an activity artifact — 9–10
-  sessions/day on 09-05/06): among sessions with 3+ edits, codex-review fired
-  in 37% (W35), 61% (W36), 85% (W37, 2 days: 22 firings across 21–23 active
-  sessions/day); 17 completed reviews that week, ~15 returning P1/P2-labelled
-  findings. The bridge returns prose, not a JSON verdict, so the old
-  needs-attention regex measures nothing; the survived-findings rate (findings
-  the session actually fixed) is the yield measure and is not yet counted.
-  Decision 2026-09-08: keep the trigger (Codex itself objected that labels are
-  not survivals). Trigger fired 2026-09-09, first data point: the audit's own
-  ship-check review returned 1 Codex finding and 0 survived it (an
-  `active_long_running` mislabel that the upstream source disproved — the event
-  type is filtered before delivery). One review is far short of the ~2-in-10
-  test. Revisit trigger: next sweep accumulates survived findings across
-  reviews; decide once there are ten.
+- The codex-review trigger is risk-or-breadth, never blanket (decision
+  2026-09-03, kept 2026-09-08): a size-based trigger produced ~2/3
+  zero-finding reviews while every surviving catch sat in a high-stakes
+  category. Yield is findings the session actually fixed; the
+  survived-findings count accumulates in the audit log — decide the trigger's
+  fate once there are ten.
 
 ## Codex transport: owned MCP bridge (decision 2026-09-05)
 
@@ -245,10 +126,5 @@ verify with that agent and update this file.
 - Trial decision trigger: revisit at the next `agent-instructions-audit`, or
   sooner once one harness clearly owns all interactive GPT sessions — then
   demote or drop the loser (codex keeps the review-backend role regardless).
-  2026-09-07 audit: two days in, not measurable from Claude transcripts.
-  2026-09-08 audit: the pi store is now in the sweep (15 sessions in three days,
-  all in this repo — self-development, not a usage signal); the Codex store
-  was denied at the permission gate. Trigger fired, decision still yours: not
-  decidable from transcripts while pi is only used to build pi.
-  2026-09-12 audit: Claude store swept via a user-run pipeline (2-day window
-  only), Codex and pi stores unswept — still not decidable.
+  Still not decidable as of the 2026-09-12 audit (status history in the audit
+  log).

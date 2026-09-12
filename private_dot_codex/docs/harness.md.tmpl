@@ -32,11 +32,8 @@
   linearly with concurrent subagents at equal model/effort (OpenAI engineer,
   openai/codex#13179; researched 2026-09-12) — delegation saves credits only
   when children run cheaper models or lower effort, and the pin-inheritance
-  caveat (openai/codex#32587) can silently void that. Observed 2026-09-12
-  (14-day rollout sweep): 511 `spawn_agent` per ~10.5k `exec` (4.4%
-  delegation), children genuinely on Terra/Luna — 571 cheap-tier
-  turn-contexts against 511 spawns, the excess consistent with multi-turn
-  children — so the pins held in this window.
+  caveat (openai/codex#32587) can silently void that. The 2026-09-12 sweep
+  found the pins held; baseline in the chezmoi repo's audit log.
 - Context window is 272,000 input tokens on the ChatGPT-subscription route, and
   the harness inherits it from the model catalog — nothing here pins it. Do not
   raise `model_context_window` above it: Codex clamps the value to the catalog's
@@ -52,7 +49,7 @@
 - Attached MCP servers reload their full tool schemas every turn — an accepted
   cost here; revisit the server list if the weekly limit starts binding.
 
-## Subagents (last verified 2026-07-31; expiry fired 2026-09-08 and is still open — re-verify the pin behaviour from a Codex session. The 2026-09-09 Claude-side audit confirmed it cannot close this: the permission gate denied `~/.codex/sessions` on two attempts, so the store stays unreadable from that side. Next trigger: the first Codex session after a Codex CLI update.)
+## Subagents (last verified 2026-07-31; expiry fired 2026-09-08, still open — re-verify the pin behaviour from the next Codex session, and again after each Codex CLI update)
 
 - Named specialists under `~/.codex/agents` stay pinned to their configured model tier,
   even after `/model` changes the parent session.

@@ -1,9 +1,11 @@
 # Pi sandbox and permissions
 
-Env-specific facts and decision records only. Generic harness behavior lives
-in the tool descriptions and the workflow's own system-prompt injection — it
-does not belong here. If behavior seems changed, verify against the source
-repository and update this file.
+Env-specific facts and decisions only, each at its current state with a dated
+annotation. Generic harness behavior lives in the tool descriptions and the
+workflow's own system-prompt injection — it does not belong here; sweep
+measurements and audit baselines live in the chezmoi repo's
+`docs/agents-audit-log.md`, not here. If behavior seems changed, verify
+against the source repository and update this file.
 
 ## Planning and permissions (last verified 2026-09-12)
 
@@ -38,7 +40,7 @@ repository and update this file.
   sandbox-attributable failure of that command or on request, per command;
   `!` commands stay sandboxed. The docker socket is one such failure: no
   `--config` or `DOCKER_HOST` workaround reaches it from inside the profile
-  (2026-09-10: five failed attempts before the session gave up).
+  (verified 2026-09-10).
 - Temp files inside the profile: `$TMPDIR` is the lease's scratch directory
   (srt would otherwise export `/tmp/claude`, which the profile never allows),
   so `mktemp -d "$TMPDIR/x.XXXXXX"` works while a bare `mktemp -d` does not —
@@ -58,9 +60,9 @@ repository and update this file.
 - `workspace_bash` with `run_in_background: true` starts a background task
   (Claude Code's flag). The call is held open for 10 s first: a command that
   ends inside that grace is answered like a foreground call and never
-  notifies (2026-09-10: 21 of 34 backgrounded commands in one session ended
-  within 10 s, and each completion woke the idle parent for a ~150k-token
-  turn — $5.92 of that session's $37.85). A longer one returns its task id,
+  notifies — most backgrounded commands end there, and each completion past
+  the grace wakes an idle parent for a full turn (verified 2026-09-10, the
+  cost that motivated the grace). A longer one returns its task id,
   the worker keeps its lease, and when the command ends the model hears a
   steer message with the exit status and the last twenty lines (with its
   next tool result, or as a new turn when idle). `workspace_task`
