@@ -882,7 +882,19 @@ live-tested on the host.
   not evidence of a successful sandbox run until executed on the user's host.
 - Live OAuth, foreground/background children, cancellation, the fleet widget, MCP and
   LSP remain acceptance gates. Do not treat fixture tests as full DX parity.
-- See `private_dot_pi/agent/docs/harness.md.tmpl` for operator checks and limitations.
+
+## Acceptance checks (last verified 2026-09-06; moved here from the runtime harness doc 2026-09-12)
+
+From the source repository, run `npm run test:pi`. It covers policy, classifier
+fallback, terminal proof, child preflight and secret-stubbed chezmoi projections.
+`PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` additionally exercises actual Unix
+sockets and SRT against disposable fixtures; it needs an unrestricted local host.
+
+Before relying on the setup, separately verify subscription login, parent and
+foreground/background child model pins, auto approvals, cancellation, the fleet widget,
+MCP queries, diagnostics and approved edits in a disposable project. Fixture
+tests do not establish account access or live terminal behavior. Compare Sol and
+Astra on matched completed tasks before changing the default model.
 
 Do not apply, sign in, stage or commit. Run Claude-side agent-instructions-audit
 after these model/harness changes; it is unavailable in this Codex session.

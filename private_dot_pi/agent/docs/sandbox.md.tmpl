@@ -1,0 +1,110 @@
+# Pi sandbox and permissions
+
+Env-specific facts and decision records only. Generic harness behavior lives
+in the tool descriptions and the workflow's own system-prompt injection — it
+does not belong here. If behavior seems changed, verify against the source
+repository and update this file.
+
+## Planning and permissions (last verified 2026-09-12)
+
+- New sessions start in plan mode with auto-reviewed approvals. Source writes
+  remain disabled; temporary build/cache artifacts use designated writable roots.
+  The mode asks for the work as well as forbidding the edits: research the
+  request to the point of a plan unprompted, delegate the independent
+  exploration, ask where different readings would lead to materially different
+  work, then submit the plan without being asked for it.
+- `/execute` or approval of `submit_plan` explicitly enables scoped execution.
+  Every mode switch revokes child sessions and sandbox processes before the
+  new mode takes effect — `/plan` before enabling planning, and approval of
+  `submit_plan` the same way before enabling execution, so a child still
+  running when the plan is approved ends aborted.
+- `/approvals` selects auto review or individual prompts. Hard denial, inherited
+  role scope and mode restrictions run before approval; approval cannot widen them.
+- Shell commands run inside the SRT profile without review, as sandboxed
+  commands do in Claude Code and Codex; the profile is the boundary. Only
+  remote-mutating verbs the profile cannot judge — `git push`, `gh` other than
+  view/list/status/search/diff/checks, `gh api` with a method or field,
+  `npm publish`, `docker push`, `curl`/`wget` with data, json or upload flags,
+  `ssh`, `scp`, `sftp`, `rsync` — go to the auto classifier, then to a confirm
+  dialog on `ask`. File edits inside the workspace run without review once
+  execution is approved.
+- `workspace_bash` with `dangerouslyDisableSandbox: true` (Claude Code's flag)
+  runs the command on the host outside the SRT profile, under the host
+  environment minus the workflow's own variables. Every such call is reviewed,
+  plan mode included, and never takes the sandboxed auto-allow: the classifier
+  under auto approvals, the confirm dialog (`Approve this unsandboxed action
+  once?`) under ask or on a classifier `ask`. Read-only roles are refused. The
+  row reads `Ran … · unsandboxed`. The model sets it only after a
+  sandbox-attributable failure of that command or on request, per command;
+  `!` commands stay sandboxed. The docker socket is one such failure: no
+  `--config` or `DOCKER_HOST` workaround reaches it from inside the profile
+  (2026-09-10: five failed attempts before the session gave up).
+- Temp files inside the profile: `$TMPDIR` is the lease's scratch directory
+  (srt would otherwise export `/tmp/claude`, which the profile never allows),
+  so `mktemp -d "$TMPDIR/x.XXXXXX"` works while a bare `mktemp -d` does not —
+  macOS `mktemp` ignores `TMPDIR` without a template and writes to the
+  per-user `/var/folders` dir, which stays denied. Apple's `/bin/bash` 3.2
+  puts here-document temp files in `/var/tmp` (writable for every role on
+  macOS for exactly this) rather than `$TMPDIR`. Verified 2026-09-11. The classifier also sees the session's recent
+  shell commands (the command, whether it ran sandboxed, its exit code; never
+  its output), so a retry after a sandboxed failure is judged on that evidence.
+- Classifier errors/uncertainty prompt the root session; unattended requests deny.
+  A pending dialog is announced in the footer and times out after ten minutes.
+- `ask_user_question` (the pinned `@juicesharp/rpiv-ask-user-question` plugin)
+  presents up to four questions with options, previews and free text in one
+  tabbed dialog; answers land in the transcript and the classifier's task
+  context. Approval dialogs are once-only; MCP approvals are never cached
+  across a mode change.
+- `workspace_bash` with `run_in_background: true` starts a background task
+  (Claude Code's flag). The call is held open for 10 s first: a command that
+  ends inside that grace is answered like a foreground call and never
+  notifies (2026-09-10: 21 of 34 backgrounded commands in one session ended
+  within 10 s, and each completion woke the idle parent for a ~150k-token
+  turn — $5.92 of that session's $37.85). A longer one returns its task id,
+  the worker keeps its lease, and when the command ends the model hears a
+  steer message with the exit status and the last twenty lines (with its
+  next tool result, or as a new turn when idle). `workspace_task`
+  `{ id, action: "output" | "stop" }` reads the output so far or stops it. Output is kept in memory, tail-capped
+  at 256 KiB. `/plan` and `/remove-dir` stop running tasks like any sandbox
+  process (they end as `stopped`); so does exiting pi.
+- `/add-dir <path>` adds a directory to the editable workspace, as Claude
+  Code's does: edits inside it are allowed once execution is approved, its
+  `.git`, `.pi` and every relative deny entry (`.env`) are protected there as
+  under cwd, and its `AGENTS.md` (or
+  `CLAUDE.md`) is appended to the system prompt after passing the read policy
+  (a symlink out of the directory or onto a denied path refuses the add).
+  Home, its ancestors, denied paths and directories already in scope are
+  refused with the reason. `/remove-dir <path>` drops one. Both take their
+  argument inline; Tab lists what each accepts (the addable directories, the
+  added ones) and, once accepted, lists the next level down, so Tab walks the
+  tree. State is per session; skills
+  under an added directory need a restart with `--skill <path>`, since pi
+  discovers resources only at startup and `/reload`. Reads were never
+  confined to the workspace; only the deny list applies.
+- If a process disappears without acknowledging termination, the workflow blocks.
+  Check orphan processes and restart; do not treat a lost connection as proof that
+  a writer stopped.
+
+The `workspace_*` tools are the SDK's own tools running in the host Pi process;
+each invocation leases a per-tool SRT worker that performs the actual file and
+shell operations, so effects and subprocess execution are sandboxed — not all
+file I/O (path probes, diff generation, and output temp files stay host-side).
+Every lease consumes a single-use ticket minted by its approval, so a mode
+change between approval and execution invalidates the lease. Interactive `!`
+commands use the same worker boundary. MCP stdio servers also run inside SRT,
+while OAuth stays in the trusted host Pi process.
+
+Sensitive paths come from the shared denylist. File tools additionally resolve
+symlinks and confine edits to the workspace; git metadata and live-loaded code
+(`~/.pi/agent`, the repository `node_modules`, `~/.zshrc`) are write-protected
+in every mode, while the repository source is editable once execution is
+approved. A refusal names its reason (`Writes are disabled in this scope`,
+`Path denied by managed policy`, `File edits must remain inside the
+workspace`); the model should report it rather than re-submit the plan. This is
+an explicit denylist, not a guarantee against unknown credential locations. Add
+new credential paths to shared policy before exposing them to a session.
+
+Extensions are trusted host code. Per-tool SRT is not containment against a
+malicious extension. The reviewed `dangerouslyDisableSandbox` flag above is the
+only unsandboxed path in the managed tools. Linux needs bubblewrap, socat and
+ripgrep; macOS needs sandbox-exec.

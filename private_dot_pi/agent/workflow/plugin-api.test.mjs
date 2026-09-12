@@ -33,6 +33,17 @@ test("a message renderer we own is composed over the plugin's, which stays as th
   assert.equal(registered.get("theirs")({ details: {} }), "box");
 });
 
+test("a quiet customType is sent with display off, everything else untouched", () => {
+  const sent = [];
+  const pi = { sendMessage(message, options) { sent.push([message, options]); } };
+  const styled = pluginApi(pi, () => ({}), {}, ["subagent-notify"]);
+  const { sendMessage } = styled; // the adapter extracts the function
+  sendMessage({ customType: "subagent-notify", content: "Background task failed: **x**", display: true }, { triggerTurn: true });
+  sendMessage({ customType: "other", content: "c", display: true });
+  assert.deepEqual(sent[0], [{ customType: "subagent-notify", content: "Background task failed: **x**", display: false }, { triggerTurn: true }]);
+  assert.deepEqual(sent[1], [{ customType: "other", content: "c", display: true }, undefined]);
+});
+
 test("the control notice row is built from the event pi-subagents puts in details", () => {
   const theme = { fg: (color, text) => `<${color}>${text}` };
   const notice = event => controlNotice({ content: "Subagent needs attention: researcher\nRun: …", details: { event } }, {}, theme)?.render(200)[0].trimEnd();
@@ -52,6 +63,7 @@ test("the plan-mode research addendum is the root's alone, and execute mode carr
   const root = workflowPrompt({ ...base, isRoot: true });
   assert.match(root, /Workflow mode: plan\. Investigate only/);
   assert.match(root, /Research the request to the point of a plan without being asked/);
+  assert.match(root, /Approval switches the mode and revokes running child sessions/);
   // A child in plan mode is read-only too, but has neither submit_plan nor ask_user_question.
   assert.doesNotMatch(workflowPrompt({ ...base, isRoot: false }), /Research the request/);
   // Execute mode replaces the investigate clause outright, so the addendum cannot ride it.

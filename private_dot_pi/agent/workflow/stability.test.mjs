@@ -148,6 +148,8 @@ const pins = [
   ["the Anthropic replay carries the thinking text with its signature, which is why blanking is gated by api", "@earendil-works/pi-ai/dist/api/anthropic-messages.js", [/type: "thinking",\s*thinking: sanitizeSurrogates\(block\.thinking\),\s*signature: thinkingSignature,/]],
   ["result statuses are completed, failed, partial, paused, stopped or detached", "pi-subagents/src/shared/types.ts", [/ExecutionProjectionStatus = "completed" \| "failed" \| "partial" \| "paused" \| "stopped" \| "detached"/]],
   ["the stored openai-codex credential carries access, a ms-epoch expires and accountId — the fields the footer's usage read scopes in without refreshing", "@earendil-works/pi-ai/dist/auth/oauth/openai-codex.js", [/type: "oauth",\s*access: token\.access,\s*refresh: token\.refresh,\s*expires: token\.expires,\s*accountId,/, /expires: Date\.now\(\) \+ json\.expires_in \* 1000,/]],
+  ["the completion notice goes through sendMessage as customType subagent-notify with a computed display flag — the literal the quiet flip keys on", "pi-subagents/src/runs/background/notify.ts", [/customType: "subagent-notify",\s*content,\s*display,/]],
+  ["pi draws a custom message only when its display flag is truthy, so a quiet send leaves no line and no spacer", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/case "custom": \{\s*if \(message\.display\) \{/]],
 ];
 for (const [claim, file, patterns] of pins) {
   test(`pin: ${claim} (${file})`, () => {

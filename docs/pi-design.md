@@ -271,6 +271,18 @@ pi's own glyphs. Each rule carries the why that earned it.
    wording; a second producer with its own wording is the plugin's to draw,
    and `stability.test.mjs` pins both that wording and the delivery path that
    makes goal notices reach the renderer at all.
+   *2026-09-12:* the completion notice itself no longer draws. pi-subagents
+   delivers every completion as a `subagent-notify` message whose box
+   duplicated the completion line above — and the box's collapsed preview
+   shows only its first line, which is the bare `<agent>:`, so a failed run's
+   box said nothing before the `full notification` hint and the session-file
+   line. A composed renderer cannot hide it — pi's custom-message component
+   prepends its spacer before the renderer answers — so the plugin wrapper
+   sends the message with `display` off: pi draws a custom message only when
+   the flag is truthy, the path pi-subagents' own quiet background successes
+   already ride, and the content the model acts on, session-file path
+   included, is untouched. `stability.test.mjs` pins the customType literal
+   and the display gate.
 5. **Composer = the user box, and the user box = the composer.** A shaded
    block in pi's `userMessageBg`: one blank shaded row above and below the
    content, `❯` at column 0 on the first content line, no rule lines, no
@@ -355,11 +367,15 @@ pi's own glyphs. Each rule carries the why that earned it.
    the task) and came back in the afternoon: the owner missed it, and
    `agent › title` is already the launch row's and the peek header's shape.
 7. **Stability over fidelity.** Build on a documented pi or plugin API. An
-   undocumented export or heuristic is allowed only with an entry in
-   `harness.md`'s coupling inventory and a test that fails on the pin bump;
-   `stability.test.mjs` enforces the import and event side mechanically and
-   pins the source text every heuristic assumes. *Why:* pi breaks extension
+   undocumented export or heuristic is allowed only with an entry in the
+   coupling inventory (`docs/pi-coupling.md`) and a test that fails on the pin
+   bump; `stability.test.mjs` enforces the import and event side mechanically
+   and pins the source text every heuristic assumes. *Why:* pi breaks extension
    APIs across 0.x releases; prose fails silently, tests fail loudly.
+   *2026-09-12:* the inventory moved out of `~/.pi/agent/docs/harness.md` into
+   the repository: its consumers are sessions editing this repo, and the
+   runtime doc was paying ~100 lines on every harness read for content no
+   session outside the repo can act on.
 8. **Glyph at the edge, text two in.** A line that opens with a glyph (`•`,
    `π`, `❯`, `▸`/`▾`) starts at column 0; a line without one (`↳`, the status
    line, the fleet rows) starts two columns in. pi's `outputPad`

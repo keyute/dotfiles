@@ -110,6 +110,7 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   const frontier = run("execute-template", "{{ .subagent_tiers.codex.frontier }}");
   assert.equal(frontier, "gpt-6-astra");
   assert.match(run("cat", target(".pi/agent/docs/harness.md")), /Astra/);
+  assert.match(run("cat", target(".pi/agent/docs/sandbox.md")), /SRT profile/);
   assert.match(run("cat", target(".codex/docs/harness.md")), /Astra/);
   assert.match(run("cat", target(".pi/agent/extensions/workflow.ts")), /\/\.pi\/agent\/workflow\/index\.mjs/);
   assert.match(run("cat", target(".pi/agent/node_modules")), /\/node_modules\s*$/);
@@ -131,6 +132,7 @@ test("diff renders each affected harness target against an isolated destination"
     ".pi/agent/settings.json",
     ".pi/agent/AGENTS.md",
     ".pi/agent/docs/harness.md",
+    ".pi/agent/docs/sandbox.md",
     ".pi/agent/subagent-tool-description.md",
     ".pi/agent/extensions/subagent/config.json",
     ".pi/agent/extensions/workflow.ts",

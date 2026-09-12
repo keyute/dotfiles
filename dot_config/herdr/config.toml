@@ -76,12 +76,16 @@ description = "split down in current directory"
 
 # Herdr has no built-in equalize action (upstream discussion #1181); the
 # script rebalances the active tab's split ratios over the socket API.
-# prefix+plus: the =/+ key mirrors Ghostty's equalize_splits chord, and
+# prefix+=: the =/+ key mirrors Ghostty's equalize_splits chord, and
 # prefix+e is taken by the edit_scrollback default (config check does not
-# flag such collisions). Absolute path: keybinding commands run under
-# /bin/sh -lc, which may not have ~/.local/bin on PATH.
+# flag such collisions). Raw "=", not the documented "plus" alias: 0.9.0's
+# client normalizes "plus" to a literal "+", rejects the resulting
+# "prefix++" and disables the binding (client log, from the 2026-09-08
+# upgrade on; config check does not flag this either). Absolute path:
+# keybinding commands run under /bin/sh -lc, which may not have
+# ~/.local/bin on PATH.
 [[keys.command]]
-key = "prefix+plus"
+key = "prefix+="
 type = "shell"
 command = "$HOME/.local/bin/herdr-equalize"
 description = "equalize pane sizes"

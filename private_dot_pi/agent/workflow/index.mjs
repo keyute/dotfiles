@@ -75,6 +75,13 @@ const PROMPT_PADDING = PAD.length;
 // plugin's to draw, so the guard is total and never throws: pi drops a throwing
 // renderer to its own box, which is the notice in full.
 const CONTROL_NOTICE = "subagent_control_notice";
+// pi-subagents' completion notice: real model context (it can trigger the next
+// turn), but its box duplicates the completion line the fleet already draws
+// from the same completion — and its collapsed preview's first line is the
+// bare agent name, so the visible box said nothing. pi draws a custom message
+// only when `display` is truthy, so the wrapper sends it quiet; the content,
+// session-file path included, still reaches the model.
+const SUBAGENT_NOTIFY = "subagent-notify";
 export const controlNotice = (message, _options, theme) => {
   const event = message?.details?.event;
   if (!event?.agent || !event.message) return undefined;
@@ -90,13 +97,16 @@ export const controlNotice = (message, _options, theme) => {
 // schema, execution or message content. A message renderer we own is composed
 // over the plugin's, which stays as the fallback: ours answers undefined for a
 // payload it does not recognise, so a plugin that changes its details shape
-// renders its own way again rather than losing its notice. Everything else
+// renders its own way again rather than losing its notice. A customType in
+// quietMessages is sent with display off — in the session and the model's
+// context, never drawn. Everything else
 // (events included) is the original, and the raw function is called on the raw
 // API because the adapter extracts it.
-export function pluginApi(pi, renderersFor, messageRenderers = {}) {
+export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = []) {
   return new Proxy(pi, {
     get(target, key, receiver) {
       if (key === "registerTool") return tool => target.registerTool({ ...tool, ...renderersFor(tool.name) });
+      if (key === "sendMessage") return (message, options) => target.sendMessage(quietMessages.includes(message?.customType) ? { ...message, display: false } : message, options);
       if (key !== "registerMessageRenderer") return Reflect.get(target, key, receiver);
       return (type, renderer) => target.registerMessageRenderer(type, Object.hasOwn(messageRenderers, type)
         ? (message, options, theme) => messageRenderers[type](message, options, theme) ?? renderer(message, options, theme)
@@ -249,7 +259,7 @@ export class CaretEditor extends sdk.CustomEditor {
 // planning workflow is gated on the root in plan mode: a child has neither
 // submit_plan nor ask_user_question (policy.mjs rootTools).
 export function workflowPrompt({ systemPrompt, added = "", mode, readonly, isRoot }) {
-  const planning = isRoot && mode === "plan" ? " Research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it." : "";
+  const planning = isRoot && mode === "plan" ? " Research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it. Approval switches the mode and revokes running child sessions, aborting their work: settle async children before submitting the plan, or launch them after." : "";
   return `${systemPrompt}${added}\n\nWorkflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}`;
 }
 
@@ -468,7 +478,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
-  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice });
+  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY]);
   if (isRoot) {
     pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", handler: (_args, ctx) => setMode("plan", ctx) });
     pi.registerCommand("execute", { description: "Approve the current plan and enable scoped execution", handler: async (_args, ctx) => {

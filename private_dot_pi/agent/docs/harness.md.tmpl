@@ -1,5 +1,11 @@
 # Pi workflow reference
 
+Env-specific facts and decision records only. Generic harness behavior lives
+in the tool descriptions and the workflow's own system-prompt injection — it
+does not belong here. Sandbox, mode and approval questions go to
+`~/.pi/agent/docs/sandbox.md`. If behavior seems changed, verify against the
+source repository and update this file.
+
 ## Launch and ownership (last verified 2026-09-07)
 
 Use the managed `pi` zsh function. It runs the repository's lockfile-pinned CLI
@@ -68,109 +74,7 @@ across 2026 without notice, so trust the status line's context segment and
 (Verified 2026-09-10 against the pinned SDK catalog; revisit at the next SDK pin
 bump, or if the context segment reports anything but 272K.)
 
-
-## Planning and permissions (last verified 2026-09-11)
-
-- New sessions start in plan mode with auto-reviewed approvals. Source writes
-  remain disabled; temporary build/cache artifacts use designated writable roots.
-  The mode asks for the work as well as forbidding the edits: research the
-  request to the point of a plan unprompted, delegate the independent
-  exploration, ask where different readings would lead to materially different
-  work, then submit the plan without being asked for it.
-- `/execute` or approval of `submit_plan` explicitly enables scoped execution.
-  `/plan` revokes child sessions and sandbox processes before enabling planning.
-- `/approvals` selects auto review or individual prompts. Hard denial, inherited
-  role scope and mode restrictions run before approval; approval cannot widen them.
-- Shell commands run inside the SRT profile without review, as sandboxed
-  commands do in Claude Code and Codex; the profile is the boundary. Only
-  remote-mutating verbs the profile cannot judge — `git push`, `gh` other than
-  view/list/status/search/diff/checks, `gh api` with a method or field,
-  `npm publish`, `docker push`, `curl`/`wget` with data, json or upload flags,
-  `ssh`, `scp`, `sftp`, `rsync` — go to the auto classifier, then to a confirm
-  dialog on `ask`. File edits inside the workspace run without review once
-  execution is approved.
-- `workspace_bash` with `dangerouslyDisableSandbox: true` (Claude Code's flag)
-  runs the command on the host outside the SRT profile, under the host
-  environment minus the workflow's own variables. Every such call is reviewed,
-  plan mode included, and never takes the sandboxed auto-allow: the classifier
-  under auto approvals, the confirm dialog (`Approve this unsandboxed action
-  once?`) under ask or on a classifier `ask`. Read-only roles are refused. The
-  row reads `Ran … · unsandboxed`. The model sets it only after a
-  sandbox-attributable failure of that command or on request, per command;
-  `!` commands stay sandboxed. The docker socket is one such failure: no
-  `--config` or `DOCKER_HOST` workaround reaches it from inside the profile
-  (2026-09-10: five failed attempts before the session gave up).
-- Temp files inside the profile: `$TMPDIR` is the lease's scratch directory
-  (srt would otherwise export `/tmp/claude`, which the profile never allows),
-  so `mktemp -d "$TMPDIR/x.XXXXXX"` works while a bare `mktemp -d` does not —
-  macOS `mktemp` ignores `TMPDIR` without a template and writes to the
-  per-user `/var/folders` dir, which stays denied. Apple's `/bin/bash` 3.2
-  puts here-document temp files in `/var/tmp` (writable for every role on
-  macOS for exactly this) rather than `$TMPDIR`. Verified 2026-09-11. The classifier also sees the session's recent
-  shell commands (the command, whether it ran sandboxed, its exit code; never
-  its output), so a retry after a sandboxed failure is judged on that evidence.
-- Classifier errors/uncertainty prompt the root session; unattended requests deny.
-  A pending dialog is announced in the footer and times out after ten minutes.
-- `ask_user_question` (the pinned `@juicesharp/rpiv-ask-user-question` plugin)
-  presents up to four questions with options, previews and free text in one
-  tabbed dialog; answers land in the transcript and the classifier's task
-  context. Approval dialogs are once-only; MCP approvals are never cached
-  across a mode change.
-- `workspace_bash` with `run_in_background: true` starts a background task
-  (Claude Code's flag). The call is held open for 10 s first: a command that
-  ends inside that grace is answered like a foreground call and never
-  notifies (2026-09-10: 21 of 34 backgrounded commands in one session ended
-  within 10 s, and each completion woke the idle parent for a ~150k-token
-  turn — $5.92 of that session's $37.85). A longer one returns its task id,
-  the worker keeps its lease, and when the command ends the model hears a
-  steer message with the exit status and the last twenty lines (with its
-  next tool result, or as a new turn when idle). `workspace_task`
-  `{ id, action: "output" | "stop" }` reads the output so far or stops it. Output is kept in memory, tail-capped
-  at 256 KiB. `/plan` and `/remove-dir` stop running tasks like any sandbox
-  process (they end as `stopped`); so does exiting pi.
-- `/add-dir <path>` adds a directory to the editable workspace, as Claude
-  Code's does: edits inside it are allowed once execution is approved, its
-  `.git`, `.pi` and every relative deny entry (`.env`) are protected there as
-  under cwd, and its `AGENTS.md` (or
-  `CLAUDE.md`) is appended to the system prompt after passing the read policy
-  (a symlink out of the directory or onto a denied path refuses the add).
-  Home, its ancestors, denied paths and directories already in scope are
-  refused with the reason. `/remove-dir <path>` drops one. Both take their
-  argument inline; Tab lists what each accepts (the addable directories, the
-  added ones) and, once accepted, lists the next level down, so Tab walks the
-  tree. State is per session; skills
-  under an added directory need a restart with `--skill <path>`, since pi
-  discovers resources only at startup and `/reload`. Reads were never
-  confined to the workspace; only the deny list applies.
-- If a process disappears without acknowledging termination, the workflow blocks.
-  Check orphan processes and restart; do not treat a lost connection as proof that
-  a writer stopped.
-
-The `workspace_*` tools are the SDK's own tools running in the host Pi process;
-each invocation leases a per-tool SRT worker that performs the actual file and
-shell operations, so effects and subprocess execution are sandboxed — not all
-file I/O (path probes, diff generation, and output temp files stay host-side).
-Every lease consumes a single-use ticket minted by its approval, so a mode
-change between approval and execution invalidates the lease. Interactive `!`
-commands use the same worker boundary. MCP stdio servers also run inside SRT,
-while OAuth stays in the trusted host Pi process.
-
-Sensitive paths come from the shared denylist. File tools additionally resolve
-symlinks and confine edits to the workspace; git metadata and live-loaded code
-(`~/.pi/agent`, the repository `node_modules`, `~/.zshrc`) are write-protected
-in every mode, while the repository source is editable once execution is
-approved. A refusal names its reason (`Writes are disabled in this scope`,
-`Path denied by managed policy`, `File edits must remain inside the
-workspace`); the model should report it rather than re-submit the plan. This is
-an explicit denylist, not a guarantee against unknown credential locations. Add
-new credential paths to shared policy before exposing them to a session.
-
-Extensions are trusted host code. Per-tool SRT is not containment against a
-malicious extension. The reviewed `dangerouslyDisableSandbox` flag above is the
-only unsandboxed path in the managed tools. Linux needs bubblewrap, socat and
-ripgrep; macOS needs sandbox-exec.
-
-## Specialists, skills and display (last verified 2026-09-11; dot form unapplied)
+## Specialists and skills (last verified 2026-09-11)
 
 Specialists under `~/.pi/agent/agents` render from the shared roster. Each has an
 explicit OpenAI model, tool list and mandatory child policy extension. Native
@@ -207,164 +111,9 @@ as an upper bound on duplication. `delegation_wait` therefore stays projected
 into the `Workflow mode:` system-prompt suffix in `workflow/index.mjs` and
 measure again — the suffix is a different placement, not a demonstrated fix.
 
-Display follows `docs/pi-design.md` in the repository. Reasoning never shows;
-a tool row is `• title` plus one `↳` summary line (`+12 −4`, `4 matches`,
-`31 lines · ctrl+o to expand`, `no output`), MCP calls included (`• exa ›
-web_search_exa "query"`), a subagent launch is `• agent › task` with
-`↳ launched`, and any other plugin tool (`bg_wait`, the questionnaire's
-answers entry) takes the same row; a failed shell command shows its first two
-and last two lines with `… N more lines` between. The `workspace_*` and MCP
-rows between two things that stay visible fold to one dim line above them
-("Read 3 files, ran 9 shell commands, called 2 MCP tools"); clicking that
-line opens or closes the group, Ctrl+O opens it. Whatever stays visible
-closes the group — assistant text, a subagent or other plugin row, a failed
-row (its group's last), a completion line, the turn line, the next run — and
-the next foldable row starts a new one. An async child
-that ends prints `• agent finished · task · 2m 14s`, or its status word
-(`failed`/`stopped` red, `paused`/`partial`/`detached` amber). Reasoning
-never renders (the markdown transformer empties `assistant-thinking`;
-`hideThinkingBlock` stays off), though pi's assistant component still adds
-its one spacer line per message that carried reasoning — the component reads
-the raw content, and no display hook reaches it (earendil-works/pi#8154), so
-the reasoning text is blanked on the settled message instead (see the coupling
-inventory below). Lines that open with a glyph (`•`, `π`, `❯`) start at column
-0, lines without one (`↳`, the fold line, the status line, the fleet rows) two columns
-in; pi's `outputPad` is 0 so its own lines match, and assistant text
-therefore sits at column 0 under its bullet rather than at Claude Code's
-text column (`outputPad` is 0/1 by design, pi#6168/#6757; no assistant
-renderer hook, pi#6747/#6876 — re-check if any of these closes). A reply
-that opens with a heading renders it bold on the bullet line.
-While a turn runs the working spinner reads
-`Interpolating… 1m 12s` (a random π-flavoured verb from `rows.mjs`) on its own
-line at column 0 directly above the composer; when it
-ends a `π Interpolated for 3m 34s · done 9:04 pm` line is appended — only once
-no background child is live, otherwise after the child's follow-up run settles
-(or the user types); ctrl+c prints `π Interrupted after …`. The status line
-carries model · context · usage · branch on the left and the workflow mode on
-the right.
-
-Running children hang under the status line as `○ agent › title · tokens ·
-model` rows (title cut at a word boundary to 36 columns; five rows, then
-`↓ N more`; queued children dim). The composer is the user box's shape: a
-block in `userMessageBg` with a blank shaded row above and below, a `❯`
-prompt at column 0, no rule lines, no placeholder; a sent message carries the
-same `❯` in the same column, and those two are the only backgrounds.
-Arrow-down from the last line of the prompt moves a `›` cursor into the rows; up/down move it, Enter shows the
-highlighted child's transcript tail and model in an overlay (Esc closes; a
-child with no transcript yet says so), Esc or up past the first row returns
-to the prompt, any other key returns and types. Tab completes: on a command
-name it offers the matching commands, on a command's argument the command's
-own candidates (pi offers file paths there instead), and after an accept that
-lands on a directory it offers that directory's contents. `Ctrl+Alt+F` (⌃⌥F on macOS)
-opens pi-subagents' inspector (steer, stop, full transcripts). On exit pi
-restores the screen and prints only the resume command
-(`fullscreenExitOutput: resume-hint`).
-
-Coupling inventory (re-check on every pin bump; `npm run test:pi` is the gate):
-
-- Documented pi surfaces: tool renderers (`renderShell: "self"`,
-  `context.expanded/toolCallId/invalidate/state`), `registerMarkdownTransformer`,
-  `appendEntry`/`registerEntryRenderer`, `setFooter`, `setHeader`,
-  `setEditorComponent`, `setWidget`, `setWorkingVisible`, the `outputPad` and
-  `hideThinkingBlock` settings, the `agent_start/agent_end/agent_settled`,
-  `message_update/message_end`, `tool_execution_*`, `ui_prompt_*` and `input`
-  events; pi-subagents' `subagents:rpc:v1` status reply and
-  `subagent:async-started/complete` events. `stability.test.mjs` checks every
-  import and event name against the package exports and docs.
-- Plugin rows: pi-subagents, pi-mcp-adapter, the questionnaire and
-  web-search plugins receive a Proxy of the extension API whose
-  `registerTool` swaps `renderShell`/`renderCall`/`renderResult` on every
-  registration (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the
-  supervisor channel, `mcp`, `mcpScript`, `mcp__*`, `ask_user_question`,
-  `web_search`, `url_context`); rests on the plugins
-  registering through the API they are handed and pi keeping the definition
-  object (`loader.js`). Rows read `args` and the result text; the two
-  `details` reads are the adapter's `error` (failures it reports without
-  `isError`) and pi-subagents' `asyncId` (a launch). No upstream override API
-  exists (earendil-works/pi#3541); `stability.test.mjs` pins the
-  registrations and both fields.
-- Session surfaces: pi's `resetExtensionUI` (on `/new`, `/resume`) clears the
-  header, footer and custom editor, so `session_start` re-applies them every
-  time; pinned in `stability.test.mjs`.
-- Tab completion: the documented `addAutocompleteProvider` wrapper
-  (`index.mjs` `argumentCompletions`, re-added on every `session_start` and
-  self-idempotent, since pi stacks providers and `/reload` re-emits
-  `session_start` without the reset that clears them) re-issues a forced
-  request unforced, because pi routes Tab in a command's arguments to forced
-  file completion (`handleTabCompletion`) and its provider guards the whole
-  slash branch on `!options.force`; it also answers
-  `shouldTriggerFileCompletion` itself, as `/cmd ` trims to a slash command pi
-  refuses to force-complete. `CaretEditor` re-issues the key after a Tab accept
-  that lands on the command's space or a directory separator, since the accept
-  cancels the menu and nothing re-opens it. All three behaviours pinned in
-  `stability.test.mjs`; `caret.test.mjs` drives the walk through pi's own
-  provider.
-- Exported but undocumented: `renderDiff`, `keyHint`, `getMarkdownTheme`,
-  `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
-  render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
-  `setPaddingX`, the first content line's padding columns).
-- Mouse: the fold handle answers clicks on its summary line from its own
-  `handleMouse`; rests on pi-tui's `MouseRegion` asking the child before its
-  own handler and on `ToolExecutionComponent` forwarding self-shell mouse
-  events one row up (`y - 1`). Reasoning stays out because pi-tui's `Markdown`
-  renders no line when the transformer returns "" (an empty hidden-thinking
-  label is not empty: pi wraps it in colour codes, which rendered an
-  invisible clickable line). Pinned in `stability.test.mjs`.
-- Heuristic: fleet rows pair with async runs by agent label, a 30 s start
-  window and sibling rank (`fleet.mjs` `runIdFor`); the DTO's keys are opaque
-  and its `goal` is never filled in 0.66.0. `fleet.test.mjs` pins it; the
-  upstream fix is a `goal`-populating DTO. Completion lines take each result's
-  resolved `status` from the `subagent:async-complete` payload (the result
-  file spread plus `runId`), falling back to `state`, `success` and `agent`,
-  the duration from the same file's `durationMs` (launch to end), and the task
-  from the launch's own tool events, since `async-started` redacts it. Row
-  text assumes the bash tool's `(no output)` stand-in and `Command exited
-  with code N` trailer, and pi's per-row click toggling one row's `expanded`
-  (a body only; a closed fold reopens when the documented
-  `ctx.ui.getToolsExpanded()` value changes, i.e. on Ctrl+O). All pinned in
-  `stability.test.mjs`.
-- srt's `CLAUDE_CODE_TMPDIR` environment variable, read when it wraps a
-  command, names the `TMPDIR` it exports into that command; `sandbox-runner.mjs`
-  sets it to the lease's scratch path. Documented only in srt's source comment
-  (`generateProxyEnvVars`, 0.0.75) and pinned in `sandbox-runner.test.mjs`.
-- Plugin data the rows and policy read: pi-web-search's `details.error` and
-  its `web_search`/`url_context` names; the SDK bash schema being a plain
-  object whose `properties` take the `run_in_background` flag. All pinned in
-  `stability.test.mjs`, with `pi.sendMessage`, `ctx.ui.input` and
-  `ctx.ui.select` checked against the docs.
-- The working row above the composer: pi's own row is a column in under a
-  blank line (pi-tui's `Loader` hardcodes both) and `setWidget`'s string form
-  wraps its lines in the same indent, so the extension subclasses `Loader` and
-  drops that leading line; it rides `setWidget`'s documented component form at
-  `placement: "aboveEditor"`, which pi docks between the status container and
-  the composer; it stands down for pi's compaction indicator, and pi's
-  auto-retry countdown (no documented event) shows alongside it. Pinned in
-  `stability.test.mjs`.
-- Blanked reasoning: pi spaces an assistant message from its raw reasoning
-  before any display hook runs (earendil-works/pi#8154), so a `message_end`
-  handler blanks the thinking text. Rests on the OpenAI Responses replay
-  sending the opaque reasoning item alone (`JSON.parse(block.thinkingSignature)`
-  in pi-ai's `openai-responses-shared.js`, which also stores the provider's own
-  summary) and on the Anthropic replay sending the text with its signature,
-  which is why the handler is gated on `message.api`. Accepted cost:
-  `transformMessages` keeps a signed block only where provider, api and model
-  id all match and drops one whose text is empty, so after a model change the
-  earlier reasoning no longer reaches the new model as plain text. All pinned
-  in `stability.test.mjs`.
-- Outside the npm pin: the status line's usage segments come from
-  `GET chatgpt.com/backend-api/wham/usage` — the read behind codex's own
-  usage display, but called directly so pi needs no codex binary — with pi's
-  stored `openai-codex` credential (the exported `readStoredCredential`; its
-  field shape is pinned in `stability.test.mjs`). The token is never refreshed
-  there: refresh tokens rotate, so a footer refresh racing pi's own would
-  invalidate the login — an expired credential skips the read and pi's next
-  model call restores it. The endpoint is an unversioned ChatGPT backend
-  surface; its window fields (`rate_limit.primary_window/secondary_window`:
-  `used_percent`, `limit_window_seconds`, `reset_at`) had only grown
-  additively over their observable history (verified against
-  openai/codex `c210f4c`, 2026-09-11). Re-verify trigger: segments missing on
-  a live turn with a fresh login — check the response shape, not the parser.
-  A failed read only drops the segments.
+Transcript and status-line rendering follows `docs/pi-design.md` in the source
+repository; the undocumented surfaces it leans on are inventoried in
+`docs/pi-coupling.md` there.
 
 Shared skills remain discoverable under `~/.agents/skills`; explicit skill loading
 is available through Pi. Inside a child, pi-subagents'
@@ -411,16 +160,3 @@ or a persistent broker-owned worker.
 
 Claude/Codex proprietary plugins, cloud services and exact UI interactions are
 not supplied by these packages. Keep the other harnesses for those capabilities.
-
-## Acceptance checks (last verified 2026-09-06)
-
-From the source repository, run `npm run test:pi`. It covers policy, classifier
-fallback, terminal proof, child preflight and secret-stubbed chezmoi projections.
-`PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` additionally exercises actual Unix
-sockets and SRT against disposable fixtures; it needs an unrestricted local host.
-
-Before relying on the setup, separately verify subscription login, parent and
-foreground/background child model pins, auto approvals, cancellation, the fleet widget,
-MCP queries, diagnostics and approved edits in a disposable project. Fixture
-tests do not establish account access or live terminal behavior. Compare Sol and
-Astra on matched completed tasks before changing the default model.
