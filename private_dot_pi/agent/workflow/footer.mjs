@@ -1,48 +1,26 @@
 import { spawn } from "node:child_process";
+import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { readLines, sendLine } from "./lines.mjs";
 import { PAD, appendVisible, createTurnClock, formatTurn, paintCounts } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 
-// Usage comes from codex's own app-server (JSONL JSON-RPC, `jsonrpc` header
-// omitted on the wire) rather than the ChatGPT backend directly: codex owns
-// auth refresh and any endpoint rename, and the read is account-scoped and
-// read-only. excludeResetCreditDetails skips a second backend lookup; the
-// luna-reserve capability is deliberately never declared — it is an opt-in
-// for clients that can apply Reserve, not for passive usage readers.
-export function readRateLimits({ timeoutMs = 10_000, spawnImpl = spawn } = {}) {
-  return new Promise(resolve => {
-    let child;
-    try {
-      child = spawnImpl("codex", ["-s", "read-only", "-a", "never", "app-server"], {
-        env: hostEnvironment(),
-        stdio: ["pipe", "pipe", "ignore"],
-      });
-    } catch {
-      return resolve(null);
-    }
-    const done = value => {
-      clearTimeout(timer);
-      child.kill("SIGTERM");
-      resolve(value);
-    };
-    const timer = setTimeout(() => done(null), timeoutMs);
-    child.on("error", () => done(null));
-    child.on("close", () => done(null));
-    child.stdin.on("error", () => {});
-    const send = message => sendLine(child.stdin, message);
-    readLines(child.stdout, message => {
-      if (message.id === 1) {
-        send({ method: "initialized" });
-        // no params: codex-cli 0.153.4 declares them as unit and rejects a
-        // map; the newer optional params object is nullable anyway
-        send({ id: 2, method: "account/rateLimits/read" });
-      } else if (message.id === 2) {
-        done(message.error ? null : parseRateLimits(message.result));
-      }
-    });
-    send({ id: 1, method: "initialize", params: { clientInfo: { name: "pi-workflow-footer", title: "Pi workflow footer", version: "1.0.0" } } });
-  });
+// Usage comes from the ChatGPT backend's usage endpoint, the read behind
+// codex's own `/status` — an unversioned surface, but its window fields have
+// only ever grown additively. The bearer token is pi's stored openai-codex
+// credential via the exported one-off `readStoredCredential`; it is never
+// refreshed here — a rotating refresh raced against pi's own would invalidate
+// the login, so an expired credential skips the read and pi's next model call
+// restores it. The account id is scoped in as pi's own requests scope it.
+export async function readRateLimits({ timeoutMs = 10_000, credential = readStoredCredential("openai-codex"), fetchImpl = fetch } = {}) {
+  if (credential?.type !== "oauth" || !credential.access || !(Date.now() < credential.expires)) return null;
+  const headers = { authorization: `Bearer ${credential.access}` };
+  if (credential.accountId) headers["chatgpt-account-id"] = credential.accountId;
+  try {
+    const response = await fetchImpl("https://chatgpt.com/backend-api/wham/usage", { headers, signal: AbortSignal.timeout(timeoutMs) });
+    return response.ok ? parseRateLimits(await response.json()) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Keys only on the long-stable fields; everything else in the response is
@@ -51,9 +29,13 @@ export function readRateLimits({ timeoutMs = 10_000, spawnImpl = spawn } = {}) {
 // window as `primary` and no 5h window), so windows are labeled by duration,
 // as codex's own TUI does — never by primary/secondary position.
 export function parseRateLimits(result) {
-  const windows = [result?.rateLimits?.primary, result?.rateLimits?.secondary]
-    .filter(w => w && typeof w.usedPercent === "number")
-    .map(w => ({ usedPercent: w.usedPercent, resetsAt: w.resetsAt ?? null, windowMins: w.windowDurationMins ?? null }));
+  const windows = [result?.rate_limit?.primary_window, result?.rate_limit?.secondary_window]
+    .filter(w => w && typeof w.used_percent === "number")
+    .map(w => ({
+      usedPercent: w.used_percent,
+      resetsAt: w.reset_at ?? null,
+      windowMins: typeof w.limit_window_seconds === "number" ? Math.round(w.limit_window_seconds / 60) : null,
+    }));
   return windows.length ? windows : null;
 }
 
@@ -156,13 +138,13 @@ class WorkingRow extends Loader {
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
-export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000 } = {}) {
+export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000, readLimits = readRateLimits } = {}) {
   const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false, working: null, compacting: false };
 
   const refreshUsage = async () => {
     if (Date.now() - state.usageAt < USAGE_MIN_INTERVAL_MS) return;
     state.usageAt = Date.now();
-    const limits = await readRateLimits();
+    const limits = await readLimits();
     if (limits) {
       state.limits = limits;
       state.tui?.requestRender();

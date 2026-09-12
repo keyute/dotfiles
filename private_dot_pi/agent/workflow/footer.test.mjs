@@ -2,13 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { buildSegments, formatReset, installFooter, paintMode, paintSegment, parseGitChanges, parseRateLimits, windowLabel } from "./footer.mjs";
+import { buildSegments, formatReset, installFooter, paintMode, paintSegment, parseGitChanges, parseRateLimits, readRateLimits, windowLabel } from "./footer.mjs";
 import { createTurnClock } from "./rows.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
 function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
   const path = process.env.PATH;
-  process.env.PATH = ""; // codex/git lookups fail fast instead of spawning
+  process.env.PATH = ""; // git lookups fail fast instead of spawning
   const handlers = {};
   const entries = [];
   const messages = [];
@@ -30,7 +30,7 @@ function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
   const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui };
   const fleet = { attach() {}, render: () => [], activeCount: () => active };
   const tasks = { live: () => live };
-  installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs });
+  installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, readLimits: async () => null });
   process.env.PATH = path;
   const fire = (name, event = {}) => handlers[name]?.(event, { cwd: "." });
   return { fire, entries, messages, fleet, tasks, widget, visible, done: () => fire("session_shutdown") };
@@ -38,20 +38,43 @@ function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
 
 test("rate limits key only on stable window fields", () => {
   const parsed = parseRateLimits({
-    rateLimits: {
-      primary: { usedPercent: 12, resetsAt: 1_800_000_000, windowDurationMins: 300 },
-      secondary: { usedPercent: 40 },
-      credits: { hasCredits: true, unlimited: false },
+    plan_type: "pro",
+    rate_limit: {
+      allowed: true,
+      limit_reached: false,
+      primary_window: { used_percent: 12, limit_window_seconds: 18_000, reset_after_seconds: 60, reset_at: 1_800_000_000 },
+      secondary_window: { used_percent: 40 },
     },
-    rateLimitUpsell: { anything: "ignored" },
+    credits: { has_credits: true, unlimited: false },
+    rate_limit_upsell: { anything: "ignored" },
   });
   assert.deepEqual(parsed, [
     { usedPercent: 12, resetsAt: 1_800_000_000, windowMins: 300 },
     { usedPercent: 40, resetsAt: null, windowMins: null },
   ]);
-  assert.equal(parseRateLimits({ rateLimits: {} }), null);
+  assert.equal(parseRateLimits({ rate_limit: {} }), null);
   assert.equal(parseRateLimits(undefined), null);
-  assert.equal(parseRateLimits({ rateLimits: { primary: { usedPercent: "50" } } }), null);
+  assert.equal(parseRateLimits({ rate_limit: { primary_window: { used_percent: "50" } } }), null);
+});
+
+test("the usage read scopes pi's stored token in and never refreshes it", async () => {
+  const credential = { type: "oauth", access: "at", refresh: "rt", expires: Date.now() + 60_000, accountId: "acc-1" };
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, headers: options.headers });
+    return { ok: true, json: async () => ({ rate_limit: { primary_window: { used_percent: 7, limit_window_seconds: 300 * 60 } } }) };
+  };
+  assert.deepEqual(await readRateLimits({ credential, fetchImpl }), [{ usedPercent: 7, resetsAt: null, windowMins: 300 }]);
+  assert.deepEqual(calls, [{ url: "https://chatgpt.com/backend-api/wham/usage", headers: { authorization: "Bearer at", "chatgpt-account-id": "acc-1" } }]);
+  // An expired or missing credential skips the read entirely: refreshing here
+  // would race pi's own rotating refresh, and pi restores the token itself.
+  assert.equal(await readRateLimits({ credential: { ...credential, expires: Date.now() - 1 }, fetchImpl }), null);
+  // null, not undefined: undefined would trigger the parameter default and
+  // read the developer's real auth.json.
+  assert.equal(await readRateLimits({ credential: null, fetchImpl }), null);
+  assert.equal(calls.length, 1);
+  assert.equal(await readRateLimits({ credential, fetchImpl: async () => ({ ok: false, status: 401 }) }), null);
+  assert.equal(await readRateLimits({ credential, fetchImpl: async () => { throw new Error("offline"); } }), null);
 });
 
 test("windows label by duration, not position", () => {
@@ -119,13 +142,13 @@ test("git shortstat parses to compact change counts", () => {
 
 test("footer renders the status line first and the fleet rows under it", () => {
   const path = process.env.PATH;
-  process.env.PATH = ""; // codex/git lookups fail fast instead of spawning
+  process.env.PATH = ""; // git lookups fail fast instead of spawning
   try {
     let factory;
     const attached = [];
     const fleet = { attach: tui => attached.push(tui), render: (width, theme) => [theme.fg("dim", `rows@${width}`)] };
     const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; }, setWorkingVisible() {}, setWidget() {} } };
-    installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet });
+    installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet, readLimits: async () => null });
     const tui = { requestRender() {} };
     let status = "plan auto";
     const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", status]]) };
