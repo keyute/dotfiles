@@ -4,7 +4,6 @@ repos = [
 	"copr.fedorainfracloud.org/lihaohong/chezmoi",
 	"copr.fedorainfracloud.org/lihaohong/yazi",
 	"copr.fedorainfracloud.org/atim/lazydocker",
-	"copr.fedorainfracloud.org/rustyclanker/lua-language-server",
 	"copr.fedorainfracloud.org/rossetnocpes/herdr",
 ]
 packages = [
@@ -30,10 +29,8 @@ packages = [
 	"chezmoi",
 	# languages & tooling
 	"golang",
-	"golang-x-tools-gopls",
 	"nodejs",
 	"uv",
-	"lua-language-server",
 	# containers
 	"docker-ce",
 	"docker-buildx-plugin",
@@ -63,7 +60,4 @@ packages = [
 packages = [
 	"@openai/codex",
 	"npm-check-updates",
-	# language servers used by Claude Code
-	"pyright",
-	"typescript-language-server",
 ]

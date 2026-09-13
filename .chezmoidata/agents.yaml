@@ -47,13 +47,14 @@ agents:
       allowed_domains:
         - "*.anthropic.com"
         - "code.claude.com"
+    # LSP plugins dropped 2026-09-13: nvim owns its servers through mason
+    # (gopls via go install, lua-language-server via release tarball), so these
+    # duplicated four system packages on two platforms for session-only gain —
+    # the same call pi made 2026-09-06. Revisit only on measured pain; project
+    # toolchains via Bash already surface diagnostics. claude-security dropped
+    # the same day (unwanted); native security-review and codex-review remain.
     plugins:
       "frontend-design@claude-plugins-official": true
-      "claude-security@claude-plugins-official": true
-      "gopls-lsp@claude-plugins-official": true
-      "typescript-lsp@claude-plugins-official": true
-      "pyright-lsp@claude-plugins-official": true
-      "lua-lsp@claude-plugins-official": true
     marketplaces: {}
   codex:
     home: "~/.codex"
