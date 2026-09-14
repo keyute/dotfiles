@@ -42,8 +42,18 @@
       "approvals_reviewer"
       "default_permissions"
       "features.network_proxy"
+      "features.apps"
+      "features.remote_plugin"
+      "apps._default.enabled"
+      "mcp_servers.codex_app"
       "permissions.chezmoi-workspace"
       "notice.hide_rate_limit_model_nudge" -}}
+{{- /* mcp_servers.codex_app: Codex Desktop persists a transport-less
+       `enabled_tools` override for its own app MCP server into this shared file,
+       and a stanza with no command/url makes the CLI abort every config load with
+       "invalid transport in `mcp_servers.codex_app`" (openai/codex#40860, verified
+       reproducible on 0.154.0). Delete-only, no managed counterpart: Desktop can
+       re-add it at runtime, apply just sweeps it back out. */ -}}
 {{- $mcpServers := dict -}}
 {{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "harness" "codex") | fromJson -}}
   {{- if not (regexMatch "^[A-Za-z0-9_-]+$" $name) -}}
@@ -89,6 +99,14 @@
 {{- $deletes = concat $deletes (list "tui.status_line" "tui.status_line_use_colors" "tui.theme") -}}
 {{- /* features.hooks: herdr's codex integration sets it; owning it here keeps
        apply from wiping it. ~/.codex/hooks.json stays herdr-managed. */ -}}
+{{- /* features.apps: a ChatGPT-authenticated Codex registers a reserved
+       `codex_apps` MCP server proxying the account's Apps (Connectors), and
+       features.remote_plugin pulls the ChatGPT-hosted plugin catalog; both off so
+       the tool surface is only what agent_mcp_servers declares. apps._default is a
+       second gate on the same capability because OpenAI has renamed the first one
+       once already (enable_mcp_apps -> features.apps), and a rename reads as
+       default-on. Only its _default.enabled leaf is claimed: apps.<id>.* is
+       Desktop-GUI-owned, like skills.config. */ -}}
 {{- /* notice: the rest of that table is Codex runtime state (dismissals,
        model_migrations, migration-prompt timestamps), so only the one leaf that
        suppresses the near-usage-limit model-switch nudge is claimed here. */ -}}
@@ -99,7 +117,12 @@
       "approval_policy" "on-request"
       "approvals_reviewer" "auto_review"
       "default_permissions" "chezmoi-workspace"
-      "features" (dict "network_proxy" (dict "enabled" true) "hooks" true)
+      "features" (dict
+          "network_proxy" (dict "enabled" true)
+          "hooks" true
+          "apps" false
+          "remote_plugin" false)
+      "apps" (dict "_default" (dict "enabled" false))
       "permissions" (dict "chezmoi-workspace" (dict
           "description" "Workspace writes with shared sensitive-path and network controls"
           "extends" ":workspace"
