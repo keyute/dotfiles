@@ -53,7 +53,7 @@ while IFS='|' read -r name serve; do
 	snapshot="$model_dir/snapshots/$(jq -r '.hash' "$ref" | sed 's/:/-/g')"
 	gguf="$(jq -r '[.files[] | select(.type == "gguf")][0].name // empty' "$ref")"
 	template="$(jq -r '[.files[] | select(.type == "chat_template")][0].name // empty' "$ref")"
-	[ -n "$gguf" ] && [ -n "$template" ] || { echo "ref for $name lists no gguf model or chat template" >&2; exit 1; }
+	{ [ -n "$gguf" ] && [ -n "$template" ]; } || { echo "ref for $name lists no gguf model or chat template" >&2; exit 1; }
 	mkdir -p "$serve_dir/$serve"
 	link "$serve_dir/$serve/model" "$snapshot/$gguf"
 	link "$serve_dir/$serve/chat_template" "$snapshot/$template"
