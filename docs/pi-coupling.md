@@ -43,12 +43,12 @@ consumers are sessions editing this repo, not runtime pi sessions.
   request unforced, because pi routes Tab in a command's arguments to forced
   file completion (`handleTabCompletion`) and its provider guards the whole
   slash branch on `!options.force`; it also answers
-  `shouldTriggerFileCompletion` itself, as `/cmd ` trims to a slash command pi
-  refuses to force-complete. `CaretEditor` re-issues the key after a Tab accept
-  that lands on the command's space or a directory separator, since the accept
-  cancels the menu and nothing re-opens it. All three behaviours pinned in
-  `stability.test.mjs`; `caret.test.mjs` drives the walk through pi's own
-  provider.
+  `shouldTriggerFileCompletion` itself, as `/cmd` plus a trailing space trims
+  to a slash command pi refuses to force-complete. `CaretEditor` re-issues the
+  key after a Tab accept that lands on the command's space or a directory
+  separator, since the accept cancels the menu and nothing re-opens it. All
+  three behaviours pinned in `stability.test.mjs`; `caret.test.mjs` drives the
+  walk through pi's own provider.
 - Exported but undocumented: `renderDiff`, `keyHint`, `getMarkdownTheme`,
   `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
   render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,

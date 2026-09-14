@@ -23,6 +23,25 @@ if [ -z "$(jq -r '.[].name' <<<"$manifest")" ]; then
 	exit 1
 fi
 
+# CI only asserts the sources: rootless podman gets no user namespace inside the
+# fresh-apply container ("cannot clone: Operation not permitted"), so every
+# `ramalama` call below exits 125. This exits rather than falling through the way
+# the omlx script's CI guard does — everything past here needs either podman or a
+# store that only those pulls would have populated.
+if [ "${CI:-}" = true ]; then
+	while IFS= read -r name; do
+		tag="${name##*:}"
+		repo="${name%:*}"
+		[[ "$repo" == */* ]] || repo="library/$repo"
+		if ! curl -fsS -o /dev/null "https://registry.ollama.ai/v2/$repo/manifests/$tag"; then
+			echo "ramalama source $name is not in the ollama registry" >&2
+			exit 1
+		fi
+		echo "ramalama source ok: $name"
+	done < <(jq -r '.[].name' <<<"$manifest")
+	exit 0
+fi
+
 # `ramalama ls --json` names carry the store path (`ollama://library/<name>:<tag>`
 # for the default organisation, cli.py `_list_models_from_store`) and a
 # ` (partial)` suffix on an interrupted pull; compare on the manifest's form.
