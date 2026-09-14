@@ -51,7 +51,14 @@ decision is final.
 {{ range $tier, $model := .subagent_tiers.pi -}}
 - {{ $tier }}: `{{ $model }}`
 {{ end }}
-Frontier is for explicit escalation, not the default. The pinned Pi SDK
+Frontier is for explicit escalation, not the default (shared rule projected
+in AGENTS.md, decision 2026-09-14): a bounded, fresh-context consult whose
+handoff carries the session's constraints, output adjudicated as hypotheses —
+here a child dispatch naming the frontier model explicitly, which is safe on
+this harness: the managed launch hook validates the requested model against
+the tier policy and catalog and fails loudly instead of silently inheriting
+(workflow/children.mjs), so codex's child-pin caveat (openai/codex#32587)
+does not apply. The pinned Pi SDK
 includes Astra in the OpenAI subscription catalog; if a future pin drops it,
 selection must report unavailable, not fabricate an alias or fall back to API
 billing.

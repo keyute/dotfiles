@@ -50,6 +50,15 @@
   observed failure, not by default. The subagents in `{{ default (printf "%s/agents" (index $root.agents $self).home) (get (index $root.agents $self) "agents_dir") }}` are
   already pinned and the dispatch-time list does not show it — pass a model
   override to one only to escalate it after an observed failure.
+{{ if and (hasKey (index $root.subagent_tiers $self) "frontier") (not (has "frontier_escalation" $native)) -}}
+- The frontier tier (`{{ index (index $root.subagent_tiers $self) "frontier" }}`)
+  is escalation-only, never the default driver or a blanket subagent promotion:
+  escalate a genuinely frontier-grade call — hardest long-horizon
+  architecture/synthesis, or a decision that has defeated this session's tier —
+  to it as a bounded, fresh-context consult whose handoff carries your
+  constraints, and adjudicate its output as hypotheses, never a verdict; never
+  model-bump a grown session to it.
+{{ end -}}
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
   library/API docs — resolve the library id and fetch unprompted.
 - Use Playwright for frontend interaction, inspection, and screenshots — not as a

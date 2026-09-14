@@ -13,7 +13,10 @@ that agent and update this file.
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
   session. The pin exists to hold the current Opus in its long-context variant
   (`[1m]`); it is not the top tier — Fable sits above it, explicit-selection
-  only (`/model fable` resolved to Fable 5.1 on 2026-09-07). Pin kept on Opus 5
+  only. The frontier pin is `claude-fable-5`, not 5.1: the CLI serves
+  `claude-fable-5-1` only from 2.1.251 (400 below it, probed 2026-09-14 on
+  2.1.236) — bump the pin in `subagent_tiers.claude` after updating the CLI.
+  Pin kept on Opus 5
   at the 2026-09-07 audit: Anthropic's "low-effort Fable beats Opus on cost
   per task" claim is API pricing, not Max-plan metering.
 - Pins use explicit model IDs, never bare aliases: aliases re-resolve across
@@ -34,26 +37,39 @@ that agent and update this file.
   `model:` is therefore NOT equivalent to `model: inherit` — omission lets that
   env var win. `subagent-claude.md` emits the literal `inherit` so an
   inherit-tier reviewer cannot drop below the model that produced the work.
-- Subscription limits (Max plan; re-checked 2026-09-07 against the costs doc):
-  a rolling 5-hour session window plus a shared weekly pool, "shared across
-  all models" — yet the errors doc still names Opus and Sonnet family
-  sub-limit messages, an unresolved contradiction. Earlier notes on a Fable
-  50% ceiling and per-model drain rates are no longer in the costs doc —
-  unverified. Next time a limit binds: re-check against the errors doc or
-  support article and reconcile the Sonnet sub-limit against `/usage`.
-- Fable is escalation-only (hardest long-horizon architecture/synthesis —
-  current Opus is near-parity on ordinary coding at normal metering): a grown
-  session `/model`-bumped into Fable re-meters its whole context against the
-  shared pool at Fable's weight every turn — the rationale behind the
-  CLAUDE.md intake rule.
-- Delegation economics (researched 2026-09-12; baselines in the audit log):
-  subagent tokens draw the same Max 5h/weekly pools as the main loop — no
-  subagent discount — and drain is model-weighted. Delegation multiplies total
-  tokens; it pays only via tier arbitrage and keeping a grown top-tier context
-  from re-metering, so delegate when work exceeds one context window or fans
-  out across independent items, and keep children on the cheap pinned tiers.
-  Whether Max metering discounts cache reads is undocumented — check `/usage`
-  next time a limit binds.
+- Subscription limits (Max plan; re-checked 2026-09-14 against the Fable
+  support article): a rolling 5-hour session window plus a shared weekly pool,
+  "shared across all models"; Fable draws the same pool, capped at up to 50%
+  of weekly usage and "using limits faster than other Claude models" (exact
+  weighting unpublished; the earlier free-Fable-5 promo ended 2026-07-19 and
+  never covered 5.1). The errors doc still names Opus and Sonnet family
+  sub-limit messages, an unresolved contradiction — next time a limit binds,
+  reconcile against `/usage`.
+- The frontier tier (`{{ .subagent_tiers.claude.frontier }}`, from
+  `subagent_tiers.claude`) is escalation-only, per the shared frontier rule
+  in CLAUDE.md (decision 2026-09-14, research record in the audit log):
+  bounded fresh-context consults from an Opus session — a read-only dispatch
+  of an *unpinned* agent (Plan, general-purpose) with a frontier model
+  override, or the harness's native Advisor tool (`/advisor` /
+  `advisorModel`; Opus pairs with Fable, tokens bill at each model's own
+  rate) — with output adjudicated as hypotheses. Pinned specialists keep
+  their observed-failure override gate; the consult path does not relax it. For work that is
+  genuinely frontier-grade end-to-end, a fresh Fable session I start myself
+  beats frontier-plans-plus-cheap-executes (Aider pairing data); a grown
+  session bumped into Fable re-meters its whole context at Fable's weight
+  every turn, so the bump stays banned.
+- Delegation economics (researched 2026-09-12; metering re-checked
+  2026-09-14; baselines in the audit log): subagent tokens draw the same Max
+  5h/weekly pools as the main loop — no subagent discount — and drain is
+  model-weighted. Delegation multiplies total tokens; it pays only via tier
+  arbitrage and keeping a grown top-tier context from re-metering, so
+  delegate when work exceeds one context window or fans out across
+  independent items, and keep children on the cheap pinned tiers. Cache reads
+  meter non-negligibly against the plan pool (measured 2026-09-14 via
+  claude-code#91220; numbers in the audit log) — session length is a primary
+  cost lever; exact cache-read weighting still unpublished.
+  Bucket caveat: exhausting a cheaper model's sub-limit can force frontier
+  fallback for routine work (claude-code#55663).
 - `implementer` (added 2026-08-28): mid-tier executor for spec-complete
   mechanical write work — a bounded edit delegated out of a grown `[1m]`
   session avoids re-sending the whole context at Opus rates.

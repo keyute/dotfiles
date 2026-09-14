@@ -42,6 +42,29 @@ when my actual intent changes, never to track harness churn.
   *Why: a stronger model that one-shots often beats a weaker one
   that flails; and the dispatch-time agent list hides the pin, so a reflexive
   override silently undoes it.*
+- **Frontier escalation**: the frontier tier (`subagent_tiers.<harness>.frontier`)
+  is escalation-only, never the default driver: escalate a genuinely
+  frontier-grade call — the hardest long-horizon architecture/synthesis, or a
+  decision that has defeated the session's tier — to it as a bounded, fresh-context consult
+  whose handoff carries the executor's constraints, and adjudicate what comes
+  back as hypotheses, never a verdict; never model-bump a grown session to
+  frontier and never blanket-promote subagents. *Why (researched 2026-09-14;
+  full record in the audit log): the only measured benchmark family (Aider
+  architect/editor) shows a stronger consultant plus mid-tier executor
+  capturing most of the frontier uplift at a fraction of the cost, while
+  frontier-as-daily-driver is the worst metering shape — both vendors meter
+  frontier against the same shared subscription pools, and the measured
+  dominant quota killer is a long-lived growing context re-metered every turn,
+  which a grown-session bump maximises and a bounded consult avoids. Consult
+  output anchors the driver — practitioners report adjudication degrading into
+  rubber-stamping — so the hypotheses stance from cross-model review applies;
+  and a handoff missing the executor's constraints is the measured
+  "split-brain" failure, so the delegation contract applies. The predecessor
+  rule's intake clause ("say so so I can restart in a fresh top-model
+  session") was shaved on measurement: 0 firings across 249 session files — I
+  select frontier sessions myself, informed by the harness doc's guidance
+  that frontier-solo beats frontier-plans-plus-cheap-executes when the whole
+  task is frontier-grade.*
 - **Fan-out**: spawn independent strands together, scaled to task breadth;
   never hand a worker the whole problem. *Why: serial spawning wastes
   wall-clock; unbounded scope wastes workers.*
@@ -270,11 +293,6 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
   and before presenting a plan for approval, not after. *Why: reversal cost is
   highest before implementation, and a cross-model reviewer cannot discard
   working code when none exists yet.*
-- **Top-model intake** *(claude)*: when work already looks top-model-grade (the
-  hardest long-horizon architecture/synthesis), say so at intake so I can start it
-  in a fresh top-model session; never `/model`-bump a grown session. *Why: a bump
-  re-meters the whole grown context at the higher rate every turn.* (Current
-  metering specifics live in `private_dot_claude/docs/harness.md.tmpl`, dated.)
 - **Community search** *(claude)*: the built-in web search omits some
   public/community sources; reach for the Exa MCP for that research rather than
   treating the gap as the web's. *Why: the miss is the tool's, not the web's —

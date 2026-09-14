@@ -66,12 +66,17 @@
   the small tier here stays on Luna (bounded extraction-shaped presets, far
   cheaper) — revisit if explorer output quality disappoints.
 
-## Frontier escalation (last verified 2026-09-06)
+## Frontier escalation (last verified 2026-09-06; aligned 2026-09-14)
 
 - The shared OpenAI frontier tier is `{{ .subagent_tiers.codex.frontier }}`;
-  existing specialist pins and the main-session default are unchanged.
-- Use it for an explicit escalation or consequential architecture/review task,
-  preferably with a bounded handoff in a fresh session. Do not promote every role.
+  existing specialist pins and the main-session default are unchanged. The
+  escalation rule itself now projects in AGENTS.md (shared across harnesses,
+  decision 2026-09-14).
+- Use it as a bounded, fresh-context consult whose handoff carries the
+  session's constraints, and adjudicate its output as hypotheses. Here that
+  means a fresh session, not a child-level model override: a spawned child
+  can silently inherit the parent's model (openai/codex#32587), so an
+  override cannot be trusted to have applied. Do not promote every role.
 - Availability depends on the account and installed harness. A model catalog
   entry is not proof of account access; never substitute another provider or paid
   API routing when subscription access is unavailable.

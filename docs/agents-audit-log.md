@@ -9,6 +9,48 @@ carries the numbers and open triggers behind those annotations (rule in
 baseline no longer serves a future sweep is deleted, not archived — git
 history keeps it.
 
+## 2026-09-14
+
+### Frontier doctrine decision (all harnesses)
+
+Reviewed frontier-as-orchestrator (Fable/Astra drives, farms execution to
+Opus/Sol) vs frontier-as-consultant (Opus/Sol drives, frontier consulted
+bounded). Decision: consultant pattern, projected as a shared
+`frontier_escalation` rule; `subagent_tiers.claude` gained a `frontier` row
+(the native Advisor tool verified against code docs same day). Pin probe:
+`claude --model claude-fable-5-1 -p` returned 400 "version 2.1.251 or newer
+is required" on the installed 2.1.236, so the pin is `claude-fable-5` with a
+bump trigger on CLI update — this also supersedes harness.md's 2026-09-07
+"`/model fable` resolved to Fable 5.1" note. Evidence baselines:
+
+- Consultant side, measured: Aider architect/editor — strong architect +
+  cheaper editor captures the frontier uplift at a fraction of the cost
+  (R1+Sonnet 64.0% @ $13 vs o1-solo 61.7% @ $186); asymmetry: o1+Sonnet did
+  NOT beat o1 solo, so frontier-solo wins when the whole task is
+  frontier-grade (aider.chat 2024-09-26, 2025-01-24). Field failure:
+  adjudication degrades into rubber-stamping (Amp user interview); planner
+  handoffs missing executor constraints halved quality on a 40-case eval
+  ("split-brain", kenashe.ai 2026-05-21).
+- Orchestrator side: no head-to-head coding benchmark anywhere; converged
+  anecdotal failures are context-starved workers + verification burden;
+  workers inheriting frontier tier drain plans (claude-code#63693).
+- Metering, measured: cache reads meter non-negligibly against Max pools —
+  claude-code#91220: one resumed 16.7h subagent = 50.7% of a Max 20x weekly
+  pool, 227.8M cache-read vs 72K output tokens, per-turn cost growing
+  monotonically with transcript length. Fable: same shared pool, ≤50% weekly
+  cap, "uses limits faster", exact weighting unpublished (support article,
+  ~2026-09). Astra: ~half Sol's messages per 5h window at every plan tier
+  (help.openai.com 2026-09-09). codex#35463 (fork-tree overnight drain,
+  99.9% replayed bookkeeping) open and contested. Bucket caveat
+  claude-code#55663. **Open**: cache-read weighting in Max metering — the
+  existing check-`/usage`-when-a-limit-binds trigger stands.
+- Shave: the (claude) top-model intake rule fired 0 times in 249 session
+  files (10 carried the projection) — assistant-authored "top-model"/fresh-
+  Fable-session suggestions grepped with user authorization. Dropped; the
+  never-bump constraint survives inside the shared rule. **Open**: next
+  sweep, count frontier-consult dispatches (frontier model override or
+  Advisor use) to measure whether the new rule fires at all.
+
 ## 2026-09-12
 
 ### (claude) Coverage probes
