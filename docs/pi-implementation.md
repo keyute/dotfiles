@@ -869,6 +869,30 @@ live-tested on the host.
   Not applied or
   live-tested on the host — pi is not installed here, so the rendering is
   test-verified only; `npm run test:pi` is green (239 pass, 7 skipped, 0 fail).
+- 2026-09-14 (owner question on GOCACHE reaching sandboxed bash): sandboxed
+  leases now inherit the host environment instead of the ten-key
+  `SAFE_ENVIRONMENT` allowlist `84ab0e1` introduced. `safeEnvironment` starts
+  from `hostEnvironment` (host minus `PI_WORKFLOW_*`), drops names matching
+  `KEY|SECRET|TOKEN|PASSW|CREDENTIAL|AUTH` — a broadened take on Codex's
+  default `shell_environment_policy` excludes, where Claude Code passes the
+  whole environment — plus the pre-sandbox shell/loader hooks (`BASH_ENV`,
+  `ENV`, `SHELLOPTS`, `PS4`, `LD_*`, `DYLD_*`: the bash that launches the SRT
+  wrapper honors them on the host before confinement begins, a Codex-review
+  finding), and lays the lease env over it, secret-shaped broker
+  names included (an MCP connection's token is config, not leakage). A name
+  pattern is not a complete secret boundary (a password-bearing `DATABASE_URL`
+  passes); the owner picked this posture over full passthrough with that
+  residual on the table. The
+  allowlist broke HOME-adjacent toolchains: the shell exports
+  `GOPATH="$HOME/.go"`, so inside the sandbox Go fell back to `~/go` and
+  module downloads aimed at `~/go/pkg/mod`, which the profile never allows —
+  while `GOCACHE` only worked because its HOME-derived default happens to
+  match the render-time `go env GOCACHE` allowance. Verified live on the host
+  (broker + SRT lease): `go env` reports `~/.go` and `~/.go/pkg/mod`, and an
+  exported `FOO_TOKEN` does not reach the shell. Pre-existing and recorded,
+  not fixed: `sandbox-live.test.mjs` fails unchanged before and after because
+  its `/denied/` expectation drifted from the broker's actual "Writes are
+  disabled in this scope" message.
 
 ## Verification and remaining gates
 

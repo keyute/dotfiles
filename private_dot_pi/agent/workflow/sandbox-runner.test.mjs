@@ -24,32 +24,44 @@ test("quoteArg safely quotes POSIX shell metacharacters", () => {
   assert.equal(quoteArg(""), "''");
 });
 
-test("safeEnvironment keeps only approved inherited values and broker server values", () => {
-  const previousPath = process.env.PATH;
-  const previousSecret = process.env.OPENAI_API_KEY;
-  const previousWorkflow = process.env.PI_WORKFLOW_TOKEN;
-  process.env.PATH = "/safe/bin";
-  process.env.OPENAI_API_KEY = "must-not-leak";
-  process.env.PI_WORKFLOW_TOKEN = "must-not-leak";
+test("safeEnvironment inherits the host minus secret-named and workflow values, broker values land verbatim", () => {
+  const entries = {
+    PATH: "/safe/bin",
+    GOPATH: "/home/user/.go",
+    OPENAI_API_KEY: "must-not-leak",
+    DB_PASSWORD: "must-not-leak",
+    SSH_AUTH_SOCK: "must-not-leak",
+    PI_WORKFLOW_TOKEN: "must-not-leak",
+    BASH_ENV: "/workspace/hook.sh",
+    DYLD_INSERT_LIBRARIES: "/workspace/evil.dylib",
+    TMPDIR: "/host/tmp",
+  };
+  const previous = Object.fromEntries(Object.keys(entries).map(key => [key, process.env[key]]));
+  Object.assign(process.env, entries);
   try {
     const environment = safeEnvironment({
       SERVER_TOKEN: "broker-approved",
+      TMPDIR: "/scratch",
       PI_WORKFLOW_SOCKET: "/forbidden.sock",
       INVALID: 42,
     });
     assert.equal(environment.PATH, "/safe/bin");
+    assert.equal(environment.GOPATH, "/home/user/.go");
     assert.equal(environment.SERVER_TOKEN, "broker-approved");
+    assert.equal(environment.TMPDIR, "/scratch");
     assert.equal(environment.OPENAI_API_KEY, undefined);
+    assert.equal(environment.DB_PASSWORD, undefined);
+    assert.equal(environment.SSH_AUTH_SOCK, undefined);
+    assert.equal(environment.BASH_ENV, undefined);
+    assert.equal(environment.DYLD_INSERT_LIBRARIES, undefined);
     assert.equal(environment.PI_WORKFLOW_TOKEN, undefined);
     assert.equal(environment.PI_WORKFLOW_SOCKET, undefined);
     assert.equal(environment.INVALID, undefined);
   } finally {
-    if (previousPath === undefined) delete process.env.PATH;
-    else process.env.PATH = previousPath;
-    if (previousSecret === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = previousSecret;
-    if (previousWorkflow === undefined) delete process.env.PI_WORKFLOW_TOKEN;
-    else process.env.PI_WORKFLOW_TOKEN = previousWorkflow;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 

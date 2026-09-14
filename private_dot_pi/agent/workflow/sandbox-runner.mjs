@@ -6,25 +6,27 @@ import { readLines, sendLine } from "./lines.mjs";
 
 const RESPONSE_LIMIT = 1024 * 1024;
 const RESPONSE_TIMEOUT_MS = 10_000;
-const SAFE_ENVIRONMENT = [
-  "PATH",
-  "HOME",
-  "TMPDIR",
-  "LANG",
-  "LC_ALL",
-  "TERM",
-  "USER",
-  "LOGNAME",
-  "SHELL",
-  "TZ",
-];
+const SECRET_NAME = /KEY|SECRET|TOKEN|PASSW|CREDENTIAL|AUTH/i;
+// The bash that launches the SRT wrapper and its dynamic loader honor these
+// before confinement begins — BASH_ENV/ENV source a file, SHELLOPTS with PS4
+// executes on trace, LD_*/DYLD_* inject into the launcher itself — so a
+// workspace-writable target would run host-side without review.
+const PRE_SANDBOX_HOOK = /^(BASH_ENV|ENV|SHELLOPTS|PS4)$|^(LD|DYLD)_/;
 
 export const quoteArg = (value) => `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 
+// Sandboxed commands inherit the host environment minus secret-named exports,
+// as Codex's default env policy does: the SRT profile's filesystem denies and
+// network allowlist are the boundary, and a key allowlist broke HOME-adjacent
+// toolchains (Go resolved GOPATH to ~/go without the shell's exported
+// override). A name pattern is not a complete secret boundary (a
+// password-bearing URL passes); that residual is the accepted posture.
+// Broker-leased entries are trusted config and land verbatim, over the
+// host's values, secret-shaped names included.
 export const safeEnvironment = (approved = {}) => {
   const environment = {};
-  for (const key of SAFE_ENVIRONMENT) {
-    if (typeof process.env[key] === "string") environment[key] = process.env[key];
+  for (const [key, value] of Object.entries(hostEnvironment())) {
+    if (!SECRET_NAME.test(key) && !PRE_SANDBOX_HOOK.test(key)) environment[key] = value;
   }
   for (const [key, value] of Object.entries(approved)) {
     if (!key.startsWith("PI_WORKFLOW_") && typeof value === "string") {

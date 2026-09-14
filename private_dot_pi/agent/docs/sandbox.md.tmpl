@@ -30,6 +30,11 @@ against the source repository and update this file.
   `ssh`, `scp`, `sftp`, `rsync` — go to the auto classifier, then to a confirm
   dialog on `ask`. File edits inside the workspace run without review once
   execution is approved.
+- Inside the profile the environment is the host's minus the workflow's own
+  variables, secret-named exports (`KEY|SECRET|TOKEN|PASSW|CREDENTIAL|AUTH`)
+  and pre-sandbox shell/loader hooks (`BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`,
+  `LD_*`, `DYLD_*`); toolchain variables such as `GOPATH` arrive as exported
+  (2026-09-14).
 - `workspace_bash` with `dangerouslyDisableSandbox: true` (Claude Code's flag)
   runs the command on the host outside the SRT profile, under the host
   environment minus the workflow's own variables. Every such call is reviewed,
