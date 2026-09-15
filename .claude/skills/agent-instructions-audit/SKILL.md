@@ -50,14 +50,19 @@ every step below; never enumerate harness names. Tier pins are
    - `session+pin`: self-probe from your own system prompt (always runs).
      Then read the pin (`.agents.<h>.defaults.model`), compare model families
      (strip decorations like `[1m]`) against the session model; if they differ,
-     spawn one general-purpose subagent with `model` overridden to the pin's
-     family, no tools, returning compact JSON
+     run the same probe as a one-shot `claude --model '<pin>' -p '<probe>'
+     --output-format json` — the pin is the driver tier, which the PreToolUse
+     hook denies as a child model, and a subagent would probe the wrong class
+     anyway — returning compact JSON
      `{"<principle>": {"coverage": "covered|partial|absent|contradicted",
-     "evidence": "…"}}`.
-     Both probes matter: the same projection serves the class running now and
-     the class the pin starts next session on. Subagent prompts differ from the
-     main loop's (MCP server instructions, for one), so treat verdicts as
-     approximate. If the probe fails, mark pin coverage unverified and continue.
+     "evidence": "…"}}`. Then probe each worker class (`subagent_tiers.<h>`
+     minus `frontier`) with one general-purpose subagent whose `model` is that
+     tier's pin, no tools, same JSON.
+     All probes matter: the same projection serves the driver class running
+     now, the class the pin starts next session on, and every child class.
+     Subagent prompts differ from the main loop's (MCP server instructions,
+     for one), so treat verdicts as approximate. If a probe fails, mark that
+     coverage unverified and continue.
    - `mcp`: load the harness's advise tool if needed (for Codex:
      `ToolSearch select:mcp__codex__advise,mcp__codex__reply`), one call with
      `cwd` = repo root and the same probe shape, instructing it to judge only its

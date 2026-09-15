@@ -41,30 +41,42 @@ when my actual intent changes, never to track harness churn.
   override their model only to escalate one after an observed failure.
   *Why: a stronger model that one-shots often beats a weaker one
   that flails; and the dispatch-time agent list hides the pin, so a reflexive
-  override silently undoes it.*
-- **Frontier escalation**: the frontier tier (`subagent_tiers.<harness>.frontier`)
-  is escalation-only, never the default driver: escalate a genuinely
-  frontier-grade call — the hardest long-horizon architecture/synthesis, or a
-  decision that has defeated the session's tier — to it as a bounded, fresh-context consult
-  whose handoff carries the executor's constraints, and adjudicate what comes
-  back as hypotheses, never a verdict; never model-bump a grown session to
-  frontier and never blanket-promote subagents. *Why (researched 2026-09-14;
-  full record in the audit log): the only measured benchmark family (Aider
-  architect/editor) shows a stronger consultant plus mid-tier executor
-  capturing most of the frontier uplift at a fraction of the cost, while
-  frontier-as-daily-driver is the worst metering shape — both vendors meter
-  frontier against the same shared subscription pools, and the measured
-  dominant quota killer is a long-lived growing context re-metered every turn,
-  which a grown-session bump maximises and a bounded consult avoids. Consult
-  output anchors the driver — practitioners report adjudication degrading into
-  rubber-stamping — so the hypotheses stance from cross-model review applies;
-  and a handoff missing the executor's constraints is the measured
-  "split-brain" failure, so the delegation contract applies. The predecessor
-  rule's intake clause ("say so so I can restart in a fresh top-model
-  session") was shaved on measurement: 0 firings across 249 session files — I
-  select frontier sessions myself, informed by the harness doc's guidance
-  that frontier-solo beats frontier-plans-plus-cheap-executes when the whole
-  task is frontier-grade.*
+  override silently undoes it. The frontier tier is the driver's, not a
+  subagent tier — see `frontier_driver`.*
+- **Frontier driver**: the frontier tier (`subagent_tiers.<harness>.frontier`)
+  is the session driver, not a consultant: it owns decomposition, decisions,
+  adjudication, integration and final verification, and dispatches
+  non-trivial bounded implementation, exploration, research and review to the
+  lowest capable pinned worker once the handoff is concrete; trivial edits,
+  tightly sequential steps, and work whose details must stay in the driver's
+  context stay inline. No child runs the frontier tier: unpinned children
+  default to the top worker tier, and when a worker fails a bounded task the
+  driver does that piece itself rather than promoting the child. *Why
+  (decision 2026-09-15 reversing 2026-09-14; research record in the audit
+  log): I choose the driver myself and already run frontier sessions — the
+  consultant rule fired in none of them while every edit ran inline and
+  `implementer` went undispatched, so the gap to close is the driver doing
+  worker-grade work in the most expensive context, not the driver choice.
+  Anthropic's Fable guide positions it as the orchestrator (dispatches
+  parallel subagents more readily, async dispatch, fresh-context verifiers),
+  OpenAI gates its only built-in coordination mode to its top tier, and both
+  meter the frontier hardest (Fable: up to 50% of the weekly pool and "uses
+  limits faster"; Astra: about half Sol's messages at 2.5x credits) — the
+  driver's context is the cost lever, and delegation exists to keep it lean.
+  Every measured quota failure is a child on the frontier tier
+  (claude-code#84667, #75055, #75054, #91220; codex#32587), which is why the
+  child boundary is enforced where the harness allows — Claude's hook on
+  per-call overrides plus the worker-tier default, pi's launch gate — and
+  only defaulted where it does not: Codex has no blocking spawn lever, and a
+  third-party Claude agent definition declaring `inherit` is invisible to the
+  hook; both residuals are verified by the transcript sweep, not assumed
+  closed. Practitioners report frontier drivers scope-creeping and
+  re-verifying on bounded work (an Astra rebase at 6h+ against Sol's 1h),
+  which "non-trivial bounded, once the handoff is concrete" answers without
+  pushing trivial edits out; Aider's architect/editor data shows a strong
+  planner plus cheaper editor captures the uplift at a fraction of the cost,
+  and the orchestrator re-reading verbose worker output is the reported sink,
+  so the delegation contract's distilled-summary clause carries the load.*
 - **Fan-out**: spawn independent strands together, scaled to task breadth;
   never hand a worker the whole problem. *Why: serial spawning wastes
   wall-clock; unbounded scope wastes workers.*
@@ -185,8 +197,8 @@ when my actual intent changes, never to track harness churn.
   requirements with a fresh set of eyes: hand `spec-reviewer` both, not your
   own reasoning trace, naming the snapshot to judge and any gates already run
   green at that snapshot, in one pass with no follow-up rounds. Launch it
-  history-free — never a context-inheriting fork — and never below the model
-  that produced the work. When the gates cover the
+  history-free — never a context-inheriting fork — at its pinned tier, with
+  no model override. When the gates cover the
   requirements and the surface is not high-stakes, skip the pass, as with
   trivial, easily-reverted changes. A cross-model review does not replace this
   pass. A re-review after fixes is a new dispatch handed the fixed findings;
@@ -201,13 +213,19 @@ when my actual intent changes, never to track harness churn.
   rounds add false positives faster than catches (false positives +62%,
   precision 0.30 to 0.20, arXiv 2603.16244, preprint). The deterministic-gate
   clause keeps it from doubling verification the tests already do. The named
-  role, the history-free launch and the capability floor all answer the
+  role, the history-free launch and the pinned tier all answer the
   2026-09-09 sweep: the pass had no defined target, so half its dispatches went
   to a write-capable catch-all, eight of twenty to a reviewer contract that
-  cannot report an omission, and six of twenty to a model below the producer —
-  and a weaker reviewer measurably degrades a stronger producer's work
-  (91.4% to 82.8%, arXiv 2607.21656), which is why the floor beats the
-  lowest-tier default here. Freshness is the launch mechanism's property, not
+  cannot report an omission, and six of twenty to whatever tier the dispatcher
+  picked. The pin is the top worker tier, not the producer's (decision
+  2026-09-15): the 91.4%-to-82.8% drop in arXiv 2607.21656 came from a
+  cross-vendor reviewer that rewrote the program, not from advisory findings,
+  the freshness studies above vary session and model identity but never
+  reviewer tier, and Anthropic's own `/code-review` runs Opus bug agents under
+  Fable sessions. The known cost is Opus's weaker recall on concurrency and
+  subtle logic defects (CodeRabbit, 2026-07-24), which `codex-review` covers on
+  high-stakes surfaces; the catch count at the new tier is an open audit
+  trigger. Freshness is the launch mechanism's property, not
   the role name's: a fork inherits the producing context and voids the rule.
   The precedence clause answers a Claude-only harness conflict: Claude Code
   explicitly tells the model to stop adding review passes once the checks pass,

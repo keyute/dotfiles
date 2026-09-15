@@ -36,10 +36,30 @@
     "defaultMode": "plan"
   },
   "model": {{ .agents.claude.defaults.model | toJson }},
+  {{- /* The driver is the frontier tier; unpinned built-ins (general-purpose,
+         Plan, claude) default to the top worker tier instead of inheriting it.
+         A default, not a force: frontmatter and per-call overrides still win
+         (v2.1.251+ resolution order, harness.md), and the PreToolUse hook
+         below is what stops a per-call frontier override. */}}
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }}
+  },
   {{- /* Mirrors herdr's canonical SessionStart entry (structural JSON equality)
          so `herdr integration install claude` leaves this file untouched; the
          script itself is herdr-generated and chezmoi-unmanaged. */}}
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node '{{ .chezmoi.homeDir }}/.claude/hooks/deny-frontier-child.mjs'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "*",

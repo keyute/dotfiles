@@ -7,36 +7,57 @@ belong here; sweep measurements and audit baselines live in the chezmoi repo's
 `docs/agents-audit-log.md`, not here. If behavior seems changed, verify with
 that agent and update this file.
 
-## Models (last verified 2026-09-12)
+## Models (last verified 2026-09-15)
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo as
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
-  session. The pin exists to hold the current Opus in its long-context variant
-  (`[1m]`); it is not the top tier — Fable sits above it, explicit-selection
-  only. The frontier pin is `claude-fable-5`, not 5.1: the CLI serves
-  `claude-fable-5-1` only from 2.1.251 (400 below it, probed 2026-09-14 on
-  2.1.236) — bump the pin in `subagent_tiers.claude` after updating the CLI.
-  Pin kept on Opus 5
-  at the 2026-09-07 audit: Anthropic's "low-effort Fable beats Opus on cost
-  per task" claim is API pricing, not Max-plan metering.
+  session. The pin is the frontier tier as the session driver (decision
+  2026-09-15, research record in the audit log); `[1m]` holds the 1M-context
+  variant — without it Fable 5 runs at 200K (probed and doc-checked
+  2026-09-15). Fable 5, not 5.1: the stable channel sits below the 5.1 floor
+  (2.1.255 per Anthropic's help center) — bump the pin and
+  `subagent_tiers.claude.frontier` together once stable clears it. Driver
+  effort is the Claude Code default; Anthropic's "low-effort Fable beats Opus
+  on cost per task" claim is API pricing, not Max-plan metering — an open
+  lever, measured before changed.
 - Pins use explicit model IDs, never bare aliases: aliases re-resolve across
   CLI releases (`opus`/`sonnet` float to the newest generation at v2.1.219+,
   and `haiku` was observed resolving to sonnet-5), so an alias pin can silently
   change tier. The agent-instructions-audit skill live-probes every pin.
 - Subagent tiers are relative capability, not fixed model names; the named
   specialists are pinned per tier in `.chezmoidata/agents.yaml`
-  (`subagent_tiers.claude`) and do NOT follow `/model`. Only unpinned/built-in
-  subagents inherit the session model; a subagent naming an unavailable model
-  silently falls back to the inherited one. Tier routing rules live in CLAUDE.md
-  (lowest tier likely to one-shot the task).
-- Subagent model resolution, in order (verified 2026-09-09 against
-  `docs.claude.com/en/docs/claude-code/sub-agents.md`; re-check next audit):
-  the per-invocation `model` parameter, then the definition's `model`
-  frontmatter (where `inherit` selects the main conversation's model), then
+  (`subagent_tiers.claude`) and do NOT follow `/model`. Unpinned built-ins
+  (general-purpose, Plan, claude, claude-code-guide) take
+  `CLAUDE_CODE_SUBAGENT_MODEL`, set in settings `env` to the top worker tier
+  (`{{ .subagent_tiers.claude.top }}`), so nothing inherits the driver by
+  omission; a subagent naming an unavailable model silently falls back. Forks
+  (`subagent_type: fork`) always run the parent model — a fork is a
+  driver-context continuation, not a worker. Tier routing rules live in
+  CLAUDE.md (lowest tier likely to one-shot the task).
+- Subagent model resolution, in order (re-verified 2026-09-15 against
+  `code.claude.com/docs/en/sub-agents`, v2.1.251+): the per-invocation
+  `model` parameter, then the definition's `model` frontmatter (where
+  `inherit` selects the main conversation's model), then
   `CLAUDE_CODE_SUBAGENT_MODEL`, then the main conversation's model. Omitting
-  `model:` is therefore NOT equivalent to `model: inherit` — omission lets that
-  env var win. `subagent-claude.md` emits the literal `inherit` so an
-  inherit-tier reviewer cannot drop below the model that produced the work.
+  `model:` is therefore NOT equivalent to `model: inherit` — omission lets the
+  env var win, which is now the intended path; no roster entry uses `inherit`
+  any more, since under a frontier driver it would mean "silently consume
+  frontier". `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (v2.1.257+) is deliberately
+  unset: it would also erase the specialists' pins.
+- No child runs the frontier tier: `~/.claude/hooks/deny-frontier-child.mjs`
+  (PreToolUse, matcher `Agent`, rendered from agents.yaml) denies a per-call
+  `model` of the frontier pin, `fable` or `inherit`, inside subagents too
+  (user-level hooks apply there); forks carry no `model` and run the parent
+  by harness design. Residual the hook cannot see: a third-party (plugin or
+  project) agent definition declaring `model: inherit`, invoked without a
+  per-call model, resolves to the driver — the roster here carries none, and
+  the transcript sweep's children-vs-pins count is the check. The silent upstream failure modes — claude-code#75054 (pins lost on
+  background resume), #85592 (env var overriding per-call requests at
+  2.1.223), #82252 (an override served by another model while the child
+  self-reports the requested one) — are not hook-catchable: after each CLI
+  update dispatch one unpinned child and one with an explicit
+  `{{ .subagent_tiers.claude.top }}` override and read `message.model` in the
+  transcript, never the child's self-report.
 - Subscription limits (Max plan; re-checked 2026-09-14 against the Fable
   support article): a rolling 5-hour session window plus a shared weekly pool,
   "shared across all models"; Fable draws the same pool, capped at up to 50%
@@ -45,46 +66,47 @@ that agent and update this file.
   never covered 5.1). The errors doc still names Opus and Sonnet family
   sub-limit messages, an unresolved contradiction — next time a limit binds,
   reconcile against `/usage`.
-- The frontier tier (`{{ .subagent_tiers.claude.frontier }}`, from
-  `subagent_tiers.claude`) is escalation-only, per the shared frontier rule
-  in CLAUDE.md (decision 2026-09-14, research record in the audit log):
-  bounded fresh-context consults from an Opus session — a read-only dispatch
-  of an *unpinned* agent (Plan, general-purpose) with a frontier model
-  override, or the harness's native Advisor tool (`/advisor` /
-  `advisorModel`; Opus pairs with Fable, tokens bill at each model's own
-  rate) — with output adjudicated as hypotheses. Pinned specialists keep
-  their observed-failure override gate; the consult path does not relax it. For work that is
-  genuinely frontier-grade end-to-end, a fresh Fable session I start myself
-  beats frontier-plans-plus-cheap-executes (Aider pairing data); a grown
-  session bumped into Fable re-meters its whole context at Fable's weight
-  every turn, so the bump stays banned.
 - Delegation economics (researched 2026-09-12; metering re-checked
-  2026-09-14; baselines in the audit log): subagent tokens draw the same Max
-  5h/weekly pools as the main loop — no subagent discount — and drain is
-  model-weighted. Delegation multiplies total tokens; it pays only via tier
-  arbitrage and keeping a grown top-tier context from re-metering, so
-  delegate when work exceeds one context window or fans out across
-  independent items, and keep children on the cheap pinned tiers. Cache reads
-  meter non-negligibly against the plan pool (measured 2026-09-14 via
-  claude-code#91220; numbers in the audit log) — session length is a primary
-  cost lever; exact cache-read weighting still unpublished.
-  Bucket caveat: exhausting a cheaper model's sub-limit can force frontier
-  fallback for routine work (claude-code#55663).
+  2026-09-14; frontier-driver framing 2026-09-15; baselines in the audit
+  log): subagent tokens draw the same Max 5h/weekly pools as the main loop —
+  no subagent discount — and drain is model-weighted, so the driver's own
+  context is the expensive one: it re-meters at Fable's weight every turn
+  and cache reads count non-negligibly against the pool (measured via
+  claude-code#91220). Delegation multiplies total tokens and pays only via
+  tier arbitrage and keeping that context lean — delegate bounded
+  implementation, reads, research and review, keep trivial edits and
+  tightly sequential steps inline, and treat session length as the primary
+  cost lever; exact cache-read weighting still unpublished. Bucket caveat:
+  exhausting a cheaper model's sub-limit can force frontier fallback for
+  routine work (claude-code#55663).
 - `implementer` (added 2026-08-28): mid-tier executor for spec-complete
-  mechanical write work — a bounded edit delegated out of a grown `[1m]`
-  session avoids re-sending the whole context at Opus rates.
+  mechanical write work — a bounded edit delegated out of the driver's
+  context avoids re-sending the whole context at frontier rates. The
+  2026-09-11/12 sweep found it undispatched while every edit ran inline in
+  Fable sessions; its dispatch count is an open audit trigger.
+- `spec-reviewer` runs at the top worker tier (`{{ .subagent_tiers.claude.top }}`),
+  not `inherit` (decision 2026-09-15): the reviewer only proposes, and the
+  evidence behind the old reviewer-≥-producer floor was a cross-vendor
+  reviewer that rewrote the program. Known limit: Opus 5 recall is weakest on
+  concurrency and subtle logic defects (CodeRabbit 2026-07-24), which
+  `codex-review` covers on high-stakes surfaces; high/medium catches at the
+  new tier are an open audit trigger against the Fable baseline.
 - `researcher` (added 2026-09-08): scoped mid-tier read-only preset with web,
   Exa and context7, so research dispatches stop hand-picking models on
   general-purpose.
 - Codex pin caveat for pinned reviewers: openai/codex#32587 (still open as of
-  2026-09-12) — a spawned Codex child can silently inherit the parent's
-  model/effort instead of its pinned config. `tier: inherit` is the one
-  setting that regression cannot break, a second reason the fresh-eyes floor
-  is expressed as inherit rather than a fixed tier.
+  2026-09-15) — a spawned Codex child can silently inherit the parent's
+  model/effort instead of its pinned config, which under an Astra parent
+  costs 2.5x; verify via `/status` after each Codex CLI update.
 - If Codex is available, `codex-review` / `codex-advisor` are read-only Codex
   consultation for high-risk diffs or stuck calls; Claude and Codex meter on
   independent windows, so read-work can offload to Codex — write-work means driving
-  the task with Codex yourself. Keep decision ownership in Claude.
+  the task with Codex yourself. Keep decision ownership in Claude. The bridge
+  is pinned to `{{ .subagent_tiers.codex.top }}` (`--model`, anchored in
+  agents.yaml) while interactive Codex drives on Astra: review is a worker
+  role, no source shows Astra reviewing better, and Astra is 2.5x the credits
+  and ~3x slower to first token on a call that blocks the Claude loop
+  (research 2026-09-15).
 - The codex-review trigger is risk-or-breadth, never blanket (decision
   2026-09-03, kept 2026-09-08): a size-based trigger produced ~2/3
   zero-finding reviews while every surviving catch sat in a high-stakes

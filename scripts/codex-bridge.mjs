@@ -7,8 +7,12 @@
 // make prompt-free in plan mode — a Bash-based transport gets neither.
 //
 // Invocation is fixed by design: read-only sandbox, approvals never, high
-// reasoning. Callers choose scope (base/uncommitted/prompt), never sandbox or
-// approval flags. Model comes from ~/.codex/config.toml.
+// reasoning, worker-tier model. Callers choose scope (base/uncommitted/prompt),
+// never sandbox or approval flags. The model arrives via --model (anchored to
+// subagent_tiers.codex.top in agents.yaml), not ~/.codex/config.toml, whose
+// default is the interactive frontier driver: review and advice are worker
+// roles, and every path here — review, advise and reply/resume — must stay on
+// that tier.
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -24,11 +28,15 @@ import { z } from "zod";
 const effortIndex = process.argv.indexOf("--reasoning-effort");
 const effort = effortIndex !== -1 ? process.argv[effortIndex + 1] : "high";
 if (!/^[a-z]+$/.test(effort)) throw new Error(`Invalid reasoning effort: ${effort}`);
+const modelIndex = process.argv.indexOf("--model");
+const pinnedModel = modelIndex !== -1 ? process.argv[modelIndex + 1] : undefined;
+if (pinnedModel !== undefined && !/^[A-Za-z0-9._-]+$/.test(pinnedModel)) throw new Error(`Invalid model: ${pinnedModel}`);
 const FIXED_ARGS = [
   "--json",
   "-c", 'sandbox_mode="read-only"',
   "-c", 'approval_policy="never"',
   "-c", `model_reasoning_effort="${effort}"`,
+  ...(pinnedModel ? ["-c", `model="${pinnedModel}"`] : []),
 ];
 
 function checkCwd(cwd) {
@@ -176,7 +184,7 @@ server.registerTool(
         .regex(/^[A-Za-z0-9._-]+$/)
         .optional()
         .describe(
-          "Model ID override (pin probing only); defaults to ~/.codex/config.toml",
+          "Model ID override (pin probing only); defaults to the bridge's pinned worker tier",
         ),
     },
     annotations: readOnly,

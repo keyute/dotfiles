@@ -9,9 +9,82 @@ carries the numbers and open triggers behind those annotations (rule in
 baseline no longer serves a future sweep is deleted, not archived — git
 history keeps it.
 
+## 2026-09-15
+
+### Frontier doctrine reversed: frontier driver (all harnesses)
+
+Reverses the 2026-09-14 consultant decision. Fable 5 (`[1m]`, stable channel
+below the 5.1 floor 2.1.255) drives Claude Code; Astra drives Codex and pi;
+implementation, exploration, research and review go to the worker tiers.
+Shaved: the `frontier_escalation` rule, the Advisor-consult path, the
+grown-session bump clause, every `inherit` tier (spec-reviewer and pi's
+general-purpose now `top`), and the self-review floor's reading of arXiv
+2607.21656. Enforcement added: Claude `CLAUDE_CODE_SUBAGENT_MODEL` = top plus
+a PreToolUse hook denying frontier `model` overrides on `Agent`; pi
+`children.mjs` rejects a frontier child (requested or inherited); Codex
+`review_model` and `[agents] default_subagent_model` = Sol (defaults only —
+no blocking lever exists). The Claude→Codex bridge is pinned to Sol via
+`--model`. Evidence baselines (Reddit unreachable from the sandboxed harness:
+Exa returns no reddit.com results and every fetch form incl. old.reddit and
+`.json` is refused, Claude Code's fetch refuses the host — HN engineer
+threads stood in):
+
+- Driver choice: 0 firings of the consultant rule; the 2026-09-11/12 sweep
+  already ran every edit inline in Fable sessions with `implementer` at 0.
+  Anthropic's Fable 5 guide: "dispatches parallel subagents more readily",
+  "use subagents frequently", async dispatch, fresh-context verifiers (line
+  absent from the 5.1 page); model overview still says start with Opus 5;
+  built-in Explore capped at Opus; `/code-review` hardcodes Opus bug agents.
+  OpenAI: docs model-agnostic on who orchestrates; Sol `ultra` (only
+  built-in coordination mode) gated to the top tier. Practitioners (HN Sept
+  2026): Astra as sole driver scope-creeps on bounded work (rebase 6h+ vs Sol
+  1h; robot-arm task handed back to Opus 5); fresh-context adversarial
+  review endorsed at any tier; orchestrator re-reading verbose worker output
+  is the reported cost sink. Aider architect/editor unchanged.
+- Child-tier failures, measured: claude-code#84667 (16 unpinned children on
+  Fable, 2,448 messages/18 min), #75055 (84 children, 11.6M tokens),
+  #75054 (sonnet pins lost on background resume, 8/8 flipped), #85592 (env
+  var overrode per-call requests at 2.1.223), #82252 (explicit fable
+  override served by sonnet, child self-reported fable), #91220 (one resumed
+  Fable subagent = 50.7% of a weekly pool); codex#32587 open, #33881/#33667
+  reproduce on 0.144.x, #32705 catalog forces multi_agent_v2. Codex
+  `SubagentStart` cannot block ("`continue: false` doesn't stop the
+  subagent"). Resolution order re-verified: per-call → frontmatter (incl.
+  `inherit`) → `CLAUDE_CODE_SUBAGENT_MODEL` → main model (v2.1.251+);
+  `_FORCE` (2.1.257+) would erase specialist pins, left unset.
+- Reviewer tier: 2607.21656 is Codex GPT-5.5 reviewing Opus 4.7 across
+  vendors, single-file Python, reviewer writes the final program — authors
+  generalise only to "use Claude to review Codex". 2603.12123, 2605.21537,
+  2507.02778, 2603.16244 vary freshness/identity, never tier. CodeRabbit
+  2026-07-24: Opus 5 x-high 55.2% vs mix 61.1% known-issue recall, weakest
+  on concurrency/races/API misuse. Baseline to beat at Opus: 1 high + 3
+  medium of 13 spec-reviewer runs (2026-09-12, at Fable).
+- Bridge tier: Coding Agent Index Astra 67 vs Sol 65.1 at max effort, ~75%
+  more per completed task, TTFT 464s vs 163s; no review-specific benchmark
+  for either; the one community codex-review bridge defaults to Sol high.
+- Codex advisor consult (hypotheses, adjudicated): agreed on spec-reviewer
+  top, bridge Sol in FIXED_ARGS, `inherit` removal, pi gate; dropped a
+  per-child SessionStart model assertion and a supervised Codex launcher.
+- Cross-model review (Codex, 2 findings, both held after one round):
+  wording narrowed — the child boundary is enforced on Claude (hook +
+  default) and pi (gate), defaulted on Codex (no blocking lever), and a
+  third-party Claude agent definition declaring `inherit` is a residual the
+  hook cannot see. Fail-closed Codex spawning rejected (catalog can force
+  multi_agent_v2, #32705; interactive Codex is a minor path). Survived
+  findings count: 2 wording / 0 code.
+- **Open** (next sweep): children's actual models vs pins (inheritance
+  drift, `message.model` not self-report — covers the two residuals above);
+  `implementer` dispatches (was 0);
+  spec-reviewer high/medium catches at Opus vs the Fable baseline; Fable
+  share of the weekly pool via `/usage`; root vs child token shares; driver
+  effort as a lever (Anthropic: low-effort Fable cost-competitive with Opus —
+  API pricing, unmeasured on Max). Run `doctrine-refresh` (self-review why
+  changed its empirical claim) then `agent-instructions-audit` (native
+  coverage against the Fable main-loop prompt) after apply.
+
 ## 2026-09-14
 
-### Frontier doctrine decision (all harnesses)
+### Frontier doctrine decision (all harnesses) — superseded 2026-09-15
 
 Reviewed frontier-as-orchestrator (Fable/Astra drives, farms execution to
 Opus/Sol) vs frontier-as-consultant (Opus/Sol drives, frontier consulted

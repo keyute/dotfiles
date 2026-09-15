@@ -51,17 +51,14 @@ decision is final.
 {{ range $tier, $model := .subagent_tiers.pi -}}
 - {{ $tier }}: `{{ $model }}`
 {{ end }}
-Frontier is for explicit escalation, not the default (shared rule projected
-in AGENTS.md, decision 2026-09-14): a bounded, fresh-context consult whose
-handoff carries the session's constraints, output adjudicated as hypotheses —
-here a child dispatch naming the frontier model explicitly, which is safe on
-this harness: the managed launch hook validates the requested model against
-the tier policy and catalog and fails loudly instead of silently inheriting
-(workflow/children.mjs), so codex's child-pin caveat (openai/codex#32587)
-does not apply. The pinned Pi SDK
-includes Astra in the OpenAI subscription catalog; if a future pin drops it,
-selection must report unavailable, not fabricate an alias or fall back to API
-billing.
+The default is the frontier tier as the driver (shared `frontier_driver` rule
+in AGENTS.md, decision 2026-09-15). No child runs it: `workflow/children.mjs`
+rejects a launch that names or inherits the frontier model and fails loudly,
+so codex's child-pin caveat (openai/codex#32587) does not apply here;
+`general-purpose`, the only nesting role, is pinned to `top`. The pinned Pi
+SDK includes Astra in the OpenAI subscription catalog; if a future pin drops
+it, selection must report unavailable, not fabricate an alias or fall back to
+API billing.
 
 Standard input/cached/output credits per million tokens: Astra 250/25/1250,
 Sol 100/10/500, Terra 50/5/300, Luna 5/0.5/30. Actual Pro allowance consumption
@@ -89,7 +86,7 @@ Specialists under `~/.pi/agent/agents` render from the shared roster. Each has a
 explicit OpenAI model, tool list and mandatory child policy extension. Native
 builtin names cannot substitute for missing `workspace_*` tools. Read-only
 specialists stay read-only even when the root enters execution. Specialists are
-leaf roles; only `general-purpose` (every tool, the session's model) may launch
+leaf roles; only `general-purpose` (every tool, the top worker tier) may launch
 children, to the same depth as Claude Code's built-in general-purpose agent.
 
 Use named `subagent` launches with an agent and bounded task; the roster is in

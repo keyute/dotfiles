@@ -25,9 +25,13 @@ agents:
     # calls in the same block"), probed 2026-09-12.
     native_coverage: [call_batching]
     defaults:
-      # explicit ID: bare aliases float across CLI releases (observed: `haiku`
-      # resolving to sonnet-5); [1m] forces the 1M-context variant
-      model: claude-opus-5[1m]
+      # the frontier tier drives the session (decision 2026-09-15); explicit
+      # ID: bare aliases float across CLI releases (observed: `haiku` resolving
+      # to sonnet-5); [1m] forces the 1M-context variant (accepted for Fable 5,
+      # probed 2026-09-15). Fable 5, not 5.1: the stable channel sits below the
+      # 5.1 floor (2.1.255) — bump this and subagent_tiers.claude.frontier
+      # together once stable clears it.
+      model: claude-fable-5[1m]
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -70,7 +74,15 @@ agents:
     # unanimous, so the weakest class decides. initiative is `covered` on both.
     native_coverage: [initiative]
     defaults:
-      model: gpt-5.6-sol
+      # frontier driver (decision 2026-09-15). Review and unpinned children
+      # stay on the top worker tier: the config template emits `review_model`
+      # (backs /review and `codex exec review` alike, one code path) and
+      # `[agents] default_subagent_model` from subagent_tiers.codex.top. Both
+      # are defaults only — per-agent pins and explicit spawn values sit above
+      # them, and openai/codex#32587 (children silently inherit the parent) can
+      # still void them, which under an Astra parent costs 2.5x: verify a
+      # child's model via /status after each CLI update.
+      model: gpt-6-astra
       model_reasoning_effort: &codex_reasoning_effort high
       plan_mode_reasoning_effort: high
     sensitive_subpaths:
@@ -120,7 +132,9 @@ agents:
     agents_dir: "~/.pi/agent/agents"
     defaults:
       provider: openai-codex
-      model: gpt-5.6-sol
+      # frontier driver (decision 2026-09-15); the 2026-09-09 cost read in
+      # docs/pi-implementation.md (same trajectory 2.5x Sol) is the baseline
+      model: gpt-6-astra
       reasoning_effort: high
       plan_reasoning_effort: high
       # Approval classifier in Anthropic's two-stage shape: the filter answers
@@ -221,11 +235,16 @@ subagents:
     # from here so a rename cannot leave the always-loaded line pointing at a
     # role that no longer exists. Exactly one subagent carries this flag.
     self_review: true
-    # inherit is the floor invariant (reviewer >= producer), not an omission:
-    # a weaker reviewer measurably degrades a stronger producer's work
-    # (91.4% -> 82.8%, arXiv 2607.21656). A mid pin breaks the floor on every
-    # default session; a top pin breaks it on a Fable one. Do not fix to a tier.
-    tier: inherit
+    # top, not inherit: the frontier tier is the driver, never a child, so
+    # inherit would silently run every review at frontier weight. The reviewer
+    # only proposes — arXiv 2607.21656's 91.4% -> 82.8% drop came from a
+    # cross-vendor reviewer that rewrote the program, and the self-review
+    # literature keys on freshness and model identity, not tier; Anthropic's
+    # own /code-review runs Opus bug agents under Fable sessions. Known limit:
+    # Opus 5 recall is weakest on concurrency/logic defects (CodeRabbit
+    # 2026-07-24), which codex-review covers on high-stakes surfaces. Open:
+    # compare high/medium catches against the Fable baseline (audit log).
+    tier: top
     reasoning_effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
@@ -265,31 +284,37 @@ subagents:
     description: "Execute a fully-specified, bounded mechanical change — renames, translations, boilerplate, pattern-repeat edits, spec'd fixes — against explicit acceptance criteria and a verification command. Makes no design decisions and stops to report when one surfaces. NOT for exploratory or judgment-heavy implementation; never commits."
   # pi only (no per-harness file renders elsewhere): Claude Code and Codex
   # ship an equivalent built-in. Mirrors Claude's general-purpose agent — every
-  # tool, the parent's model, and the only role that may launch children; the
-  # specialists above stay leaf roles, as their Claude tool lists imply.
+  # tool and the only role that may launch children; the specialists above
+  # stay leaf roles, as their Claude tool lists imply. Top, not inherit: the
+  # parent is the frontier tier and no child runs it (Claude's counterpart
+  # gets the same default via CLAUDE_CODE_SUBAGENT_MODEL).
   general-purpose:
-    tier: inherit
+    tier: top
     reasoning_effort: high
     readonly: false
     nests: true
     tools: "Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
-    description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation. Inherits the session model; prefer a specialist when one fits."
+    description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation. Runs the top worker tier; prefer a specialist when one fits."
 # explicit model IDs, not aliases: aliases re-resolve across CLI releases and can
 # silently land on another tier; the agent-instructions-audit skill live-probes
-# these pins, so drift fails loudly there instead
+# these pins, so drift fails loudly there instead. `frontier` is the driver's
+# tier (agents.<harness>.defaults.model), never a child's: Claude's hook, pi's
+# child gate and Codex's subagent default all hold children at `top` or below,
+# and no roster entry uses `inherit` any more — under a frontier driver it
+# would mean "silently consume frontier".
 subagent_tiers:
   claude:
     small: claude-haiku-4-5
     mid: claude-sonnet-5
     top: claude-opus-5
-    # not 5-1: the CLI rejects it below 2.1.251 (400, probed 2026-09-14 on
-    # 2.1.236) and an unavailable subagent model falls back silently; bump to
-    # claude-fable-5-1 once the installed CLI clears that floor
+    # 5, not 5-1: the stable channel sits below the 5.1 floor (2.1.255); an
+    # unavailable model falls back silently. Bump with agents.claude.defaults.model.
     frontier: claude-fable-5
   codex: &openai_subagent_tiers
     small: gpt-5.6-luna
     mid: gpt-5.6-terra
-    top: gpt-5.6-sol
+    # anchored: the Claude->Codex review/advice bridge pins this tier
+    top: &openai_top gpt-5.6-sol
     frontier: gpt-6-astra
   pi: *openai_subagent_tiers
 agent_sandbox:
@@ -367,8 +392,12 @@ agent_mcp_servers:
   # and prompt-free in plan mode via the rendered allow rule.
   codex:
     script: codex-bridge.mjs
-    # Anchored to defaults.model_reasoning_effort so the bridge cannot drift.
-    args: ["--reasoning-effort", *codex_reasoning_effort]
+    # Anchored to defaults.model_reasoning_effort and subagent_tiers.codex.top
+    # so the bridge cannot drift: review and advice are worker roles, so the
+    # bridge runs Sol even though interactive Codex drives on Astra (no source
+    # shows Astra reviewing better; 2.5x credits, ~3x slower first token on a
+    # call that blocks the Claude loop — research 2026-09-15, audit log).
+    args: ["--reasoning-effort", *codex_reasoning_effort, "--model", *openai_top]
     auto_approve_tools: true
     requires: codex
     harnesses:

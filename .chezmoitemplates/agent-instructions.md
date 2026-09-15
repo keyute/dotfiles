@@ -28,8 +28,11 @@
 
 ## Working agreements
 
-{{/* Fleet instructions require a configured model-tier mapping. */ -}}
+{{/* Fleet instructions require a configured model-tier mapping. The
+     frontier_driver rule below renders only where the harness's default model
+     is the frontier tier (prefix match: the Claude pin carries a [1m] suffix). */ -}}
 {{ if hasKey $root.subagent_tiers $self -}}
+{{- $tiers := index $root.subagent_tiers $self -}}
 - Delegate bounded, independent work that repays the handoff — disposable
   searches, log triage, research, and spec-complete leaf implementation with an
   objective correctness gate; state objective, scope, files/tools, and output
@@ -50,14 +53,14 @@
   observed failure, not by default. The subagents in `{{ default (printf "%s/agents" (index $root.agents $self).home) (get (index $root.agents $self) "agents_dir") }}` are
   already pinned and the dispatch-time list does not show it — pass a model
   override to one only to escalate it after an observed failure.
-{{ if and (hasKey (index $root.subagent_tiers $self) "frontier") (not (has "frontier_escalation" $native)) -}}
-- The frontier tier (`{{ index (index $root.subagent_tiers $self) "frontier" }}`)
-  is escalation-only, never the default driver or a blanket subagent promotion:
-  escalate a genuinely frontier-grade call — hardest long-horizon
-  architecture/synthesis, or a decision that has defeated this session's tier —
-  to it as a bounded, fresh-context consult whose handoff carries your
-  constraints, and adjudicate its output as hypotheses, never a verdict; never
-  model-bump a grown session to it.
+{{ if and (hasKey $tiers "frontier") (hasPrefix $tiers.frontier $ag.defaults.model) (not (has "frontier_driver" $native)) -}}
+- You run on the frontier tier: keep decomposition, decisions, adjudication,
+  integration and final verification here; dispatch non-trivial bounded
+  implementation, exploration, research and review to the lowest capable
+  pinned worker once the handoff is concrete — including spec-complete edits
+  you would otherwise make inline. No child runs `{{ $tiers.frontier }}`;
+  unpinned children default to `{{ $tiers.top }}`. When a worker fails a
+  bounded task, do that piece yourself rather than promoting the child.
 {{ end -}}
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
   library/API docs — resolve the library id and fetch unprompted.
@@ -131,7 +134,7 @@
   `{{ $reviewer }}` both, not your reasoning trace, naming the snapshot to judge
   and any gates already run green at that snapshot, in one pass with no
   follow-up rounds. Launch it history-free — never a context-inheriting fork —
-  and never below the model that produced the work.
+  at its pinned tier, with no model override.
   When the gates cover the requirements and the surface is not high-stakes,
   skip the pass, as with trivial, easily-reverted changes. A cross-model
   review does not replace this pass. A re-review after fixes is a new dispatch

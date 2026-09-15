@@ -24,8 +24,9 @@ live-tested on the host.
   package, pinned exactly); Brew and metapac entries were dropped because they
   cannot declare versions and pi breaks extension APIs across 0.x releases.
   Upgrade as one unit: bump the pin, `npm ci`, `npm run test:pi`, apply.
-- OpenAI subscription OAuth only: Luna small, Terra mid, Sol default/top, Astra
-  frontier escalation. The pinned Pi SDK (see `package.json`) lists Astra; if a
+- OpenAI subscription OAuth only: Luna small, Terra mid, Sol top worker, Astra
+  the frontier driver and default (decision 2026-09-15; `children.mjs` rejects
+  a child on it). The pinned Pi SDK (see `package.json`) lists Astra; if a
   future pin drops it, report unavailable — do not invent an alias.
 - Native host Pi and trusted extensions. The `workspace_*` tools are the SDK's
   own tools running in-host with the real harness context; each invocation
@@ -133,8 +134,9 @@ live-tested on the host.
   `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` default; Codex 0.153 uses 4), and
   nesting takes Claude Code's shape: specialists are leaf roles (`nests: true`
   opts a role in, `allowNestedSubagents` follows it) and a pi-only
-  `general-purpose` role — every tool, `model: inherit`, resolved to the
-  parent's model in the hook — is the one that delegates, at
+  `general-purpose` role — every tool, `model: inherit` resolved to the
+  parent's model in the hook (pinned to `top` on 2026-09-15, when the parent
+  became the frontier tier) — is the one that delegates, at
   `maxSubagentDepth: 2` (Claude's three layers). `forkContext` stays at the
   default full copy: the pruned mode fails the launch on any summary error.
 - 2026-09-07: the fleet widget takes Claude Code's panel shape (`⏺ main` row,
@@ -919,8 +921,10 @@ sockets and SRT against disposable fixtures; it needs an unrestricted local host
 Before relying on the setup, separately verify subscription login, parent and
 foreground/background child model pins, auto approvals, cancellation, the fleet widget,
 MCP queries, diagnostics and approved edits in a disposable project. Fixture
-tests do not establish account access or live terminal behavior. Compare Sol and
-Astra on matched completed tasks before changing the default model.
+tests do not establish account access or live terminal behavior. The default
+moved to Astra on 2026-09-15 on doctrine, not on a matched-task comparison; the
+2026-09-09 cost read above (same trajectory 2.5x Sol) is the baseline to
+measure against.
 
 Do not apply, sign in, stage or commit. Run Claude-side agent-instructions-audit
 after these model/harness changes; it is unavailable in this Codex session.

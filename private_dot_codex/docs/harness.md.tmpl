@@ -1,9 +1,13 @@
 # Codex workflow reference
 
-## Session defaults (last verified 2026-09-06)
+## Session defaults (last verified 2026-09-15)
 
 - Plain `codex` starts with `{{ .agents.codex.defaults.model }}` at {{ .agents.codex.defaults.model_reasoning_effort }} reasoning effort;
-  plan mode is pinned to {{ .agents.codex.defaults.plan_mode_reasoning_effort }}.
+  plan mode is pinned to {{ .agents.codex.defaults.plan_mode_reasoning_effort }}. The
+  driver is the frontier tier (decision 2026-09-15, shared `frontier_driver`
+  rule in AGENTS.md); `review_model` and `[agents] default_subagent_model`
+  are managed to `{{ .subagent_tiers.codex.top }}` so `/review` and unpinned
+  children run the top worker tier.
 - `/model` changes the model or reasoning effort for the current session only; a new
   session returns to the managed defaults.
 - No launch profiles are configured. Start with plain `codex` and make any temporary
@@ -66,17 +70,15 @@
   the small tier here stays on Luna (bounded extraction-shaped presets, far
   cheaper) — revisit if explorer output quality disappoints.
 
-## Frontier escalation (last verified 2026-09-06; aligned 2026-09-14)
+## Frontier driver (decision 2026-09-15)
 
-- The shared OpenAI frontier tier is `{{ .subagent_tiers.codex.frontier }}`;
-  existing specialist pins and the main-session default are unchanged. The
-  escalation rule itself now projects in AGENTS.md (shared across harnesses,
-  decision 2026-09-14).
-- Use it as a bounded, fresh-context consult whose handoff carries the
-  session's constraints, and adjudicate its output as hypotheses. Here that
-  means a fresh session, not a child-level model override: a spawned child
-  can silently inherit the parent's model (openai/codex#32587), so an
-  override cannot be trusted to have applied. Do not promote every role.
+- The frontier tier `{{ .subagent_tiers.codex.frontier }}` is the session
+  default; specialist pins are unchanged and no child runs it. There is no
+  blocking lever here: `SubagentStart` receives only the agent type and
+  "`continue: false` doesn't stop the subagent", and openai/codex#32587 (open)
+  can make a child silently inherit the parent — under an Astra parent that
+  costs 2.5x, so after each CLI update check a child's model via `/status`
+  before trusting tier economics. Pins are defaults, not guarantees.
 - Availability depends on the account and installed harness. A model catalog
   entry is not proof of account access; never substitute another provider or paid
   API routing when subscription access is unavailable.

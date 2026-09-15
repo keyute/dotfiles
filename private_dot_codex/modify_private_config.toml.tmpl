@@ -38,6 +38,8 @@
       "model"
       "model_reasoning_effort"
       "plan_mode_reasoning_effort"
+      "review_model"
+      "agents.default_subagent_model"
       "approval_policy"
       "approvals_reviewer"
       "default_permissions"
@@ -110,10 +112,15 @@
 {{- /* notice: the rest of that table is Codex runtime state (dismissals,
        model_migrations, migration-prompt timestamps), so only the one leaf that
        suppresses the near-usage-limit model-switch nudge is claimed here. */ -}}
+{{- /* review_model and agents.default_subagent_model: the driver is the
+       frontier tier, review and unpinned children are worker roles (see the
+       codex defaults comment in agents.yaml). */ -}}
 {{- $managed := dict
       "model" $codex.defaults.model
       "model_reasoning_effort" $codex.defaults.model_reasoning_effort
       "plan_mode_reasoning_effort" $codex.defaults.plan_mode_reasoning_effort
+      "review_model" .subagent_tiers.codex.top
+      "agents" (dict "default_subagent_model" .subagent_tiers.codex.top)
       "approval_policy" "on-request"
       "approvals_reviewer" "auto_review"
       "default_permissions" "chezmoi-workspace"

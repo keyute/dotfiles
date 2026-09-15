@@ -33,6 +33,10 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract)
   // the launch contract check on a concrete tier-policy model.
   if (selected === "inherit") selected = `${ctx.model.provider}/${ctx.model.id}`;
   const [modelName, effort] = selected.split(":");
+  // The frontier tier is the driver's alone: a child on it, requested or
+  // inherited, is the measured quota failure the tier policy exists to stop.
+  const { frontier } = config.models.tiers;
+  if (frontier && modelName === `${config.models.provider}/${frontier}`) throw new Error("Children never run the frontier tier; it is the driver's tier alone");
   const allowedModels = Object.values(config.models.tiers).map(id => `${config.models.provider}/${id}`);
   if (!allowedModels.includes(modelName) || (effort && !["low", "medium", "high", "xhigh", "max"].includes(effort))) throw new Error("Child model is outside the OpenAI tier policy");
   const modelId = modelName.slice(config.models.provider.length + 1);

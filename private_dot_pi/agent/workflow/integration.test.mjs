@@ -222,4 +222,7 @@ test("an inherit-model child resolves to the parent's model before the tier chec
   assert.deepEqual([resolve.model, resolved.model], ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-sol"]);
   await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-5-other"), resolve), /tier policy/);
   await assert.rejects(checkChildLaunch(launch(), config, "fixture-reader", ctxFor("gpt-5.6-sol"), resolve), /delegate to writers/);
+  // The frontier tier is in the catalog but never a child's, requested or inherited.
+  await assert.rejects(checkChildLaunch({ ...launch(), model: "openai-codex/gpt-6-astra" }, config, "root", ctxFor("gpt-5.6-sol"), resolve), /frontier/);
+  await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-6-astra"), resolve), /frontier/);
 });
