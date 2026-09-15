@@ -7,6 +7,15 @@ Chezmoi source repo: `private_dot_claude/` → `~/.claude`, `private_dot_codex/`
 `.chezmoitemplates/`, data in `.chezmoidata/`. `docs/`, `README.md`, and this
 file are chezmoi-ignored (repo-local only).
 
+- When changing a dotfile or harness integration, extend or replace its existing
+  mechanism rather than layering on a parallel one. Keep one owner per setting,
+  policy, or fact. Add a layer only for a concrete requirement the existing path
+  cannot meet, and retire superseded code, configuration, and documentation in
+  the same change. Judge the maintained and loaded surface—including generated
+  configuration, startup work, and agent context—not just the diff.
+  *Why: small additions can leave competing controls and recurring maintenance;
+  preserve required behavior and safety while minimizing unnecessary machinery.*
+
 - Edit source state only; verify renders with `chezmoi diff` plus
   `chezmoi cat <target>` for every harness the file renders to — `chezmoi cat`
   surfaces template errors that `chezmoi diff` silently hides, and a shared
@@ -14,21 +23,15 @@ file are chezmoi-ignored (repo-local only).
 - Nested shared templates need `includeTemplate`, not `{{ template }}`.
 - Before editing the pi TUI (`private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`)
   read `docs/pi-design.md`; its rules change only with a dated decision there.
-- Leave `chezmoi apply` and 1Password signin to me; when a change touches a
-  template using `onepasswordRead`, verify renders with the call stubbed,
-  never by triggering a signin prompt.
-- Keep 1Password-resolved values out of source state: they belong only in the
-  applied private targets, never in a source file, a commit, or terminal output.
+- Leave `chezmoi apply` and 1Password signin to me; stub `onepasswordRead`
+  when verifying affected templates. Resolved values belong only in applied
+  private targets, never in source files, commits, or terminal output.
 
 ## Authoring agent instructions
 
-The sections below govern edits to the agent-instruction sources: the
-baseline, `.chezmoitemplates/agent-instructions.md` and its consumer
-templates, subagent and skill bodies. These projections load into every
-future session — and every subagent — so hold edits to the gates below.
-`npm run test:docs` (`scripts/check-docs.mjs`) enforces the mechanical half:
-file budgets, why lengths, dated annotations, audit-log pruning and
-cross-file duplication.
+Apply the gates below to instruction sources: the baseline, shared and consumer
+templates, subagent and skill bodies. `npm run test:docs` enforces file budgets,
+why lengths, dated annotations, audit-log pruning, and cross-file duplication.
 
 ### Gates — a rule earns its place only if all four hold
 
@@ -92,10 +95,6 @@ erodes compliance across the whole set, not just the new rule's.*
   preferred world.
 - Say what to do; reserve "never" for absolute boundaries and emphasis
   markers for almost nothing — both work only while scarce.
-- Point to a canonical file instead of paraphrasing it: one home per fact.
-  Inlined snippets, model names, version facts and roster summaries rot
-  silently in a projection, and a roster name in a shared body is wrong on
-  the other harness. Generate from `.chezmoidata/agents.yaml`, or leave it out.
 - Reuse the baseline's exact terminology; synonyms obscure equivalence and
   make drift harder to detect.
 

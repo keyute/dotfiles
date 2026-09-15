@@ -33,31 +33,23 @@ my actual intent changes, never to track harness churn.
   underspecified workers drift, serial spawning wastes wall-clock, unbounded
   scope wastes workers, and the orchestrator re-reading verbose worker output
   is the reported cost sink.*
-- **Delegation economics**: delegate only when the handoff repays its cost —
-  including bounded leaf implementation once its design is settled, its
-  ownership overlaps nothing else in flight, and correctness has an objective
-  gate; accept delegated writes only after a fresh-context read of the actual
-  diff, never the worker's summary. Keep inline trivial tasks, tightly
-  sequential steps, and changes whose details the main context must retain.
-  *Why: spawn-up costs tokens and latency, and implementation delegation pays
-  only while specifying and verifying the boundary costs less than doing — or
-  repairing — the work in the grown main context.*
-- **Frontier driver**: the frontier tier (`subagent_tiers.<harness>.frontier`)
-  is the session driver, not a consultant: it keeps decomposition, decisions,
-  adjudication, integration and final verification, and dispatches
-  non-trivial bounded implementation, exploration, research and review to the
-  lowest capable pinned worker once the handoff is concrete — delegation is
-  requested, not optional. Pins are overridden only to escalate after an
-  observed failure; an unpinned child gets the top worker tier named
-  explicitly; no child runs the frontier tier; a failed worker's piece is
-  done by the driver, not a promoted child. *Why (decision 2026-09-15;
-  evidence in the audit log): I choose the driver myself; the gap to close is
-  the driver doing worker-grade work in the most expensive context — both
-  vendors meter the frontier hardest and every measured quota failure is a
-  child on it; the frontier guides position the model as an orchestrator with
-  cheaper workers and fresh-context verifiers, while OpenAI's frontier delegates
-  less than wanted unless told when to; and the roster hides the pins, so a
-  reflexive override or an inherited model silently undoes them.*
+- **Delegation economics**: delegate only when the handoff repays its cost;
+  accept delegated writes only after a fresh-context read of the actual diff,
+  never the worker's summary. Keep inline trivial tasks, tightly sequential
+  steps, and changes whose details the main context must retain. *Why: a
+  handoff pays only when specifying and verifying its boundary costs less than
+  doing — or repairing — the work in the main context.*
+- **Frontier driver**: the frontier owns overall planning decisions and synthesis,
+  decomposition, architecture, cross-scope decisions, approval, integration,
+  adjudication, and final verification. Delegate bounded read-only planning work.
+  Before editing a non-trivial implementation slice, delegate it once design,
+  exclusive scope, and an objective gate are settled. The lowest capable pinned
+  worker owns implementation/test/repair. Override pins only to escalate after
+  observed failure; unpinned children get the top worker tier explicitly;
+  no child gets frontier. Finish a failed worker's piece yourself, not via promotion.
+  *Why (decision 2026-09-15; evidence in the audit log): explicit ownership keeps
+  scoped implementation out of the driver's context without ceding cross-scope
+  decisions; objective gates make worker results reviewable.*
 - **Delegation wait**: once children are launched, their scope is off-limits:
   do only work outside it, then end the turn or wait for their results; read a
   child's report before deciding whether a finding needs your own check.

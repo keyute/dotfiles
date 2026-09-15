@@ -10,75 +10,50 @@ behavior seems changed, verify with that agent and update this file.
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo as
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
-  session. The pin is the frontier tier as the session driver (decision
-  2026-09-15); `[1m]` holds the 1M-context variant — without it Fable 5 runs
-  at 200K. The pin follows the stable channel, which cannot yet serve 5.1
-  (floor and probe record on the pin in agents.yaml): bump it and
-  `subagent_tiers.claude.frontier` together once stable clears the floor;
-  driver effort stays the Claude Code default (lower effort unmeasured on Max).
+  session. The default is the frontier driver; `[1m]` selects its 1M context.
+  The installed CLI is latest 2.1.272, which can serve Fable 5.1; changing
+  channel does not update the source model pin. Driver effort stays the default.
 - Pins use explicit model IDs, never bare aliases: aliases re-resolve across CLI releases.
-- Subagent tiers are relative capability, pinned per specialist in
-  `.chezmoidata/agents.yaml` (`subagent_tiers.claude`); they do NOT follow
-  `/model`. Unpinned built-ins (general-purpose, Plan, claude,
-  claude-code-guide) take `CLAUDE_CODE_SUBAGENT_MODEL`, set in settings `env`
-  to the top worker tier (`{{ .subagent_tiers.claude.top }}`); an unavailable
-  model silently falls back. Forks (`subagent_type: fork`) always run the
-  parent model — a driver-context continuation, not a worker.
-- Subagent model resolution, in order (vendor sub-agents doc, re-verified
-  2026-09-15): the per-invocation `model` parameter, the definition's `model`
-  frontmatter (`inherit` = the main conversation's model), then
-  `CLAUDE_CODE_SUBAGENT_MODEL`, then the main conversation's model. Omitting
-  `model:` lets the env var win — the intended path; no roster entry uses
-  `inherit`. An undocumented `_FORCE` variant exists in the binary; leave it
-  unset — it would erase the specialists' pins.
-- No child runs the frontier tier: `~/.claude/hooks/deny-frontier-child.mjs`
-  (PreToolUse, matcher `Agent`, rendered from agents.yaml) denies a per-call
-  `model` of the frontier pin, `fable` or `inherit`; hooks from settings files
-  run inside subagents too (vendor hooks doc, 2026-09-15). Residual the hook
-  cannot see: a third-party agent definition declaring `model: inherit` with
-  no per-call model — the roster carries none; the transcript sweep's
-  children-vs-pins count is the check.
-- After each CLI update: dispatch one unpinned child and one with an explicit
-  `{{ .subagent_tiers.claude.top }}` override and read `message.model` in the
-  transcript, never the child's self-report — the silent upstream failures
-  (pins lost on background resume, the env var overriding per-call requests,
-  an override served by another model) are not hook-catchable; issue numbers
-  in the audit log.
+- Specialist tiers are pinned in `.chezmoidata/agents.yaml` and do not follow
+  `/model`. `CLAUDE_CODE_SUBAGENT_MODEL` is configured as the fallback for
+  unpinned children at the top worker tier (`{{ .subagent_tiers.claude.top }}`),
+  but definitions and built-ins may pin themselves; `claude-code-guide` uses
+  Haiku. Forks (`subagent_type: fork`) run the parent model — a driver-context
+  continuation, not a worker.
+- Since Claude Code 2.1.251, subagent resolution is per-invocation `model`, then
+  definition frontmatter (`inherit` = main conversation), then
+  `CLAUDE_CODE_SUBAGENT_MODEL`, then the main conversation (release note and
+  sub-agents doc, 2026-09-15). Before 2.1.251 the env setting overrode the first
+  two. No roster entry uses `inherit`; leave the `_FORCE` variant unset because
+  it would erase specialist pins.
+- The no-frontier-child policy has a partial mechanical guard:
+  `~/.claude/hooks/deny-frontier-child.mjs` denies visible per-call requests for
+  the frontier pin, `fable`, or `inherit`. It cannot see a third-party agent
+  definition that declares `model: inherit` without a per-call model; the
+  managed roster carries none. Defaults and hooks do not prove actual routing.
+- After each CLI update, dispatch one unpinned child and one with an explicit
+  `{{ .subagent_tiers.claude.top }}` override and verify `message.model` rather
+  than self-report. Resume and upstream routing failures remain outside the
+  hook; issue history and the latest sample are in the audit log.
 - Every custom subagent loads `~/.claude/CLAUDE.md` (built-in Explore and Plan
-  do not), so the projection groups its driver-only rules under one "session
-  driver" bullet. Continue an existing agent with `SendMessage` for follow-ups
-  rather than re-spawning: a long-lived subagent keeps its context and pays
-  cache-read rates (Fable 5 guide).
-- Subscription limits (Max plan; re-checked 2026-09-14 against the Fable
-  support article): a rolling 5-hour window plus a shared weekly pool "shared
-  across all models"; Fable draws the same pool, capped at up to 50% of weekly
-  usage and "using limits faster than other Claude models", exact weighting
-  unpublished. The errors doc still names Opus and Sonnet sub-limits — next
-  time a limit binds, reconcile against `/usage`.
-- Delegation economics (framing 2026-09-15; baselines in the audit log):
-  subagents draw the same Max pools, drain is model-weighted, and the driver's
-  context re-meters at Fable's weight every turn with cache reads counting —
-  delegation pays only via tier arbitrage and a lean driver context; session
-  length is the primary cost lever. Exhausting a cheaper model's sub-limit can
-  force frontier fallback for routine work (claude-code#55663).
-- Roster notes: `implementer` (mid, added 2026-08-28) takes spec-complete
-  write work out of the driver's context — dispatch count is an open trigger
-  (0 through 2026-09-12); `spec-reviewer` runs at the top worker tier, not
-  `inherit` (decision 2026-09-15) — it only proposes, and its weaker
-  concurrency recall is covered by `codex-review` on high-stakes surfaces.
-- Codex pin caveat: openai/codex#32587 (open 2026-09-15) — a spawned Codex child
-  can silently inherit the parent's model/effort; verify via `/status` after each CLI update.
-- `codex-review` / `codex-advisor` are read-only Codex consultation for
-  high-risk diffs or stuck calls; Claude and Codex meter on independent
-  windows, so read-work can offload to Codex while decision ownership stays in
-  Claude. The bridge is pinned to `{{ .subagent_tiers.codex.top }}` (`--model`,
-  anchored in agents.yaml): review is a worker role, no source shows Astra
-  reviewing better, and Astra costs 2.5x and ~3x the time to first token on a
-  call that blocks the Claude loop (research 2026-09-15).
+  do not), so shared driver-only rules are grouped under "session driver".
+  Continue an existing agent for follow-ups rather than re-spawning it; a
+  long-lived subagent retains context (Fable 5 guide).
+- Max has a rolling 5-hour window and shared weekly pool; Fable can consume up
+  to 50% of weekly usage and uses limits faster than other models, but exact
+  model and cache-read weighting is unpublished. Raw transcript token counts
+  are not Max quota costs; reconcile the next binding limit against `/usage`.
+- Subagents draw the same Max pools. Delegation is for bounded ownership and
+  context quality, not assumed quota savings; neither the savings nor a single
+  primary cost lever is verified.
+- Codex pin caveat: openai/codex#32587 (open 2026-09-15) reports spawned
+  children inheriting parent model/effort; verify via `/status` after updates.
+- `codex-review` / `codex-advisor` are read-only Codex consultations for
+  high-risk diffs or stuck calls; decision ownership stays in Claude. The
+  bridge is configured for `{{ .subagent_tiers.codex.top }}` (`--model`,
+  anchored in agents.yaml), but configured routing is not verified service.
 - The codex-review trigger is risk-or-breadth, never blanket (decision
-  2026-09-03): yield is findings the session actually fixed; the
-  survived-findings count accumulates in the audit log — decide the trigger's
-  fate once there are ten.
+  2026-09-03); the audit log tracks findings the session actually fixed.
 
 ## Codex transport: owned MCP bridge (decision 2026-09-05)
 

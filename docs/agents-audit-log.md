@@ -11,95 +11,68 @@ history keeps it.
 
 ## 2026-09-15
 
-### Frontier doctrine reversed: frontier driver (all harnesses)
+### Delegation sample and Claude routing correction
 
-Reverses the 2026-09-14 consultant decision. Fable 5 (`[1m]`, stable channel
-below the 5.1 floor 2.1.255) drives Claude Code; Astra drives Codex and pi;
-implementation, exploration, research and review go to the worker tiers.
-Shaved: the `frontier_escalation` rule, the Advisor-consult path, the
-grown-session bump clause, every `inherit` tier (spec-reviewer and pi's
-general-purpose now `top`), and the self-review floor's reading of arXiv
-2607.21656. Enforcement added: Claude `CLAUDE_CODE_SUBAGENT_MODEL` = top plus
-a PreToolUse hook denying frontier `model` overrides on `Agent`; pi
-`children.mjs` rejects a frontier child (requested or inherited); Codex
-`review_model` and `[agents] default_subagent_model` = Sol (defaults only —
-no blocking lever exists). The Claude→Codex bridge is pinned to Sol via
-`--model`. Evidence baselines (Reddit unreachable from the sandboxed harness:
-Exa returns no reddit.com results and every fetch form incl. old.reddit and
-`.json` is refused, Claude Code's fetch refuses the host — HN engineer
-threads stood in):
+The frontier-driver decision from `49b4cff` stands; this change makes its
+implementation handoff trigger concrete without changing worker pins or guards.
 
-- Driver choice: 0 firings of the consultant rule; the 2026-09-11/12 sweep
-  already ran every edit inline in Fable sessions with `implementer` at 0.
-  Anthropic's Fable 5 guide: "dispatches parallel subagents more readily",
-  "use subagents frequently", async dispatch, fresh-context verifiers (line
-  absent from the 5.1 page); model overview still says start with Opus 5;
-  built-in Explore capped at Opus; `/code-review` hardcodes Opus bug agents.
-  OpenAI: docs model-agnostic on who orchestrates; Sol `ultra` (only
-  built-in coordination mode) gated to the top tier. Practitioners (HN Sept
-  2026): Astra as sole driver scope-creeps on bounded work (rebase 6h+ vs Sol
-  1h; robot-arm task handed back to Opus 5); fresh-context adversarial
-  review endorsed at any tier; orchestrator re-reading verbose worker output
-  is the reported cost sink. Aider architect/editor unchanged.
-- Child-tier failures, measured: claude-code#84667 (16 unpinned children on
-  Fable, 2,448 messages/18 min), #75055 (84 children, 11.6M tokens),
-  #75054 (sonnet pins lost on background resume, 8/8 flipped), #85592 (env
-  var overrode per-call requests at 2.1.223), #82252 (explicit fable
-  override served by sonnet, child self-reported fable), #91220 (one resumed
-  Fable subagent = 50.7% of a weekly pool); codex#32587 open, #33881/#33667
-  reproduce on 0.144.x, #32705 catalog forces multi_agent_v2. Codex
-  `SubagentStart` cannot block ("`continue: false` doesn't stop the
-  subagent"). Resolution order re-verified: per-call → frontmatter (incl.
-  `inherit`) → `CLAUDE_CODE_SUBAGENT_MODEL` → main model (v2.1.251+);
-  `_FORCE` (undocumented; in the binary) would erase specialist pins, left unset.
-- Reviewer tier: 2607.21656 is Codex GPT-5.5 reviewing Opus 4.7 across
-  vendors, single-file Python, reviewer writes the final program — authors
-  generalise only to "use Claude to review Codex". 2603.12123, 2605.21537,
-  2507.02778, 2603.16244 vary freshness/identity, never tier. CodeRabbit
-  2026-07-24: Opus 5 x-high 55.2% vs mix 61.1% known-issue recall, weakest
-  on concurrency/races/API misuse. Baseline to beat at Opus: 1 high + 3
-  medium of 13 spec-reviewer runs (2026-09-12, at Fable).
-- Bridge tier: Coding Agent Index Astra 67 vs Sol 65.1 at max effort, ~75%
-  more per completed task, TTFT 464s vs 163s; no review-specific benchmark
-  for either; the one community codex-review bridge defaults to Sol high.
-- Codex advisor consult (hypotheses, adjudicated): agreed on spec-reviewer
-  top, bridge Sol in FIXED_ARGS, `inherit` removal, pi gate; dropped a
-  per-child SessionStart model assertion and a supervised Codex launcher.
-- Cross-model review (Codex, 2 findings, both held after one round):
-  wording narrowed — the child boundary is enforced on Claude (hook +
-  default) and pi (gate), defaulted on Codex (no blocking lever), and a
-  third-party Claude agent definition declaring `inherit` is a residual the
-  hook cannot see. Fail-closed Codex spawning rejected (catalog can force
-  multi_agent_v2, #32705; interactive Codex is a minor path). Survived
-  findings count: 2 wording / 0 code.
-- **Open** (next sweep): children's actual models vs pins (inheritance
-  drift, `message.model` not self-report — covers the two residuals above);
-  `implementer` dispatches (was 0);
-  spec-reviewer high/medium catches at Opus vs the Fable baseline; Fable
-  share of the weekly pool via `/usage`; root vs child token shares; driver
-  effort as a lever (Anthropic: low-effort Fable cost-competitive with Opus —
-  API pricing, unmeasured on Max). Run `doctrine-refresh` (self-review why
-  changed its empirical claim) then `agent-instructions-audit` (native
-  coverage against the Fable main-loop prompt) after apply.
+- Five Sep 15 Claude sessions contained 26 child logs. Deduplicated direct
+  source Edit/Write calls (excluding 16 plan/memory writes; shell mutations not
+  counted) were 86 root / 61 child. Session prefixes (root/child): `ac795c23`
+  2/0, `fe817516` 0/0, `85d28926` 18/0, `1f35ace2` 5/0, `7c60182f` 61/61.
+  The pre-change Sep 11/12 `implementer = 0` remains the comparison baseline;
+  this sample had four implementation
+  dispatches, all in the i18n session. The root made 46 source writes before
+  the first, and those four handoffs totalled 14,230 prompt characters. After
+  receiving a glossary it still wrote five catalogs totalling 85,195
+  characters. Shared `en.json` made serial extraction and some root integration
+  reasonable; the sample proves neither delegate-everything nor worker quality.
+- All 21 child logs from stable 2.1.236 served Opus 5 despite Haiku/Sonnet
+  configuration. After switching to latest 2.1.272, the exported sample served
+  Explore and `claude-code-guide` on Haiku 4.5 and three researcher children on
+  Sonnet 5. This matches the 2.1.251 change that made
+  `CLAUDE_CODE_SUBAGENT_MODEL` a fallback: per-call → definition → env → parent
+  ([release](https://github.com/anthropics/claude-code/releases/tag/v2.1.251),
+  [sub-agents docs](https://code.claude.com/docs/en/sub-agents)). The source
+  Fable 5 `[1m]` pin did not change; a latest-channel Fable 5.1 session shows
+  availability, not changed source configuration. There is no post-2.1.272
+  implementation sample, so routing and delegation efficacy remain open.
+- The instruction change keeps read-only exploration, research, and bounded
+  option proposals available during planning, while reserving architecture,
+  approval, and synthesis for the driver. Its source-edit trigger applies only
+  after an implementation slice has settled design, exclusive ownership, and
+  an objective gate; the worker then owns its test/repair loop. Relevant
+  model-qualified guidance: [Astra](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra),
+  [Sol](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.6-sol),
+  [Fable 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5),
+  [Fable 5.1](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1),
+  and [Opus 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5)
+  address delegation triggers, bounded autonomy, async work, and excessive
+  verification; they do not all prescribe one orchestration recipe.
+  The [Cursor](https://cursor.com/blog/scaling-agents) report and
+  [Aider](https://aider.chat/2024/09/26/architect.html) experiment support
+  planner/worker separation, not a current tier-cost or Max-savings claim.
+  Claude is measured above; Codex/pi remain configuration- and guidance-based.
+- Raw transcript tokens are not Max quota costs. Exact model and cache-read
+  weighting, quota savings from delegation, and a primary cost lever remain
+  unverified. Two Reddit searches also yielded no fetchable source; no snippets
+  or community consensus were used.
 
 ### Review of 49b4cff — doctrine, tiers, docs (same day)
 
 Full audit (skill steps 1–4 and 6; step 5 skipped, the doctrine was hours
-old), a doctrine-refresh pass and a bloat sweep. Decisions: doctrine and every
-tier pin unchanged; the Fable pin follows the stable channel, which is still
-below the 5.1 floor (the installed 2.1.270 is the latest-channel cask and does
-serve 5.1: `claude --model claude-fable-5-1[1m] -p` returned `modelUsage:
-claude-fable-5-1`; the CLI's own floor message says 2.1.251, Anthropic's help
-center 2.1.255). Measurements moved here from the baseline
-whys, which now carry rationale only:
+old), a doctrine-refresh pass and a bloat sweep. That review retained every pin,
+including Fable 5 for stable-channel compatibility. Current latest-channel
+availability and routing are recorded above; the pin remains unchanged.
+Measurements below were moved from the baseline whys into this audit record:
 
 - Frontier-driver evidence. Anthropic's Fable 5 guide, verbatim: "dispatches
   parallel subagents more readily than prior models. Use subagents
   frequently… prefer asynchronous communication between orchestrator and
   subagents"; "Separate, fresh-context verifier subagents tend to outperform
-  self-critique"; the Opus 5 guide carries similar language, and Claude Code
-  adds a "don't call the Agent tool unless asked" line under an Opus 5
-  driver. OpenAI's GPT-6 Astra guide: "may delegate less often than desired
+  self-critique". Opus 5 separately cautions against redundant verification and
+  small-task delegation. The prior Claude probe reported a "don't call the
+  Agent tool unless asked" line under an Opus 5 driver. OpenAI's GPT-6 Astra guide: "may delegate less often than desired
   for your workflow. Specify when and how much it should use subagents" — the
   vendor-documented failure that keeps the rule projected on Codex/pi.
   Dropped as unsourced: "an Astra rebase at 6h+ vs Sol's 1h"; dropped as
@@ -118,10 +91,8 @@ whys, which now carry rationale only:
   (16 unpinned children, 2,448 messages/18 min), #75055 (84 children, 11.6M
   tokens), #75054 (pins lost on background resume), #85592 (env var overrode
   per-call requests at 2.1.223), #82252 (override served by another model),
-  #91160 (env var as hard override at 2.1.236, open); codex#32587 open.
-  Aider architect/editor: a strong planner plus cheaper editor captures the
-  uplift at a fraction of the cost (R1+Sonnet 64.0% at $13 vs o1 solo 61.7%
-  at $186; o1+Sonnet did not beat o1 solo).
+  #91160 (env var as hard override at 2.1.236, the documented pre-2.1.251
+  behavior); codex#32587 remains open.
 - Self-review evidence: models fix an identical bug when told it is someone
   else's but not their own (64.5% blind spot, arXiv 2507.02778); self-review
   endorses ~32% of its own behaviour-changing output (2605.21537); a
@@ -184,8 +155,7 @@ whys, which now carry rationale only:
   the driver-only rules under one bullet.
 - Documented-reliance check: CLAUDE_CODE_SUBAGENT_MODEL, the four-step
   resolution order, hooks running inside subagents and the PreToolUse deny
-  shape are vendor-documented; `_FORCE` is undocumented (present in the
-  2.1.270 binary), unset, not relied on.
+  shape are vendor-documented; `_FORCE` stays unset to preserve specialist pins.
 - Doctrine-refresh: the density why is supported in direction (Anthropic
   memory doc: target under 200 lines, longer reduces adherence; OpenAI
   harness-engineering 2026-02-11: ~100-line AGENTS.md as a table of
@@ -214,9 +184,10 @@ whys, which now carry rationale only:
   top-level template for `onepasswordRead` — all three fixed with a test for
   the date case. Survived findings: 4 of 5 fixed, 1 narrowed.
 - **Open** (next sweep): children's actual `message.model` vs pins after
-  each CLI update (covers #91160 and the third-party `inherit` residual);
-  `implementer` dispatches (was 0); spec-reviewer high/medium catches at Opus
-  vs the 1 high + 3 medium of 13 baseline; Fable share via `/usage`;
+  each CLI update, including the third-party `inherit` residual; implementation
+  dispatches after 2.1.272 and the new trigger (handoff timing, successful gates,
+  repairs, elapsed time, and driver/worker usage); spec-reviewer high/medium
+  catches at Opus vs the 1 high + 3 medium of 13 baseline; Fable share via `/usage`;
   cache-read weighting in Max metering; Haiku call_batching re-probe; Codex
   child model via `/status` after each CLI update; Codex subagent facts
   unverified since 2026-07-31 (harness doc); survived codex-review findings;
@@ -354,8 +325,9 @@ stands.
 
 Sweep baselines (2026-09-11/12, transcript content read with user
 authorization): delegation 76/~2,000 tool calls (3.9%), read-heavy;
-`implementer` 0 dispatches — all 374 Edits ran inline in Fable sessions
-(**open**: unused lever, watch at next audit). Token shares over 2 days:
+`implementer` 0 dispatches — all 374 Edits ran inline in Fable sessions. This
+remains the pre-change comparison; the Sep 15 sample and next trigger are above.
+Token shares over 2 days:
 main-loop output 3.6M, cache-write 9.4M, cache-read 603M raw, all subagents
 3.87M/77 runs — at the API's 0.025x Fable factor those reads are ~15M
 input-equivalent, comparable to the output burn, not 100x it. **Open**:

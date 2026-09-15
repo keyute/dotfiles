@@ -10,17 +10,11 @@ agents:
       docs: private_dot_claude/docs
       sessions: { path: "~/.claude/projects/**/*.jsonl", shape: claude-projects }
       probe: session+pin
-    # rules this harness's own prompt already carries; the shared template skips
-    # them. Recomputed by the agent-instructions-audit skill; probe records in
-    # the audit log. 2026-09-15: initiative is covered on both Fable main loops
-    # and moot for children; docs_mcp is carried by the context7 server
-    # instructions wherever those tools exist (long_running_work: partial, kept).
+    # rules this harness carries natively; the shared template skips them.
+    # Recomputed by the audit skill; evidence lives in the audit log.
     native_coverage: [call_batching, docs_mcp, initiative]
     defaults:
-      # frontier driver (decision 2026-09-15). Explicit ID: bare aliases float
-      # across CLI releases; [1m] holds the 1M-context variant. Fable 5, not
-      # 5.1: the stable channel sits below the 5.1 floor (2.1.255; the latest
-      # channel serves it) — bump with subagent_tiers.claude.frontier once stable clears it.
+      # Explicit ID: aliases float across releases; [1m] selects the context variant.
       model: claude-fable-5[1m]
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
@@ -56,11 +50,6 @@ agents:
       docs: private_dot_codex/docs
       sessions: { path: "~/.codex/sessions/*/*/*/rollout-*.jsonl", shape: codex-rollout }
       probe: mcp
-    # call_batching stays projected: re-probed 2026-09-09 on both classes and
-    # they disagree — sol is `partial` (the prompt recommends parallelising
-    # "when possible" but never states the invariant: batch independent calls,
-    # keep dependent ones sequential) while astra carries it natively. Not
-    # unanimous, so the weakest class decides. initiative covered on both (re-probed 2026-09-15).
     native_coverage: [initiative]
     defaults:
       # frontier driver (decision 2026-09-15); `review_model` and `[agents]
@@ -102,11 +91,6 @@ agents:
         - node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js
         - private_dot_pi/agent/workflow/index.mjs
         - private_dot_pi/agent/subagent-tool-description.md.tmpl
-    # Empty as of 2026-09-09, re-read 2026-09-15: initiative sits in the
-    # plan-mode-only addendum; call_batching's sentence batches subagent
-    # launches, not tool calls; delegation_wait and long_running_work live in a
-    # tool description, which the sweep shows under-steers (audit log). Text
-    # present is not coverage.
     native_coverage: []
     # pi-web-search: OpenAI's server-side web_search tool through the same
     # Codex Responses endpoint and token as model calls; search_model keeps it
@@ -116,8 +100,6 @@ agents:
     agents_dir: "~/.pi/agent/agents"
     defaults:
       provider: openai-codex
-      # frontier driver (decision 2026-09-15); the 2026-09-09 cost read in the
-      # audit log (same trajectory 2.5x Sol) is the baseline to measure against
       model: gpt-6-astra
       reasoning_effort: high
       plan_reasoning_effort: high
@@ -151,9 +133,8 @@ agents:
 # `tools` binds only the Claude render — subagent-codex.toml emits no tool
 # list, just a read-only permission flag from `readonly`
 subagents:
-  # Explore (Claude) / explorer (Codex) override each harness's built-in explore
-  # role — which since Claude Code v2.1.198 (and by default on Codex) inherits the
-  # session model — to keep routine read-heavy exploration on the small tier.
+  # Explore (Claude) / explorer (Codex) override each harness's built-in role
+  # so managed routine exploration stays on the configured small tier.
   # explore-deep handles broad/cross-subsystem sweeps. Names differ because
   # the built-ins do: Claude's is `Explore`, Codex's is `explorer`.
   Explore: &explore
@@ -210,10 +191,8 @@ subagents:
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them — a conformance pass over requirements-plus-artifact goes to spec-reviewer."
-  # the fresh-eyes self-review pass. A 30-day sweep (2026-09-09) found its 20
-  # dispatches split across general-purpose (10, write-capable), the diff and
-  # language reviewers (8, whose contract cannot report an omission) and
-  # Explore/researcher (2) — this preset is that gap.
+  # Fresh-eyes conformance pass: unlike a diff-lens reviewer, this role checks
+  # the finished artifact for omissions against its requirements.
   spec-reviewer:
     # the `self_review` rule names this agent; the projection reads the name
     # from here so a rename cannot leave the always-loaded line pointing at a
@@ -243,9 +222,8 @@ subagents:
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
   researcher:
-    # the 2026-09-07/08 sweeps found 133 of 217 general-purpose dispatches in 30
-    # days carrying a hand-picked mid model for web/docs research: that friction is
-    # this preset. No Bash for the same reason as dep-researcher.
+    # Dedicated web/docs research preset; no Bash for the same reason as
+    # dep-researcher.
     tier: mid
     reasoning_effort: medium
     readonly: true
@@ -264,7 +242,7 @@ subagents:
   # ship an equivalent built-in. Mirrors Claude's general-purpose agent — every
   # tool and the only role that may launch children; the specialists stay leaf
   # roles. Top, not inherit: the parent is the frontier tier and no child runs
-  # it (Claude's counterpart gets the same default via CLAUDE_CODE_SUBAGENT_MODEL).
+  # it (Claude config supplies the same fallback via CLAUDE_CODE_SUBAGENT_MODEL).
   general-purpose:
     tier: top
     reasoning_effort: high
@@ -281,8 +259,7 @@ subagent_tiers:
     small: claude-haiku-4-5
     mid: claude-sonnet-5
     top: claude-opus-5
-    # 5, not 5-1: the stable channel sits below the 5.1 floor; an unavailable
-    # model falls back silently. Bump with agents.claude.defaults.model.
+    # Keep in lockstep with agents.claude.defaults.model.
     frontier: claude-fable-5
   codex: &openai_subagent_tiers
     small: gpt-5.6-luna

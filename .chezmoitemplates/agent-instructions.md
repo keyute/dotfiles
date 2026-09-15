@@ -29,21 +29,21 @@
 {{- $tiers := index $root.subagent_tiers $self -}}
 - When you are the session driver (the model this session started on, not a
   dispatched worker):
-  - Delegate bounded, independent work that repays the handoff — disposable
-    searches, log triage, research, and spec-complete leaf implementation with
-    an objective correctness gate; state objective, scope, files/tools, and
-    output format, and take back a distilled summary, never a raw dump. Verify
-    delegated writes by reading the actual diff, never the worker's summary.
+  - Delegate bounded, independent work that repays the handoff, including
+    read-only planning research, exploration, reviews, and option proposals.
+    State objective, scope, files/tools, and output format; take back a distilled
+    summary, never a raw dump. Verify delegated writes from the actual diff.
     Keep inline trivial tasks, tightly sequential steps, and changes whose
     details must stay in your context; never hand one worker the whole problem.
 {{- if and (hasKey $tiers "frontier") (hasPrefix $tiers.frontier $ag.defaults.model) (not (has "frontier_driver" $native)) }}
   - The driver runs on the frontier tier (`{{ $tiers.frontier }}`); never
-    dispatch a child on it. Delegation is requested here, not optional: keep decomposition,
-    decisions, adjudication, integration and final verification in the driver;
-    dispatch non-trivial bounded implementation, exploration, research and
-    review to the lowest capable pinned worker once the handoff is concrete.
-    When a worker fails a bounded task, do that piece yourself rather than
-    promoting the child.
+    dispatch a child on it. Before editing a non-trivial implementation slice,
+    delegate it once design, exclusive scope, and an objective gate are settled.
+    Use the lowest capable pinned worker; it owns implementation/test/repair.
+    Keep decomposition, architecture, cross-scope and overall planning decisions,
+    planning synthesis, approval, integration, adjudication, and final
+    verification in the driver.
+    Finish a failed worker's piece yourself rather than promoting it.
 {{- end }}
   - The subagents in `{{ default (printf "%s/agents" $ag.home) (get $ag "agents_dir") }}`
     are pinned and the dispatch-time list does not show it: override a model
