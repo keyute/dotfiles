@@ -70,7 +70,7 @@ every step below; never enumerate harness names. Tier pins are
      refuses to quote its own prompt returns an empty row that reads as
      `absent`: re-ask on the same thread for a paraphrased self-report of its
      defaults, naming false positives as the failure mode you care about, and
-     label from that (observed on the frontier tier, 2026-09-09).
+     label from that (probe record in the audit log).
    - `static`: the harness prompt is on disk — read every file in
      `audit.prompt_sources` (the SDK default prompt, the workflow's
      system-prompt additions and tool descriptions) and judge coverage from
@@ -125,8 +125,9 @@ every step below; never enumerate harness names. Tier pins are
      environment state, or metering/pricing specifics an on-demand doc already
      owns. Check each flagged line's `git log -p` history; a line re-worded more
      than twice is oscillating — propose DELETE, not a re-word.
-   Out of scope for the matrix: doc-pointer bullets and the generated
-   sensitive-path prose (computed from `agent-sandbox`).
+   Out of scope for the matrix: doc-pointer bullets. The credential bullet's
+   path list is sandbox-enforced (`agent-sandbox`), not projected; the bullet's
+   intent line is audited like any other.
 
 5. **Behavioural sweep.** Only with the user's explicit authorization for the
    session stores, which are sandbox-denied. Run it yourself, in the session

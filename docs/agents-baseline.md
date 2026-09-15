@@ -14,8 +14,11 @@ nothing here says what is currently projected or covered. Run the
 `agent-instructions-audit` skill to compute coverage and drift fresh against the
 models actually in use.
 
-Each principle is one imperative intent line plus a why. Edit this file only
-when my actual intent changes, never to track harness churn.
+Each principle takes the shape the repo AGENTS.md prescribes (Style): an
+intent line plus a why that records the tradeoff or failure it protects.
+Measurements, sources and decision history live in `docs/agents-audit-log.md`
+under the dated entry the why points at, never here. Edit this file only when
+my actual intent changes, never to track harness churn.
 
 ## Context & delegation
 
@@ -25,7 +28,11 @@ when my actual intent changes, never to track harness churn.
   *Why: degradation sets in well before the window is full.*
 - **Delegation contract**: every handoff states objective, exact scope and
   boundaries, files/tools to use, and output format; take back a compressed
-  summary, never a raw dump. *Why: underspecified workers drift.*
+  summary, never a raw dump; spawn independent strands together, scaled to
+  task breadth, and never hand one worker the whole problem. *Why:
+  underspecified workers drift, serial spawning wastes wall-clock, unbounded
+  scope wastes workers, and the orchestrator re-reading verbose worker output
+  is the reported cost sink.*
 - **Delegation economics**: delegate only when the handoff repays its cost —
   including bounded leaf implementation once its design is settled, its
   ownership overlaps nothing else in flight, and correctness has an objective
@@ -35,58 +42,29 @@ when my actual intent changes, never to track harness churn.
   *Why: spawn-up costs tokens and latency, and implementation delegation pays
   only while specifying and verifying the boundary costs less than doing — or
   repairing — the work in the grown main context.*
-- **Tier selection**: pick the lowest tier likely to one-shot, judged by total
-  tokens-to-done including retries; escalate on observed failure, not by
-  default. Subagents that ship with their own tier are already pinned —
-  override their model only to escalate one after an observed failure.
-  *Why: a stronger model that one-shots often beats a weaker one
-  that flails; and the dispatch-time agent list hides the pin, so a reflexive
-  override silently undoes it. The frontier tier is the driver's, not a
-  subagent tier — see `frontier_driver`.*
 - **Frontier driver**: the frontier tier (`subagent_tiers.<harness>.frontier`)
-  is the session driver, not a consultant: it owns decomposition, decisions,
+  is the session driver, not a consultant: it keeps decomposition, decisions,
   adjudication, integration and final verification, and dispatches
   non-trivial bounded implementation, exploration, research and review to the
-  lowest capable pinned worker once the handoff is concrete; trivial edits,
-  tightly sequential steps, and work whose details must stay in the driver's
-  context stay inline. No child runs the frontier tier: unpinned children
-  default to the top worker tier, and when a worker fails a bounded task the
-  driver does that piece itself rather than promoting the child. *Why
-  (decision 2026-09-15 reversing 2026-09-14; research record in the audit
-  log): I choose the driver myself and already run frontier sessions — the
-  consultant rule fired in none of them while every edit ran inline and
-  `implementer` went undispatched, so the gap to close is the driver doing
-  worker-grade work in the most expensive context, not the driver choice.
-  Anthropic's Fable guide positions it as the orchestrator (dispatches
-  parallel subagents more readily, async dispatch, fresh-context verifiers),
-  OpenAI gates its only built-in coordination mode to its top tier, and both
-  meter the frontier hardest (Fable: up to 50% of the weekly pool and "uses
-  limits faster"; Astra: about half Sol's messages at 2.5x credits) — the
-  driver's context is the cost lever, and delegation exists to keep it lean.
-  Every measured quota failure is a child on the frontier tier
-  (claude-code#84667, #75055, #75054, #91220; codex#32587), which is why the
-  child boundary is enforced where the harness allows — Claude's hook on
-  per-call overrides plus the worker-tier default, pi's launch gate — and
-  only defaulted where it does not: Codex has no blocking spawn lever, and a
-  third-party Claude agent definition declaring `inherit` is invisible to the
-  hook; both residuals are verified by the transcript sweep, not assumed
-  closed. Practitioners report frontier drivers scope-creeping and
-  re-verifying on bounded work (an Astra rebase at 6h+ against Sol's 1h),
-  which "non-trivial bounded, once the handoff is concrete" answers without
-  pushing trivial edits out; Aider's architect/editor data shows a strong
-  planner plus cheaper editor captures the uplift at a fraction of the cost,
-  and the orchestrator re-reading verbose worker output is the reported sink,
-  so the delegation contract's distilled-summary clause carries the load.*
-- **Fan-out**: spawn independent strands together, scaled to task breadth;
-  never hand a worker the whole problem. *Why: serial spawning wastes
-  wall-clock; unbounded scope wastes workers.*
+  lowest capable pinned worker once the handoff is concrete — delegation is
+  requested, not optional. Pins are overridden only to escalate after an
+  observed failure; an unpinned child gets the top worker tier named
+  explicitly; no child runs the frontier tier; a failed worker's piece is
+  done by the driver, not a promoted child. *Why (decision 2026-09-15;
+  evidence in the audit log): I choose the driver myself; the gap to close is
+  the driver doing worker-grade work in the most expensive context — both
+  vendors meter the frontier hardest and every measured quota failure is a
+  child on it; the frontier guides position the model as an orchestrator with
+  cheaper workers and fresh-context verifiers, while OpenAI's frontier delegates
+  less than wanted unless told when to; and the roster hides the pins, so a
+  reflexive override or an inherited model silently undoes them.*
 - **Delegation wait**: once children are launched, their scope is off-limits:
   do only work outside it, then end the turn or wait for their results; read a
   child's report before deciding whether a finding needs your own check.
-  *Why: in every same-prompt pi run (2026-09-07/08) the parent redid its
-  children's review while they ran — four reviewers launched, then ~60 own
-  calls on the same files — doubling tokens and wall-clock; a tool-description
-  hint under-steers, and only Claude's harness prompt carries the rule natively.*
+  *Why: parents measurably redo their children's review while it runs,
+  doubling tokens and wall-clock; a tool-description hint under-steers, and
+  only Claude's harness prompt carries the rule natively (audit log
+  2026-09-12).*
 - **State persistence** *(conditional)*: where the harness lacks reliable
   auto-compaction, persist plan, decisions, and open threads to a durable
   file before nearing the window. *Why: a fresh session should resume with
@@ -99,9 +77,10 @@ when my actual intent changes, never to track harness churn.
   *Why: training data goes stale.*
 - **Playwright**: use for frontend interaction, inspection, and screenshots —
   not as a web-search substitute. *Why: real rendering beats guessing.*
-- **Web search**: built-in search by default (cost); escalate to the Exa MCP
-  when built-in results are sparse, stale, or can't reach the source.
-  *Why: route by strength, meter by price.*
+- **Web search**: built-in search and fetch by default (cost); escalate to
+  the Exa MCP — search or fetch — when built-in results are sparse, stale,
+  miss community sources, or a fetch is refused. *Why: route by strength,
+  meter by price; the built-in tools' misses are the tools', not the web's.*
 
 ## Engineering discipline
 
@@ -160,27 +139,21 @@ when my actual intent changes, never to track harness churn.
   requested work to done, continuing under a stated, in-scope assumption
   instead of asking about a step the request already covers; pause only for a
   clearly destructive or irreversible action, or for input only I can give.
-  *Why: OpenAI documents the current generation stopping to ask where the user
-  expects it to assume and persist, and ships an initiative/follow-through
-  clause as the fix (GPT-6 Astra guide); Anthropic documents the same
-  stop-and-describe failure for Fable 5.1. Stated once and in the positive
-  direction, because OpenAI's GPT-5.6 guide finds that repeating approval
-  wording causes approval requests for actions that were already expected.
-  Sources verified 2026-09-08, re-verified 2026-09-09 against the
-  model-qualified guide URLs — the bare `latest-model` alias is mutable and
-  served two different model generations minutes apart, so cite the qualified
-  form and keep a dated snapshot.*
+  *Why: both vendors document the current generation stopping to ask where
+  the user expects it to assume and persist, and ship an initiative clause as
+  the fix. Stated once and in the positive direction, because repeating
+  approval wording measurably causes approval requests for actions that were
+  already expected — which is also why it is shaved wherever the harness
+  prompt already carries it (sources: audit log 2026-09-15).*
 - **Partial delivery**: when one part of the work is blocked, finish every
   other part and say what you left out and why. *Why: scaling the work down is
   my call, not the agent's — my intent, not a vendor finding.*
 - **Call batching**: issue independent tool calls together in one message, and
-  keep dependent work sequential. *Why: OpenAI's GPT-5.6 guidance still
-  addresses parallelization to the prompt author — telling them to state
-  concurrency limits and to instruct independent calls to run together — rather
-  than asserting it as a default, and Anthropic documents Fable 5.1 issuing
-  implied independent calls one per turn in coding loops. Re-probed 2026-09-09:
-  gpt-6-astra carries the invariant natively, gpt-5.6-sol only partially, so
-  the rule stays projected for the weaker class.*
+  keep dependent work sequential. *Why: OpenAI's guidance still addresses
+  parallelization to the prompt author rather than asserting it as a default,
+  and Anthropic documents Fable issuing implied independent calls one per turn
+  in coding loops; the weaker classes carry it only partially (probe record
+  in the audit log), so the rule stays projected for them.*
 - **Long-running work**: start a long command in the background and collect its
   result once, rather than re-checking it turn after turn. *Why: nothing in the
   current generation removes polling — the model keeps working only where the
@@ -190,59 +163,22 @@ when my actual intent changes, never to track harness churn.
   user hits it gets a mention in the review — no code comment, no fix until
   that bug report is itself the task. *Why: speculative edge-case work
   crowds out the blocking signal and stalls shipping.*
-- **Self-review**: before calling a change done that no deterministic check
-  (tests, build) gates and that will be merged or applied — and always, green
-  checks included, for a high-stakes or expensive-to-reverse surface: auth,
-  security, data, concurrency, migrations — check the artifact against the
-  requirements with a fresh set of eyes: hand `spec-reviewer` both, not your
-  own reasoning trace, naming the snapshot to judge and any gates already run
-  green at that snapshot, in one pass with no follow-up rounds. Launch it
-  history-free — never a context-inheriting fork — at its pinned tier, with
-  no model override. When the gates cover the
-  requirements and the surface is not high-stakes, skip the pass, as with
-  trivial, easily-reverted changes. A cross-model review does not replace this
-  pass. A re-review after fixes is a new dispatch handed the fixed findings;
-  it verifies those, not the whole artifact again.
+- **Self-review**: before calling done a change that no deterministic check
+  gates and that will be merged or applied — always on a high-stakes surface
+  (auth, security, data, concurrency, migrations) — hand `spec-reviewer` the
+  artifact and its requirements, not the reasoning trace: history-free (never
+  a fork), at its pinned tier, one pass, naming the snapshot and the gates
+  already green. Skip it when gates cover the requirements and the surface is
+  not high-stakes; a cross-model review does not replace it; a re-review after
+  fixes verifies the fixes only; it outranks a harness prompt discouraging it.
   *Why: a producing context endorses its own output and the bias is
-  structural, not a capability gap — models fix an identical bug when told it
-  is someone else's but not their own (64.5% blind spot, arXiv 2507.02778,
-  COLM 2026), self-review silently endorses ~32% of its own behaviour-changing
-  output (arXiv 2605.21537, preprint), and a fresh-context pass beats
-  same-session self-review (F1 28.6% vs 24.6%, arXiv 2603.12123, preprint)
-  while reviewing twice in the same session does not; iterated follow-up
-  rounds add false positives faster than catches (false positives +62%,
-  precision 0.30 to 0.20, arXiv 2603.16244, preprint). The deterministic-gate
-  clause keeps it from doubling verification the tests already do. The named
-  role, the history-free launch and the pinned tier all answer the
-  2026-09-09 sweep: the pass had no defined target, so half its dispatches went
-  to a write-capable catch-all, eight of twenty to a reviewer contract that
-  cannot report an omission, and six of twenty to whatever tier the dispatcher
-  picked. The pin is the top worker tier, not the producer's (decision
-  2026-09-15): the 91.4%-to-82.8% drop in arXiv 2607.21656 came from a
-  cross-vendor reviewer that rewrote the program, not from advisory findings,
-  the freshness studies above vary session and model identity but never
-  reviewer tier, and Anthropic's own `/code-review` runs Opus bug agents under
-  Fable sessions. The known cost is Opus's weaker recall on concurrency and
-  subtle logic defects (CodeRabbit, 2026-07-24), which `codex-review` covers on
-  high-stakes surfaces; the catch count at the new tier is an open audit
-  trigger. Freshness is the launch mechanism's property, not
-  the role name's: a fork inherits the producing context and voids the rule.
-  The precedence clause answers a Claude-only harness conflict: Claude Code
-  explicitly tells the model to stop adding review passes once the checks pass,
-  which would otherwise silence this rule in exactly the high-stakes cell it
-  exists for. Codex does not: re-probed 2026-09-09 on both gpt-5.6-sol and
-  gpt-6-astra, neither prompt discourages a fresh-eyes pass after tests pass,
-  and astra states its limits on repeated testing do not prohibit one — so the
-  clause is precedence over one harness, not both. Sources verified 2026-09-08;
-  conflict re-scoped 2026-09-09; re-probe both at the next audit. The explicit
-  skip and the fix-scoped re-review answer the 2026-09-12 transcript sweep:
-  under the prior wording the pass fired 13 times in 13 distinct sessions in a
-  two-day window, trivial test-gated bodies included — 4–5 of 13 reviews returned zero
-  findings at ~51k top-tier tokens each, one body of work was fully
-  re-reviewed 35 minutes after its first pass, and reviewers re-ran suites the
-  session had already seen green — while every high/medium catch sat on a
-  high-stakes surface: the trigger's risk-shape held and it was the carve-outs
-  that failed to fire.*
+  structural, not a capability gap; a fresh-context pass catches what
+  same-session self-review endorses, reviewing twice in one session does not,
+  and iterated rounds add false positives faster than catches. The named
+  role, history-free launch and pinned tier answer sweeps that found the pass
+  aimed at write-capable or omission-blind reviewers; the explicit skip and
+  fix-scoped re-review answer a sweep that found it firing on trivial
+  test-gated bodies (measurements: audit log 2026-09-15).*
 - **Convention recording**: when corrected or re-taught a convention, offer
   to record it in the project's instructions file or memory.
   *Why: re-explaining is waste.*
@@ -252,9 +188,9 @@ when my actual intent changes, never to track harness churn.
 - **Credential hygiene**: never read credential stores, shell history, agent
   transcripts/session stores, or auth configs unless I explicitly ask for
   that specific path; flag any suspected credential read immediately so I
-  can rotate it. *Why: exposure is irreversible.* (The enforced path list is
-  generated from `.chezmoidata/agents.yaml` via the `agent-sandbox` template
-  — never hand-edit the projected prose.)
+  can rotate it. *Why: exposure is irreversible.* (The path list itself is
+  enforced by the sandbox, generated from `.chezmoidata/agents.yaml` via the
+  `agent-sandbox` template — it is not projected as prose.)
 - **Commit etiquette**: never commit or push on my behalf — I stage, commit,
   and push myself. *Why: authorship and review stay mine.*
 
@@ -278,43 +214,24 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
 
 - **Cross-model review** *(claude)*: when a body of work is ready to hand back
   and it touches a high-stakes surface (auth or security boundaries, data loss
-  or migration, concurrency, an external contract) or is broad enough to hide a
-  defect (a cross-cutting change spanning roughly five or more files), run the
-  `codex-review` skill once, unprompted: Codex proposes, you stay the
-  implementer and adjudicate — substantiate each finding independently, fix
-  only what survives, and say which you dropped and why. Once per body of work
-  even when it spans sessions — not per session, not per edit — and in addition
-  to the fresh-context subagent pass of `self_review`: launch both as
-  independent single passes and adjudicate them together. *Why: review yield
-  tracks risk and breadth, not change count — a size-only trigger measured over my transcripts fired ~20x
-  more often while its hit rate fell from ~4% to under 1%, and every surviving
-  catch sat in a high-stakes category. Direct Codex revision of Claude drafts
-  degraded one controlled static-review benchmark (91.4% to 82.8%, arXiv
-  2607.21656) — there the reviewer emitted the replacement program and could
-  not run tests, which is the treatment "propose, never apply" exists to
-  exclude; adjudication avoids that failure but does not by itself establish a
-  gain, since a false finding can still anchor the implementer. So findings
-  stay hypotheses, never a verdict to apply, and the increment this adds on top
-  of `self_review` remains unmeasured — it stands on the transcript record
-  until a survived-findings count confirms it. Both rules fired on the same high-stakes set from 2026-08-27,
-  and by 2026-09 the Codex review had displaced the subagent pass in ~70% of
-  its sessions, which the "in addition to" clause exists to stop — still 68%
-  (101 of the 149 sessions that fired it) when re-measured 2026-09-09, though
-  the named `spec-reviewer` target landed that same day and had fired twice, so
-  that is the pre-fix baseline rather than a verdict on the clause.* (The trigger and adjudication guard project
-  with this rule and `cross_model_advice` — both must be present when the
-  model decides whether to fire; the skill bodies hold only the execution
-  procedure, which loads after that decision.)
+  or migration, concurrency, an external contract) or spans roughly five or
+  more files, run the `codex-review` skill once per body of work — unprompted,
+  even across sessions, and alongside the `self_review` pass, never instead
+  of it. Codex proposes; you stay the implementer: substantiate each finding
+  independently, fix only what survives, say which you dropped and why. *Why:
+  yield tracks risk and breadth, not change count — a size-only trigger fired
+  far more often for a falling hit rate while every surviving catch was
+  high-stakes; a reviewer that rewrites the program degrades stronger work and
+  a false finding can still anchor the implementer, so findings stay
+  hypotheses; the Codex pass displaced the subagent pass until "in addition
+  to"; and the trigger must sit in the always-loaded line, since the skill body
+  loads only after the model has decided to fire (audit log 2026-09-15).*
 - **Cross-model advice** *(claude)*: before committing to an architecture or
   approach decision that is expensive to reverse, or when a bug resists a
   second diagnosis, get a decorrelated read via `codex-advisor` — unprompted,
   and before presenting a plan for approval, not after. *Why: reversal cost is
   highest before implementation, and a cross-model reviewer cannot discard
   working code when none exists yet.*
-- **Community search** *(claude)*: the built-in web search omits some
-  public/community sources; reach for the Exa MCP for that research rather than
-  treating the gap as the web's. *Why: the miss is the tool's, not the web's —
-  extends `web_search`.*
 - **Profile boundary** *(codex)*: the named permission profile also blocks the
   sensitive paths for sandboxed tools; treat that as a hard boundary even if the
   session's permission mode changes. *Why: a mode change must not reopen an

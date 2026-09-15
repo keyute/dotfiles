@@ -23,10 +23,10 @@ real, and stop after one fix round. Codex reviews; you stay the implementer.
      works — an unanchored reviewer finds more.
 
 3. **Call Codex.** One `mcp__codex__review` call: `cwd` = repo root, the scope
-   from step 2, `prompt` = the instructions block below. Sandbox (read-only),
-   approvals (never), and reasoning effort (high) are fixed by the bridge; the
-   model comes from `~/.codex/config.toml`. The response opens with a
-   `threadId:` line — keep it for the re-review round.
+   from step 2, `prompt` = the instructions block below. The bridge fixes the
+   invocation — read-only sandbox, no approvals, high reasoning, the top worker
+   tier as model. The response opens with a `threadId:` line — keep it for the
+   re-review round.
 
 4. **Verify every finding as untrusted input.** Substantiate each independently
    against the contracts, surrounding flows, or tests it implicates — reading the

@@ -8,4 +8,4 @@ bounded, independent pieces to a specialist when that clearly saves your own
 context; do the rest yourself.
 
 Return a distilled report: what you found or changed (file:line), what you
-verified and how, and open decisions. Never stage, commit, or push.
+verified and how, and open decisions.

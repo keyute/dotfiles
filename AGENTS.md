@@ -25,7 +25,10 @@ file are chezmoi-ignored (repo-local only).
 The sections below govern edits to the agent-instruction sources: the
 baseline, `.chezmoitemplates/agent-instructions.md` and its consumer
 templates, subagent and skill bodies. These projections load into every
-future session, so hold edits to the gates below.
+future session — and every subagent — so hold edits to the gates below.
+`npm run test:docs` (`scripts/check-docs.mjs`) enforces the mechanical half:
+file budgets, why lengths, dated annotations, audit-log pruning and
+cross-file duplication.
 
 ### Gates — a rule earns its place only if all four hold
 
@@ -51,51 +54,48 @@ erodes compliance across the whole set, not just the new rule's.*
 
 - Intent change → `docs/agents-baseline.md`, then reproject.
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`.
+  Every subagent loads the projection too, so driver-only rules sit under its
+  one "session driver" bullet and read as the driver's, never the reader's.
 - Subagent and skill bodies render for every harness: keep harness-specific
   nouns — tool names, agent names, instruction filenames — out of them, and take
   what varies as a parameter, as `reviewer-common.md` does with
-  `instructions_file`. A name that exists on only one harness is dead text on
-  the other.
+  `instructions_file`.
 - Harness-specific *intent* → `docs/agents-baseline.md`, tagged `(claude)` /
-  `(codex)`; its projection prose stays in the consumer template
-  (`private_dot_claude/CLAUDE.md.tmpl`, `private_dot_codex/AGENTS.md.tmpl`) so the
-  audit adjudicates it like any baseline principle. Only non-intent harness
-  mechanics (doc pointers) live solely in the consumer template.
+  `(codex)`; its projection prose stays in the consumer template so the audit
+  adjudicates it like any principle. A tag encodes intent intrinsic to that
+  harness, never the harness where a failure was observed — such a failure
+  still gets the full coverage matrix and projects wherever coverage is not
+  native; only non-intent harness mechanics (doc pointers) live solely in the
+  consumer template.
 - Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
   from it, never hand-write what it already encodes. The harness roster and
   each harness's audit paths (`agents.<name>.audit`) live there too: skills
   iterate it, never enumerate harness names.
-- A harness tag encodes intent intrinsic to that harness; a failure observed
-  on one harness still gets the full coverage matrix, and projects wherever
-  coverage is not native.
 - Environment facts and decisions → on-demand docs; give every doc
   pointer an explicit trigger ("read X before Y") — discretionary loading
   under-triggers.
 - An on-demand doc loads whole at its trigger, so it carries only what that
-  trigger's question needs: each fact or decision at its current state, with
-  a one-line dated annotation (last-verified or revisit trigger). Sweep
-  measurements, probe results, and superseded history go to
-  `docs/agents-audit-log.md` when they carry a live baseline or open
+  trigger's question needs: each fact at its current state with a dated
+  annotation. Measurements, probe results and superseded history go to
+  `docs/agents-audit-log.md` while they carry a live baseline or open
   trigger, and are deleted otherwise — git history keeps the rest. *Why: the
   doc's reader is a session answering one question; audit state's only
-  reader is the audit skill, which runs from this repo.*
+  reader is the audit skill.*
 - Occasional workflows → skills.
 
 ### Style
 
 - One imperative intent line plus a why; the why records the tradeoff or
   failure the rule is meant to protect, so the rule survives cases it never
-  enumerated.
+  enumerated. Evidence, numbers and sources go to the audit log, not the why.
 - State the constraint with its concrete trigger, not a description of the
   preferred world.
 - Say what to do; reserve "never" for absolute boundaries and emphasis
   markers for almost nothing — both work only while scarce.
-- Point to a canonical file instead of paraphrasing it; inlined snippets, model
-  names, version facts, and summaries of a mutable roster (subagents, skills,
-  plugins) rot — and rot silently in a projection, which carries no expiry
-  annotation. In a shared body a roster name is also wrong on the other harness,
-  where it is spelled differently or absent. Generate from
-  `.chezmoidata/agents.yaml`, or leave it out.
+- Point to a canonical file instead of paraphrasing it: one home per fact.
+  Inlined snippets, model names, version facts and roster summaries rot
+  silently in a projection, and a roster name in a shared body is wrong on
+  the other harness. Generate from `.chezmoidata/agents.yaml`, or leave it out.
 - Reuse the baseline's exact terminology; synonyms obscure equivalence and
   make drift harder to detect.
 
@@ -105,17 +105,13 @@ erodes compliance across the whole set, not just the new rule's.*
   it computes coverage fresh. Hand-run "lean passes" restart the churn.
 - Before rewording an existing line, check its `git log -p` history: if it
   has oscillated, delete it or change the intent — never re-word.
-- On-demand docs expire by their own annotations: give every fact there a
-  last-verified date or a revisit trigger (a section-level date covers its
-  bullets); the audit's doc sweep flags the ones that have fired.
-  Generated content (Claude's `sandbox.md`) is exempt.
+- On-demand docs expire by their own annotations (a section-level date covers
+  its bullets); generated content (Claude's `sandbox.md`) is exempt.
 - Before a novel rule enters the baseline, and whenever a why here or in
   the baseline feels stale, run the `doctrine-refresh` skill — it re-checks
   every empirical claim in both against current practitioner consensus.
 - Both maintenance skills are Claude-side; from a Codex session, flag the
   need for a run instead of attempting one.
-- Expect projections to steer, not bind: guarantees belong in the
-  environment (sandbox, hooks, tests); prose only biases behavior.
 - Agent memory holds only what this repo cannot record — session-side
   gotchas; a method belongs in the skill and a measurement in the dated
   audit log.

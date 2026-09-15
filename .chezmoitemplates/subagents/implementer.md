@@ -20,5 +20,3 @@ Return:
 **Verification**: the command you ran and its result.
 
 **Assumptions** (or "none"): anything you had to interpret.
-
-Never stage, commit, or push.

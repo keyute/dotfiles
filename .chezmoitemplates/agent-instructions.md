@@ -1,7 +1,8 @@
 {{- /* agent-instructions: portable, harness-agnostic instruction preamble.
        Keep this file free of harness/product-specific pointers — those belong in
        the consumer template (e.g. CLAUDE.md.tmpl). It renders for any agent or
-       harness (Claude Code, Codex, ...).
+       harness (Claude Code, Codex, ...), and every subagent loads it too, so the
+       driver-only rules sit under one explicit "session driver" bullet.
        input: dict "self" <agent name> "root" <template data> */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
@@ -18,59 +19,61 @@
 {{- if not $reviewer -}}{{- fail "no subagent in .chezmoidata/agents.yaml carries `self_review: true`, so the self-review rule cannot name its reviewer" -}}{{- end -}}
 {{- $native := list -}}
 {{- if hasKey $ag "native_coverage" -}}{{ $native = $ag.native_coverage }}{{- end -}}
-{{- /* the sensitive-path prose reuses agent-sandbox's denyRead so it can never
-       drift from the sandbox policy actually enforced for this agent */ -}}
-{{- $sb := includeTemplate "agent-sandbox" (dict "self" $self "root" $root) | fromJson -}}
-{{- $formatted := list -}}
-{{- range $sb.denyRead | sortAlpha -}}
-{{- $formatted = append $formatted (printf "`%s`" .) -}}
-{{- end -}}
 
 ## Working agreements
 
-{{/* Fleet instructions require a configured model-tier mapping. The
-     frontier_driver rule below renders only where the harness's default model
-     is the frontier tier (prefix match: the Claude pin carries a [1m] suffix). */ -}}
+{{/* Fleet instructions require a configured model-tier mapping. The frontier
+     bullet renders only where the harness's default model is the frontier tier
+     (prefix match: the Claude pin carries a [1m] suffix). */ -}}
 {{ if hasKey $root.subagent_tiers $self -}}
 {{- $tiers := index $root.subagent_tiers $self -}}
-- Delegate bounded, independent work that repays the handoff — disposable
-  searches, log triage, research, and spec-complete leaf implementation with an
-  objective correctness gate; state objective, scope, files/tools, and output
-  format, and take back a distilled summary, never a raw dump. Verify delegated
-  writes by reading the actual diff, never the worker's summary. Keep inline
-  trivial tasks, tightly sequential steps, and changes whose details must stay
-  in your context.
-- Spawn independent strands together, scaled to the task's breadth; never hand
-  one worker the whole problem.
-{{ if not (has "delegation_wait" $native) -}}
-- Once you have launched subagents, their scope is off-limits: do only work
-  outside it, then end the turn or wait for their results; read a report before
-  deciding whether a finding needs your own check.
-{{ end -}}
-- For unpinned subagents, pick the lowest tier likely to one-shot the task —
-  small for bounded mechanical/read-heavy work, mid for routine implementation
-  and review, top for hard synthesis or expensive-to-reverse calls; escalate on
-  observed failure, not by default. The subagents in `{{ default (printf "%s/agents" (index $root.agents $self).home) (get (index $root.agents $self) "agents_dir") }}` are
-  already pinned and the dispatch-time list does not show it — pass a model
-  override to one only to escalate it after an observed failure.
-{{ if and (hasKey $tiers "frontier") (hasPrefix $tiers.frontier $ag.defaults.model) (not (has "frontier_driver" $native)) -}}
-- You run on the frontier tier: keep decomposition, decisions, adjudication,
-  integration and final verification here; dispatch non-trivial bounded
-  implementation, exploration, research and review to the lowest capable
-  pinned worker once the handoff is concrete — including spec-complete edits
-  you would otherwise make inline. No child runs `{{ $tiers.frontier }}`;
-  unpinned children default to `{{ $tiers.top }}`. When a worker fails a
-  bounded task, do that piece yourself rather than promoting the child.
-{{ end -}}
+- When you are the session driver (the model this session started on, not a
+  dispatched worker):
+  - Delegate bounded, independent work that repays the handoff — disposable
+    searches, log triage, research, and spec-complete leaf implementation with
+    an objective correctness gate; state objective, scope, files/tools, and
+    output format, and take back a distilled summary, never a raw dump. Verify
+    delegated writes by reading the actual diff, never the worker's summary.
+    Keep inline trivial tasks, tightly sequential steps, and changes whose
+    details must stay in your context; never hand one worker the whole problem.
+{{- if and (hasKey $tiers "frontier") (hasPrefix $tiers.frontier $ag.defaults.model) (not (has "frontier_driver" $native)) }}
+  - The driver runs on the frontier tier (`{{ $tiers.frontier }}`); never
+    dispatch a child on it. Delegation is requested here, not optional: keep decomposition,
+    decisions, adjudication, integration and final verification in the driver;
+    dispatch non-trivial bounded implementation, exploration, research and
+    review to the lowest capable pinned worker once the handoff is concrete.
+    When a worker fails a bounded task, do that piece yourself rather than
+    promoting the child.
+{{- end }}
+  - The subagents in `{{ default (printf "%s/agents" $ag.home) (get $ag "agents_dir") }}`
+    are pinned and the dispatch-time list does not show it: override a model
+    only to escalate after an observed failure. Spawn an unpinned child with
+    `{{ $tiers.top }}` named explicitly; never leave one to inherit the driver's
+    model — a pin is a default the harness can drop, not a guarantee.
+{{- if not (has "delegation_wait" $native) }}
+  - Once children are launched, their scope is off-limits: do only work outside
+    it, then wait for their results; read a report before deciding whether a
+    finding needs your own check.
+{{- end }}
+  - Before calling done a change that no deterministic check gates and that
+    will be merged or applied — always on a high-stakes surface (auth,
+    security, data, concurrency, migrations) — hand `{{ $reviewer }}` the
+    artifact and its requirements: history-free (never a fork), pinned tier,
+    one pass, naming the snapshot and the gates already green. Skip it when
+    gates cover the requirements and the surface is not high-stakes; a
+    cross-model review does not replace it; a re-review verifies the fixes only.
+{{ if not (has "docs_mcp" $native) -}}
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
   library/API docs — resolve the library id and fetch unprompted.
+{{ end -}}
 - Use Playwright for frontend interaction, inspection, and screenshots — not as a
   web-search substitute.
-{{ if and (hasKey (index $root.agents $self) "native_web_search") (not (index $root.agents $self).native_web_search) -}}
+{{ if and (hasKey $ag "native_web_search") (not $ag.native_web_search) -}}
 - Use the Exa MCP for web search and fetching; no native web-search tool is configured.
 {{ else -}}
-- Web search: built-in by default (cost); escalate to the Exa MCP when built-in
-  results are sparse, stale, or can't reach the source.
+- Web search and fetch: built-in by default (cost); escalate to the Exa MCP
+  (search or fetch) when built-in results are sparse, stale, miss community
+  sources, or a fetch is refused.
 {{ end -}}
 {{ end -}}
 - Keep implementations simple — the simplest thing that works: no features,
@@ -88,9 +91,8 @@
   contracts, hazards; reason in scratch, not the source. Leave unrelated
   existing comments alone; drop a pre-existing one only when your change made
   it wrong or redundant.
-- Bugfix where tests are wired up: learn the project's test style; if a repro
-  test is simple and meaningful, write it, see it fail, fix, see it pass. No
-  unnecessary cases.
+- Bugfix where tests are wired up: if a repro test is simple and meaningful,
+  write it, see it fail, fix, see it pass. No unnecessary cases.
 - A pre-existing bug, performance concern, or adjacent cleanup found while
   working goes in the summary as a follow-up, not into the change, unless the
   requested behaviour cannot work without it; keep scratch checks out of the
@@ -125,25 +127,12 @@
   now; an edge case worth fixing only once a real user hits it gets a
   mention in the review — no code comment, no fix until that bug report is
   the task at hand.
-{{ if hasKey $root.subagent_tiers $self -}}
-- Before calling a change done that no deterministic check (tests, build) gates
-  and that will be merged or applied — and always, green checks included, for a
-  high-stakes or expensive-to-reverse surface: auth, security, data,
-  concurrency, migrations —
-  check the artifact against the requirements with a fresh set of eyes: hand
-  `{{ $reviewer }}` both, not your reasoning trace, naming the snapshot to judge
-  and any gates already run green at that snapshot, in one pass with no
-  follow-up rounds. Launch it history-free — never a context-inheriting fork —
-  at its pinned tier, with no model override.
-  When the gates cover the requirements and the surface is not high-stakes,
-  skip the pass, as with trivial, easily-reverted changes. A cross-model
-  review does not replace this pass. A re-review after fixes is a new dispatch
-  handed the fixed findings; it verifies those, not the whole artifact again.
-{{ end -}}
+{{ if not (has "convention_recording" $native) -}}
 - When I correct your approach or re-explain a convention, offer to record it in
   the project's instruction file (AGENTS.md/CLAUDE.md) or your memory.
+{{ end -}}
 - Never read credential stores, shell history, agent transcripts/session stores,
-  or auth config paths such as {{ join ", " $formatted }}, or similar sensitive
-  paths, unless I explicitly ask for that specific path. If you believe you read a
-  credential, flag it immediately so I can rotate it.
+  or auth configs unless I explicitly ask for that specific path — the sandbox
+  denies them, and a denial there is the boundary, not an obstacle. If you
+  believe you read a credential, flag it immediately so I can rotate it.
 - Never commit on my behalf — I stage, commit, and push myself.

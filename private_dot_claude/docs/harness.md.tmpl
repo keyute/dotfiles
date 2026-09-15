@@ -1,168 +1,120 @@
 # Claude Code workflow reference
 
 Env-specific facts and decisions only, each at its current state with a dated
-annotation. Generic harness behavior (commands, flags, modes) is injected into
-every session or answerable live via the claude-code-guide agent — it does not
-belong here; sweep measurements and audit baselines live in the chezmoi repo's
-`docs/agents-audit-log.md`, not here. If behavior seems changed, verify with
-that agent and update this file.
+annotation. Generic harness behavior is injected into every session or
+answerable live via the claude-code-guide agent; measurements, research and
+audit baselines live in the chezmoi repo's `docs/agents-audit-log.md`. If
+behavior seems changed, verify with that agent and update this file.
 
 ## Models (last verified 2026-09-15)
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo as
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
   session. The pin is the frontier tier as the session driver (decision
-  2026-09-15, research record in the audit log); `[1m]` holds the 1M-context
-  variant — without it Fable 5 runs at 200K (probed and doc-checked
-  2026-09-15). Fable 5, not 5.1: the stable channel sits below the 5.1 floor
-  (2.1.255 per Anthropic's help center) — bump the pin and
-  `subagent_tiers.claude.frontier` together once stable clears it. Driver
-  effort is the Claude Code default; Anthropic's "low-effort Fable beats Opus
-  on cost per task" claim is API pricing, not Max-plan metering — an open
-  lever, measured before changed.
-- Pins use explicit model IDs, never bare aliases: aliases re-resolve across
-  CLI releases (`opus`/`sonnet` float to the newest generation at v2.1.219+,
-  and `haiku` was observed resolving to sonnet-5), so an alias pin can silently
-  change tier. The agent-instructions-audit skill live-probes every pin.
-- Subagent tiers are relative capability, not fixed model names; the named
-  specialists are pinned per tier in `.chezmoidata/agents.yaml`
-  (`subagent_tiers.claude`) and do NOT follow `/model`. Unpinned built-ins
-  (general-purpose, Plan, claude, claude-code-guide) take
-  `CLAUDE_CODE_SUBAGENT_MODEL`, set in settings `env` to the top worker tier
-  (`{{ .subagent_tiers.claude.top }}`), so nothing inherits the driver by
-  omission; a subagent naming an unavailable model silently falls back. Forks
-  (`subagent_type: fork`) always run the parent model — a fork is a
-  driver-context continuation, not a worker. Tier routing rules live in
-  CLAUDE.md (lowest tier likely to one-shot the task).
-- Subagent model resolution, in order (re-verified 2026-09-15 against
-  `code.claude.com/docs/en/sub-agents`, v2.1.251+): the per-invocation
-  `model` parameter, then the definition's `model` frontmatter (where
-  `inherit` selects the main conversation's model), then
+  2026-09-15); `[1m]` holds the 1M-context variant — without it Fable 5 runs
+  at 200K. The pin follows the stable channel, which cannot yet serve 5.1
+  (floor and probe record on the pin in agents.yaml): bump it and
+  `subagent_tiers.claude.frontier` together once stable clears the floor;
+  driver effort stays the Claude Code default (lower effort unmeasured on Max).
+- Pins use explicit model IDs, never bare aliases: aliases re-resolve across CLI releases.
+- Subagent tiers are relative capability, pinned per specialist in
+  `.chezmoidata/agents.yaml` (`subagent_tiers.claude`); they do NOT follow
+  `/model`. Unpinned built-ins (general-purpose, Plan, claude,
+  claude-code-guide) take `CLAUDE_CODE_SUBAGENT_MODEL`, set in settings `env`
+  to the top worker tier (`{{ .subagent_tiers.claude.top }}`); an unavailable
+  model silently falls back. Forks (`subagent_type: fork`) always run the
+  parent model — a driver-context continuation, not a worker.
+- Subagent model resolution, in order (vendor sub-agents doc, re-verified
+  2026-09-15): the per-invocation `model` parameter, the definition's `model`
+  frontmatter (`inherit` = the main conversation's model), then
   `CLAUDE_CODE_SUBAGENT_MODEL`, then the main conversation's model. Omitting
-  `model:` is therefore NOT equivalent to `model: inherit` — omission lets the
-  env var win, which is now the intended path; no roster entry uses `inherit`
-  any more, since under a frontier driver it would mean "silently consume
-  frontier". `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (v2.1.257+) is deliberately
-  unset: it would also erase the specialists' pins.
+  `model:` lets the env var win — the intended path; no roster entry uses
+  `inherit`. An undocumented `_FORCE` variant exists in the binary; leave it
+  unset — it would erase the specialists' pins.
 - No child runs the frontier tier: `~/.claude/hooks/deny-frontier-child.mjs`
   (PreToolUse, matcher `Agent`, rendered from agents.yaml) denies a per-call
-  `model` of the frontier pin, `fable` or `inherit`, inside subagents too
-  (user-level hooks apply there); forks carry no `model` and run the parent
-  by harness design. Residual the hook cannot see: a third-party (plugin or
-  project) agent definition declaring `model: inherit`, invoked without a
-  per-call model, resolves to the driver — the roster here carries none, and
-  the transcript sweep's children-vs-pins count is the check. The silent upstream failure modes — claude-code#75054 (pins lost on
-  background resume), #85592 (env var overriding per-call requests at
-  2.1.223), #82252 (an override served by another model while the child
-  self-reports the requested one) — are not hook-catchable: after each CLI
-  update dispatch one unpinned child and one with an explicit
+  `model` of the frontier pin, `fable` or `inherit`; hooks from settings files
+  run inside subagents too (vendor hooks doc, 2026-09-15). Residual the hook
+  cannot see: a third-party agent definition declaring `model: inherit` with
+  no per-call model — the roster carries none; the transcript sweep's
+  children-vs-pins count is the check.
+- After each CLI update: dispatch one unpinned child and one with an explicit
   `{{ .subagent_tiers.claude.top }}` override and read `message.model` in the
-  transcript, never the child's self-report.
+  transcript, never the child's self-report — the silent upstream failures
+  (pins lost on background resume, the env var overriding per-call requests,
+  an override served by another model) are not hook-catchable; issue numbers
+  in the audit log.
+- Every custom subagent loads `~/.claude/CLAUDE.md` (built-in Explore and Plan
+  do not), so the projection groups its driver-only rules under one "session
+  driver" bullet. Continue an existing agent with `SendMessage` for follow-ups
+  rather than re-spawning: a long-lived subagent keeps its context and pays
+  cache-read rates (Fable 5 guide).
 - Subscription limits (Max plan; re-checked 2026-09-14 against the Fable
-  support article): a rolling 5-hour session window plus a shared weekly pool,
-  "shared across all models"; Fable draws the same pool, capped at up to 50%
-  of weekly usage and "using limits faster than other Claude models" (exact
-  weighting unpublished; the earlier free-Fable-5 promo ended 2026-07-19 and
-  never covered 5.1). The errors doc still names Opus and Sonnet family
-  sub-limit messages, an unresolved contradiction — next time a limit binds,
-  reconcile against `/usage`.
-- Delegation economics (researched 2026-09-12; metering re-checked
-  2026-09-14; frontier-driver framing 2026-09-15; baselines in the audit
-  log): subagent tokens draw the same Max 5h/weekly pools as the main loop —
-  no subagent discount — and drain is model-weighted, so the driver's own
-  context is the expensive one: it re-meters at Fable's weight every turn
-  and cache reads count non-negligibly against the pool (measured via
-  claude-code#91220). Delegation multiplies total tokens and pays only via
-  tier arbitrage and keeping that context lean — delegate bounded
-  implementation, reads, research and review, keep trivial edits and
-  tightly sequential steps inline, and treat session length as the primary
-  cost lever; exact cache-read weighting still unpublished. Bucket caveat:
-  exhausting a cheaper model's sub-limit can force frontier fallback for
-  routine work (claude-code#55663).
-- `implementer` (added 2026-08-28): mid-tier executor for spec-complete
-  mechanical write work — a bounded edit delegated out of the driver's
-  context avoids re-sending the whole context at frontier rates. The
-  2026-09-11/12 sweep found it undispatched while every edit ran inline in
-  Fable sessions; its dispatch count is an open audit trigger.
-- `spec-reviewer` runs at the top worker tier (`{{ .subagent_tiers.claude.top }}`),
-  not `inherit` (decision 2026-09-15): the reviewer only proposes, and the
-  evidence behind the old reviewer-≥-producer floor was a cross-vendor
-  reviewer that rewrote the program. Known limit: Opus 5 recall is weakest on
-  concurrency and subtle logic defects (CodeRabbit 2026-07-24), which
-  `codex-review` covers on high-stakes surfaces; high/medium catches at the
-  new tier are an open audit trigger against the Fable baseline.
-- `researcher` (added 2026-09-08): scoped mid-tier read-only preset with web,
-  Exa and context7, so research dispatches stop hand-picking models on
-  general-purpose.
-- Codex pin caveat for pinned reviewers: openai/codex#32587 (still open as of
-  2026-09-15) — a spawned Codex child can silently inherit the parent's
-  model/effort instead of its pinned config, which under an Astra parent
-  costs 2.5x; verify via `/status` after each Codex CLI update.
-- If Codex is available, `codex-review` / `codex-advisor` are read-only Codex
-  consultation for high-risk diffs or stuck calls; Claude and Codex meter on
-  independent windows, so read-work can offload to Codex — write-work means driving
-  the task with Codex yourself. Keep decision ownership in Claude. The bridge
-  is pinned to `{{ .subagent_tiers.codex.top }}` (`--model`, anchored in
-  agents.yaml) while interactive Codex drives on Astra: review is a worker
-  role, no source shows Astra reviewing better, and Astra is 2.5x the credits
-  and ~3x slower to first token on a call that blocks the Claude loop
-  (research 2026-09-15).
+  support article): a rolling 5-hour window plus a shared weekly pool "shared
+  across all models"; Fable draws the same pool, capped at up to 50% of weekly
+  usage and "using limits faster than other Claude models", exact weighting
+  unpublished. The errors doc still names Opus and Sonnet sub-limits — next
+  time a limit binds, reconcile against `/usage`.
+- Delegation economics (framing 2026-09-15; baselines in the audit log):
+  subagents draw the same Max pools, drain is model-weighted, and the driver's
+  context re-meters at Fable's weight every turn with cache reads counting —
+  delegation pays only via tier arbitrage and a lean driver context; session
+  length is the primary cost lever. Exhausting a cheaper model's sub-limit can
+  force frontier fallback for routine work (claude-code#55663).
+- Roster notes: `implementer` (mid, added 2026-08-28) takes spec-complete
+  write work out of the driver's context — dispatch count is an open trigger
+  (0 through 2026-09-12); `spec-reviewer` runs at the top worker tier, not
+  `inherit` (decision 2026-09-15) — it only proposes, and its weaker
+  concurrency recall is covered by `codex-review` on high-stakes surfaces.
+- Codex pin caveat: openai/codex#32587 (open 2026-09-15) — a spawned Codex child
+  can silently inherit the parent's model/effort; verify via `/status` after each CLI update.
+- `codex-review` / `codex-advisor` are read-only Codex consultation for
+  high-risk diffs or stuck calls; Claude and Codex meter on independent
+  windows, so read-work can offload to Codex while decision ownership stays in
+  Claude. The bridge is pinned to `{{ .subagent_tiers.codex.top }}` (`--model`,
+  anchored in agents.yaml): review is a worker role, no source shows Astra
+  reviewing better, and Astra costs 2.5x and ~3x the time to first token on a
+  call that blocks the Claude loop (research 2026-09-15).
 - The codex-review trigger is risk-or-breadth, never blanket (decision
-  2026-09-03, kept 2026-09-08): a size-based trigger produced ~2/3
-  zero-finding reviews while every surviving catch sat in a high-stakes
-  category. Yield is findings the session actually fixed; the
+  2026-09-03): yield is findings the session actually fixed; the
   survived-findings count accumulates in the audit log — decide the trigger's
   fate once there are ten.
 
 ## Codex transport: owned MCP bridge (decision 2026-09-05)
 
-- `codex mcp-server` (the previous transport) was deprecated in codex-cli
-  0.149.1 with removal announced, so the `codex` MCP entry now spawns
-  `scripts/codex-bridge.mjs` from the chezmoi source repo, wrapping the stable
-  `codex exec` / `codex exec review` CLI (verified present at 0.153.1). Tools:
-  `review`, `advise`, `reply`; invocation fixed to read-only sandbox, never
-  approvals, high reasoning — callers pick scope only, never sandbox flags.
-  `review` states the scope inside the prompt when custom instructions are
-  given: the CLI rejects a PROMPT combined with `--base`/`--uncommitted`
-  (verified at 0.153.4).
+- `codex mcp-server` was deprecated in codex-cli 0.149.1, so the `codex` MCP
+  entry spawns `scripts/codex-bridge.mjs` from the chezmoi source repo,
+  wrapping the stable `codex exec` / `codex exec review` CLI. Tools: `review`,
+  `advise`, `reply`; invocation fixed to read-only sandbox, never approvals,
+  high reasoning, top worker tier — callers pick scope only. `review` states
+  the scope inside the prompt when custom instructions are given: the CLI
+  rejects a PROMPT combined with `--base`/`--uncommitted`.
 - MCP transport kept deliberately: the bridge is harness-spawned outside the
-  Bash sandbox (the `~/.codex` deny stays fully intact), and its rendered
-  allow rule (`mcp__codex`, from `auto_approve_tools`) makes the tools
-  prompt-free in plan mode — verified live 2026-09-05. Plan mode blocks MCP
-  tools as a class unless allow-listed (`readOnlyHint` is ignored; upstream
-  issue #12368 closed "not planned"), and Bash has no plan-mode allowlist
-  exemption at all, which rules out every Bash-based transport (plain
-  `codex exec` calls and the plugin alike).
+  Bash sandbox (the `~/.codex` deny stays intact) and its rendered allow rule
+  (`mcp__codex`) makes the tools prompt-free in plan mode (verified
+  2026-09-05). Plan mode blocks MCP tools unless allow-listed (`readOnlyHint`
+  ignored; upstream #12368 closed "not planned") and Bash has no plan-mode
+  exemption, which rules out every Bash-based transport.
 
-## Codex plugin (not installed — reaffirmed 2026-09-05)
+## Codex plugin: not installed (decision 2026-09-05)
 
-- OpenAI's official plugin (`openai/codex-plugin-cc`, first dissected at
-  v1.0.6) stays uninstalled, on updated grounds: its command paths spawn the
-  experimental `codex app-server` through sandboxed Bash — still blocked by
-  the `~/.codex` deny, never prompt-free in plan mode (see above), and riding
-  a protocol OpenAI documents as changeable without notice. The bridge covers
-  review + advice on the stable `exec` interface with no sandbox carve-out.
-  The extras remain excluded by doctrine (write-capable rescue, stop-review
-  gate, session transfer, background job manager). Reconsider only if the
-  `codex exec` interface itself breaks AND the sandbox/plan-mode constraints
-  change.
+- OpenAI's official plugin (`openai/codex-plugin-cc`, dissected at v1.0.6)
+  stays uninstalled: it spawns the experimental `codex app-server` through
+  sandboxed Bash — blocked by the `~/.codex` deny, never prompt-free in plan
+  mode, on a protocol documented as changeable without notice. Reconsider only
+  if `codex exec` itself breaks AND the sandbox/plan-mode constraints change.
 
-## pi (side-by-side trial vs codex, started 2026-09-05)
+## pi trial vs codex (decision 2026-09-05)
 
 - pi (`earendil-works/pi`, adopted at v0.85.0) runs interactive GPT sessions
   alongside codex until one wins the trial; ChatGPT-subscription OAuth in
-  third-party OSS harnesses is OpenAI-sanctioned (Codex for OSS program names
-  pi; last verified 2026-09-05) and draws the same plan quota as codex.
+  third-party OSS harnesses is OpenAI-sanctioned (last verified 2026-09-05)
+  and draws the same plan quota as codex.
 - pi ships no permission system: the managed workflow extension leases a
   per-tool srt (`@anthropic-ai/sandbox-runtime`) worker for every
-  `workspace_*` call, its profile rendered from `.chezmoidata/agents.yaml`,
-  and the `pi` zsh function launches the pinned CLI with that extension; the
-  workflow's own plan mode supplies read-only planning (verified 2026-09-09).
-  `~/.pi/agent/settings.json` is key-merged by a `modify_` script (since
-  2026-09-06): the managed subset renders from agents.yaml while pi's own
-  trust and UI state survives every apply.
+  `workspace_*` call with a profile rendered from agents.yaml, and its plan
+  mode gives read-only planning (verified 2026-09-09).
 - Trial decision trigger: revisit at the next `agent-instructions-audit`, or
   sooner once one harness clearly owns all interactive GPT sessions — then
-  demote or drop the loser (codex keeps the review-backend role regardless).
-  Still not decidable as of the 2026-09-12 audit (status history in the audit
-  log).
+  demote or drop the loser (codex keeps the review-backend role). Not
+  decidable as of 2026-09-15 (status history in the audit log).

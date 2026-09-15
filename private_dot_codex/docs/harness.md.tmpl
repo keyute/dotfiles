@@ -2,83 +2,60 @@
 
 ## Session defaults (last verified 2026-09-15)
 
-- Plain `codex` starts with `{{ .agents.codex.defaults.model }}` at {{ .agents.codex.defaults.model_reasoning_effort }} reasoning effort;
-  plan mode is pinned to {{ .agents.codex.defaults.plan_mode_reasoning_effort }}. The
-  driver is the frontier tier (decision 2026-09-15, shared `frontier_driver`
-  rule in AGENTS.md); `review_model` and `[agents] default_subagent_model`
-  are managed to `{{ .subagent_tiers.codex.top }}` so `/review` and unpinned
-  children run the top worker tier.
-- `/model` changes the model or reasoning effort for the current session only; a new
-  session returns to the managed defaults.
-- No launch profiles are configured. Start with plain `codex` and make any temporary
-  session changes in the TUI.
-- Plan mode is selected per session; this setup does not persist a default mode
-  override.
-- `/fast` is a separate speed toggle, not a model or reasoning-effort profile.
+- Plain `codex` starts with `{{ .agents.codex.defaults.model }}` at {{ .agents.codex.defaults.model_reasoning_effort }} reasoning effort; plan mode is
+  pinned to {{ .agents.codex.defaults.plan_mode_reasoning_effort }}. `review_model` and `[agents] default_subagent_model` are managed
+  to `{{ .subagent_tiers.codex.top }}`, so `/review` and unpinned children run the top worker tier.
+- `/model` changes the model or reasoning effort for the current session only; a
+  new session returns to the managed defaults. `/fast` is a separate speed
+  toggle, not a model or reasoning-effort profile.
+- No launch profiles and no persisted mode override: start with plain `codex`
+  and make plan-mode or other temporary changes per session in the TUI.
 
-## Limits (last verified 2026-09-10; revisit Sol pricing 2026-11-21)
+## Limits (last verified 2026-09-10; revisit Sol pricing 2026-11-21, the context window at the next Codex CLI catalog bump)
 
-- Subscription metering is token-based credits (since 2026-04): one shared
-  credit pool across CLI, IDE extension, cloud tasks, and other ChatGPT agent
-  surfaces, drawn against a weekly window plus a rolling 5-hour window — treat
-  both as potentially binding; check `/status`.
-- Standard credits per million input/cached/output tokens: Astra 250/25/1250,
-  Sol 100/10/500, Terra 50/5/300, Luna 5/0.5/30. These are credit rates, not API
-  dollar charges or fixed Pro message limits. Sol's promotional pricing lasts
-  at least through 2026-11-21. [Official rate card](https://learn.chatgpt.com/docs/pricing).
+- Metering is token-based credits (since 2026-04): one pool shared across CLI,
+  IDE extension, cloud tasks and other ChatGPT agent surfaces, drawn on a weekly
+  window plus a rolling 5-hour window — both potentially binding; check `/status`.
+{{ includeTemplate "openai-rate-card.md" . -}}
 - Compare successful-task cost including reasoning, cached context, retries and
-  delegation overhead. A larger model can use fewer tokens without being cheaper.
-  Astra Standard costs 2.5× Sol at equivalent token usage; Astra Fast is a further
-  2.5× Standard. Keep bounded work on the lower tiers and Fast off unless needed.
-- Reasoning effort scales burn directly: drop effort per session via `/model`
-  for routine work instead of changing the managed default.
-- Child agents draw the same credit pool as the parent, scaling roughly
-  linearly with concurrent subagents at equal model/effort (OpenAI engineer,
-  openai/codex#13179; researched 2026-09-12) — delegation saves credits only
-  when children run cheaper models or lower effort, and the pin-inheritance
-  caveat (openai/codex#32587) can silently void that. The 2026-09-12 sweep
-  found the pins held; baseline in the chezmoi repo's audit log.
-- Context window is 272,000 input tokens on the ChatGPT-subscription route, and
-  the harness inherits it from the model catalog — nothing here pins it. Do not
-  raise `model_context_window` above it: Codex clamps the value to the catalog's
+  delegation; a larger model can use fewer tokens without being cheaper. Keep
+  bounded work on the lower tiers, Fast off unless needed, and drop reasoning
+  effort per session via `/model` for routine work — effort scales burn directly.
+- Child agents draw the same credit pool as the parent, scaling roughly linearly
+  with concurrent subagents at equal model/effort (OpenAI engineer,
+  openai/codex#13179), so delegation saves credits only when children run
+  cheaper models or lower effort — #32587 below can silently void that.
+{{ includeTemplate "openai-context-window.md" . -}}
+- Do not raise `model_context_window` above it: Codex clamps to the catalog's
   `max_context_window` and then to ~95%, so a larger number is cosmetic
   (`/status` shows it until the first message, then the real cap) and it
-  miscalibrates auto-compaction, which is sized off the configured window. The
-  1,050,000 window the model pages advertise is real but API-key only, and input
-  above 272,000 bills the whole request at 2x input / 1.5x output. This ceiling
-  moved 272K -> 372K -> 872K -> 272K across 2026 without notice, so read
-  `/status` rather than trusting any number written down — including this one.
-  (Verified 2026-09-10 against the pinned SDK catalog; revisit at the next Codex
-  CLI catalog bump, or if `/status` reports anything but 272K.)
+  miscalibrates auto-compaction, which is sized off the configured window.
 - Attached MCP servers reload their full tool schemas every turn — an accepted
   cost here; revisit the server list if the weekly limit starts binding.
 
-## Subagents (last verified 2026-07-31; expiry fired 2026-09-08, still open — re-verify the pin behaviour from the next Codex session, and again after each Codex CLI update)
+## Subagents (last verified 2026-07-31 — unverified since; re-verify from a Codex session)
 
-- Named specialists under `~/.codex/agents` stay pinned to their configured model tier,
-  even after `/model` changes the parent session.
-- Known upstream regression (openai/codex#32587, MultiAgent V2; verified still
-  open 2026-09-12, last upstream activity 2026-07-12): spawned subagents can silently inherit the parent's
-  model/effort instead of their pinned config. After Codex CLI updates, verify
-  a specialist actually ran its pin via `/status` or the session log before
-  trusting tier economics.
-- `implementer` (added 2026-08-28): mid-tier (Terra) executor for
-  spec-complete mechanical write work — the weighted credit rates make it far
-  cheaper than inline edits in a grown session, but #32587 above can silently
-  erase exactly that economics, so the pin check applies doubly here.
-- OpenAI's own Codex guidance routes read-heavy exploration subagents to Terra;
-  the small tier here stays on Luna (bounded extraction-shaped presets, far
-  cheaper) — revisit if explorer output quality disappoints.
+- Named specialists under `~/.codex/agents` stay pinned to their configured
+  model tier, even after `/model` changes the parent session.
+- Known upstream regression (openai/codex#32587, MultiAgent V2; still open
+  2026-09-12, last upstream activity 2026-07-12): spawned subagents can silently
+  inherit the parent's model/effort instead of their pinned config. After Codex
+  CLI updates, verify a specialist ran its pin via `/status` or the session log
+  before trusting tier economics — doubly so under an Astra parent (2.5× Sol).
+- `implementer` (added 2026-08-28): mid-tier (Terra) executor for spec-complete
+  mechanical write work — weighted credit rates make it far cheaper than inline
+  edits in a grown session, and #32587 erases exactly that economics.
+- OpenAI's Codex guidance routes read-heavy exploration subagents to Terra; the
+  small tier here stays on Luna (bounded extraction-shaped presets, far cheaper)
+  — revisit if explorer output quality disappoints.
 
 ## Frontier driver (decision 2026-09-15)
 
-- The frontier tier `{{ .subagent_tiers.codex.frontier }}` is the session
-  default; specialist pins are unchanged and no child runs it. There is no
-  blocking lever here: `SubagentStart` receives only the agent type and
-  "`continue: false` doesn't stop the subagent", and openai/codex#32587 (open)
-  can make a child silently inherit the parent — under an Astra parent that
-  costs 2.5x, so after each CLI update check a child's model via `/status`
-  before trusting tier economics. Pins are defaults, not guarantees.
+- The frontier tier `{{ .subagent_tiers.codex.frontier }}` is the session default (shared `frontier_driver`
+  rule in AGENTS.md); specialist pins are unchanged and no child runs it. There is
+  no blocking lever: `SubagentStart` receives only the agent type and "`continue:
+  false` doesn't stop the subagent", so pins are defaults, not guarantees — run
+  the #32587 pin check after each CLI update.
 - Availability depends on the account and installed harness. A model catalog
-  entry is not proof of account access; never substitute another provider or paid
-  API routing when subscription access is unavailable.
+  entry is not proof of account access; never substitute another provider or
+  paid API routing when subscription access is unavailable.

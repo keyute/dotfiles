@@ -10,8 +10,8 @@ value is a decorrelated perspective — protect it from anchoring.
 
 1. **Load the tools.** If `mcp__codex__advise` / `mcp__codex__reply` are not
    loaded, fetch them via ToolSearch (`select:mcp__codex__advise,mcp__codex__reply`).
-   If the server is missing, stop and say so (codex not installed, or the bridge
-   not yet re-applied via chezmoi into `~/.claude.json`).
+   A missing server means codex is not installed or the bridge has not been
+   re-applied into `~/.claude.json`: stop and say so.
 
 2. **Form your own position first — silently.** You need it for the comparison; it
    must not leak into the brief.
@@ -27,8 +27,8 @@ value is a decorrelated perspective — protect it from anchoring.
      against it
 
 4. **Call Codex.** One `mcp__codex__advise` call: `cwd` = repo root, `brief` =
-   the brief. Sandbox (read-only), approvals (never), and reasoning effort
-   (high) are fixed by the bridge; the model comes from `~/.codex/config.toml`.
+   the brief; sandbox, approvals, reasoning effort and model (top worker tier)
+   are pinned by the bridge, not chosen here.
    The response opens with a `threadId:` line — probe weak points or follow up
    via `mcp__codex__reply` on it, challenging reasoning that conflicts with
    yours rather than accepting or dismissing it.
