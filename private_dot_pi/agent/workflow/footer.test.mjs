@@ -147,26 +147,35 @@ test("footer renders the status line first and the fleet rows under it", () => {
     let factory;
     const attached = [];
     const fleet = { attach: tui => attached.push(tui), render: (width, theme) => [theme.fg("dim", `rows@${width}`)] };
+    let live = 2;
+    const tasks = { live: () => live };
     const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; }, setWorkingVisible() {}, setWidget() {} } };
-    installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet, readLimits: async () => null });
+    installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet, tasks, readLimits: async () => null });
     const tui = { requestRender() {} };
-    let status = "plan auto";
+    let status = "execute auto";
     const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", status]]) };
     const render = width => factory(tui, { fg: (_color, text) => text }, footerData).render(width);
-    const lines = render(60);
+    const lines = render(70);
     assert.deepEqual(attached, [tui]);
-    assert.equal(lines[0], "  gpt-5.6-sol high · 27.2% · main" + " ".repeat(60 - 4 - 31 - 11) + "plan · auto  ");
-    assert.deepEqual(lines.slice(1), ["rows@60"]);
+    assert.equal(lines[0], "  gpt-5.6-sol high · 27.2% · main" + " ".repeat(70 - 4 - 31 - 25) + "2 shells · execute · auto  ");
+    assert.deepEqual(lines.slice(1), ["rows@70"]);
     // Too narrow for both: the left gives way, so the mode and its approval
     // survive whole. Truncating the composed line clipped the right first, and
     // `· auto` and `· ask` clip to the same string — two states, one reading.
     const auto = render(30)[0];
     status = "plan ask";
     const ask = render(30)[0];
-    assert.ok(auto.endsWith("plan · auto  "), auto);
+    assert.ok(auto.endsWith("execute · auto  "), auto);
     assert.ok(ask.endsWith("plan · ask  "), ask);
+    assert.doesNotMatch(auto, /shell/, "shell count yields before the mode at narrow widths");
+    assert.doesNotMatch(ask, /shell/, "shell count yields before the mode at narrow widths");
     assert.equal(visibleWidth(auto), 30);
     assert.equal(visibleWidth(ask), 30);
+    live = 0;
+    status = "execute auto";
+    const zero = render(60)[0];
+    assert.ok(zero.endsWith("execute · auto  "), zero);
+    assert.doesNotMatch(zero, /shell/);
   } finally {
     process.env.PATH = path;
   }

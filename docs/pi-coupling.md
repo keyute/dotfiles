@@ -12,27 +12,34 @@ consumers are sessions editing this repo, not runtime pi sessions.
   `hideThinkingBlock` settings, the `agent_start/agent_end/agent_settled`,
   `message_update/message_end`, `tool_execution_*`, `ui_prompt_*` and `input`
   events; pi-subagents' `subagents:rpc:v1` status reply and
-  `subagent:async-started/complete` events. `stability.test.mjs` checks every
-  import and event name against the package exports and docs.
+  `subagent:async-started/complete` and `subagent:process-terminal` events.
+  Detached-run cleanup requires observed proof, not logical completion; its
+  root shutdown hook precedes the plugin's RPC disposal, including headless
+  sessions. A capped history alone is not failure; remaining unaccounted active
+  work is. `fleet.test.mjs` and `integration.test.mjs` cover this ordering and
+  evidence; `stability.test.mjs` checks import/event documentation (2026-09-16).
 - Plugin rows: pi-subagents, pi-mcp-adapter, the questionnaire and
   web-search plugins receive a Proxy of the extension API whose
-  `registerTool` swaps `renderShell`/`renderCall`/`renderResult` on every
-  registration (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the
-  supervisor channel, `mcp`, `mcpScript`, `mcp__*`, `ask_user_question`,
-  `web_search`, `url_context`); rests on the plugins
-  registering through the API they are handed and pi keeping the definition
-  object (`loader.js`). Rows read `args` and the result text; the two
-  `details` reads are the adapter's `error` (failures it reports without
-  `isError`) and pi-subagents' `asyncId` (a launch). earendil-works/pi#3541
-  closed completed 2026-04-22, but the pinned SDK still ships no
-  renderer-override API (checked 2026-09-12; re-check at the next pin bump);
-  `stability.test.mjs` pins the registrations and both fields.
+  `registerTool` swaps `renderShell`/`renderCall`/`renderResult` and, for
+  `subagent` only, narrows its schema from managed accepted-key definitions
+  (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the supervisor channel,
+  `mcp`, `mcpScript`, `mcp__*`, `ask_user_question`, `web_search`,
+  `url_context`). The wrapper retains executor and description, and launch/
+  control enforcement is unchanged; it rests on plugins registering through
+  the API they are handed and pi keeping the definition object (`loader.js`).
+  Rows read `args` and the result text; the two `details` reads are the
+  adapter's `error` (failures it reports without `isError`) and pi-subagents'
+  `asyncId` (a launch). `stability.test.mjs` pins registrations and both fields;
+  `plugin-api.test.mjs` and `integration.test.mjs` gate the schema narrowing
+  without a dependency fork (2026-09-16).
 - The quiet completion notice: the same `pluginApi` Proxy intercepts
   `sendMessage` and sends pi-subagents' completion notice with `display` off
   (`docs/pi-design.md` rule 4, 2026-09-12). Rests on the plugin sending that
   notice as the literal customType `subagent-notify` through the API it is
   handed, and on pi drawing a custom message only when its `display` flag is
-  truthy. Both pinned in `stability.test.mjs`.
+  truthy. Both pinned in `stability.test.mjs`. During shutdown, results still
+  reach the transcript but cannot request a new model turn (`triggerTurn: false`);
+  `plugin-api.test.mjs` covers this exception (2026-09-16).
 - Session surfaces: pi's `resetExtensionUI` (on `/new`, `/resume`) clears the
   header, footer and custom editor, so `session_start` re-applies them every
   time; pinned in `stability.test.mjs`.

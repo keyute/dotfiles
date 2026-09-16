@@ -9,7 +9,7 @@ import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, a
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
 import { rootTools, canonical, expand, publicToolName, unsandboxed } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
-import { checkChildLaunch } from "./children.mjs";
+import { checkChildLaunch, narrowSubagentSchema } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
@@ -103,11 +103,18 @@ export const controlNotice = (message, _options, theme) => {
 // context, never drawn. Everything else
 // (events included) is the original, and the raw function is called on the raw
 // API because the adapter extracts it.
-export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = []) {
+export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = [], narrowSchema, isShuttingDown = () => false) {
   return new Proxy(pi, {
     get(target, key, receiver) {
-      if (key === "registerTool") return tool => target.registerTool({ ...tool, ...renderersFor(tool.name) });
-      if (key === "sendMessage") return (message, options) => target.sendMessage(quietMessages.includes(message?.customType) ? { ...message, display: false } : message, options);
+      if (key === "registerTool") return tool => target.registerTool({
+        ...tool,
+        ...(tool.name === "subagent" && narrowSchema ? { parameters: narrowSchema(tool.parameters) } : {}),
+        ...renderersFor(tool.name),
+      });
+      if (key === "sendMessage") return (message, options) => {
+        if (!quietMessages.includes(message?.customType)) return target.sendMessage(message, options);
+        return target.sendMessage({ ...message, display: false }, isShuttingDown() ? { ...options, triggerTurn: false } : options);
+      };
       if (key !== "registerMessageRenderer") return Reflect.get(target, key, receiver);
       return (type, renderer) => target.registerMessageRenderer(type, Object.hasOwn(messageRenderers, type)
         ? (message, options, theme) => messageRenderers[type](message, options, theme) ?? renderer(message, options, theme)
@@ -275,8 +282,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // output), sent with every bash authorization as the classifier's evidence.
   const shellHistory = [];
   let ready = false;
+  let shuttingDown = false;
   let installed = false;
   let ceiling;
+  let fleet;
   let surfaces;
   let releaseChild;
   let childRevoked = false;
@@ -368,7 +377,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
   for (const name of ["read", "write", "edit", "bash", "grep", "find", "ls"]) sandboxTool(name);
   if (background) {
-    pi.registerTool({ name: "workspace_task", label: "Background task", description: "Read the output so far of a background task started by workspace_bash with run_in_background, or stop it.", parameters: Type.Object({ id: Type.String(), action: Type.Union([Type.Literal("output"), Type.Literal("stop")]) }), ...taskRenderers, async execute(_id, args) {
+    pi.registerTool({ name: "workspace_task", label: "Background task", description: "List background tasks, read their output so far, or stop one.", parameters: Type.Object({ id: Type.Optional(Type.String()), action: Type.Union([Type.Literal("list"), Type.Literal("output"), Type.Literal("stop")]) }), ...taskRenderers, async execute(_id, args) {
+      if (args.action === "list") {
+        const listed = tasks.list();
+        return resultText(listed.length ? listed.map(task => `${task.id} · ${task.status} · ${task.command}`).join("\n") : "No background tasks");
+      }
+      if (!args.id) throw new Error(`workspace_task ${args.action} requires id`);
       if (args.action === "stop") return resultText(tasks.stop(args.id) ? `Stopping task ${args.id}` : `Task ${args.id} had already ended`);
       return resultText(tasks.output(args.id));
     } });
@@ -411,12 +425,16 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // drift; the footer paints it, where the theme is live.
   const publishStatus = ctx => ctx.ui.setStatus("workflow", `${broker.policy.mode} ${broker.policy.approval}`);
 
-  async function setMode(mode, ctx) {
+  async function setMode(mode, ctx, { cleanup = true } = {}) {
     if (!broker) throw new Error("Only the parent can change workflow mode");
     ready = false;
-    // Stopped here, before the broker revokes their leases, so a task ends as
-    // "stopped" rather than as a lost worker.
-    tasks.stopAll();
+    if (cleanup) {
+      // Stop owners while unavailable, before the broker changes its policy:
+      // shells settle normally, then detached plugin runners are stopped.
+      await tasks.stopAll();
+      if (tasks.live()) throw new Error("Background shell cleanup did not finish; workflow remains unavailable");
+      await fleet.stopAll();
+    }
     await broker.setMode(mode);
     publishEpoch();
     ready = true;
@@ -424,13 +442,37 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     publishStatus(ctx);
   }
 
+  async function shutdown() {
+    ready = false;
+    shuttingDown = true;
+    const failures = [];
+    const attempt = async (label, action) => {
+      try { await action(); }
+      catch (error) { failures.push(`${label}: ${error instanceof Error ? error.message : String(error)}`); }
+    };
+    await attempt("background shells", () => tasks.stopAll({ silent: true }));
+    if (tasks.live()) failures.push("background shells: cleanup timed out");
+    if (isRoot) {
+      if (currentContext) await attempt("detached subagents", () => fleet.stopAll());
+    } else releaseChild?.();
+    await attempt("capability ceiling", () => ceiling?.dispose());
+    if (broker) {
+      await attempt("broker", () => broker.close());
+      delete process.env.PI_WORKFLOW_EPOCH;
+      for (const [key, value] of Object.entries(env)) if (process.env[key] === value) delete process.env[key];
+    }
+    if (failures.length) throw new Error(`Workflow shutdown cleanup failed: ${failures.join("; ")}`);
+  }
+
   pi.on("session_start", async (_event, ctx) => {
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     currentContext = ctx;
+    shuttingDown = false;
     const allowedAgents = Object.entries(config.agents).filter(([, child]) => isRoot || !config.agents[role].readonly || child.readonly).map(([name]) => name);
     ceiling?.dispose();
     ceiling = registerSubagentCapabilityCeiling({ sessionId: ctx.sessionManager.getSessionId(), source: "managed-workflow", ceiling: { allowedAgents, allowedTools: permittedTools } });
-    if (broker) await setMode("plan", ctx);
+    fleet?.attachContext(ctx);
+    if (broker) await setMode("plan", ctx, { cleanup: false });
     else {
       releaseChild = await acquireChild(env, role, release => {
         ready = false;
@@ -444,14 +486,13 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (isRoot && ctx.hasUI) {
       if (!surfaces) {
         installFolding(pi, ctx);
-        const fleet = installFleet(pi, ctx);
-        surfaces = { fleet, footer: installFooter(pi, ctx, { fleet, tasks }) };
+        surfaces = { footer: installFooter(pi, ctx, { fleet, tasks }) };
       }
       // pi resets every extension surface when a session is invalidated
       // (/new, /resume), so these are applied on each session start.
       installHeader(ctx);
       surfaces.footer.attach(ctx);
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet: surfaces.fleet, palette: ctx.ui.theme }));
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme }));
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
     pi.setActiveTools(pi.getAllTools().map(tool => tool.name).filter(permitted));
@@ -479,7 +520,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
-  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY]);
+  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY], narrowSubagentSchema, () => shuttingDown);
+  // Fleet owns detached-run lifecycle for every root, including headless roots;
+  // only its footer rendering is conditional on UI. Register our shutdown
+  // before pi-subagents installs its hook, which disposes the RPC bridge.
+  if (isRoot) fleet = installFleet(pi, null);
+  pi.on("session_shutdown", shutdown);
   if (isRoot) {
     pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", handler: (_args, ctx) => setMode("plan", ctx) });
     pi.registerCommand("execute", { description: "Approve the current plan and enable scoped execution", handler: async (_args, ctx) => {
@@ -564,7 +610,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     // their args patched) by the blocking tool_call hook, the capability
     // ceiling bounds every launch path, and the broker's child leases enforce
     // capacity and runtime role.
-    const subagents = await jiti.import("pi-subagents", { default: true });
+    const subagents = runtime.installSubagents ?? await jiti.import("pi-subagents", { default: true });
     await subagents(styled);
   }
 
@@ -579,17 +625,6 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
     await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false } } })(styled);
   }
-  pi.on("session_shutdown", async () => {
-    ready = false;
-    await tasks.stopAll();
-    releaseChild?.();
-    ceiling?.dispose();
-    if (broker) {
-      await broker.close();
-      delete process.env.PI_WORKFLOW_EPOCH;
-      for (const [key, value] of Object.entries(env)) if (process.env[key] === value) delete process.env[key];
-    }
-  });
   installed = true;
 }
 

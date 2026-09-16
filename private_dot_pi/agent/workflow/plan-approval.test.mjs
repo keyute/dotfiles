@@ -153,10 +153,20 @@ function tuiApproval(signal) {
   };
 }
 
-test("inline approval uses Tab between Yes/No and Enter or Shift+Enter inside feedback", async () => {
+test("approval starts as a three-row menu and opens feedback only on Enter", async () => {
   const prompt = tuiApproval();
   const component = prompt.component();
+  const initial = component.render(80).join("\n");
+  assert.match(initial, /Yes, approve and execute/);
+  assert.match(initial, /Give feedback…/);
+  assert.match(initial, /No, cancel/);
+  assert.doesNotMatch(initial, /Optional feedback:/);
+
   component.handleInput("\t");
+  const feedbackSelected = component.render(80).join("\n");
+  assert.doesNotMatch(feedbackSelected, /Optional feedback:/, "highlighting feedback must not open its editor");
+  component.handleInput("\r");
+  assert.match(component.render(80).join("\n"), /Optional feedback:/);
   component.handleInput("ab");
   component.handleInput("\x1b[D");
   component.handleInput("X");
@@ -164,12 +174,25 @@ test("inline approval uses Tab between Yes/No and Enter or Shift+Enter inside fe
   component.handleInput("second");
   component.handleInput("\r");
   assert.deepEqual(await prompt.promise, { decision: PLAN_REVISION, feedback: "aX\nsecondb" });
-  assert.ok(prompt.stats().renders >= 6);
+  assert.ok(prompt.stats().renders >= 7);
 });
 
-test("inline approval treats blank No and Esc in either state as cancellation", async () => {
+test("approval menu moves with arrows, Tab cycles, and cancellation needs no editor", async () => {
+  const arrows = tuiApproval();
+  arrows.component().handleInput("\x1b[B");
+  arrows.component().handleInput("\x1b[B");
+  arrows.component().handleInput("\r");
+  assert.deepEqual(await arrows.promise, { decision: PLAN_CANCELLED });
+
+  const tab = tuiApproval();
+  tab.component().handleInput("\t");
+  tab.component().handleInput("\t");
+  tab.component().handleInput("\r");
+  assert.deepEqual(await tab.promise, { decision: PLAN_CANCELLED });
+
   const blank = tuiApproval();
   blank.component().handleInput("\t");
+  blank.component().handleInput("\r");
   blank.component().handleInput("\r");
   assert.deepEqual(await blank.promise, { decision: PLAN_CANCELLED });
 
@@ -179,6 +202,7 @@ test("inline approval treats blank No and Esc in either state as cancellation", 
 
   const editor = tuiApproval();
   editor.component().handleInput("\t");
+  editor.component().handleInput("\r");
   editor.component().handleInput("draft");
   editor.component().handleInput("\x1b");
   assert.deepEqual(await editor.promise, { decision: PLAN_CANCELLED });
@@ -188,11 +212,25 @@ test("unsubmitted feedback is not a decision, and narrow rendering stays within 
   const prompt = tuiApproval();
   const component = prompt.component();
   component.handleInput("\t");
+  component.handleInput("\r");
   component.handleInput("draft");
   for (const line of component.render(14)) assert.ok(visibleWidth(line) <= 14, `${visibleWidth(line)} > 14: ${line}`);
   component.handleInput("\t");
+  component.handleInput("\t");
   component.handleInput("\r");
   assert.deepEqual(await prompt.promise, { decision: PLAN_APPROVED });
+});
+
+test("feedback editor keeps its component focus", () => {
+  const prompt = tuiApproval();
+  const component = prompt.component();
+  component.focused = false;
+  component.handleInput("\t");
+  component.handleInput("\r");
+  assert.equal(component.focused, false);
+  component.focused = true;
+  assert.equal(component.focused, true);
+  component.handleInput("\x1b");
 });
 
 test("the active signal dismisses inline approval and cleanup prevents duplicate completion", async () => {

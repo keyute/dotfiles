@@ -4,6 +4,24 @@ const launchKeys = new Set(["agent", "task", "async", "model", "context", "agent
 const scriptKeys = new Set(["workflowScript", "workflowScriptPath", "tasks", "chain"]);
 const controlKeys = new Set(["action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery"]);
 const listKeys = new Set(["action", "agentScope", "capabilities"]);
+const managementActions = new Set(["list", "status", "interrupt", "stop", "steer"]);
+const launchContexts = new Set(["fresh", "fork"]);
+const agentScopes = new Set(["user"]);
+const subagentKeys = new Set([...launchKeys, ...controlKeys, ...listKeys]);
+
+export function narrowSubagentSchema(schema) {
+  const properties = Object.fromEntries([...subagentKeys].map(key => [key, schema.properties[key]]));
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      action: { ...properties.action, enum: [...managementActions] },
+      context: { ...properties.context, enum: [...launchContexts] },
+      agentScope: { ...properties.agentScope, enum: [...agentScopes] },
+    },
+    additionalProperties: false,
+  };
+}
 
 export async function checkChildLaunch(args, config, role, ctx, resolveContract) {
   if (args.action) {
@@ -12,22 +30,20 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract)
       args.agentScope = "user";
       return;
     }
-    if (!["status", "interrupt", "stop", "steer"].includes(args.action)
+    if (!managementActions.has(args.action) || args.action === "list"
       || Object.keys(args).some(key => !controlKeys.has(key))
       || (args.view && !["fleet", "transcript"].includes(args.view))) throw new Error("This child management operation is not enabled");
     args.steeringRecovery = false;
     return;
   }
   if (Object.keys(args).some(key => scriptKeys.has(key))) throw new Error("Use a named child launch with agent and task; workflow scripts, task lists and chains are not enabled");
-  // pi-subagents' schema still advertises cwd, toolBudget, acceptance and the
-  // like; every observed run passed some of them on its first launch, so they
-  // are dropped rather than refused (a refusal costs a turn per launch batch).
+  // Launch-only extras stay silently dropped; the execution contract admits only launchKeys.
   for (const key of Object.keys(args)) if (!launchKeys.has(key)) delete args[key];
   const child = config.agents[args.agent];
   if (!child || typeof args.task !== "string" || !args.task.trim()) throw new Error("A configured agent and bounded task are required");
   if (role !== "root" && config.agents[role].readonly && !child.readonly) throw new Error("Read-only children cannot delegate to writers");
   args.agentScope = "user";
-  if (args.context !== undefined && !["fresh", "fork"].includes(args.context)) delete args.context;
+  if (args.context !== undefined && !launchContexts.has(args.context)) delete args.context;
   let selected = args.model ?? child.model;
   // `inherit` is pi-subagents' own frontmatter value; resolving it here keeps
   // the launch contract check on a concrete tier-policy model.

@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
+import { Type } from "typebox";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
 
@@ -79,8 +80,18 @@ test("pinned upstream packages register against the managed extension and prefli
   };
   const { installWorkflow, mcpServerDefinitions } = await import("./index.mjs");
   await installWorkflow(pi, configPath, "root", { startBroker, requestBroker });
+  // Upstream lifecycle callbacks require a real Pi session; this registration
+  // fixture never starts one, but must always release our broker.
+  t.after(() => handlers.get("session_shutdown").find(handler => handler.name === "shutdown")());
   assert.ok(tools.has("workspace_read"));
   assert.ok(tools.has("subagent"));
+  const subagentSchema = tools.get("subagent").parameters;
+  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "agentScope", "async", "capabilities", "context", "id", "index", "lines", "message", "mode", "model", "runId", "steeringRecovery", "task", "view"].sort());
+  assert.equal(subagentSchema.additionalProperties, false);
+  assert.deepEqual(subagentSchema.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
+  assert.deepEqual(subagentSchema.properties.context.enum, ["fresh", "fork"]);
+  assert.deepEqual(subagentSchema.properties.agentScope.enum, ["user"]);
+  assert.ok(tools.get("subagent").description);
   assert.ok(tools.has("submit_plan"));
   assert.equal(tools.get("submit_plan").executionMode, "sequential");
   assert.equal(tools.get("submit_plan").description, "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.");
@@ -124,8 +135,83 @@ test("pinned upstream packages register against the managed extension and prefli
   await checkChildLaunch(list, config, "root", ctx, resolveSubagentLaunchContract);
   assert.equal(list.agentScope, "user");
   await assert.rejects(checkChildLaunch({ action: "list", view: "fleet" }, config, "root", ctx, resolveSubagentLaunchContract), /not enabled/);
-  // Exercise only our cleanup: upstream lifecycle callbacks require a real Pi session.
-  await handlers.get("session_shutdown").at(-1)();
+
+});
+
+test("headless root cleanup uses plugin RPC before its shutdown hook and still closes the broker on stop failure", async t => {
+  const { config } = fixture(t);
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const handlers = new Map();
+  const eventHandlers = new Map();
+  const tools = new Map();
+  const commands = new Map();
+  const log = [];
+  let rpcReady = false;
+  const events = {
+    on(name, fn) {
+      const list = eventHandlers.get(name) ?? new Set();
+      list.add(fn);
+      eventHandlers.set(name, list);
+      return () => list.delete(fn);
+    },
+    emit(name, payload) {
+      for (const fn of eventHandlers.get(name) ?? []) fn(payload);
+    },
+  };
+  const pi = {
+    events,
+    on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool(tool) { tools.set(tool.name, tool); },
+    registerCommand(name, command) { commands.set(name, command); }, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, setThinkingLevel() {},
+  };
+  const broker = {
+    env: { PI_WORKFLOW_SOCKET: "fake-socket", PI_WORKFLOW_TOKEN: "fake-token" },
+    policy: { mode: "plan", approval: "auto", epoch: 1, roots: new Map(), addableDirs: () => [] },
+    async setMode(mode) { this.policy.mode = mode; log.push(`mode:${mode}`); },
+    async close() { log.push("broker:close"); },
+  };
+  const installSubagents = async styled => {
+    styled.registerTool({ name: "subagent", label: "subagent", description: "fake", parameters: Type.Object({}), async execute() {} });
+    styled.events.on("subagents:rpc:v1:request", request => {
+      let success = true;
+      let data;
+      if (request.method === "ping") data = { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } };
+      else if (!rpcReady) success = false;
+      else if (request.method === "status" && !request.params.id) data = { fleet: { entries: [], totalActive: 1 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [{ id: "owned-run", state: "running" }] } };
+      else if (request.method === "status") data = { details: { lifecycleStatus: { processTerminal: { version: 1, runId: "owned-run", state: "pending" } } }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [{ id: "owned-run", state: "running" }] } };
+      else if (request.method === "stop") { log.push(`stop:${request.params.id}`); success = false; }
+      events.emit(`subagents:rpc:v1:reply:${request.requestId}`, success ? { success: true, data } : { success: false, error: { code: "failed", message: "fixture stop failure" } });
+    });
+    styled.on("session_start", () => { rpcReady = true; events.emit("subagents:rpc:v1:ready"); });
+    styled.on("session_shutdown", () => { log.push("rpc:teardown"); rpcReady = false; });
+  };
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: broker.policy.mode, readonly: false }), installSubagents });
+  assert.ok(tools.has("workspace_task"));
+  assert.deepEqual(tools.get("workspace_task").parameters.properties.action.anyOf.map(entry => entry.const), ["list", "output", "stop"]);
+  assert.equal(tools.get("workspace_task").parameters.required.includes("id"), false);
+  assert.equal((await tools.get("workspace_task").execute("list", { action: "list" })).content[0].text, "No background tasks");
+
+  const ctx = {
+    cwd: process.cwd(), hasUI: false, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, thinkingLevel: "medium",
+    sessionManager: { getSessionId: () => "headless-root", getSessionFile: () => null },
+    modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
+    ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
+  };
+  for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
+  log.length = 0;
+  await assert.rejects(commands.get("plan").handler("", ctx), /owned-run: stop request failed/);
+  assert.deepEqual(log, ["stop:owned-run"], "a failed child stop does not reach the broker mode update");
+  log.length = 0;
+  let cleanupError;
+  for (const handler of handlers.get("session_shutdown") ?? []) {
+    try { await handler({ reason: "quit" }, ctx); }
+    catch (error) { cleanupError ??= error; }
+  }
+  assert.match(cleanupError?.message ?? "", /owned-run: stop request failed/);
+  assert.deepEqual(log, ["stop:owned-run", "broker:close", "rpc:teardown"]);
 });
 
 test("child sessions share one capacity ceiling and acknowledge revocation before plan becomes active", { skip }, async t => {

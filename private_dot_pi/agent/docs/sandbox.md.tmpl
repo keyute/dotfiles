@@ -7,22 +7,25 @@ measurements and audit baselines live in the chezmoi repo's
 `docs/agents-audit-log.md`, not here. If behavior seems changed, verify
 against the source repository and update this file.
 
-## Planning and permissions (last verified 2026-09-12)
+## Planning and permissions (last verified 2026-09-16)
 
-- New sessions start in plan mode with auto-reviewed approvals. Source writes
-  remain disabled; temporary build/cache artifacts use designated writable roots.
-  The mode asks for the work as well as forbidding the edits: research the
-  request to the point of a plan unprompted, delegate the independent
-  exploration, ask where different readings would lead to materially different
-  work, then submit the plan without being asked for it.
+- New sessions start in plan mode with auto-reviewed approvals. In the normal
+  sandbox, source writes remain disabled; temporary build/cache artifacts use
+  designated writable roots. This read-only claim does not apply to a reviewed
+  unsandboxed plan action, which is not OS-enforced read-only. The mode asks for
+  the work as well as forbidding the edits: research the request to the point of
+  a plan unprompted, delegate the independent exploration, ask where different
+  readings would lead to materially different work, then submit the plan without
+  being asked for it (2026-09-16).
 - `/execute` or approval of `submit_plan` explicitly enables scoped execution.
   Every mode switch revokes child sessions and sandbox processes before the
   new mode takes effect — `/plan` before enabling planning, and approval of
   `submit_plan` the same way before enabling execution, so a child still
   running when the plan is approved ends aborted.
-  `submit_plan` offers Yes/No with inline feedback: No with text requests revision;
-  blank No or Esc stops without an acknowledgement model turn. Neither enables
-  execution; only Yes approves (2026-09-16).
+  `submit_plan` offers `Yes — execute`, `Give feedback…`, `No — cancel` vertically;
+  only feedback opens the multiline editor. Blank submitted feedback, No, or Esc
+  cancel without an acknowledgement model turn; nonblank submitted feedback keeps
+  the plan for revision. Only Yes enables execution (2026-09-16).
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
 - Shell commands run inside the SRT profile without review, as sandboxed
@@ -74,9 +77,14 @@ against the source repository and update this file.
   the worker keeps its lease, and when the command ends the model hears a
   steer message with the exit status and the last twenty lines (with its
   next tool result, or as a new turn when idle). `workspace_task`
-  `{ id, action: "output" | "stop" }` reads the output so far or stops it. Output is kept in memory, tail-capped
-  at 256 KiB. `/plan` and `/remove-dir` stop running tasks like any sandbox
-  process (they end as `stopped`); so does exiting pi.
+  `{ id, action: "output" | "stop" }` reads the output so far or stops it;
+  `{ action: "list" }` needs no id and returns known IDs, status, and command.
+  Output is kept in memory, tail-capped at 256 KiB. `/plan` and `/remove-dir`
+  stop running tasks like any sandbox process (they end as `stopped`); so does
+  exiting pi. The close hook silently stops shell tasks; cleanup retains their
+  outputs and failures. Cleanup cannot run after Pi receives SIGKILL, nor does it
+  cover deliberately detached `setsid` daemons or external services/containers
+  (2026-09-16).
 - `/add-dir <path>` adds a directory to the editable workspace, as Claude
   Code's does: edits inside it are allowed once execution is approved, its
   `.git`, `.pi` and every relative deny entry (`.env`) are protected there as
@@ -91,9 +99,16 @@ against the source repository and update this file.
   under an added directory need a restart with `--skill <path>`, since pi
   discovers resources only at startup and `/reload`. Reads were never
   confined to the workspace; only the deny list applies.
-- If a process disappears without acknowledging termination, the workflow blocks.
-  Check orphan processes and restart; do not treat a lost connection as proof that
-  a writer stopped.
+- Mode changes and shutdown stop detached children through session-owned RPC
+  and require observed process-terminal proof, not a completion notification.
+  Unverified cleanup blocks mode changes; shutdown still closes the broker and
+  reports cleanup failures. Shutdown child results cannot trigger a model turn.
+  If termination cannot be established, check orphan processes and restart
+  (2026-09-16).
+- Browser launch is currently blocked under macOS SRT containment; no browser
+  policy or broad permission is adopted. Revisit only on an upstream pin with a
+  contained launch, navigation, and cleanup gate; evidence is in the audit log
+  (2026-09-16).
 
 The `workspace_*` tools are the SDK's own tools running in the host Pi process;
 each invocation leases a per-tool SRT worker that performs the actual file and

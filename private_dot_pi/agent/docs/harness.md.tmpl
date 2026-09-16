@@ -65,11 +65,14 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   the child, as Codex's forked children do, for a second pass over material
   already read. They have no channel back: the pi-subagents intercom bridge is
   off in `extensions/subagent/config.json` (decision 2026-09-10).
-- Unsupported launch keys the upstream schema still advertises (`cwd`, `toolBudget`,
-  …) are dropped silently; workflow scripts, task lists and chains are refused.
-  Status (fleet or transcript view), stop, interrupt and non-recovering steer are
-  enabled; project role overrides, revival and mutating management are not, and
-  results arrive as notifications — `bg_wait` only when the turn depends on them.
+- The upstream launch schema is narrowed from the same managed accepted-key
+  definitions, so unsupported keys it advertises (`cwd`, `toolBudget`, …) are not
+  offered; executor and description are retained, and launch/control enforcement
+  is unchanged. Workflow scripts, task lists and chains are refused. Status (fleet
+  or transcript view), stop, interrupt and non-recovering steer are enabled;
+  project role overrides, revival and mutating management are not, and results
+  arrive as notifications — `bg_wait` only when the turn depends on them
+  (2026-09-16).
 - Launched children's scope is off-limits to the parent (AGENTS.md).
 - Transcript and status-line rendering follows the source repo's `docs/pi-design.md`;
   the undocumented surfaces it leans on are inventoried in `docs/pi-coupling.md`.

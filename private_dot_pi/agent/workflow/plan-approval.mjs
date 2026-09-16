@@ -66,7 +66,10 @@ export class PlanApprovalComponent {
     this.theme = theme;
     this.keybindings = keybindings;
     this.done = done;
-    this.selected = PLAN_APPROVED;
+    this.selected = 0;
+    this.editing = false;
+    this.isFocused = true;
+    this.finished = false;
     this.editor = new Editor(tui, {
       borderColor: text => theme.fg("borderMuted", text),
       selectList: {
@@ -83,13 +86,20 @@ export class PlanApprovalComponent {
     if (signal?.aborted) this.onAbort();
   }
 
-  get focused() { return this.editor.focused; }
-  set focused(value) { this.editor.focused = value && this.selected === PLAN_REVISION; }
+  get focused() { return this.isFocused; }
+  set focused(value) {
+    this.isFocused = value;
+    this.editor.focused = value && this.editing;
+  }
 
-  finish(result) { this.done(result); }
+  finish(result) {
+    if (this.finished) return;
+    this.finished = true;
+    this.done(result);
+  }
 
   refresh() {
-    this.editor.focused = this.selected === PLAN_REVISION;
+    this.editor.focused = this.isFocused && this.editing;
     this.tui.requestRender();
   }
 
@@ -100,17 +110,28 @@ export class PlanApprovalComponent {
       return;
     }
     if (kb.matches(data, "tui.input.tab") || matchesKey(data, Key.tab)) {
-      this.selected = this.selected === PLAN_APPROVED ? PLAN_REVISION : PLAN_APPROVED;
+      this.editing = false;
+      this.selected = (this.selected + 1) % 3;
       this.refresh();
       return;
     }
-    if (this.selected === PLAN_APPROVED) {
-      if (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down") || matchesKey(data, Key.left) || matchesKey(data, Key.right)) {
-        this.selected = PLAN_REVISION;
+    if (!this.editing && (kb.matches(data, "tui.select.up") || matchesKey(data, Key.up))) {
+      this.selected = Math.max(0, this.selected - 1);
+      this.refresh();
+      return;
+    }
+    if (!this.editing && (kb.matches(data, "tui.select.down") || matchesKey(data, Key.down))) {
+      this.selected = Math.min(2, this.selected + 1);
+      this.refresh();
+      return;
+    }
+    if (!this.editing) {
+      if (!(kb.matches(data, "tui.select.confirm") || kb.matches(data, "tui.input.submit") || matchesKey(data, Key.enter))) return;
+      if (this.selected === 0) this.finish({ decision: PLAN_APPROVED });
+      else if (this.selected === 1) {
+        this.editing = true;
         this.refresh();
-        return;
-      }
-      if (kb.matches(data, "tui.select.confirm") || kb.matches(data, "tui.input.submit") || matchesKey(data, Key.enter)) this.finish({ decision: PLAN_APPROVED });
+      } else this.finish({ decision: PLAN_CANCELLED });
       return;
     }
     if (kb.matches(data, "tui.input.newLine")) {
@@ -130,16 +151,18 @@ export class PlanApprovalComponent {
   render(width) {
     const usable = Math.max(1, width);
     const lines = wrapTextWithAnsi(this.theme.fg("text", "Approve the current plan?"), usable);
-    const option = (decision, label) => decision === this.selected
-      ? this.theme.fg("accent", `[${label}]`)
-      : ` ${label} `;
-    lines.push(truncateToWidth(`${option(PLAN_APPROVED, "Yes")}   ${option(PLAN_REVISION, "No")}`, usable, ""));
-    if (this.selected === PLAN_REVISION) {
+    const option = (index, label) => index === this.selected
+      ? this.theme.fg("accent", `> ${label}`)
+      : `  ${label}`;
+    for (const [index, label] of [[0, "Yes, approve and execute"], [1, "Give feedback…"], [2, "No, cancel"]]) {
+      lines.push(...wrapTextWithAnsi(option(index, label), usable));
+    }
+    if (this.editing) {
       lines.push(...wrapTextWithAnsi(this.theme.fg("muted", "Optional feedback:"), usable));
       lines.push(...this.editor.render(usable));
-      lines.push(...wrapTextWithAnsi(this.theme.fg("dim", "Enter submit · Shift+Enter newline · Tab choose Yes · Esc cancel"), usable));
+      lines.push(...wrapTextWithAnsi(this.theme.fg("dim", "Enter submit · Shift+Enter newline · Tab next option · Esc cancel"), usable));
     } else {
-      lines.push(...wrapTextWithAnsi(this.theme.fg("dim", "Enter approve · Tab choose No · Esc cancel"), usable));
+      lines.push(...wrapTextWithAnsi(this.theme.fg("dim", "Up/down move · Tab next option · Enter select · Esc cancel"), usable));
     }
     return lines.map(line => truncateToWidth(line, usable, ""));
   }

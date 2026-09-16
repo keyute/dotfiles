@@ -1,8 +1,7 @@
 # Pi TUI design language
 
-Last verified 2026-09-09 (pi 0.85.1). Read this before editing
-`private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`; change a rule
-only with a dated decision here, never by re-wording.
+Last verified 2026-09-16 (pi 0.85.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`;
+change a rule only with a dated decision here, never by re-wording.
 
 The intent, set on 2026-09-07 from a side-by-side of pi, Codex and Claude
 Code: Claude Code's presentation of the work in progress, Codex's composer,
@@ -66,9 +65,9 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-09, later:* `workspace_task` left the fold set (a background task
      is running work under rule 4), and the plan row took the tool's own
      `Plan approval` label.
-   - *2026-09-16:* plan markdown stays in its pending transcript row (`isPartial`);
-     approval offers Yes or No with inline feedback. Blank No/Esc abort without an
-     acknowledgement model turn; submitted feedback alone continues planning.
+   - *2026-09-16:* pending plan markdown (`isPartial`) and its RPC are unchanged; compact vertical approval is `Yes — execute`,
+     `Give feedback…`, `No — cancel`; only feedback opens the multiline editor. Blank submitted feedback, No, or Esc cancel
+     without an acknowledgement model turn; nonblank feedback keeps the plan.
    - *2026-09-10:* fold extent is derived from `rows.mjs`'s ordered timeline of
      facts — a maximal stretch of settled successful rows with a separator on
      its right, keyed by that boundary so ctrl+o and click state survive —
@@ -94,9 +93,10 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      the shared painter keys on the `+`, as the two surfaces spell the minus
      differently.
    - *2026-09-10:* the mode takes the theme's success/warning pair with the
-     approval setting beside it in dim (`execute · auto`), painted in the
-     footer's render and travelling as one string; the left side is truncated
-     against the space the mode does not need, so mode and approval stay whole.
+     approval setting beside it in dim (`execute · auto`); the left side yields
+     so mode and approval stay whole.
+   - *2026-09-16:* the right footer prepends live background shells (`2 shells · execute · auto`), omits zero, and yields them first when narrow.
+     It counts no subagents or MCP; completion notices stay normal except actual-shutdown shell settlements, which are silent.
 4. **A turn ends when nothing is running.** The turn line prints at
    `agent_settled` only when no background child or task is live; with either
    running it waits for the follow-up run to settle (or the user to type) and
@@ -119,9 +119,9 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-09, later:* goal-mission notices go back to the plugin's box
      whole, since the row's `<agent> <state>` strip assumes one producer's
      wording.
-   - *2026-09-12:* the completion notice itself no longer draws — the plugin
-     wrapper sends it with `display` off, the path pi-subagents' quiet
-     background successes ride; its content is untouched.
+   - *2026-09-12:* the completion notice does not draw: the plugin wrapper sends
+     it with `display` off, pi-subagents' quiet-background-success path; content
+     is untouched.
 5. **Composer = the user box, and the user box = the composer.** A shaded block
    in pi's `userMessageBg`: one blank shaded row above and below the content,
    `❯` at column 0 on the first content line, no rule lines, no placeholder;

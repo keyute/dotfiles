@@ -41,6 +41,8 @@ export function createFleetState() {
   return { entries: [], totalActive: 0, runs: [], launches: new Map(), focused: false, cursor: 0 };
 }
 
+const ACTIVE_RUN_STATES = new Set(["queued", "running"]);
+
 export function setEntries(state, fleet, snapshot) {
   state.entries = fleet?.entries ?? [];
   state.runs = snapshot?.runs ?? [];
@@ -122,8 +124,8 @@ export function rpcCall(events, method, params = {}, timeoutMs = 2_000) {
 
 // The rows render inside the footer (attach/render): pi's dock order is fixed
 // with the footer last, so a widget could only sit above the status line.
-export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeoutMs = 2_000 } = {}) {
-  const state = { ...createFleetState(), pending: new Map(), active: new Set(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null };
+export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeoutMs = 2_000, cleanupTimeoutMs = 5_000 } = {}) {
+  const state = { ...createFleetState(), pending: new Map(), active: new Set(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
 
   const shape = () => [state.totalActive, ...state.entries.map(entry => `${entry.agent}|${entry.status}|${entry.goal}|${entry.tokens?.total ?? entry.tokens}`)].join("\n");
   const show = (fleet, snapshot) => {
@@ -140,7 +142,10 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
       if (reply && !state.stopped) show(reply.fleet, reply.asyncSnapshot);
     } catch { state.capable = false; }
     const again = state.capable && !state.stopped && (state.entries.length || Date.now() - state.lastWake < quietMs);
-    if (again) state.timer = setTimeout(poll, pollMs);
+    if (again) {
+      state.timer = setTimeout(poll, pollMs);
+      state.timer.unref?.();
+    }
     else state.polling = false;
   };
   const wake = () => {
@@ -168,13 +173,16 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
   // poll lags agent_settled, where the footer asks whether a turn is over.
   pi.events.on("subagents:rpc:v1:ready", wake);
   pi.events.on("subagent:async-started", payload => { if (payload?.id) state.active.add(payload.id); wake(); });
+  pi.events.on("subagent:process-terminal", proof => {
+    if (proof?.state === "observed" && proof?.runId) state.active.delete(proof.runId);
+    wake();
+  });
   // The completion payload spreads the result file (`success`, `state`,
   // `agent`, `durationMs` from launch to end) plus `runId` and, per result,
   // pi-subagents' resolved `status` (completed, failed, partial, paused,
   // stopped, detached); the task comes from the launch recorded above.
   pi.events.on("subagent:async-complete", payload => {
     const id = payload?.runId ?? payload?.id;
-    state.active.delete(id);
     const launch = state.launches.get(id);
     const statuses = (payload?.results ?? []).map(result => result?.status).filter(Boolean);
     const status = (statuses.length ? STATUS_ORDER.find(s => statuses.includes(s)) ?? statuses[0] : null)
@@ -189,18 +197,84 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     clearTimeout(state.timer);
     show(null);
   });
-  wake();
+  if (ctx) wake();
+
+  // Stop only current-session top-level async run IDs. The fresh public
+  // snapshot supplies restored ownership; launch events cover runs that have
+  // not reached that bounded projection yet. Fleet entry keys are display-only
+  // and are never treated as control IDs.
+  const stopAll = async () => {
+    const failures = [];
+    const terminal = new Set();
+    let wakeSettlement;
+    const observe = proof => {
+      if (proof?.state !== "observed" || !proof.runId) return;
+      terminal.add(proof.runId);
+      state.active.delete(proof.runId);
+      wakeSettlement?.();
+    };
+    const offProof = pi.events.on("subagent:process-terminal", observe);
+    try {
+      const ping = await rpcCall(pi.events, "ping", {}, timeoutMs);
+      if (!ping?.capabilities?.stop) failures.push("subagent stop RPC is unavailable");
+      const status = await rpcCall(pi.events, "status", {}, timeoutMs);
+      const snapshot = status?.asyncSnapshot;
+      const validSnapshot = snapshot?.version === 1 && Array.isArray(snapshot.runs);
+      if (!validSnapshot) failures.push("fresh async status was unavailable; cleanup of restored work could not be established");
+      const ids = new Set(state.active);
+      if (validSnapshot) {
+        for (const run of snapshot.runs) if (run?.id && ACTIVE_RUN_STATES.has(run.state)) ids.add(run.id);
+      }
+      const ordered = [...ids].sort();
+      const stops = new Map(await Promise.all(ordered.map(async id => [id, await rpcCall(pi.events, "stop", { id }, timeoutMs)])));
+      const inspect = () => Promise.all(ordered.filter(id => !terminal.has(id)).map(async id => {
+        const reply = await rpcCall(pi.events, "status", { id }, timeoutMs);
+        const proof = reply?.details?.lifecycleStatus?.processTerminal;
+        if (proof?.runId === id) observe(proof);
+      }));
+      await inspect();
+      if (!ordered.every(id => terminal.has(id))) {
+        await new Promise(resolve => {
+          const timer = setTimeout(resolve, cleanupTimeoutMs);
+          wakeSettlement = () => {
+            if (!ordered.every(id => terminal.has(id))) return;
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+        await inspect();
+      }
+      for (const id of ordered) {
+        // A natural exit can beat stop's state check. Its observed close is
+        // sufficient; neither a stop acknowledgment nor completion is.
+        if (terminal.has(id)) continue;
+        const reply = stops.get(id);
+        failures.push(`${id}: ${reply?.runId === id && reply.state === "stopping" ? "terminal state was not established" : "stop request failed; terminal state was not established"}`);
+      }
+      if (validSnapshot && snapshot.omitted?.runs > 0) {
+        // The snapshot caps history, not active runs. Historical omissions
+        // alone are harmless; any remaining active work is not accounted for.
+        const remaining = await rpcCall(pi.events, "status", {}, timeoutMs);
+        if (remaining?.fleet?.totalActive !== 0) failures.push(`async status snapshot omitted ${snapshot.omitted.runs} runs; cleanup of omitted or restored work could not be established`);
+      }
+    } finally {
+      offProof?.();
+    }
+    if (failures.length) throw new Error(`Subagent cleanup failed: ${failures.join("; ")}`);
+  };
 
   // Enter shows the highlighted child's transcript tail (pi-subagents' own
   // status view) in an overlay, and says so when there is none yet — Enter is
   // never silent.
   const peek = async entry => {
+    const current = state.ctx;
+    if (!current) return;
     const id = runIdFor(state, entry);
     const reply = id ? await rpcCall(pi.events, "status", { id, view: "transcript", lines: 40 }, timeoutMs) : null;
-    if (!reply?.text || !ctx.hasUI) return ctx.ui.notify(`No transcript yet for ${entry.agent}`, "info");
+    if (!reply?.text || !current.hasUI) return current.ui.notify(`No transcript yet for ${entry.agent}`, "info");
     const { agent, goal, model, effort } = rowFor(state, entry);
     const header = [goal ? `${agent}${NAME_SEP}${oneLine(goal)}` : agent, modelLabel(model, effort)].filter(Boolean).join(" · ");
-    await ctx.ui.custom((_tui, theme, _keybindings, done) => {
+    await current.ui.custom((_tui, theme, _keybindings, done) => {
       const body = new Text(`${theme.fg("accent", header)}\n\n${reply.text}\n\n${theme.fg("dim", "esc close")}`, 1, 0);
       return { render: width => body.render(width), invalidate: () => body.invalidate(), handleInput: () => done() };
     }, { overlay: true, overlayOptions: { anchor: "center", width: "90%", maxHeight: "80%", margin: 1 } });
@@ -210,8 +284,11 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     state.tui?.requestRender();
     return consumed;
   };
+  let stopping;
   return {
     wake,
+    stopAll: () => stopping ??= stopAll().finally(() => { stopping = undefined; }),
+    attachContext: current => { state.ctx = current; state.stopped = false; wake(); },
     handleKey,
     // Runs restored with the session never emit async-started; the poll's
     // count covers them (it lags a completion by one poll, so the event set

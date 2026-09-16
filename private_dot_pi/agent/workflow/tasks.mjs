@@ -23,7 +23,7 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
     start({ command, run, close }) {
       const id = `t${next++}`;
       const controller = new AbortController();
-      const task = { id, command, startedAt: now(), status: "running", output: "", exitCode: null, error: null, controller, claimed: false };
+      const task = { id, command, startedAt: now(), status: "running", output: "", exitCode: null, error: null, controller, claimed: false, silent: false };
       tasks.set(id, task);
       task.done = (async () => {
         let status;
@@ -40,7 +40,7 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
         task.status = status;
         // A caller still holding the tool call open takes the result as that call's
         // reply; the message and the line exist to reach a model that has moved on.
-        if (task.claimed) return;
+        if (task.claimed || task.silent) return;
         // A session replaced while the task ran leaves a stale pi API that throws; the line is lost, not the process.
         try {
           record({ id, command, status, durationMs: now() - task.startedAt });
@@ -73,6 +73,7 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
         return null;
       });
     },
+    list: () => [...tasks.values()].map(({ id, status, command }) => ({ id, status, command })),
     output: id => summary(find(id)),
     stop(id) {
       const task = find(id);
@@ -83,8 +84,11 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
     live: () => running().length,
     // Bounded: session shutdown awaits this, and a worker that never answers
     // the abort must not hold it; the broker's lease teardown kills it after.
-    stopAll({ timeoutMs = 5_000 } = {}) {
+    stopAll({ timeoutMs = 5_000, silent = false } = {}) {
       const live = running();
+      // Shutdown silence is marked before abort: a synchronous rejection from
+      // the worker must not race its settlement notification past teardown.
+      if (silent) for (const task of live) task.silent = true;
       for (const task of live) task.controller.abort();
       return Promise.race([Promise.all(live.map(task => task.done)), new Promise(resolve => setTimeout(resolve, timeoutMs).unref())]);
     },

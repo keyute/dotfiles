@@ -9,6 +9,51 @@ carries the numbers and open triggers behind those annotations (rule in
 baseline no longer serves a future sweep is deleted, not archived — git
 history keeps it.
 
+## 2026-09-16
+
+### (pi) Audit baseline and containment decision
+
+- 10 authorized exported root sessions: every actual assistant was Astra at high
+  reasoning. Their 65 direct and one nested children were 51 Terra, 10 Sol, and
+  5 Luna, zero Astra; all 65 direct children matched configured tiers, including
+  12 implementers. No direct root file edits preceded recorded approval. Shell
+  and mode-effect evidence is incomplete.
+- Of 24 returned shell task IDs with terminal records, 16 completed, 5 failed,
+  and 3 stopped. Root tokens were 2,518,410 input / 194,388 output / 29,391,744
+  cache-read; child tokens were 4,283,937 / 375,658 / 35,114,752. Token metadata
+  is neither subscription quota nor dollar cost.
+- Upstream subagent JSON schema fell from 16,225 bytes and 79 properties to
+  3,470 bytes and 16. No dollar or latency savings are inferred. Transcript
+  accusations of root/worker concurrent writes and duplicate reviews are not
+  substantiated: root writes followed worker completion, and similar reviews
+  covered different repos. Managed child leases already abort; the detached
+  runner cleanup uses session-owned RPC stops and observed process-terminal
+  evidence. Review caught completion/exit confusion, historical overflow,
+  natural-exit races, and shutdown wake-ups; regression tests cover the fixes.
+  No permanent transcript copies are retained.
+- Verification: 294 normal tests passed on the host, including socket integration;
+  docs checks and changed-target renders passed. **Open:** the unchanged optional
+  live-SRT test expects `/denied/` where policy now returns `Writes are disabled
+  in this scope`. A disposable smoke check separately passed plan-write denial,
+  approved execution, sensitive-symlink denial, reviewed host execution, and
+  lease cleanup; the stale test was not weakened or changed.
+
+### (pi) Browser blocker — retain containment
+
+- Playwright MCP 0.0.80's full Chromium 1243 (153.0.8010.12) and SRT 0.0.75
+  cannot launch under current containment. The live initial `ProcessSingleton`
+  failure is sandbox-caused, not a stale profile. A scratch `MAC_CHROMIUM_TMPDIR`
+  fixed-directory probe passed that failure but then hit denied Unix-socket bind;
+  a fixture-only `allowUnixSockets: [ownscratch]` passed it and then fatally
+  failed on `base/mac/mac_util.mm:379`, `sysctlbyname kern.hv_vmm_present`
+  denied. The pinned SRT fixed sysctl allowlist lacks that key and has no
+  supported configuration override. Crashpad Mach and settings warnings were
+  also observed but are not claimed as the root fatal:
+  [Chromium check](https://github.com/chromium/chromium/blob/153.0.8010.12/base/mac/mac_util.mm#L376-L380),
+  [Apple file utility](https://github.com/chromium/chromium/blob/main/base/files/file_util_apple.mm).
+- No browser-policy/source fix or broad permission is adopted. A future upstream
+  pin must gate launch, navigation, and cleanup under containment.
+
 ## 2026-09-15
 
 ### Delegation sample and Claude routing correction

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { controlNotice, pluginApi, recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
+import { narrowSubagentSchema } from "./children.mjs";
 
 test("the plugin API decorates every registration and forwards everything else untouched", () => {
   const tools = new Map();
@@ -17,6 +18,33 @@ test("the plugin API decorates every registration and forwards everything else u
   assert.equal(tools.get("bg_wait").renderCall, "ours:bg_wait");
   assert.equal(styled.events, events);
   assert.equal(styled.on, pi.on);
+});
+
+test("the subagent schema exposes only the managed launch and control surface", () => {
+  const supported = ["agent", "task", "async", "model", "context", "agentScope", "action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery", "capabilities"];
+  const upstream = { type: "object", description: "upstream safety description", properties: Object.fromEntries([...supported, "cwd", "workflowScript"].map(name => [name, { description: `${name} definition` }])) };
+  const narrowed = narrowSubagentSchema(upstream);
+  assert.deepEqual(Object.keys(narrowed.properties).sort(), supported.slice().sort());
+  assert.equal(narrowed.additionalProperties, false);
+  assert.deepEqual(narrowed.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
+  assert.deepEqual(narrowed.properties.context.enum, ["fresh", "fork"]);
+  assert.deepEqual(narrowed.properties.agentScope.enum, ["user"]);
+  assert.equal(narrowed.description, "upstream safety description");
+  assert.equal(narrowed.properties.task.description, "task definition");
+});
+
+test("the plugin API narrows only the subagent definition and preserves its executor", () => {
+  const tools = new Map();
+  const pi = { registerTool(tool) { tools.set(tool.name, tool); } };
+  const execute = () => {};
+  const schema = { type: "object", properties: { agent: {}, task: {}, async: {}, model: {}, context: {}, agentScope: {}, action: {}, id: {}, runId: {}, index: {}, message: {}, mode: {}, view: {}, lines: {}, steeringRecovery: {}, capabilities: {}, cwd: {} } };
+  const styled = pluginApi(pi, () => ({}), {}, [], narrowSubagentSchema);
+  styled.registerTool({ name: "subagent", parameters: schema, execute });
+  styled.registerTool({ name: "other", parameters: schema, execute });
+  assert.equal(tools.get("subagent").execute, execute);
+  assert.equal(tools.get("other").parameters, schema);
+  assert.equal(tools.get("subagent").parameters.additionalProperties, false);
+  assert.equal("cwd" in tools.get("subagent").parameters.properties, false);
 });
 
 test("a message renderer we own is composed over the plugin's, which stays as the fallback", () => {
@@ -42,6 +70,20 @@ test("a quiet customType is sent with display off, everything else untouched", (
   sendMessage({ customType: "other", content: "c", display: true });
   assert.deepEqual(sent[0], [{ customType: "subagent-notify", content: "Background task failed: **x**", display: false }, { triggerTurn: true }]);
   assert.deepEqual(sent[1], [{ customType: "other", content: "c", display: true }, undefined]);
+});
+
+test("shutdown retains child results without requesting a new model turn", () => {
+  const sent = [];
+  let shuttingDown = false;
+  const styled = pluginApi({ sendMessage: (message, options) => sent.push([message, options]) }, () => ({}), {}, ["subagent-notify"], undefined, () => shuttingDown);
+  const message = { customType: "subagent-notify", content: "Child stopped", display: true };
+  styled.sendMessage(message, { triggerTurn: true });
+  shuttingDown = true;
+  styled.sendMessage(message, { triggerTurn: true });
+  assert.equal(sent[0][1].triggerTurn, true);
+  assert.equal(sent[1][1].triggerTurn, false);
+  assert.equal(sent[1][0].content, message.content);
+  assert.equal(sent[1][0].display, false);
 });
 
 test("the control notice row is built from the event pi-subagents puts in details", () => {

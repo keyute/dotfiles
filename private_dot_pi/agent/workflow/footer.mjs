@@ -245,7 +245,12 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
           });
           // The workflow mode; other extensions keep their own surfaces. It is
           // painted here rather than at setStatus so a theme switch repaints it.
-          const right = paintMode(footerData.getExtensionStatuses().get("workflow") ?? "", theme);
+          const mode = paintMode(footerData.getExtensionStatuses().get("workflow") ?? "", theme);
+          const shellCount = tasks?.live?.() ?? 0;
+          const shells = shellCount > 0 ? `${theme.fg("dim", `${shellCount} shell${shellCount === 1 ? "" : "s"} · `)}${mode}` : mode;
+          // Shell visibility is useful only while enough of the left identity
+          // remains to orient the row; at narrow widths it yields before mode.
+          const right = shellCount > 0 && width - PAD.length * 2 - visibleWidth(shells) >= 8 ? shells : mode;
           // The left side yields first. Truncating the composed line instead
           // eats the mode, and `· auto` and `· ask` clip to the same string —
           // the mode says what the agent may do to the tree, where a branch and

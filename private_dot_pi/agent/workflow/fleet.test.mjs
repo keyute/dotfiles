@@ -96,7 +96,7 @@ function fakeBus() {
     delayMs: 0,
     on(channel, handler) { handlers.set(channel, handler); return () => handlers.delete(channel); },
     emit(channel, message) {
-      if (channel.startsWith("subagent:async-")) return handlers.get(channel)?.(message);
+      if (channel.startsWith("subagent:")) return handlers.get(channel)?.(message);
       if (channel !== "subagents:rpc:v1:request") return;
       this.requests.push(message.method);
       if (this.silent) return;
@@ -109,6 +109,123 @@ function fakeBus() {
     pending: () => [...handlers.keys()].filter(key => key.startsWith("subagents:rpc:v1:reply:")).length,
   };
 }
+
+function cleanupBus({ runs = [], omitted = 0, hiddenActive = 0, failStop = new Set(), settle = true, initialProof = false, completeOnly = false, onStop } = {}) {
+  const handlers = new Map();
+  const bus = {
+    requests: [],
+    proofs: new Map(),
+    on(channel, handler) {
+      const list = handlers.get(channel) ?? new Set();
+      list.add(handler);
+      handlers.set(channel, list);
+      return () => list.delete(handler);
+    },
+    emit(channel, message) {
+      if (channel !== "subagents:rpc:v1:request") {
+        for (const handler of handlers.get(channel) ?? []) handler(message);
+        return;
+      }
+      this.requests.push({ method: message.method, params: message.params });
+      if (message.method === "stop") onStop?.(this, message.params.id);
+      let success = true;
+      let data;
+      if (message.method === "ping") data = { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } };
+      else if (message.method === "status" && !message.params.id) data = {
+        fleet: { version: 1, entries: [], totalActive: runs.filter(run => ["queued", "running"].includes(run.state)).length + hiddenActive },
+        asyncSnapshot: { kind: "pi-subagents.async-status-snapshot", version: 1, omitted: { runs: omitted, children: 0, byteLimitExceeded: false }, runs },
+      };
+      else if (message.method === "status") {
+        const run = runs.find(item => item.id === message.params.id);
+        data = {
+          details: this.proofs.has(message.params.id) || initialProof ? { lifecycleStatus: { processTerminal: this.proofs.get(message.params.id) ?? { version: 1, runId: message.params.id, state: "pending" } } } : { mode: "single", results: [] },
+          asyncSnapshot: { kind: "pi-subagents.async-status-snapshot", version: 1, omitted: { runs: omitted, children: 0, byteLimitExceeded: false }, runs: run ? [run] : [] },
+        };
+      } else if (message.method === "stop" && failStop.has(message.params.id)) {
+        success = false;
+      } else if (message.method === "stop") {
+        data = { runId: message.params.id, state: "stopping" };
+        if (settle) setImmediate(() => {
+          const run = runs.find(item => item.id === message.params.id);
+          if (run) run.state = "stopped";
+          if (completeOnly) return this.emit("subagent:async-complete", { runId: message.params.id, state: "stopped" });
+          const proof = { version: 1, runId: message.params.id, state: "observed" };
+          this.proofs.set(message.params.id, proof);
+          this.emit("subagent:process-terminal", proof);
+        });
+      }
+      const reply = { version: 1, requestId: message.requestId, success, ...(success ? { data } : { error: { code: "failed", message: "stop failed" } }) };
+      for (const handler of handlers.get(`subagents:rpc:v1:reply:${message.requestId}`) ?? []) handler(reply);
+    },
+  };
+  return bus;
+}
+
+test("cleanup stops event-owned and restored top-level run ids and verifies process-terminal proof", async () => {
+  const runs = [{ id: "restored", label: "worker", state: "running", updatedAt: 2 }, { id: "done", label: "reviewer", state: "complete", updatedAt: 3 }];
+  const bus = cleanupBus({ runs });
+  const events = {};
+  const pi = { events: bus, on: (name, handler) => { events[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
+  const fleet = installFleet(pi, null, { pollMs: 50, quietMs: 50, timeoutMs: 20, cleanupTimeoutMs: 50 });
+  bus.emit("subagent:async-started", { id: "launched" });
+  runs.push({ id: "launched", label: "scout", state: "running", updatedAt: 1 });
+  await fleet.stopAll();
+  assert.deepEqual(bus.requests.filter(request => request.method === "stop").map(request => request.params), [{ id: "launched" }, { id: "restored" }]);
+  assert.equal(runs.find(run => run.id === "done").state, "complete");
+});
+
+test("cleanup fails visibly for a failed stop, missing terminal proof, or an omitted snapshot", async () => {
+  const failed = cleanupBus({ runs: [{ id: "bad", state: "running" }], failStop: new Set(["bad"]) });
+  const failedFleet = installFleet({ events: failed, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 5, timeoutMs: 20, cleanupTimeoutMs: 20 });
+  await assert.rejects(failedFleet.stopAll(), /bad.*stop request failed/);
+
+  const unproven = cleanupBus({ runs: [{ id: "slow", state: "running" }], settle: false, initialProof: true });
+  const unprovenFleet = installFleet({ events: unproven, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 5, timeoutMs: 20, cleanupTimeoutMs: 5 });
+  await assert.rejects(unprovenFleet.stopAll(), /slow.*terminal state was not established/);
+
+  const omitted = cleanupBus({ runs: [{ id: "known", state: "running" }], omitted: 1, hiddenActive: 1 });
+  const omittedFleet = installFleet({ events: omitted, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 5, timeoutMs: 20, cleanupTimeoutMs: 20 });
+  await assert.rejects(omittedFleet.stopAll(), /snapshot omitted 1 run.*restored work/i);
+  assert.deepEqual(omitted.requests.filter(request => request.method === "stop").map(request => request.params), [{ id: "known" }]);
+});
+
+test("cleanup permits more than twenty terminal historical runs", async () => {
+  const bus = cleanupBus({ runs: Array.from({ length: 20 }, (_, i) => ({ id: `done-${i}`, state: "complete" })), omitted: 1 });
+  const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { timeoutMs: 20, cleanupTimeoutMs: 5 });
+  await fleet.stopAll();
+  assert.equal(bus.requests.some(request => request.method === "stop"), false);
+});
+
+test("completion without process metadata is not exit proof", async () => {
+  const bus = cleanupBus({ runs: [{ id: "unproven", state: "running" }], completeOnly: true });
+  const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { timeoutMs: 20, cleanupTimeoutMs: 5 });
+  await assert.rejects(fleet.stopAll(), /unproven.*terminal state was not established/);
+});
+
+test("observed natural exit racing a stop is successful and repeated cleanup is harmless", async () => {
+  const runs = [{ id: "racing", state: "running" }];
+  const bus = cleanupBus({ runs, failStop: new Set(["racing"]), onStop(bus, id) {
+    runs[0].state = "complete";
+    const proof = { version: 1, runId: id, state: "observed" };
+    bus.proofs.set(id, proof);
+    bus.emit("subagent:process-terminal", proof);
+  } });
+  const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { timeoutMs: 20, cleanupTimeoutMs: 5 });
+  await fleet.stopAll();
+  await fleet.stopAll();
+  assert.equal(bus.requests.filter(request => request.method === "stop").length, 1);
+});
+
+test("completed event-owned runs stay tracked until their process exits", async () => {
+  const bus = cleanupBus();
+  const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { timeoutMs: 20, cleanupTimeoutMs: 5 });
+  bus.emit("subagent:async-started", { id: "closing" });
+  bus.emit("subagent:async-complete", { runId: "closing", success: true });
+  assert.equal(fleet.activeCount(), 1);
+  await fleet.stopAll();
+  assert.deepEqual(bus.requests.filter(request => request.method === "stop").map(request => request.params.id), ["closing"]);
+  assert.equal(fleet.activeCount(), 0);
+});
 
 test("rows poll while children run, name the task from the launch, peek each sibling, and stop on shutdown", async () => {
   const bus = fakeBus();
@@ -213,6 +330,8 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.equal(entries[0].data.durationMs, undefined);
   bus.entries = [];
   await sleep(20);
+  assert.equal(fleet.activeCount(), 1, "logical completion does not prove runner exit");
+  bus.emit("subagent:process-terminal", { version: 1, runId: "late-1", state: "observed" });
   assert.equal(fleet.activeCount(), 0);
   bus.entries = [{ agent: "late", tokens: { total: 0 } }];
   await sleep(20);

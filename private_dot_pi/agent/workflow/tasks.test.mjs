@@ -110,13 +110,39 @@ test("a non-zero exit fails; a stop or a worker abort reads as stopped; unknown 
   assert.throws(() => h.tasks.output("t9"), /Unknown/);
 });
 
-test("stopAll aborts every running task and resolves once each has recorded", async () => {
+test("list retains every task id, status, and command after completion", async () => {
   const h = harness();
-  h.start("a");
-  h.start("b");
-  await h.tasks.stopAll();
-  assert.equal(h.tasks.live(), 0);
-  assert.deepEqual(h.records.map(entry => entry.status), ["stopped", "stopped"]);
+  const first = h.start("npm test");
+  h.start("npm run dev");
+  first.exec.resolve({ exitCode: 0 });
+  await h.settle();
+  assert.deepEqual(h.tasks.list(), [
+    { id: "t1", status: "completed", command: "npm test" },
+    { id: "t2", status: "running", command: "npm run dev" },
+  ]);
+  await h.tasks.stopAll({ silent: true });
+});
+
+test("stopAll normally records and notifies, while shutdown-silent stops retain status without either", async () => {
+  const normal = harness();
+  normal.start("a");
+  normal.start("b");
+  await normal.tasks.stopAll();
+  assert.equal(normal.tasks.live(), 0);
+  assert.deepEqual(normal.records.map(entry => entry.status), ["stopped", "stopped"]);
+  assert.equal(normal.notices.length, 2);
+
+  const shutdown = harness();
+  shutdown.start("c");
+  shutdown.start("d");
+  await shutdown.tasks.stopAll({ silent: true });
+  assert.equal(shutdown.tasks.live(), 0);
+  assert.deepEqual(shutdown.records, []);
+  assert.deepEqual(shutdown.notices, []);
+  assert.deepEqual(shutdown.tasks.list(), [
+    { id: "t1", status: "stopped", command: "c" },
+    { id: "t2", status: "stopped", command: "d" },
+  ]);
 });
 
 test("a task stays live until its worker has closed, and a stale session's throw is not an unhandled rejection", async () => {
