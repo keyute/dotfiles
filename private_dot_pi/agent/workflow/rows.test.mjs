@@ -186,9 +186,17 @@ test("the plan renders as markdown while the decision is open, then hands its bo
   // and from there only `expanded` shows the plan.
   const settled = context({ executionStarted: true, args: { plan } });
   assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, settled)), [`<success>${title}`]);
-  const approved = result("Plan approved; scoped execution enabled.");
+  const approved = result("Plan approved; scoped execution enabled.", { decision: "approved" });
   assert.deepEqual(rendered(planRenderers.renderResult(approved, { expanded: false }, theme, settled)), ["  <muted>↳ <success>approved"]);
   assert.deepEqual(rendered(planRenderers.renderResult(approved, { expanded: true }, theme, settled)), ["  <muted>↳ <success>approved", ...body]);
+  const revision = result("Plan revision requested.", { decision: "revision_requested" });
+  assert.deepEqual(rendered(planRenderers.renderResult(revision, { expanded: false }, theme, settled)), ["  <muted>↳ <warning>revision requested"]);
+  const cancelled = result("Plan approval cancelled.", { decision: "cancelled" });
+  assert.deepEqual(rendered(planRenderers.renderResult(cancelled, { expanded: false }, theme, settled)), ["  <muted>↳ <warning>cancelled"]);
+  const legacyApproved = result("Plan approved; scoped execution enabled.");
+  assert.deepEqual(rendered(planRenderers.renderResult(legacyApproved, { expanded: false }, theme, settled)), ["  <muted>↳ <success>approved"]);
+  const legacyRejected = result("Plan not approved. Remain in planning mode.");
+  assert.deepEqual(rendered(planRenderers.renderResult(legacyRejected, { expanded: false }, theme, settled)), ["  <muted>↳ <warning>not approved"]);
 });
 
 test("diff counts take the theme's success/error pair, whichever minus the surface spells", () => {

@@ -82,6 +82,8 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.has("workspace_read"));
   assert.ok(tools.has("subagent"));
   assert.ok(tools.has("submit_plan"));
+  assert.equal(tools.get("submit_plan").executionMode, "sequential");
+  assert.equal(tools.get("submit_plan").description, "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.");
   assert.ok(tools.has("ask_user_question"));
   assert.ok(!tools.has("ask_user"));
   assert.ok(!tools.has("read"));

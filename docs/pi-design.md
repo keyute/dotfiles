@@ -66,9 +66,9 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-09, later:* `workspace_task` left the fold set (a background task
      is running work under rule 4), and the plan row took the tool's own
      `Plan approval` label.
-   - *2026-09-10:* the plan renders as markdown under its row from the call's
-     own `executionStarted` while the decision is open, the dialog carries only
-     the question, and a result retires it through the row's `isPartial`.
+   - *2026-09-16:* plan markdown stays in its pending transcript row (`isPartial`);
+     approval offers Yes or No with inline feedback. Blank No/Esc abort without an
+     acknowledgement model turn; submitted feedback alone continues planning.
    - *2026-09-10:* fold extent is derived from `rows.mjs`'s ordered timeline of
      facts — a maximal stretch of settled successful rows with a separator on
      its right, keyed by that boundary so ctrl+o and click state survive —

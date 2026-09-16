@@ -14,6 +14,7 @@ import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createTasks } from "./tasks.mjs";
+import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
 import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
@@ -543,16 +544,21 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     // markdown transformer only reaches the render, and pi spaces the message
     // from its raw content (see blankReasoning).
     pi.on("message_end", event => {
-      const message = blankReasoning(event.message);
-      return message ? { message } : undefined;
+      const isolated = isolatePlanApproval(event.message);
+      const message = blankReasoning(isolated ?? event.message);
+      return isolated || message ? { message: message ?? isolated } : undefined;
     });
-    pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present the implementation plan for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), ...planRenderers, async execute(_id, args) {
+    pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), executionMode: "sequential", ...planRenderers, async execute(_id, args, signal) {
       const ctx = currentContext;
-      // The plan itself is the row above (planRenderers), not the dialog's body.
-      if (!ctx.hasUI || !await ctx.ui.confirm("Approve the current plan?", "Enable scoped edits and auto-reviewed actions for this task?")) return resultText("Plan not approved. Remain in planning mode.");
-      userTask = `${userTask}\nApproved plan: ${args.plan}`.slice(-8000);
-      await setMode("execute", ctx);
-      return resultText("Plan approved; scoped execution enabled.");
+      // The plan itself is the row above (planRenderers), not the approval UI's body.
+      const decision = await requestPlanApproval(ctx, signal);
+      return applyPlanDecision(decision, {
+        plan: args.plan,
+        userTask,
+        setUserTask: value => { userTask = value; },
+        setMode: () => setMode("execute", ctx),
+        abort: () => ctx.abort(),
+      });
     } });
     // Registered as documented; model-originated launches are validated (and
     // their args patched) by the blocking tool_call hook, the capability

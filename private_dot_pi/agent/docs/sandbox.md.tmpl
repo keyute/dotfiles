@@ -20,6 +20,9 @@ against the source repository and update this file.
   new mode takes effect — `/plan` before enabling planning, and approval of
   `submit_plan` the same way before enabling execution, so a child still
   running when the plan is approved ends aborted.
+  `submit_plan` offers Yes/No with inline feedback: No with text requests revision;
+  blank No or Esc stops without an acknowledgement model turn. Neither enables
+  execution; only Yes approves (2026-09-16).
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
 - Shell commands run inside the SRT profile without review, as sandboxed

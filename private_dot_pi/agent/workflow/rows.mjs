@@ -467,9 +467,14 @@ export const planRenderers = {
     return container;
   },
   renderResult(result, options, theme, context) {
-    const approved = /approved;/.test(resultText(result));
+    // Persisted results from before structured decisions have only result text.
+    const status = {
+      approved: ["success", "approved"],
+      revision_requested: ["warning", "revision requested"],
+      cancelled: ["warning", "cancelled"],
+    }[result.details?.decision] ?? (/approved;/.test(resultText(result)) ? ["success", "approved"] : ["warning", "not approved"]);
     const container = new Container();
-    container.addChild(new Text(indent(`${theme.fg("muted", SUB)} ${theme.fg(approved ? "success" : "warning", approved ? "approved" : "not approved")}`), 0, 0));
+    container.addChild(new Text(indent(`${theme.fg("muted", SUB)} ${theme.fg(status[0], status[1])}`), 0, 0));
     if (options.expanded && context.args?.plan) container.addChild(new Markdown(context.args.plan, PAD.length, 0, getMarkdownTheme()));
     return container;
   },
