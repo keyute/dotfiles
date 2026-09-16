@@ -124,7 +124,7 @@ const keybindings = {
     return bindings.some(binding => matchesKey(data, binding));
   },
 };
-const theme = { fg: (_colour, text) => text };
+const theme = { fg: (_colour, text) => text, bold: text => text };
 
 function tuiApproval(signal) {
   let component;
@@ -153,83 +153,81 @@ function tuiApproval(signal) {
   };
 }
 
-test("approval starts as a three-row menu and opens feedback only on Enter", async () => {
+test("approval renders a framed Yes/No choice and opens the No editor immediately", async () => {
   const prompt = tuiApproval();
   const component = prompt.component();
   const initial = component.render(80).join("\n");
-  assert.match(initial, /Yes, approve and execute/);
-  assert.match(initial, /Give feedback…/);
-  assert.match(initial, /No, cancel/);
-  assert.doesNotMatch(initial, /Optional feedback:/);
+  assert.match(initial, /Approve the current plan\?/);
+  assert.match(initial, /Yes/);
+  assert.match(initial, /No/);
+  assert.equal(initial.split("\n")[0], "─".repeat(80));
+  assert.equal(initial.split("\n").at(-1), "─".repeat(80));
+  assert.doesNotMatch(initial, /[╭╮╰╯│]/);
+  assert.doesNotMatch(initial, /approve and execute|Give feedback|cancel|Optional feedback|Enter submit|Up\/down/);
 
-  component.handleInput("\t");
-  const feedbackSelected = component.render(80).join("\n");
-  assert.doesNotMatch(feedbackSelected, /Optional feedback:/, "highlighting feedback must not open its editor");
-  component.handleInput("\r");
-  assert.match(component.render(80).join("\n"), /Optional feedback:/);
+  component.handleInput("\x1b[B");
+  assert.equal(component.editor.focused, true);
+  assert.ok(component.render(80).length > initial.split("\n").length, "No selection renders its editor immediately");
   component.handleInput("ab");
   component.handleInput("\x1b[D");
   component.handleInput("X");
   component.handleInput("\x1b[13;2~");
   component.handleInput("second");
+  component.handleInput("\x1b[A");
+  component.handleInput("X");
   component.handleInput("\r");
-  assert.deepEqual(await prompt.promise, { decision: PLAN_REVISION, feedback: "aX\nsecondb" });
-  assert.ok(prompt.stats().renders >= 7);
+  assert.deepEqual(await prompt.promise, { decision: PLAN_REVISION, feedback: "aXX\nsecondb" });
+  assert.ok(prompt.stats().renders >= 6);
 });
 
-test("approval menu moves with arrows, Tab cycles, and cancellation needs no editor", async () => {
-  const arrows = tuiApproval();
-  arrows.component().handleInput("\x1b[B");
-  arrows.component().handleInput("\x1b[B");
-  arrows.component().handleInput("\r");
-  assert.deepEqual(await arrows.promise, { decision: PLAN_CANCELLED });
+test("Tab returns from No to Yes without submitting its draft", async () => {
+  const prompt = tuiApproval();
+  const component = prompt.component();
+  component.handleInput("\t");
+  component.handleInput("draft");
+  component.handleInput("\t");
+  assert.match(component.render(80).join("\n"), /→ Yes/);
+  component.handleInput("\r");
+  assert.deepEqual(await prompt.promise, { decision: PLAN_APPROVED });
+});
 
-  const tab = tuiApproval();
-  tab.component().handleInput("\t");
-  tab.component().handleInput("\t");
-  tab.component().handleInput("\r");
-  assert.deepEqual(await tab.promise, { decision: PLAN_CANCELLED });
-
+test("blank No submission and Esc from choices or input cancel", async () => {
   const blank = tuiApproval();
-  blank.component().handleInput("\t");
-  blank.component().handleInput("\r");
+  blank.component().handleInput("\x1b[B");
   blank.component().handleInput("\r");
   assert.deepEqual(await blank.promise, { decision: PLAN_CANCELLED });
 
-  const selection = tuiApproval();
-  selection.component().handleInput("\x1b");
-  assert.deepEqual(await selection.promise, { decision: PLAN_CANCELLED });
+  const choice = tuiApproval();
+  choice.component().handleInput("\x1b");
+  assert.deepEqual(await choice.promise, { decision: PLAN_CANCELLED });
 
   const editor = tuiApproval();
-  editor.component().handleInput("\t");
-  editor.component().handleInput("\r");
+  editor.component().handleInput("\x1b[B");
   editor.component().handleInput("draft");
   editor.component().handleInput("\x1b");
   assert.deepEqual(await editor.promise, { decision: PLAN_CANCELLED });
 });
 
-test("unsubmitted feedback is not a decision, and narrow rendering stays within width", async () => {
+test("framed approval rendering stays within narrow widths", () => {
   const prompt = tuiApproval();
   const component = prompt.component();
-  component.handleInput("\t");
-  component.handleInput("\r");
+  component.handleInput("\x1b[B");
   component.handleInput("draft");
-  for (const line of component.render(14)) assert.ok(visibleWidth(line) <= 14, `${visibleWidth(line)} > 14: ${line}`);
-  component.handleInput("\t");
-  component.handleInput("\t");
-  component.handleInput("\r");
-  assert.deepEqual(await prompt.promise, { decision: PLAN_APPROVED });
+  for (const width of [1, 2, 14, 80]) {
+    for (const line of component.render(width)) assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}: ${line}`);
+  }
+  component.handleInput("\x1b");
 });
 
 test("feedback editor keeps its component focus", () => {
   const prompt = tuiApproval();
   const component = prompt.component();
   component.focused = false;
-  component.handleInput("\t");
-  component.handleInput("\r");
+  component.handleInput("\x1b[B");
   assert.equal(component.focused, false);
+  assert.equal(component.editor.focused, false);
   component.focused = true;
-  assert.equal(component.focused, true);
+  assert.equal(component.editor.focused, true);
   component.handleInput("\x1b");
 });
 

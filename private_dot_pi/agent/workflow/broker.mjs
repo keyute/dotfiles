@@ -118,6 +118,7 @@ export async function startBroker(config, cwd, review) {
           command = connection.command;
           args = connection.args;
           Object.assign(env, connection.env);
+          if (request.name === "playwright") sandbox = false;
           if (request.name === "serena") {
             const serenaHome = join(scratch, "serena");
             mkdirSync(serenaHome, { recursive: true });
@@ -135,8 +136,8 @@ export async function startBroker(config, cwd, review) {
           }
         } else throw new Error("Unknown process kind");
         leases.add(socket);
-        // A null profile is an approved unsandboxed run; the runner never asks
-        // for one, the reviewed ticket alone decides.
+        // A null profile is either an approved unsandboxed tool run or the
+        // managed Playwright server exception; clients never select it.
         sendLine(socket, { ok: true, profile: sandbox ? policy.profile(request.role) : null, cwd: policy.cwd, env, command, args });
       // The message is the model's only signal for why a call was refused
       // (plan mode vs. protected path vs. capacity); every thrown text here is

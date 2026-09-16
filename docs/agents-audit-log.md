@@ -38,7 +38,7 @@ history keeps it.
   approved execution, sensitive-symlink denial, reviewed host execution, and
   lease cleanup; the stale test was not weakened or changed.
 
-### (pi) Browser blocker — retain containment
+### (pi) Browser launch — managed host exception
 
 - Playwright MCP 0.0.80's full Chromium 1243 (153.0.8010.12) and SRT 0.0.75
   cannot launch under current containment. The live initial `ProcessSingleton`
@@ -51,8 +51,14 @@ history keeps it.
   also observed but are not claimed as the root fatal:
   [Chromium check](https://github.com/chromium/chromium/blob/153.0.8010.12/base/mac/mac_util.mm#L376-L380),
   [Apple file utility](https://github.com/chromium/chromium/blob/main/base/files/file_util_apple.mm).
-- No browser-policy/source fix or broad permission is adopted. A future upstream
-  pin must gate launch, navigation, and cleanup under containment.
+- Later owner decision (2026-09-16): frontend browser verification is required;
+  retain shared Playwright and grant only its broker-selected server a host
+  lease. PATH/HOME/scratch TMPDIR only; tool approval/denials and lifecycle
+  remain, but browser/server filesystem and network access are not SRT-contained.
+- Source-stage live gate passed: local navigation, click/DOM assertion, PNG
+  screenshot, browser close/reopen, mode-switch termination of all 16 observed
+  processes, and scratch removal. Unsafe-tool and plan-mode interaction checks
+  rejected as expected. No applied configuration changed.
 
 ## 2026-09-15
 

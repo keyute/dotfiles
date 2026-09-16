@@ -92,19 +92,20 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   tier so the default model's quota is untouched.
 - Roles with Claude's `WebSearch` get it; the plugin's Gemini-only `url_context`
   also registers and is in no role's list. Fetching stays with the Exa MCP tools
-  and Playwright (sandboxed); OpenAI's search accepts extra `urls` to analyse
+  and Playwright; OpenAI's search accepts extra `urls` to analyse
   alongside the query.
 
-## MCP and code intelligence (last verified 2026-09-07, third smoke run)
+## MCP and code intelligence (last verified 2026-09-16)
 
 - Context7, Exa and Serena register their tools directly as `mcp__<server>_<tool>`
   (for example `mcp__exa_web_search_exa`), called like any other tool. Playwright
   stays behind the `mcp` proxy: `mcp({ search: "…" })` finds a tool in the cached
   catalog, `mcp({ describe: "<name>" })` shows its schema, `mcp({ tool: "<name>",
   args: { … } })` calls it; a server shown as not connected connects on first call.
-- MCP servers run as sandboxed Node processes with `NODE_USE_ENV_PROXY=1` so
-  their fetch calls follow the sandbox proxy; if every call from a server fails
-  with `fetch failed`, check that first, then the allowed domains.
+- MCP servers other than Playwright run inside SRT; Node servers use
+  `NODE_USE_ENV_PROXY=1` so fetch follows the sandbox proxy. If every call fails
+  with `fetch failed`, check that setting, then the allowed domains. The browser
+  exception and its permissions are documented in `sandbox.md`.
 - Configuration is explicit; other harnesses' private config is not imported. MCP
   scripting, sampling and automatic OAuth discovery are disabled; the approval
   broker checks the resolved server/tool/arguments, not just the outer proxy call.

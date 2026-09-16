@@ -65,18 +65,24 @@ test("safeEnvironment inherits the host minus secret-named and workflow values, 
   }
 });
 
-test("a null profile skips the sandbox and strips workflow variables from the host environment", async () => {
-  assert.deepEqual(hostEnvironment({ PATH: "/bin", PI_WORKFLOW_TOKEN: "secret", PI_WORKFLOW_TICKET: "t" }), { PATH: "/bin" });
-  // Only a tool lease may run unsandboxed; an MCP server lease with no profile is malformed.
-  const unsandboxedLease = { ok: true, profile: null, cwd: process.cwd(), env: {} };
-  assert.equal(validateLease(unsandboxedLease, "tool"), unsandboxedLease);
+test("a null profile is valid only for reviewed tools or the managed Playwright server", () => {
+  const unsandboxedLease = { ok: true, profile: null, cwd: process.cwd(), env: {}, command: "managed-command", args: ["--managed"] };
+  assert.equal(validateLease(unsandboxedLease, "tool", "bash"), unsandboxedLease);
+  assert.equal(validateLease(unsandboxedLease, "server", "playwright"), unsandboxedLease);
   assert.throws(() => validateLease(unsandboxedLease, "server"));
+  assert.throws(() => validateLease(unsandboxedLease, "server", "other"));
+  assert.throws(() => validateLease({ ...unsandboxedLease, command: "" }, "server", "playwright"));
+  assert.throws(() => validateLease({ ...unsandboxedLease, args: [42] }, "server", "playwright"));
+});
+
+test("a null-profile tool retains its original host environment", async () => {
   const activeLease = lease();
   activeLease.response.profile = null;
+  activeLease.response.env = { TMPDIR: "/broker-scratch" };
   let spawnOptions;
   let spawnArgs;
   await main(["tool", "bash"], {
-    environment: { PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token", PATH: "/fixture/bin" },
+    environment: { PATH: "/fixture/bin", HOME: "/fixture/home", API_TOKEN: "host-token", PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token", PI_WORKFLOW_TICKET: "ticket" },
     requestLease: async () => activeLease,
     sandboxManager: { async initialize() { throw new Error("sandbox must not start"); } },
     spawnChild(command, args, options) {
@@ -93,8 +99,41 @@ test("a null profile skips the sandbox and strips workflow variables from the ho
   assert.equal(spawnArgs[0], "bash");
   assert.match(spawnArgs[2], /ops-worker\.mjs' 'bash'$/);
   assert.equal(spawnOptions.detached, true);
-  assert.equal(spawnOptions.env.PI_WORKFLOW_TOKEN, undefined);
-  assert.equal(spawnOptions.env.PATH, "/fixture/bin");
+  assert.deepEqual(spawnOptions.env, { PATH: "/fixture/bin", HOME: "/fixture/home", API_TOKEN: "host-token" });
+});
+
+test("the managed Playwright server skips srt and receives only PATH, HOME, and scratch", async () => {
+  const activeLease = lease();
+  const cleanup = [];
+  activeLease.socket = {
+    destroy() {},
+    end(callback) { cleanup.push("end"); callback?.(); },
+    write() { cleanup.push("write"); },
+    once() {},
+  };
+  activeLease.response = { profile: null, cwd: process.cwd(), env: { TMPDIR: "/broker-scratch", SERVER_TOKEN: "configured" }, command: "managed-playwright", args: ["--stdio"] };
+  let spawnOptions;
+  let spawnArgs;
+  let sandboxStarted = false;
+  await main(["server", "playwright"], {
+    environment: { PATH: "/fixture/bin", HOME: "/fixture/home", API_TOKEN: "secret", NODE_OPTIONS: "--require=hook", HTTPS_PROXY: "https://proxy", SSH_AUTH_SOCK: "/ssh.sock", PI_WORKFLOW_SOCKET: "/broker.sock", PI_WORKFLOW_TOKEN: "test-token" },
+    requestLease: async () => activeLease,
+    sandboxManager: { async initialize() { sandboxStarted = true; } },
+    spawnChild(command, args, options) {
+      spawnArgs = [command, ...args];
+      spawnOptions = options;
+      return { pid: 46 };
+    },
+    waitForClose: async () => ({ code: 0, signal: null }),
+    killProcess() {},
+    setTimer: immediateTimer,
+    clearTimer() {},
+    signals: new EventEmitter(),
+  });
+  assert.equal(sandboxStarted, false);
+  assert.deepEqual(spawnArgs, ["bash", "-c", "'managed-playwright' '--stdio'"]);
+  assert.deepEqual(spawnOptions.env, { PATH: "/fixture/bin", HOME: "/fixture/home", TMPDIR: "/broker-scratch" });
+  assert.deepEqual(cleanup, ["write", "end"]);
 });
 
 test("a stop during sandbox initialization prevents spawning", async () => {

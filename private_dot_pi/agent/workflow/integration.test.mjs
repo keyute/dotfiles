@@ -296,6 +296,43 @@ test("tool leases require a single-use ticket bound to the current epoch", { ski
   assert.ok((await leaseTool({ name: "read", ticket: flaggedRead.ticket })).profile.filesystem);
 });
 
+test("only the configured Playwright server receives the managed null-profile lease", { skip }, async t => {
+  const { root, config } = fixture(t);
+  config.mcp = {
+    playwright: { connection: { type: "stdio", command: "managed-playwright", args: ["--stdio"], env: { SERVER_TOKEN: "configured" } }, policy: { denied_tools: [] } },
+    docs: { connection: { type: "stdio", command: "managed-docs", args: ["--stdio"], env: {} }, policy: { denied_tools: [] } },
+  };
+  const broker = await startBroker(config, root, async () => true);
+  t.after(() => broker.close());
+  const leaseServer = (name, role = "root") => new Promise(resolve => {
+    const socket = createConnection(broker.env.PI_WORKFLOW_SOCKET);
+    let buffer = "";
+    socket.on("error", () => resolve({ ok: false }));
+    socket.on("connect", () => socket.write(`${JSON.stringify({ action: "lease", token: broker.env.PI_WORKFLOW_TOKEN, kind: "server", role, name, command: "client-command", args: ["--client"], profile: null, env: { CLIENT_TOKEN: "spoofed" } })}\n`));
+    socket.on("data", chunk => {
+      buffer += chunk;
+      if (!buffer.includes("\n")) return;
+      const message = JSON.parse(buffer.slice(0, buffer.indexOf("\n")));
+      if (message.ok) socket.write(`${JSON.stringify({ action: "terminated" })}\n`);
+      socket.end(() => resolve(message));
+    });
+  });
+
+  const playwright = await leaseServer("playwright");
+  assert.equal(playwright.profile, null);
+  assert.equal(playwright.command, "managed-playwright");
+  assert.deepEqual(playwright.args, ["--stdio"]);
+  assert.equal(playwright.env.SERVER_TOKEN, "configured");
+  assert.equal(playwright.env.CLIENT_TOKEN, undefined);
+
+  const docs = await leaseServer("docs");
+  assert.ok(docs.profile.filesystem);
+  assert.equal(docs.command, "managed-docs");
+  assert.deepEqual(docs.args, ["--stdio"]);
+  assert.equal((await leaseServer("unconfigured")).ok, false);
+  assert.equal((await leaseServer("playwright", "fixture-reader")).ok, false);
+});
+
 test("an inherit-model child resolves to the parent's model before the tier check", { skip }, async t => {
   const { config } = fixture(t);
   const role = config.agents["fixture-reader"];

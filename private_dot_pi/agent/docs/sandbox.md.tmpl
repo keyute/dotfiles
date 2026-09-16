@@ -22,10 +22,10 @@ against the source repository and update this file.
   new mode takes effect — `/plan` before enabling planning, and approval of
   `submit_plan` the same way before enabling execution, so a child still
   running when the plan is approved ends aborted.
-  `submit_plan` offers `Yes — execute`, `Give feedback…`, `No — cancel` vertically;
-  only feedback opens the multiline editor. Blank submitted feedback, No, or Esc
-  cancel without an acknowledgement model turn; nonblank submitted feedback keeps
-  the plan for revision. Only Yes enables execution (2026-09-16).
+  `submit_plan` shows a framed title and vertical Yes/No choices; selecting No
+  immediately opens inline input. Submitted text requests revision; blank Enter
+  or Esc stops without an acknowledgement model turn. Tab returns to Yes without
+  submitting the draft; only Yes enables execution (2026-09-16).
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
 - Shell commands run inside the SRT profile without review, as sandboxed
@@ -105,10 +105,11 @@ against the source repository and update this file.
   reports cleanup failures. Shutdown child results cannot trigger a model turn.
   If termination cannot be established, check orphan processes and restart
   (2026-09-16).
-- Browser launch is currently blocked under macOS SRT containment; no browser
-  policy or broad permission is adopted. Revisit only on an upstream pin with a
-  contained launch, navigation, and cleanup gate; evidence is in the audit log
-  (2026-09-16).
+- Playwright alone runs outside SRT so Chromium can launch, with only PATH,
+  HOME and the broker's scratch TMPDIR. Its isolated profile is disposable,
+  not filesystem/network containment: the browser and server have normal user
+  access. Tool approvals, denials, role checks and process cleanup still apply;
+  other MCP servers remain sandboxed (owner decision 2026-09-16).
 
 The `workspace_*` tools are the SDK's own tools running in the host Pi process;
 each invocation leases a per-tool SRT worker that performs the actual file and
@@ -116,8 +117,8 @@ shell operations, so effects and subprocess execution are sandboxed — not all
 file I/O (path probes, diff generation, and output temp files stay host-side).
 Every lease consumes a single-use ticket minted by its approval, so a mode
 change between approval and execution invalidates the lease. Interactive `!`
-commands use the same worker boundary. MCP stdio servers also run inside SRT,
-while OAuth stays in the trusted host Pi process.
+commands use the same worker boundary. MCP stdio servers other than Playwright
+run inside SRT; OAuth stays in the trusted host Pi process.
 
 Sensitive paths come from the shared denylist. File tools additionally resolve
 symlinks and confine edits to the workspace; git metadata and live-loaded code
@@ -130,6 +131,6 @@ an explicit denylist, not a guarantee against unknown credential locations. Add
 new credential paths to shared policy before exposing them to a session.
 
 Extensions are trusted host code. Per-tool SRT is not containment against a
-malicious extension. The reviewed `dangerouslyDisableSandbox` flag above is the
-only unsandboxed path in the managed tools. Linux needs bubblewrap, socat and
-ripgrep; macOS needs sandbox-exec.
+malicious extension. Reviewed host-shell runs and the managed Playwright server
+are the unsandboxed exceptions. Linux needs bubblewrap, socat and ripgrep;
+macOS needs sandbox-exec.

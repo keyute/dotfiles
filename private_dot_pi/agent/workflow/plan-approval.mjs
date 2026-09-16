@@ -110,28 +110,30 @@ export class PlanApprovalComponent {
       return;
     }
     if (kb.matches(data, "tui.input.tab") || matchesKey(data, Key.tab)) {
-      this.editing = false;
-      this.selected = (this.selected + 1) % 3;
+      if (this.editing) {
+        this.editing = false;
+        this.selected = 0;
+      } else {
+        this.selected = 1;
+        this.editing = true;
+      }
       this.refresh();
       return;
     }
     if (!this.editing && (kb.matches(data, "tui.select.up") || matchesKey(data, Key.up))) {
-      this.selected = Math.max(0, this.selected - 1);
+      this.selected = 0;
       this.refresh();
       return;
     }
     if (!this.editing && (kb.matches(data, "tui.select.down") || matchesKey(data, Key.down))) {
-      this.selected = Math.min(2, this.selected + 1);
+      this.selected = 1;
+      this.editing = true;
       this.refresh();
       return;
     }
     if (!this.editing) {
       if (!(kb.matches(data, "tui.select.confirm") || kb.matches(data, "tui.input.submit") || matchesKey(data, Key.enter))) return;
-      if (this.selected === 0) this.finish({ decision: PLAN_APPROVED });
-      else if (this.selected === 1) {
-        this.editing = true;
-        this.refresh();
-      } else this.finish({ decision: PLAN_CANCELLED });
+      this.finish({ decision: PLAN_APPROVED });
       return;
     }
     if (kb.matches(data, "tui.input.newLine")) {
@@ -150,21 +152,20 @@ export class PlanApprovalComponent {
 
   render(width) {
     const usable = Math.max(1, width);
-    const lines = wrapTextWithAnsi(this.theme.fg("text", "Approve the current plan?"), usable);
+    const inset = usable > 1 ? " " : "";
+    const contentWidth = usable - inset.length;
     const option = (index, label) => index === this.selected
-      ? this.theme.fg("accent", `> ${label}`)
+      ? this.theme.fg("accent", `→ ${label}`)
       : `  ${label}`;
-    for (const [index, label] of [[0, "Yes, approve and execute"], [1, "Give feedback…"], [2, "No, cancel"]]) {
-      lines.push(...wrapTextWithAnsi(option(index, label), usable));
-    }
-    if (this.editing) {
-      lines.push(...wrapTextWithAnsi(this.theme.fg("muted", "Optional feedback:"), usable));
-      lines.push(...this.editor.render(usable));
-      lines.push(...wrapTextWithAnsi(this.theme.fg("dim", "Enter submit · Shift+Enter newline · Tab next option · Esc cancel"), usable));
-    } else {
-      lines.push(...wrapTextWithAnsi(this.theme.fg("dim", "Up/down move · Tab next option · Enter select · Esc cancel"), usable));
-    }
-    return lines.map(line => truncateToWidth(line, usable, ""));
+    const content = [
+      ...wrapTextWithAnsi(this.theme.bold(this.theme.fg("accent", "Approve the current plan?")), contentWidth),
+      "",
+      option(0, "Yes"),
+      option(1, "No"),
+    ];
+    if (this.editing) content.push("", ...this.editor.render(contentWidth));
+    const border = this.theme.fg("borderAccent", "─".repeat(usable));
+    return [border, ...content.map(line => truncateToWidth(`${inset}${line}`, usable, "")), border];
   }
 
   invalidate() { this.editor.invalidate(); }

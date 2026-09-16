@@ -91,11 +91,11 @@ const parseInvocation = (argv) => {
   return { kind, name };
 };
 
-export const validateLease = (value, kind) => {
+export const validateLease = (value, kind, name) => {
   if (
     !isRecord(value) ||
     value.ok !== true ||
-    !(isRecord(value.profile) || (kind === "tool" && value.profile === null)) ||
+    !(isRecord(value.profile) || ((kind === "tool" || (kind === "server" && name === "playwright")) && value.profile === null)) ||
     !isAbsolute(value.cwd) ||
     !isRecord(value.env) ||
     !Object.values(value.env).every((envValue) => typeof envValue === "string")
@@ -160,7 +160,7 @@ const requestLease = (
       if (!receivedLease) {
         receivedLease = true;
         try {
-          resolveOnce(validateLease(message, kind));
+          resolveOnce(validateLease(message, kind, name));
         } catch {
           socket.destroy();
           rejectOnce();
@@ -262,10 +262,15 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
     if (state.terminal) throw fail();
 
     const spawnChild = dependencies.spawnChild || spawn;
+    const managedServerEnvironment = {
+      ...(typeof environment.PATH === "string" ? { PATH: environment.PATH } : {}),
+      ...(typeof environment.HOME === "string" ? { HOME: environment.HOME } : {}),
+      TMPDIR: response.env.TMPDIR,
+    };
     child = spawnChild("bash", ["-c", command], {
       cwd: response.cwd,
       detached: true,
-      env: sandboxed ? safeEnvironment(response.env) : hostEnvironment(environment),
+      env: sandboxed ? safeEnvironment(response.env) : kind === "server" ? managedServerEnvironment : hostEnvironment(environment),
       stdio: "inherit",
     });
     state.child = child;
