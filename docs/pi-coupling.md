@@ -60,6 +60,9 @@ consumers are sessions editing this repo, not runtime pi sessions.
   `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
   render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
   `setPaddingX`, the first content line's padding columns).
+- Inline plan feedback retains `Editor.render()` for wrapping, cursor and navigation geometry,
+  dropping its first/last border rows. `plan-approval.test.mjs` pins that render shape,
+  Unicode cursor and wrapped navigation alongside the placeholder (2026-09-17).
 - Mouse: the fold handle answers clicks on its summary line from its own
   `handleMouse`; rests on pi-tui's `MouseRegion` asking the child before its
   own handler and on `ToolExecutionComponent` forwarding self-shell mouse

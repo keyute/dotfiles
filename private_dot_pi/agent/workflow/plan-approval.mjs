@@ -1,10 +1,11 @@
-import { Editor, Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export const PLAN_APPROVED = "approved";
 export const PLAN_REVISION = "revision_requested";
 export const PLAN_CANCELLED = "cancelled";
 
 const trimFeedback = value => String(value ?? "").trim();
+const FEEDBACK_PLACEHOLDER = "Tell pi what to do differently";
 
 export function planDecisionResult(decision, feedback = "") {
   if (decision === PLAN_APPROVED) return {
@@ -158,13 +159,29 @@ export class PlanApprovalComponent {
     const option = (index, label) => index === this.selected
       ? this.theme.fg("accent", `→ ${label}`)
       : `  ${label}`;
+    const noPrefix = `${option(1, "No")}  `;
+    const prefixWidth = visibleWidth(noPrefix);
+    const feedbackWidth = Math.max(1, contentWidth - prefixWidth);
+    const feedback = this.editor.getText();
+    const focused = this.isFocused && this.editing;
+    let feedbackLines;
+    if (!feedback) {
+      const placeholder = focused
+        ? `${CURSOR_MARKER}\x1b[7m${FEEDBACK_PLACEHOLDER[0]}\x1b[27m${FEEDBACK_PLACEHOLDER.slice(1)}`
+        : FEEDBACK_PLACEHOLDER;
+      feedbackLines = [this.theme.fg("dim", placeholder)];
+    } else if (focused) {
+      // Keep native wrapping and navigation geometry; omit only its two borders.
+      feedbackLines = this.editor.render(feedbackWidth).slice(1, -1);
+    } else {
+      feedbackLines = wrapTextWithAnsi(feedback, Math.max(1, feedbackWidth - 1));
+    }
     const content = [
       ...wrapTextWithAnsi(this.theme.bold(this.theme.fg("accent", "Approve the current plan?")), contentWidth),
       "",
       option(0, "Yes"),
-      option(1, "No"),
+      ...feedbackLines.map((line, index) => `${index === 0 ? noPrefix : " ".repeat(prefixWidth)}${line}`),
     ];
-    if (this.editing) content.push("", ...this.editor.render(contentWidth));
     const border = this.theme.fg("borderAccent", "─".repeat(usable));
     return [border, ...content.map(line => truncateToWidth(`${inset}${line}`, usable, "")), border];
   }

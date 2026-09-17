@@ -68,8 +68,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-16, later decision:* restore the native-style horizontal frame: title, vertical Yes/No, inline input immediately on No; no explanatory copy.
      Blank Enter or Esc stops without another model turn; submitted text requests revision. Tab returns to Yes without submitting a draft.
      Pending plan markdown (`isPartial`) and RPC stay unchanged. *Why:* the owner rejected both intervening approval layouts and chose the older minimal shape.
-   - *2026-09-17:* Up from the first logical line of No's feedback returns to Yes without submitting or discarding the draft;
-     later lines retain cursor-up editing. Tab still returns from anywhere. *Why:* the owner wants arrow navigation back to Yes without losing multiline editing.
+   - *2026-09-17, updated:* render feedback beside No without an editor box; empty feedback shows dim `Tell pi what to do differently` (no angle brackets).
+     Typing replaces it. Up from the first logical line or Tab anywhere returns to Yes, retaining the visible draft; later lines retain cursor-up editing. *Why:* questionnaire-style inline typing and arrow navigation should preserve multiline drafts.
    - *2026-09-10:* fold extent is derived from `rows.mjs`'s ordered timeline of
      facts — a maximal stretch of settled successful rows with a separator on
      its right, keyed by that boundary so ctrl+o and click state survive —
