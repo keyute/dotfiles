@@ -68,6 +68,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-16, later decision:* restore the native-style horizontal frame: title, vertical Yes/No, inline input immediately on No; no explanatory copy.
      Blank Enter or Esc stops without another model turn; submitted text requests revision. Tab returns to Yes without submitting a draft.
      Pending plan markdown (`isPartial`) and RPC stay unchanged. *Why:* the owner rejected both intervening approval layouts and chose the older minimal shape.
+   - *2026-09-17:* Up from the first logical line of No's feedback returns to Yes without submitting or discarding the draft;
+     later lines retain cursor-up editing. Tab still returns from anywhere. *Why:* the owner wants arrow navigation back to Yes without losing multiline editing.
    - *2026-09-10:* fold extent is derived from `rows.mjs`'s ordered timeline of
      facts — a maximal stretch of settled successful rows with a separator on
      its right, keyed by that boundary so ctrl+o and click state survive —
@@ -133,9 +135,6 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-08, night:* a sent message carries the same `❯` in the same
      column, through the markdown transformer in the box's own colour; a
      message opening with a markdown block marker renders as a paragraph.
-   - *2026-09-08, later:* Tab completes what the command accepts — the
-     command's own candidates in argument position, and the next level after an
-     accept, so Tab walks a directory tree.
    - *2026-09-09:* Tab opens nothing on a line that does not start with `/`;
      the wrapper answers pi's `shouldTriggerFileCompletion` itself, and only
      the forced path consults it, so `@path` is untouched.
@@ -145,9 +144,10 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-09, later still:* the menu also opens on the characters a path is
      typed with (the command's space, `/`, `~`), first line only, and `..` is
      offered while the walk climbs; an accept shows the next level and stops.
-   - *2026-09-10:* the walk climbs on its own past a level offering nothing but
-     `..` and the directory it came out of, opening on the first level with an
-     unrelated directory; the skipped levels lose their ancestor from the menu.
+   - *2026-09-17:* superseding the 2026-09-10 ancestor-skipping decision, `/add-dir` respects explicit paths literally:
+     an addable slash-ended path comes first, children below, preserving relative, `~/…` and absolute spelling.
+     Empty input starts at siblings; policy exclusions still apply. Tab accepting unchanged text closes the menu;
+     accepting a different directory opens its level. *Why:* automatic descent selected the wrong directory; literal paths also remove the climbing heuristic.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then `↓ N
    more`; Down from the prompt's last line enters the rows, the highlighted row

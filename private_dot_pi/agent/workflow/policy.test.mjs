@@ -91,9 +91,9 @@ test("/add-dir completions offer the addable siblings and nothing addRoot refuse
   mkdirSync(join(p.cwd, "..", "other"));
   mkdirSync(join(p.cwd, "..", ".hidden"));
   assert.deepEqual(p.addableDirs(""), ["../../", "../cache/", "../other/", "../scratch/"]);
-  // `..` is offered so the walk goes up as well as down, and a separator-ended
-  // prefix is the same list.
-  assert.deepEqual(p.addableDirs("../"), ["../../", "../cache/", "../other/", "../scratch/"]);
+  // `..` is offered so the walk goes up as well as down; an explicit parent
+  // path stays first, ahead of its children.
+  assert.deepEqual(p.addableDirs("../"), ["../", "../../", "../cache/", "../other/", "../scratch/"]);
   // Under a named directory the walk is going down, where `..` only undoes it.
   assert.ok(!p.addableDirs("../other/").includes("../other/../"));
   assert.throws(() => p.addRoot("../control"), /denied/);
@@ -111,21 +111,38 @@ test("/add-dir completions offer the addable siblings and nothing addRoot refuse
   assert.deepEqual(p.addableDirs(""), []);
 });
 
-test("/add-dir completions climb past levels holding only the way back to cwd", t => {
+test("/add-dir completions keep explicit relative, absolute and home paths first", t => {
+  const previousHome = process.env.HOME;
+  const root = mkdtempSync(join(tmpdir(), "pi-policy-home-test-"));
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    rmSync(root, { recursive: true, force: true });
+  });
+  process.env.HOME = join(root, "home");
+  for (const dir of ["work", "scratch", "control", "cache", "home", "apps/apps/child", "home/apps/child"]) mkdirSync(join(root, dir), { recursive: true });
+  const config = { version: 1, models: {}, filesystem: { denyRead: [], denyWrite: [], allowWrite: [join(root, "cache")] }, network: { allowedDomains: [] }, agents: { reviewer: { readonly: true, tools: workerTools.map(publicToolName) } }, mcp: {} };
+  const p = new Policy(config, join(root, "work"), join(root, "scratch"), join(root, "control"));
+  const apps = join(root, "apps", "apps");
+  assert.deepEqual(p.addableDirs("../apps/"), ["../apps/", "../apps/apps/"]);
+  assert.deepEqual(p.addableDirs("../apps/apps/"), ["../apps/apps/", "../apps/apps/child/"]);
+  assert.deepEqual(p.addableDirs(`${apps}/`), [`${apps}/`, `${apps}/child/`]);
+  assert.deepEqual(p.addableDirs("~/"), ["~/apps/"]);
+  assert.deepEqual(p.addableDirs("~/apps/"), ["~/apps/", "~/apps/child/"]);
+  // An explicitly typed ascent remains literal; it does not walk past levels.
+  assert.deepEqual(p.addableDirs("../"), ["../apps/", "../cache/", "../scratch/"]);
+  assert.deepEqual(p.addableDirs("../control/"), []);
+  assert.deepEqual(p.addableDirs("./"), []);
+});
+
+test("/add-dir completions keep ancestor levels literal instead of skipping them", t => {
   const p = fixture(t);
   mkdirSync(join(p.cwd, "deep", "a", "b"), { recursive: true });
   const q = new Policy(p.config, join(p.cwd, "deep", "a", "b"), p.scratch, join(p.cwd, "..", "control"));
-  // `a`, `deep` and `work` each hold nothing but the next step back down to
-  // cwd, so the walk skips all three and lands on the first level holding an
-  // unrelated directory, with a further `..` still on offer.
-  const landed = ["../../../../../", "../../../../cache/", "../../../../scratch/", "../../../../work/"];
-  assert.deepEqual(q.addableDirs(""), landed);
-  assert.deepEqual(q.addableDirs("../"), landed);
-  // A typed name filters the level it was typed under rather than searching
-  // upward — `.` matches the `..` there and stops the climb on it — and a named
-  // head is the walk going down, with no `..` to climb by.
+  assert.deepEqual(q.addableDirs(""), ["../../"]);
+  assert.deepEqual(q.addableDirs("../"), ["../", "../../"]);
   assert.deepEqual(q.addableDirs("."), ["../../"]);
-  assert.deepEqual(q.addableDirs("../../../../work/"), ["../../../../work/deep/"]);
+  assert.deepEqual(q.addableDirs("../../../../work/"), ["../../../../work/", "../../../../work/deep/"]);
 });
 
 test("an added directory's instructions are read through the read policy", t => {

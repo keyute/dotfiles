@@ -202,14 +202,16 @@ export class CaretEditor extends sdk.CustomEditor {
     // Accepting an item with Tab closes the menu and nothing re-opens it, so the
     // command's arguments show nothing until a character is typed (and `~` and
     // `/`, where an added directory starts, are not pi's natural triggers). An
-    // accept that left the cursor on the command's space or on a directory
-    // separator has a next level to show, so that level is asked for — as the
-    // request a typed character makes, not as another Tab: pi applies a lone
-    // candidate outright on an explicit Tab, so a level holding one entry would
-    // be walked into as well, descending twice on the one keypress.
+    // accept that changes the text and leaves the cursor on the command's space
+    // or on a directory separator has a next level to show, so that level is
+    // asked for — as the request a typed character makes, not as another Tab:
+    // pi applies a lone candidate outright on an explicit Tab, so a level
+    // holding one entry would be walked into as well, descending twice on the
+    // one keypress.
     if (this.keybindings.matches(data, "tui.input.tab") && this.isShowingAutocomplete()) {
+      const before = this.getText();
       super.handleInput(data);
-      if (this.isShowingAutocomplete()) return;
+      if (this.isShowingAutocomplete() || this.getText() === before) return;
       const { line, col } = this.getCursor();
       const lines = this.getLines();
       if (/[ /]$/.test((lines[line] ?? "").slice(0, col)) && commandArgument(lines, line, col)) this.tryTriggerAutocomplete();

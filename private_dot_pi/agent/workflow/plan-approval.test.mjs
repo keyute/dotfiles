@@ -191,6 +191,22 @@ test("Tab returns from No to Yes without submitting its draft", async () => {
   assert.deepEqual(await prompt.promise, { decision: PLAN_APPROVED });
 });
 
+test("Up from the first No feedback line returns to Yes without submitting its draft", async () => {
+  const prompt = tuiApproval();
+  const component = prompt.component();
+  component.handleInput("\x1b[B");
+  component.handleInput("draft");
+  component.handleInput("\x1b[A");
+  assert.equal(component.editing, false);
+  assert.equal(component.selected, 0);
+  assert.equal(prompt.stats().completions, 0);
+  component.handleInput("\x1b[B");
+  assert.equal(component.editor.getText(), "draft");
+  component.handleInput("\t");
+  component.handleInput("\r");
+  assert.deepEqual(await prompt.promise, { decision: PLAN_APPROVED });
+});
+
 test("blank No submission and Esc from choices or input cancel", async () => {
   const blank = tuiApproval();
   blank.component().handleInput("\x1b[B");

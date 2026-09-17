@@ -65,7 +65,7 @@ test("down enters fleet navigation only when the editor could not move, and othe
 
 // The real provider, so the command lookup, the prefix it returns and the
 // insertion its applyCompletion performs are pi's own.
-const dirs = { "": ["../one/", "../two/"], "../one/": ["../one/a/", "../one/b/"], "../two/": ["../two/only/"], "~/": ["~/p/", "~/q/"] };
+const dirs = { "": ["../one/", "../two/"], "../one/": ["../one/", "../one/a/", "../one/b/"], "../one/a/": ["../one/a/", "../one/a/child/"], "../two/": ["../two/only/"], "~/": ["~/p/", "~/q/"] };
 const commands = [
   { name: "add-dir", description: "Add a directory", getArgumentCompletions: prefix => (dirs[prefix] ?? []).map(value => ({ value, label: value })) },
   { name: "remove-dir", description: "Remove a directory", getArgumentCompletions: prefix => ["/tmp/added", "/tmp/other"].filter(root => root.startsWith(prefix)).map(value => ({ value, label: value })) },
@@ -96,7 +96,7 @@ test("tab offers the command's own completions and, after accepting, the next le
   assert.deepEqual(menu(caret), ["../one/", "../two/"]);
   await tab(caret);
   assert.equal(caret.getText(), "/add-dir ../one/");
-  assert.deepEqual(menu(caret), ["../one/a/", "../one/b/"]);
+  assert.deepEqual(menu(caret), ["../one/", "../one/a/", "../one/b/"]);
 });
 
 test("accepting a value that is not a directory ends the walk", async () => {
@@ -182,6 +182,18 @@ test("moving the cursor across a separator is not typing one", async () => {
   assert.deepEqual(menu(caret), []);
 });
 
+test("accepting an exact directory leaves its text and closes the menu", async () => {
+  for (const accept of [async caret => keys(caret, "\r"), tab]) {
+    const caret = completing();
+    caret.setText("/add-dir ../one/");
+    await tab(caret);
+    assert.deepEqual(menu(caret), ["../one/", "../one/a/", "../one/b/"]);
+    await accept(caret);
+    assert.equal(caret.getText(), "/add-dir ../one/");
+    assert.deepEqual(menu(caret), []);
+  }
+});
+
 test("an accept shows the next level and stops there, even when that level holds one entry", async () => {
   const caret = completing();
   caret.setText("/add-dir ");
@@ -191,4 +203,14 @@ test("an accept shows the next level and stops there, even when that level holds
   await tab(caret);
   assert.equal(caret.getText(), "/add-dir ../two/");
   assert.deepEqual(menu(caret), ["../two/only/"]);
+});
+
+test("accepting a child directory reopens at its next level", async () => {
+  const caret = completing();
+  caret.setText("/add-dir ../one/");
+  await tab(caret);
+  caret.handleInput("\x1b[B"); // highlight ../one/a/
+  await tab(caret);
+  assert.equal(caret.getText(), "/add-dir ../one/a/");
+  assert.deepEqual(menu(caret), ["../one/a/", "../one/a/child/"]);
 });

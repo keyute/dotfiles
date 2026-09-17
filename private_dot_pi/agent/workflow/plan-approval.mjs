@@ -120,7 +120,8 @@ export class PlanApprovalComponent {
       this.refresh();
       return;
     }
-    if (!this.editing && (kb.matches(data, "tui.select.up") || matchesKey(data, Key.up))) {
+    if ((!this.editing || this.editor.getCursor().line === 0) && (kb.matches(data, "tui.select.up") || matchesKey(data, Key.up))) {
+      this.editing = false;
       this.selected = 0;
       this.refresh();
       return;
