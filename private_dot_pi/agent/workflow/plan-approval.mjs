@@ -5,7 +5,7 @@ export const PLAN_REVISION = "revision_requested";
 export const PLAN_CANCELLED = "cancelled";
 
 const trimFeedback = value => String(value ?? "").trim();
-const FEEDBACK_PLACEHOLDER = "Tell pi what to do differently";
+const FEEDBACK_PLACEHOLDER = "What should change?";
 
 export function planDecisionResult(decision, feedback = "") {
   if (decision === PLAN_APPROVED) return {

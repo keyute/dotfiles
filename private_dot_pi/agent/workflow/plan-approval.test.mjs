@@ -159,7 +159,7 @@ test("approval renders its placeholder inline and focuses No immediately", async
   const initial = component.render(80).join("\n");
   assert.match(initial, /Approve the current plan\?/);
   assert.match(initial, /→ Yes/);
-  assert.match(initial, /  No  Tell pi what to do differently/);
+  assert.match(initial, /  No  What should change\?/);
   assert.equal(initial.split("\n")[0], "─".repeat(80));
   assert.equal(initial.split("\n").at(-1), "─".repeat(80));
   assert.doesNotMatch(initial, /[╭╮╰╯│]/);
@@ -168,7 +168,7 @@ test("approval renders its placeholder inline and focuses No immediately", async
   component.handleInput("\x1b[B");
   const selected = component.render(80).join("\n");
   assert.equal(component.editor.focused, true);
-  assert.match(selected.replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /→ No  Tell pi what to do differently/);
+  assert.match(selected.replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /→ No  What should change\?/);
   assert.ok(selected.includes(CURSOR_MARKER));
   assert.equal(selected.split("\n").length, initial.split("\n").length, "No adds no editor spacer or box");
   component.handleInput("ab");
@@ -188,7 +188,7 @@ test("empty No shows a visible cursor and wrapped feedback keeps editor navigati
   const prompt = tuiApproval();
   const component = prompt.component();
   component.handleInput("\x1b[B");
-  assert.match(component.render(80).join("\n"), /\x1b\[7mT\x1b\[27m/);
+  assert.match(component.render(80).join("\n"), /\x1b\[7mW\x1b\[27m/);
   component.handleInput("abc");
   component.handleInput("\x1b[13;2~");
   component.handleInput("0123456789012345");
@@ -210,7 +210,7 @@ test("inline draft replaces and restores the No placeholder without losing it on
   component.handleInput("\x7f");
   component.handleInput("\x7f");
   component.handleInput("\x7f");
-  assert.match(component.render(80).join("\n").replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /→ No  Tell pi what to do differently/);
+  assert.match(component.render(80).join("\n").replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /→ No  What should change\?/);
   component.handleInput("draft");
   component.handleInput("\t");
   const onYes = component.render(80).join("\n");
