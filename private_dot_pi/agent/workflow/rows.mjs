@@ -418,12 +418,8 @@ export function toolRenderers(name, folds = defaultFolds) {
 
 // pi-mcp-adapter reports init, auth and server failures in details.error
 // without isError; a subagent launch answers with its run id and finishes
-// later. The questionnaire tool is an overlay while it runs and a
-// workflow-answers entry once it ends, so its own row would say nothing.
-const NOTHING = { renderShell: "self", renderCall: () => new Text("", 0, 0), renderResult: () => new Text("", 0, 0) };
-
+// later.
 export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {}) {
-  if (name === "ask_user_question") return NOTHING;
   const subagent = name === "subagent";
   const renderers = rowRenderers({
     name: subagent ? "subagent" : isMcp(name) ? "mcp" : "plugin",
@@ -531,10 +527,10 @@ export function blankReasoning(message) {
   return blanked ? message : undefined;
 }
 
-export function answerLines(answers, theme, globalNote = "") {
+export function answerLines(answers, theme) {
   const head = `${theme.fg("success", BULLET)} ${theme.fg("toolTitle", `User answered pi's ${answers.length === 1 ? "question" : "questions"}`)}`;
   const line = (label, text) => indent(`${theme.fg("muted", SUB)} ${label} ${theme.fg("muted", "→")} ${text}`);
-  return [head, ...answers.map(({ question, answer, notes }) => line(question, [answer, notes].filter(Boolean).join(" — "))), ...(globalNote ? [line("Note", globalNote)] : [])];
+  return [head, ...answers.map(({ question, answer, notes }) => line(question, [answer, notes].filter(Boolean).join(" — ")))];
 }
 
 // One line when an async child ends; pi-subagents' own notice shows only for

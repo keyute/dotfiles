@@ -430,10 +430,6 @@ test("plugin rows: MCP failures reported in details turn the row red after the r
   assert.equal(wait.renderShell, "self");
   assert.deepEqual(rendered(wait.renderCall({ id: "r1" }, theme, context())), ['<success>• <toolTitle>bg wait "r1"']);
   assert.deepEqual(rendered(wait.renderResult(result('Waited 33.2s for run "r1"; done.'), { expanded: false }, theme, context())), ['  <muted>↳ Waited 33.2s for run "r1"; done.']);
-  // The questionnaire has an overlay and an answers entry; its row says nothing.
-  const ask = pluginRenderers("ask_user_question", { folds: createFolds() });
-  assert.deepEqual(rendered(ask.renderCall({ questions: [] }, theme, context())), []);
-  assert.deepEqual(rendered(ask.renderResult(result("answered"), { expanded: false }, theme, context())), []);
 });
 
 test("assistant bullets sit at column 0, a leading heading rides the bullet line, other block starts follow it, reasoning renders nothing", () => {
@@ -477,13 +473,11 @@ test("answers, completion and turn lines format", () => {
     "<success>• <toolTitle>User answered pi's question",
     "  <muted>↳ Pad both sides? <muted>→ yes",
   ]);
-  // A note is the whole answer when the user writes instead of picking, and
-  // the submit-tab note rides the end.
-  assert.deepEqual(answerLines([{ question: "Which marker?", answer: "", notes: "or use the background" }, { question: "Pad?", answer: "yes", notes: "both sides" }], theme, "research this first"), [
+  // Custom text is the whole answer when the user writes instead of picking.
+  assert.deepEqual(answerLines([{ question: "Which marker?", answer: "", notes: "or use the background" }, { question: "Pad?", answer: "yes", notes: "both sides" }], theme), [
     "<success>• <toolTitle>User answered pi's questions",
     "  <muted>↳ Which marker? <muted>→ or use the background",
     "  <muted>↳ Pad? <muted>→ yes — both sides",
-    "  <muted>↳ Note <muted>→ research this first",
   ]);
   assert.equal(completionLine({ agent: "explore-deep", task: "Audit the\n last commits", status: "completed", durationMs: 134_000 }, theme), "<success>• <toolTitle>explore-deep finished<muted> · Audit the last commits · 2m 14s");
   assert.equal(completionLine({ agent: "explore-deep", task: "Audit", status: "completed" }, theme), "<success>• <toolTitle>explore-deep finished<muted> · Audit");

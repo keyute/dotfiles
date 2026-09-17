@@ -18,12 +18,11 @@ consumers are sessions editing this repo, not runtime pi sessions.
   sessions. A capped history alone is not failure; remaining unaccounted active
   work is. `fleet.test.mjs` and `integration.test.mjs` cover this ordering and
   evidence; `stability.test.mjs` checks import/event documentation (2026-09-16).
-- Plugin rows: pi-subagents, pi-mcp-adapter, the questionnaire and
-  web-search plugins receive a Proxy of the extension API whose
-  `registerTool` swaps `renderShell`/`renderCall`/`renderResult` and, for
-  `subagent` only, narrows its schema from managed accepted-key definitions
-  (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the supervisor channel,
-  `mcp`, `mcpScript`, `mcp__*`, `ask_user_question`, `web_search`,
+- Plugin rows: pi-subagents, pi-mcp-adapter and web-search receive a Proxy of
+  the extension API whose `registerTool` swaps `renderShell`/`renderCall`/
+  `renderResult` and, for `subagent` only, narrows its schema from managed
+  accepted-key definitions (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the
+  supervisor channel, `mcp`, `mcpScript`, `mcp__*`, `web_search`,
   `url_context`). The wrapper retains executor and description, and launch/
   control enforcement is unchanged; it rests on plugins registering through
   the API they are handed and pi keeping the definition object (`loader.js`).
@@ -60,6 +59,8 @@ consumers are sessions editing this repo, not runtime pi sessions.
   `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
   render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
   `setPaddingX`, the first content line's padding columns).
+- The owned questionnaire directly uses public `custom`, `Editor` and `Markdown`;
+  native paste expansion preserves complete notes and free answers (2026-09-17).
 - Inline plan feedback retains `Editor.render()` for wrapping, cursor and navigation geometry,
   dropping its first/last border rows. `plan-approval.test.mjs` pins that render shape,
   Unicode cursor and wrapped navigation alongside the placeholder (2026-09-17).

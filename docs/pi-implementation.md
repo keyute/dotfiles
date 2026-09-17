@@ -53,6 +53,10 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   `PI0850_PEER_ALIASES`, #1944), so the root `@earendil-works/pi-client` pin
   added for 0.65.1 was removed. Re-check on every pi/pi-subagents bump: the
   child-preflight test passes without it, live background launch is the gate.
+- 2026-09-17: an owned questionnaire replaces RPIV and its dependencies using
+  public TUI primitives. Root write/edit schemas are hidden during planning;
+  Exa moves behind the existing MCP gateway, while Context7 stays direct.
+  These exposure changes leave broker enforcement and child permissions intact.
 - The host copies the settings `editorPaddingX` (default 0) onto custom editors
   right after the factory runs and on settings reloads; `CaretEditor` clamps
   `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`

@@ -9,6 +9,7 @@ import { createJiti } from "jiti";
 import { Type } from "typebox";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
+import { activeToolNames } from "./index.mjs";
 
 // Unix sockets are unavailable in some sandboxes (EPERM on listen); probe once
 // up front so every test in this file can share one skip reason.
@@ -31,6 +32,18 @@ function fixture(t) {
   const config = { version: 1, agentDir, models: { provider: "openai-codex", default: "gpt-5.6-sol", defaultEffort: "medium", planEffort: "high", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role }, mcp: {} };
   return { root, config };
 }
+
+test("active tool exposure follows root mode and UI without changing child authority", () => {
+  const tools = ["workspace_read", "workspace_write", "workspace_edit", "ask_user_question"].map(name => ({ name }));
+  const root = options => activeToolNames(tools, { ready: true, permitted: () => true, isRoot: true, mode: "plan", currentContext: { mode: "tui", hasUI: true }, ...options });
+  assert.deepEqual(root(), ["workspace_read", "ask_user_question"]);
+  assert.deepEqual(root({ mode: "execute" }), tools.map(tool => tool.name));
+  assert.deepEqual(root({ currentContext: { mode: "rpc", hasUI: true } }), ["workspace_read"]);
+  assert.deepEqual(root({ currentContext: { mode: "tui", hasUI: false } }), ["workspace_read"]);
+  assert.deepEqual(root({ ready: false }), []);
+  assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name === "workspace_read", isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read"]);
+  assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name.startsWith("workspace_"), isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read", "workspace_write", "workspace_edit"]);
+});
 
 test("broker does not expose its credential to the classifier and invalidates pending approval", { skip }, async t => {
   const { root, config } = fixture(t);
@@ -140,6 +153,8 @@ test("pinned upstream packages register against the managed extension and prefli
 
 test("headless root cleanup uses plugin RPC before its shutdown hook and still closes the broker on stop failure", async t => {
   const { config } = fixture(t);
+  config.models.classifierFilter = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
   const configPath = join(config.agentDir, "workflow.json");
   writeFileSync(configPath, JSON.stringify(config));
   const handlers = new Map();
@@ -147,7 +162,12 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   const tools = new Map();
   const commands = new Map();
   const log = [];
+  const activeTools = [];
+  const entries = [];
   let rpcReady = false;
+  let running = false;
+  let review;
+  let classified;
   const events = {
     on(name, fn) {
       const list = eventHandlers.get(name) ?? new Set();
@@ -163,8 +183,8 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     events,
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); },
-    registerCommand(name, command) { commands.set(name, command); }, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
-    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, setThinkingLevel() {},
+    registerCommand(name, command) { commands.set(name, command); }, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry(type, data) { entries.push({ type, data }); },
+    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return [...tools.keys()]; }, setActiveTools(names) { activeTools.push(names); }, setThinkingLevel() {},
   };
   const broker = {
     env: { PI_WORKFLOW_SOCKET: "fake-socket", PI_WORKFLOW_TOKEN: "fake-token" },
@@ -179,7 +199,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
       let data;
       if (request.method === "ping") data = { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } };
       else if (!rpcReady) success = false;
-      else if (request.method === "status" && !request.params.id) data = { fleet: { entries: [], totalActive: 1 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [{ id: "owned-run", state: "running" }] } };
+      else if (request.method === "status" && !request.params.id) data = { fleet: { entries: [], totalActive: running ? 1 : 0 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: running ? [{ id: "owned-run", state: "running" }] : [] } };
       else if (request.method === "status") data = { details: { lifecycleStatus: { processTerminal: { version: 1, runId: "owned-run", state: "pending" } } }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [{ id: "owned-run", state: "running" }] } };
       else if (request.method === "stop") { log.push(`stop:${request.params.id}`); success = false; }
       events.emit(`subagents:rpc:v1:reply:${request.requestId}`, success ? { success: true, data } : { success: false, error: { code: "failed", message: "fixture stop failure" } });
@@ -188,21 +208,50 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     styled.on("session_shutdown", () => { log.push("rpc:teardown"); rpcReady = false; });
   };
   const { installWorkflow } = await import("./index.mjs");
-  await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: broker.policy.mode, readonly: false }), installSubagents });
+  await installWorkflow(pi, configPath, "root", { startBroker: async (_config, _cwd, callback) => { review = callback; return broker; }, requestBroker: async () => ({ mode: broker.policy.mode, readonly: false }), installSubagents });
   assert.ok(tools.has("workspace_task"));
   assert.deepEqual(tools.get("workspace_task").parameters.properties.action.anyOf.map(entry => entry.const), ["list", "output", "stop"]);
   assert.equal(tools.get("workspace_task").parameters.required.includes("id"), false);
   assert.equal((await tools.get("workspace_task").execute("list", { action: "list" })).content[0].text, "No background tasks");
 
   const ctx = {
-    cwd: process.cwd(), hasUI: false, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, thinkingLevel: "medium",
+    cwd: process.cwd(), mode: "rpc", hasUI: false, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, thinkingLevel: "medium",
     sessionManager: { getSessionId: () => "headless-root", getSessionFile: () => null },
-    modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
+    modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [], complete: async (_model, request) => { classified = request.messages[0].content; return { content: [{ type: "text", text: '{"decision":"allow"}' }] }; } },
     ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
   };
   for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
+  assert.equal(broker.policy.mode, "plan");
+  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_bash", "workspace_grep", "workspace_find", "workspace_ls", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
+  assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
+  for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);
+  const completed = {
+    toolName: "ask_user_question",
+    result: { details: { cancelled: false, answers: [{ id: 1, header: "Direction", question: "Which complete direction should we take?", selected: [{ number: 1, label: "Fast", note: "keeps the exact note" }, { number: 2, label: "Safe" }], custom: "raw custom: 1,3" }] } },
+  };
+  for (const handler of handlers.get("tool_execution_end") ?? []) handler(completed, ctx);
+  assert.deepEqual(entries.at(-1), { type: "workflow-answers", data: { answers: [{ question: "Which complete direction should we take?", answer: "Fast — keeps the exact note; Safe", notes: "raw custom: 1,3" }] } });
+  await review({ approval: "auto", tool: "bash", args: { command: "true" } });
+  assert.match(classified, /User decision: Which complete direction should we take\? → Fast — keeps the exact note; Safe — raw custom: 1,3/);
+  for (const event of [{ ...completed, isError: true }, { ...completed, result: { ...completed.result, isError: true } }, { ...completed, result: { details: { ...completed.result.details, error: "unavailable" } } }, { ...completed, result: { details: { ...completed.result.details, cancelled: true } } }, { ...completed, result: { details: { cancelled: false, answers: [] } } }]) {
+    for (const handler of handlers.get("tool_execution_end") ?? []) handler(event, ctx);
+  }
+  assert.equal(entries.length, 1);
+  ctx.hasUI = true;
+  ctx.ui.confirm = async () => true;
+  await commands.get("execute").handler("", ctx);
+  assert.equal(broker.policy.mode, "execute");
+  assert.ok(activeTools.at(-1).includes("workspace_write"));
+  assert.ok(activeTools.at(-1).includes("workspace_edit"));
+  assert.equal(activeTools.at(-1).includes("ask_user_question"), false, "RPC UI cannot show the TUI questionnaire");
+  await commands.get("plan").handler("", ctx);
+  assert.equal(broker.policy.mode, "plan");
+  assert.equal(activeTools.at(-1).includes("workspace_write"), false);
+  assert.equal(activeTools.at(-1).includes("workspace_edit"), false);
+  running = true;
   log.length = 0;
   await assert.rejects(commands.get("plan").handler("", ctx), /owned-run: stop request failed/);
+  assert.deepEqual(activeTools.at(-1), []);
   assert.deepEqual(log, ["stop:owned-run"], "a failed child stop does not reach the broker mode update");
   log.length = 0;
   let cleanupError;

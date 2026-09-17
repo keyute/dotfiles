@@ -63,11 +63,13 @@ against the source repository and update this file.
   its output), so a retry after a sandboxed failure is judged on that evidence.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
   A pending dialog is announced in the footer and times out after ten minutes.
-- `ask_user_question` (the pinned `@juicesharp/rpiv-ask-user-question` plugin)
-  presents up to four questions with options, previews and free text in one
-  tabbed dialog; answers land in the transcript and the classifier's task
-  context. Approval dialogs are once-only; MCP approvals are never cached
-  across a mode change.
+- `ask_user_question` is the owned TUI-only questionnaire: up to four questions,
+  per-option notes and literal free answers. Completed decisions retain question
+  text for the classifier, while model results omit presentation data.
+  Root `workspace_write` and `workspace_edit` are hidden during planning and
+  restored on execution approval; the questionnaire remains available in either
+  mode. Approval dialogs are once-only; MCP approvals are never cached across
+  a mode change (2026-09-17).
 - `workspace_bash` with `run_in_background: true` starts a background task
   (Claude Code's flag). The call is held open for 10 s first: a command that
   ends inside that grace is answered like a foreground call and never

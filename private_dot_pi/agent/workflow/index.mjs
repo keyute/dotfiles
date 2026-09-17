@@ -15,6 +15,7 @@ import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
+import { registerQuestionnaire } from "./questionnaire.mjs";
 import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
@@ -273,6 +274,14 @@ export function workflowPrompt({ systemPrompt, added = "", mode, readonly, isRoo
   return `${systemPrompt}${added}\n\nWorkflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}`;
 }
 
+export function activeToolNames(tools, { ready, permitted, isRoot, mode, currentContext }) {
+  if (!ready) return [];
+  const planningRoot = isRoot && mode === "plan";
+  return tools.map(tool => tool.name).filter(name => permitted(name)
+    && !(planningRoot && (name === "workspace_write" || name === "workspace_edit"))
+    && !(name === "ask_user_question" && (currentContext?.mode !== "tui" || !currentContext?.hasUI)));
+}
+
 export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "workflow.json"), role = "root", runtime = {}) {
   const startBroker = runtime.startBroker ?? createPolicyBroker;
   const requestBroker = runtime.requestBroker ?? callPolicyBroker;
@@ -311,6 +320,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
   const permittedTools = isRoot ? rootTools : config.agents[role].tools;
   const permitted = name => permittedTools.includes(name) || (permittedTools.includes("mcp") && isDirectMcpTool(name));
+  const refreshActiveTools = () => pi.setActiveTools(activeToolNames(pi.getAllTools(), {
+    ready, permitted, isRoot, mode: broker?.policy.mode, currentContext,
+  }));
 
   async function authorize(tool, args) {
     if (!ready) throw new Error("Managed workflow is not ready");
@@ -430,6 +442,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   async function setMode(mode, ctx, { cleanup = true } = {}) {
     if (!broker) throw new Error("Only the parent can change workflow mode");
     ready = false;
+    refreshActiveTools();
     if (cleanup) {
       // Stop owners while unavailable, before the broker changes its policy:
       // shells settle normally, then detached plugin runners are stopped.
@@ -440,12 +453,14 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     await broker.setMode(mode);
     publishEpoch();
     ready = true;
+    refreshActiveTools();
     pi.setThinkingLevel(mode === "plan" ? config.models.planEffort : config.models.defaultEffort);
     publishStatus(ctx);
   }
 
   async function shutdown() {
     ready = false;
+    refreshActiveTools();
     shuttingDown = true;
     const failures = [];
     const attempt = async (label, action) => {
@@ -478,6 +493,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     else {
       releaseChild = await acquireChild(env, role, release => {
         ready = false;
+        refreshActiveTools();
         childRevoked = true;
         ctx.abort();
         if (ctx.isIdle()) release();
@@ -497,7 +513,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme }));
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
-    pi.setActiveTools(pi.getAllTools().map(tool => tool.name).filter(permitted));
+    refreshActiveTools();
     if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
   });
   pi.on("input", event => {
@@ -567,26 +583,21 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       appendVisible(pi, "workflow-note", { text: `Removed ${dir} from the workspace` });
     } });
     pi.registerEntryRenderer("workflow-note", (entry, _options, theme) => new Text(noteLine(entry.data.text, theme), 0, 0));
-    // The questionnaire dialog is the pinned plugin's; the answers feed the
-    // classifier's task context and the transcript line from its result.
-    const askUserQuestion = await jiti.import("@juicesharp/rpiv-ask-user-question", { default: true });
-    askUserQuestion(styled);
+    // The questionnaire owns its invisible renderers; completed answers feed
+    // the classifier's task context and one transcript entry.
+    registerQuestionnaire(pi);
     pi.on("tool_execution_end", event => {
-      // A cancelled questionnaire keeps its partial answers in details; they
-      // are not decisions.
-      if (event.toolName !== "ask_user_question" || event.result?.details?.cancelled) return;
-      // A multi-select answers in `selected` with a null `answer`, and either
-      // kind can carry notes instead of a choice — the whole decision, when the
-      // user writes rather than picks.
-      const answers = (event.result?.details?.answers ?? []).map(entry => ({ question: entry.question, answer: entry.answer ?? entry.selected?.join(", ") ?? "", notes: entry.notes ?? "" })).filter(entry => entry.answer || entry.notes);
-      const globalNote = event.result?.details?.globalNote;
-      if (!answers.length && !globalNote) return;
-      const decisions = answers.map(entry => `User decision: ${entry.question} → ${[entry.answer, entry.notes].filter(Boolean).join(" — ")}`);
-      if (globalNote) decisions.push(`User note: ${globalNote}`);
-      userTask = `${userTask}\n${decisions.join("\n")}`.slice(-8000);
-      appendVisible(pi, "workflow-answers", { answers, ...(globalNote ? { globalNote } : {}) });
+      const details = event.result?.details;
+      if (event.toolName !== "ask_user_question" || event.isError || event.result?.isError || details?.error || details?.cancelled || !details?.answers?.length) return;
+      const answers = details.answers.map(entry => {
+        const selected = entry.selected?.map(option => `${option.label}${option.note ? ` — ${option.note}` : ""}`).join("; ") ?? "";
+        return { question: entry.question, answer: selected, notes: entry.custom ?? "" };
+      }).filter(entry => entry.answer || entry.notes);
+      if (!answers.length) return;
+      userTask = `${userTask}\n${answers.map(entry => `User decision: ${entry.question} → ${[entry.answer, entry.notes].filter(Boolean).join(" — ")}`).join("\n")}`.slice(-8000);
+      appendVisible(pi, "workflow-answers", { answers });
     });
-    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme, entry.data.globalNote).join("\n"), 0, 0));
+    pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
     pi.registerMarkdownTransformer(bulletMarkdown);
     // Reasoning leaves the settled message as well as the transcript; the
     // markdown transformer only reaches the render, and pi spaces the message
@@ -627,6 +638,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
     await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false } } })(styled);
   }
+  // Plugin session hooks may refresh their own registrations, so ours runs
+  // last and restores the managed exposure after every startup or resume.
+  pi.on("session_start", refreshActiveTools);
   installed = true;
 }
 

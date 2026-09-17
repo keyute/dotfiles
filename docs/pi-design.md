@@ -45,11 +45,6 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      wrapper that swaps only their renderers; the questionnaire tool renders
      nothing, subagent rows never fold, the fold summary lost its dot and error
      rows their full dump.
-   - *2026-09-08, later:* the hidden-thinking label moved to the markdown
-     transformer (pi wraps an "empty" label in colour codes, rendering an
-     invisible clickable line); the fold handle moved to the group's top.
-   - *2026-09-08, afternoon:* a group runs between separators instead of from
-     the assistant's last words to its next.
    - *2026-09-08, night:* a shell row that ran outside the sandbox (Claude
      Code's `dangerouslyDisableSandbox`) carries `· unsandboxed` on its title,
      background launch row included — the classifier may allow the escalation
@@ -198,3 +193,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
     - *2026-09-08, night:* the todo plugin was removed — both reference CLIs
       dropped the surface the panel existed to mirror — and `○` means one thing
       again.
+    - *2026-09-17:* own the questionnaire: framed choices, previews centred in the
+      remaining width (stack narrow), Tab notes below each option, literal free answers.
+      Arrows edit inside native `Editor`, switch tabs outside; retain its whole
+      block (minimum eight rows). PgUp/PgDn scroll long forms and previews.
+      *Why:* the owner's hybrid interaction needs lack a public plugin layout seam.

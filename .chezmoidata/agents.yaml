@@ -15,7 +15,7 @@ agents:
     native_coverage: [call_batching, docs_mcp, initiative]
     defaults:
       # Explicit ID: aliases float across releases; [1m] selects the context variant.
-      model: claude-fable-5[1m]
+      model: claude-fable-5-1[1m]
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -260,7 +260,7 @@ subagent_tiers:
     mid: claude-sonnet-5
     top: claude-opus-5
     # Keep in lockstep with agents.claude.defaults.model.
-    frontier: claude-fable-5
+    frontier: claude-fable-5-1
   codex: &openai_subagent_tiers
     small: gpt-5.6-luna
     mid: gpt-5.6-terra
@@ -361,7 +361,7 @@ agent_mcp_servers:
         op: Personal/Context7/api key
   exa:
     package_bin: exa-mcp-server
-    direct_tools: true
+    direct_tools: false
     args: []
     auto_approve_tools: true
     # web_fetch_exa is 3.4.x's fetch tool; crawling_exa is its legacy name and

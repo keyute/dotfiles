@@ -120,7 +120,6 @@ const pins = [
   ["markdown that transforms to nothing renders no line", "@earendil-works/pi-tui/dist/components/markdown.js", [/this\.options\.transform\?\.\(this\.text, contentWidth\) \?\? this\.text/, /if \(!text \|\| text\.trim\(\) === ""\)/]],
   ["pi resets every extension surface when a session is invalidated", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/setBeforeSessionInvalidate\(\(\) => \{\s*this\.resetExtensionUI\(\);/]],
   ["pi-subagents registers bg_wait and the supervisor channel without renderers of their own", "pi-subagents/src/runs/background/wait-tool.ts", [/name: "bg_wait"/]],
-  ["the questionnaire plugin registers ask_user_question without renderers of its own", "@juicesharp/rpiv-ask-user-question/ask-user-question.ts", [/ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"/, /pi\.registerTool\(\{/]],
   ["pi-web-search registers web_search and a Gemini-only url_context with its own renderers", "pi-web-search/src/index.ts", [/const WEB_SEARCH_TOOL = "web_search"/, /const URL_CONTEXT_TOOL = "url_context"/, /name: WEB_SEARCH_TOOL/, /renderCall\(args, theme\)/]],
   ["pi-web-search takes the model's credentials from pi and posts to the Codex responses endpoint", "pi-web-search/src/api.ts", [/ctx\.modelRegistry\.getApiKeyAndHeaders\(model\)/, /model\.api === "openai-codex-responses"/, /`\$\{base\}\/codex\/responses`/]],
   ["pi-web-search reports failures in details.error", "pi-web-search/src/utils.ts", [/details: \{ error: true \}/]],

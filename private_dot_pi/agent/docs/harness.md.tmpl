@@ -97,9 +97,8 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
 
 ## MCP and code intelligence (last verified 2026-09-17)
 
-- Context7 and Exa register their tools directly as `mcp__<server>_<tool>`
-  (for example `mcp__exa_web_search_exa`), called like any other tool. Playwright
-  stays behind the `mcp` proxy: `mcp({ search: "…" })` finds a tool in the cached
+- Context7 tools stay direct (e.g. `mcp__context7_query-docs`); Exa and Playwright
+  stay behind the `mcp` proxy: `mcp({ search: "…" })` finds a tool in the cached
   catalog, `mcp({ describe: "<name>" })` shows its schema, `mcp({ tool: "<name>",
   args: { … } })` calls it; a server shown as not connected connects on first call.
 - MCP servers other than Playwright run inside SRT; Node servers use

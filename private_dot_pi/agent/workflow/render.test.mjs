@@ -69,7 +69,8 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.deepEqual([workflow.agents["general-purpose"].model, workflow.agents["general-purpose"].nests], ["openai-codex/gpt-5.6-sol", true]);
   assert.deepEqual([workflow.agents["spec-reviewer"].model, workflow.agents["spec-reviewer"].readonly], ["openai-codex/gpt-5.6-sol", true]);
   assert.ok(["workspace_write", "mcp", "subagent"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
-  assert.equal(workflow.mcp.exa.policy.direct_tools, true);
+  assert.equal(workflow.mcp.context7.policy.direct_tools, true);
+  assert.equal(workflow.mcp.exa.policy.direct_tools, false);
   assert.equal(workflow.mcp.playwright.policy.direct_tools, false);
   assert.equal(Object.hasOwn(workflow.mcp, "serena"), false);
   const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
@@ -95,17 +96,41 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   }
 
   const piInstructions = run("cat", target(".pi/agent/AGENTS.md"));
+  const questionnaire = run("cat", target(".pi/agent/workflow/questionnaire.mjs"));
+  const rows = run("cat", target(".pi/agent/workflow/rows.mjs"));
   const claudeInstructions = run("cat", target(".claude/CLAUDE.md"));
+  const claudeHarness = run("cat", target(".claude/docs/harness.md"));
   const codexInstructions = run("cat", target(".codex/AGENTS.md"));
   assert.match(piInstructions, /Working agreements/);
   assert.match(claudeInstructions, /Working agreements/);
   assert.match(codexInstructions, /Working agreements/);
+  assert.match(questionnaire, /registerQuestionnaire/);
+  assert.match(rows, /export/);
+  assert.match(claudeHarness, /claude-fable-5-1/);
 
-  const claudeSettings = run("cat", target(".claude/settings.json"));
+  const claudeSettings = JSON.parse(run("cat", target(".claude/settings.json")));
   const codexConfig = run("cat", target(".codex/config.toml"));
-  assert.match(claudeSettings, /context7/);
-  assert.match(claudeSettings, /filesystem/);
-  assert.doesNotMatch(claudeSettings, /serena/i);
+  assert.equal(claudeSettings.model, "claude-fable-5-1[1m]");
+  assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, "claude-opus-5");
+  assert.match(JSON.stringify(claudeSettings), /context7/);
+  assert.match(JSON.stringify(claudeSettings), /filesystem/);
+  assert.doesNotMatch(JSON.stringify(claudeSettings), /serena/i);
+  const denyFrontierChild = run("cat", target(".claude/hooks/deny-frontier-child.mjs"));
+  assert.match(denyFrontierChild, /const PIN = "claude-fable-5-1"/);
+  const hookPath = target(".claude/hooks/deny-frontier-child.mjs");
+  mkdirSync(dirname(hookPath), { recursive: true });
+  writeFileSync(hookPath, denyFrontierChild);
+  const invokeHook = model => spawnSync(process.execPath, [hookPath], {
+    input: JSON.stringify({ tool_input: { model } }), encoding: "utf8",
+  });
+  for (const model of ["claude-fable-5-1", "claude-fable-5-1[1m]"]) {
+    const result = invokeHook(model);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, "deny");
+  }
+  const allowed = invokeHook("claude-opus-5");
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.equal(allowed.stdout, "");
   assert.match(codexConfig, /gpt-5\.6-sol/);
   assert.match(codexConfig, /context7/);
   assert.match(codexConfig, /filesystem/);
@@ -140,9 +165,13 @@ test("diff renders each affected harness target against an isolated destination"
     ".pi/agent/extensions/subagent/config.json",
     ".pi/agent/extensions/workflow.ts",
     ".pi/agent/workflow/index.mjs",
+    ".pi/agent/workflow/questionnaire.mjs",
+    ".pi/agent/workflow/rows.mjs",
     ".pi/agent/node_modules",
     ".claude/settings.json",
+    ".claude/hooks/deny-frontier-child.mjs",
     ".claude/CLAUDE.md",
+    ".claude/docs/harness.md",
     ".codex/config.toml",
     ".codex/AGENTS.md",
     ".codex/docs/harness.md",
