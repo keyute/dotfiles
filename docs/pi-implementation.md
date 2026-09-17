@@ -44,9 +44,9 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   enforced at the broker's child leases. MCP script mode and arbitrary
   subagent workflow/management paths stay disabled; `list` discovery, named
   launches and lifecycle controls are enabled.
-- No LSP integration (dropped 2026-09-06; `@narumitw/pi-lsp` was deep-imported
-  against internals, per-invocation server starts forfeit LSP's benefit, and
-  the package is young/solo/unproven). Serena covers symbols; diagnostics via
+- No agent LSP or semantic-navigation integration (decision 2026-09-17):
+  Serena's startup and language-server provisioning add maintenance without a
+  demonstrated need. Navigation uses file/search tools; diagnostics use project
   toolchains in `workspace_bash`. Reintroduce only on measured pain.
 - pi-subagents 0.66.0 (bumped 2026-09-07) resolves `@earendil-works/pi-client/unix`
   only when the host pi is exactly 0.85.0 (`runner-aliases.ts`
@@ -60,10 +60,6 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - Themes come from the data-only `catppuccin-pi-theme` pin, registered by path
   through the managed settings `themes` array (no `pi install`, no extension);
   the `theme` light/dark pair enables pi's terminal-followed auto mode.
-- Serena metadata is redirected into session scratch; source remains read-only
-  during planning. uv tool/python dirs are also redirected into scratch (they
-  neighbor denied credentials), with uv's macOS cache allowed in the shared
-  sandbox data.
 
 ## Verification and remaining gates
 
@@ -77,8 +73,8 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - Actual Unix sockets/SRT cannot run in this session (socket binding returns
   EPERM). Broker tests use an explicit memory transport; the opt-in live test is
   not evidence of a successful sandbox run until executed on the user's host.
-- Live OAuth, foreground/background children, cancellation, the fleet widget, MCP and
-  LSP remain acceptance gates. Do not treat fixture tests as full DX parity.
+- Live OAuth, foreground/background children, cancellation, the fleet widget and
+  MCP remain acceptance gates. Do not treat fixture tests as full DX parity.
 - Open residuals and follow-ups (carried from the pruned build log,
   2026-09-15): a timed-out approval does not cancel its queued classifier
   review and a minted ticket is not bound to the reviewed arguments; a

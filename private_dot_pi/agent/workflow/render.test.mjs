@@ -71,6 +71,7 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.ok(["workspace_write", "mcp", "subagent"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
   assert.equal(workflow.mcp.exa.policy.direct_tools, true);
   assert.equal(workflow.mcp.playwright.policy.direct_tools, false);
+  assert.equal(Object.hasOwn(workflow.mcp, "serena"), false);
   const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
   assert.match(description, /^- diff-reviewer: Review a changed diff/m);
   assert.match(description, /^- general-purpose: /m);
@@ -104,9 +105,11 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   const codexConfig = run("cat", target(".codex/config.toml"));
   assert.match(claudeSettings, /context7/);
   assert.match(claudeSettings, /filesystem/);
+  assert.doesNotMatch(claudeSettings, /serena/i);
   assert.match(codexConfig, /gpt-5\.6-sol/);
   assert.match(codexConfig, /context7/);
   assert.match(codexConfig, /filesystem/);
+  assert.doesNotMatch(codexConfig, /serena/i);
 
   const frontier = run("execute-template", "{{ .subagent_tiers.codex.frontier }}");
   assert.equal(frontier, "gpt-6-astra");
@@ -117,7 +120,6 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.match(run("cat", target(".pi/agent/node_modules")), /\/node_modules\s*$/);
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/private_dot_pi")), false);
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/node_modules")), true);
-  assert.match(run("cat", target(".pi/agent/serena-context.yml")), /single_project: true/);
 
   const zsh = run("cat", target(".zshrc"));
   const zshPath = target(".zshrc.rendered");
@@ -139,7 +141,6 @@ test("diff renders each affected harness target against an isolated destination"
     ".pi/agent/extensions/workflow.ts",
     ".pi/agent/workflow/index.mjs",
     ".pi/agent/node_modules",
-    ".pi/agent/serena-context.yml",
     ".claude/settings.json",
     ".claude/CLAUDE.md",
     ".codex/config.toml",

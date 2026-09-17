@@ -95,9 +95,9 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   and Playwright; OpenAI's search accepts extra `urls` to analyse
   alongside the query.
 
-## MCP and code intelligence (last verified 2026-09-16)
+## MCP and code intelligence (last verified 2026-09-17)
 
-- Context7, Exa and Serena register their tools directly as `mcp__<server>_<tool>`
+- Context7 and Exa register their tools directly as `mcp__<server>_<tool>`
   (for example `mcp__exa_web_search_exa`), called like any other tool. Playwright
   stays behind the `mcp` proxy: `mcp({ search: "…" })` finds a tool in the cached
   catalog, `mcp({ describe: "<name>" })` shows its schema, `mcp({ tool: "<name>",
@@ -110,7 +110,7 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   scripting, sampling and automatic OAuth discovery are disabled; the approval
   broker checks the resolved server/tool/arguments, not just the outer proxy call.
 - No LSP here: diagnostics come from project toolchains via `workspace_bash`
-  (`tsc --noEmit`, `go vet`, pyright, linters) or Serena; rationale in the
+  (`tsc --noEmit`, `go vet`, pyright, linters); rationale in the
   Decisions block of `docs/pi-implementation.md`.
 - Claude/Codex proprietary plugins, cloud services and exact UI interactions are
   not supplied by these packages; keep the other harnesses for those.

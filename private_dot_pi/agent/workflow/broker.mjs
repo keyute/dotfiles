@@ -1,5 +1,5 @@
 import { createConnection, createServer } from "node:net";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -119,21 +119,6 @@ export async function startBroker(config, cwd, review) {
           args = connection.args;
           Object.assign(env, connection.env);
           if (request.name === "playwright") sandbox = false;
-          if (request.name === "serena") {
-            const serenaHome = join(scratch, "serena");
-            mkdirSync(serenaHome, { recursive: true });
-            writeFileSync(join(serenaHome, "serena_config.yml"), JSON.stringify({
-              project_serena_folder_location: join(serenaHome, "projects", "$projectFolderName"),
-              fixed_tools: config.mcp.serena.policy.allowed_tools,
-              gui_log_window: false, web_dashboard: false,
-            }));
-            env.SERENA_HOME = serenaHome;
-            // uvx materializes tool/python environments under ~/.local/share/uv,
-            // which neighbors denied credentials; keep those in session scratch
-            // (the shared uv cache stays warm, so this is mostly re-linking).
-            env.UV_TOOL_DIR = join(scratch, "uv-tools");
-            env.UV_PYTHON_INSTALL_DIR = join(scratch, "uv-python");
-          }
         } else throw new Error("Unknown process kind");
         leases.add(socket);
         // A null profile is either an approved unsandboxed tool run or the
