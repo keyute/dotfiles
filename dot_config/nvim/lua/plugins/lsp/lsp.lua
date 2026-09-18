@@ -165,6 +165,7 @@ return {
 				"docker_compose_language_service",
 				"gopls",
 				"marksman",
+				"mdx_analyzer",
 				"jsonls",
 				"helm_ls",
 				"ty",

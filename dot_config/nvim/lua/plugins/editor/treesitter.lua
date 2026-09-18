@@ -6,6 +6,7 @@ return {
 		vim.filetype.add({
 			extension = {
 				gotmpl = "gotmpl",
+				mdx = "mdx",
 			},
 			pattern = {
 				[".*/templates/.*%.tpl"] = "helm",
@@ -13,6 +14,8 @@ return {
 				["helmfile.*%.ya?ml"] = "helm",
 			},
 		})
+		-- Reuse markdown until upstream offers an MDX parser.
+		vim.treesitter.language.register("markdown", "mdx")
 	end,
 	config = function()
 		-- c, lua, markdown, markdown_inline, query, vim, and vimdoc are bundled

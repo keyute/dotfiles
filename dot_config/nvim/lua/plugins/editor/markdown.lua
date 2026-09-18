@@ -4,8 +4,10 @@ return {
 		"nvim-treesitter/nvim-treesitter",
 		"nvim-mini/mini.icons",
 	},
-	ft = { "markdown" },
+	ft = { "markdown", "mdx" },
 	---@module 'render-markdown'
 	---@type render.md.UserConfig
-	opts = {},
+	opts = {
+		file_types = { "markdown", "mdx" },
+	},
 }

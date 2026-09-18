@@ -36,6 +36,7 @@ return {
 			go = { "goimports", "gofumpt" },
 			toml = { "taplo" },
 			markdown = { "prettierd", "rumdl" },
+			mdx = { "prettierd", "prettier", stop_after_first = true },
 			yaml = { "yamlfmt" },
 			sql = { "sqlfluff" },
 			terraform = { "tofu_fmt" },
