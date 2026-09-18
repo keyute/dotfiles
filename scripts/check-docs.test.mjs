@@ -202,8 +202,8 @@ test("yaml-comment flags a comment block longer than the run limit", () => {
 });
 
 test("budget flags a file over its line budget", () => {
-  assert.deepEqual(checks({ "AGENTS.md": "line\n".repeat(120) }), []);
-  assert.deepEqual(checks({ "AGENTS.md": "line\n".repeat(121) }), ["budget"]);
+  assert.deepEqual(checks({ "AGENTS.md": "line\n".repeat(130) }), []);
+  assert.deepEqual(checks({ "AGENTS.md": "line\n".repeat(131) }), ["budget"]);
 });
 
 test("the CLI prints one line per finding and exits non-zero", () => {
@@ -215,9 +215,9 @@ test("the CLI prints one line per finding and exits non-zero", () => {
 
   const dirty = spawnSync(
     process.execPath,
-    [script.pathname, fixture({ "AGENTS.md": "line\n".repeat(121) })],
+    [script.pathname, fixture({ "AGENTS.md": "line\n".repeat(131) })],
     { encoding: "utf8" },
   );
   assert.equal(dirty.status, 1);
-  assert.match(dirty.stdout, /^AGENTS\.md:1 {2}budget {2}121 lines \(max 120\)\n$/);
+  assert.match(dirty.stdout, /^AGENTS\.md:1 {2}budget {2}131 lines \(max 130\)\n$/);
 });

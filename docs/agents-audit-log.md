@@ -9,6 +9,52 @@ carries the numbers and open triggers behind those annotations (rule in
 baseline no longer serves a future sweep is deleted, not archived — git
 history keeps it.
 
+## 2026-09-18
+
+### (pi) Delegation sweep and completion-guard false failures
+
+Store copied by the user to a sandbox-readable path; metadata only (tool
+names and paths, usage, artifact `_meta.json`, three `_output.md` "Changed"
+headings). Window 2026-09-16/17: 38 root sessions across nine projects, ~260
+child runs. Pipelines: `jq` over `subagent-artifacts/*_meta.json` for agent,
+model, `exitCode`, `usage`, `error`; a node pass over each root JSONL and its
+`<session>/<child>/run-0/session.jsonl` for cost and for root `workspace_read`
+paths that a child also read, split by whether the root read fell inside the
+child's run window (duplication) or after it (post-report re-read).
+
+- Pins held: every child on Terra, Sol or Luna, zero Astra. One nested launch
+  in ~260 runs (general-purpose → spec-reviewer); that child polled `status`
+  nine times for its one launch. Spend: root ≈ $254 of ≈ $338, children ≈ $84
+  (pi's own cost estimate, not quota). Root cost is mostly cache reads of a
+  long context.
+- Per agent (runs / child $ / post-report root re-reads of child-read paths):
+  explore-deep 79 / 22.6 / 450 of 1,583 (~28%); implementer 36 / 11.8 / 50;
+  spec-reviewer 28 / 13.1 / ~2; general-purpose 5 / 16.2 / 11 (two runs ≈ $7
+  each, 64 and 50 turns, 10 and 20 own edits); explorer 15 / 0.12; dep-researcher
+  29 / 0.58. Luna roles pay off unconditionally; explore-deep pays on average
+  (~$0.29 a run against ~5× Astra input plus the permanent cache-read tail)
+  except where the root re-reads the files anyway.
+- During-run duplication (`delegation_wait`): ~35 root reads of child-read
+  paths across all runs — closes the 2026-09-12 open item; the suffix
+  relocation is not needed. Post-report re-reads concentrate in the three
+  largest sessions (152, 131, 90), which also hold most inline root edits
+  (27, 15, 12): the re-reads serve the root's own editing.
+- Completion guard: three implementer runs and one explore-deep run ended
+  `exitCode 1` with pi-subagents' "completed without making edits" error. Two
+  implementers had written or edited still-untracked files with
+  `workspace_write`/`workspace_edit` (invisible to both guard signals); one
+  genuinely changed nothing; the explore-deep task merely read as
+  implementation. The session holding a false failure is the only one where
+  the root read raw `async-subagent-runs/*/output-0.log` and `status.json`
+  (11 reads). Fix: `mutationTools` / `completionGuard: false` via `pi-roles`
+  (`docs/pi-implementation.md` 2026-09-18).
+- **Open**: after the guard fix, re-measure post-report re-reads of explorer
+  paths and general-purpose used for implementation-shaped work; both are
+  named by existing rules (delegation economics, frontier driver) and get a
+  baseline change only if they persist — which needs the claude and codex
+  sweeps the audit skill owns, not this pi-only sample. Nested-child polling
+  stays a one-off watch item.
+
 ## 2026-09-16
 
 ### (pi) Audit baseline and containment decision
@@ -424,9 +470,10 @@ polls per launch — polling overhead persists; the roster-in-tool-description
 change has not removed `list` calls). Fleet mix review-heavy: 59
 diff/language reviewers, 36 explorers, 12 researchers, 9 spec-reviewer, 2
 general-purpose. `delegation_wait` stays projected (`native_coverage: []`).
-**Open**: if the next sweep repeats the duplication, move the rule into the
-`Workflow mode:` system-prompt suffix in `workflow/index.mjs` and measure
-again — the suffix is a different placement, not a demonstrated fix.
+Resolved 2026-09-18 on a narrower measure: root reads of a child's own files
+while that child ran (~35 over ~260 runs), not the own-calls-after-launch
+figure above, which was never re-measured and is not comparable. The suffix
+relocation is not needed; the polling baseline above stays for comparison.
 
 ### (pi trial) Status
 

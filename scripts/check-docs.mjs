@@ -23,7 +23,8 @@ const YAML_COMMENT_MAX_RUN = 5;
 const LINE_BUDGETS = {
   "docs/pi-implementation.md": 150,
   "docs/pi-design.md": 200,
-  "AGENTS.md": 120,
+  // 130 since 2026-09-18: the plugin-vs-owned convention took the last slack
+  "AGENTS.md": 130,
   "docs/agents-baseline.md": 250,
 };
 

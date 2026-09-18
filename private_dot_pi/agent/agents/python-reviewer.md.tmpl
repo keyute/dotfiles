@@ -12,6 +12,7 @@ inheritProjectContext: true
 inheritGlobalContext: true
 inheritSkills: true
 allowNestedSubagents: {{ $role.nests }}
+{{ if $role.mutationTools }}mutationTools: {{ join ", " $role.mutationTools }}{{ else }}completionGuard: false{{ end }}
 ---
 
 {{ includeTemplate (printf "subagents/%s.md" $name) (dict "instructions_file" "AGENTS.md") -}}

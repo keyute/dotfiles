@@ -21,7 +21,9 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   Gondolin example does) into a per-invocation SRT ops worker. Grep search runs
   wholly inside the worker (the SDK's GrepOperations seam does not cover its
   host-side ripgrep spawn). MCP stdio servers also use SRT workers.
-- Root Unix-socket broker owns mode, approvals and process leases. Tool leases
+- Root Unix-socket broker owns mode, approvals and process leases (owned code:
+  re-check when a pi release ships per-tool approval or a policy hook API,
+  2026-09-18). Tool leases
   require a single-use ticket minted at approval, bound to epoch/role/tool.
   Child sessions carry the policy epoch they were launched under (via the
   parent's environment) and are refused if it changed before they connected.
@@ -43,7 +45,9 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   hook (documented mutable input), bounded by the capability ceiling and
   enforced at the broker's child leases. MCP script mode and arbitrary
   subagent workflow/management paths stay disabled; `list` discovery, named
-  launches and lifecycle controls are enabled.
+  launches and lifecycle controls are enabled. Reversal trigger (2026-09-18):
+  own the launch/status surface only if its coupling-register rows still grow
+  after two consecutive pi-subagents bumps.
 - No agent LSP or semantic-navigation integration (decision 2026-09-17):
   Serena's startup and language-server provisioning add maintenance without a
   demonstrated need. Navigation uses file/search tools; diagnostics use project
@@ -57,6 +61,13 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   public TUI primitives. Root write/edit schemas are hidden during planning;
   Exa moves behind the existing MCP gateway, while Context7 stays direct.
   These exposure changes leave broker enforcement and child permissions intact.
+- 2026-09-18: the pi-subagents completion guard is fed through frontmatter —
+  `mutationTools` (shell, edit, write) on write roles, `completionGuard: false`
+  on read-only roles — after two implementer runs were failed as "no edits"
+  with new files on disk and a read-only explore-deep run was judged as
+  implementation; a third implementer that changed nothing was rejected
+  correctly, which is why the guard stays on for write roles (audit log
+  2026-09-18).
 - The host copies the settings `editorPaddingX` (default 0) onto custom editors
   right after the factory runs and on settings reloads; `CaretEditor` clamps
   `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`

@@ -15,6 +15,17 @@ file are chezmoi-ignored (repo-local only).
   configuration, startup work, and agent context—not just the diff.
   *Why: small additions can leave competing controls and recurring maintenance;
   preserve required behavior and safety while minimizing unnecessary machinery.*
+- Adopt a plugin or package when it is maintained and widely used and its
+  public API covers the need with at most a one-line seam (a renderer swap, a
+  config knob, a frontmatter key). Own the code when the need is specific to
+  this repo's policy or layout, when adoption would need a wrapper, pin or
+  workaround for the coupling register, or when only a sliver of it would be
+  used. Either way, record beside the decision the trigger that reverses it.
+  *Why: an adopted package costs its upstream churn plus every seam held
+  against it, and a widely used one has its breakage found by others first;
+  owned code costs only what it does — the questionnaire came in-house once
+  its seams outgrew the plugin, the todo panel left when the surface it
+  mirrored vanished.*
 
 - Edit source state only; verify renders with `chezmoi diff` plus
   `chezmoi cat <target>` for every harness the file renders to — `chezmoi cat`

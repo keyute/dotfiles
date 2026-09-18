@@ -31,6 +31,18 @@ consumers are sessions editing this repo, not runtime pi sessions.
   `asyncId` (a launch). `stability.test.mjs` pins registrations and both fields;
   `plugin-api.test.mjs` and `integration.test.mjs` gate the schema narrowing
   without a dependency fork (2026-09-16).
+- Completion guard: pi-subagents fails an implementation-shaped run that shows
+  no mutation attempt, judged from tool names it knows (`edit`, `write`,
+  `bash`) or the agent's `mutationTools`, plus a tracked-files `git diff HEAD`
+  before and after; unknown names such as `workspace_*` count as
+  mutation-capable but never as attempts, only the literal `bash` name gets
+  command inspection, and new files are invisible to the diff. Write roles
+  therefore declare `mutationTools: workspace_bash, workspace_edit,
+  workspace_write` plus `subagent` where they nest (any shell call or launch
+  counts, so the guard now fires only on a read-then-prose run) and read-only
+  roles `completionGuard: false`
+  (`pi-roles`, `agents/*.md.tmpl`); `stability.test.mjs` pins both frontmatter
+  keys and the name check (2026-09-18).
 - The quiet completion notice: the same `pluginApi` Proxy intercepts
   `sendMessage` and sends pi-subagents' completion notice with `display` off
   (`docs/pi-design.md` rule 4, 2026-09-12). Rests on the plugin sending that

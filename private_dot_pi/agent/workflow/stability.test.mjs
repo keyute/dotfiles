@@ -149,6 +149,8 @@ const pins = [
   ["the stored openai-codex credential carries access, a ms-epoch expires and accountId — the fields the footer's usage read scopes in without refreshing", "@earendil-works/pi-ai/dist/auth/oauth/openai-codex.js", [/type: "oauth",\s*access: token\.access,\s*refresh: token\.refresh,\s*expires: token\.expires,\s*accountId,/, /expires: Date\.now\(\) \+ json\.expires_in \* 1000,/]],
   ["the completion notice goes through sendMessage as customType subagent-notify with a computed display flag — the literal the quiet flip keys on", "pi-subagents/src/runs/background/notify.ts", [/customType: "subagent-notify",\s*content,\s*display,/]],
   ["pi draws a custom message only when its display flag is truthy, so a quiet send leaves no line and no spacer", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/case "custom": \{\s*if \(message\.display\) \{/]],
+  ["pi-subagents reads mutationTools and completionGuard from agent frontmatter — the keys the managed roles declare so renamed workspace tools count as edit evidence and read-only roles skip the guard", "pi-subagents/src/agents/agents.ts", [/parseFrontmatterList\(frontmatter\.mutationTools\)/, /frontmatter\.completionGuard === "false"/]],
+  ["the completion guard counts a call as a mutation attempt when its tool name is listed in mutationTools", "pi-subagents/src/runs/shared/long-running-guard.ts", [/if \(mutationTools\?\.includes\(toolName\)\) return true;/]],
 ];
 for (const [claim, file, patterns] of pins) {
   test(`pin: ${claim} (${file})`, () => {
