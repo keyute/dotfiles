@@ -216,7 +216,7 @@ test("summary wording", () => {
   assert.equal(summarise({}), "");
 });
 
-test("folding closes on assistant text, streaming or not, and on anything that stays visible; MCP rows and subagent launches fold, subagent management and background-task rows never", () => {
+test("grouping closes on assistant text and visible rows; MCP, discovery, and launches group, other management and background-task rows do not", () => {
   const folds = createFolds();
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
@@ -321,6 +321,34 @@ test("two subagent launches alone seal into a run, a failed launch is never a me
 
 test("summarise names launches and background commands", () => {
   assert.equal(summarise({ read: 2, agent: 3, task: 1 }), "Read 2 files, launched 3 agents, started 1 background command");
+});
+
+test("successful calls, discovery, launches, and completions share one chronological activity group", () => {
+  const folds = createFolds(() => false);
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  const calls = [
+    ["r1", "workspace_read", { path: "a.mjs" }],
+    ["w1", "web_search", { query: "pi tui" }],
+    ["m1", "mcp", { search: "mouse region" }],
+    ["d1", "subagent", { action: "list" }],
+    ["a1", "subagent", { agent: "researcher", task: "Audit rows" }],
+  ];
+  for (const [toolCallId, toolName, args] of calls) handlers.tool_execution_start({ toolName, toolCallId, args });
+  for (const [toolCallId] of calls) handlers.tool_execution_end({ toolCallId, isError: false, result: { content: [], details: {} } });
+
+  const child = { agent: "researcher", task: "Audit rows", status: "completed", durationMs: 45_000 };
+  const task = { id: "t1", command: "npm test", status: "completed", durationMs: 12_000 };
+  appendVisible(fakePi(), "workflow-child", child, folds);
+  appendVisible(fakePi(), "workflow-task", task, folds);
+  handlers.message_update({ message: { role: "assistant", content: [{ type: "text", text: "Done" }] } });
+
+  const group = foldGroup(folds, "r1");
+  assert.equal(doneGroup(folds, child.seq), group);
+  assert.equal(doneGroup(folds, task.seq), group);
+  assert.deepEqual(group.entries.map(entry => entry.id), ["r1", "w1", "m1", "d1", "a1", child.seq, task.seq]);
+  assert.deepEqual(group.counts, { read: 1, web: 1, mcp: 1, discovery: 1, agent: 1, agentDone: 1, taskDone: 1 });
+  assert.equal(summarise(group.counts), "Read 1 file, called 1 MCP tool, ran 1 web search, ran 1 agent discovery, launched 1 agent, finished 1 agent, finished 1 background task");
 });
 
 test("a failed row separates the runs on either side of it, whatever order the batch settles in", () => {
@@ -737,9 +765,9 @@ test("a control notice is one row: the state, and the signal without what the ti
   assert.equal(noticeLine({ agent: "researcher", message: "" }, theme), "<warning>• <toolTitle>researcher needs attention");
 });
 
-// completed completions form a group on the same ladder as a tool run
-// (docs/pi-design.md rule 4, 2026-09-18); `appendVisible` gives each one a
-// `seq`, and `doneEntryRenderer` decides what its entry renders.
+// Successful completions are activity facts on the same ladder as successful
+// tool rows; `appendVisible` gives each one a `seq`, and `doneEntryRenderer`
+// decides whether its entry owns the shared group or renders plain.
 const childMapper = "workflow-child";
 const taskMapper = "workflow-task";
 const fakePi = () => ({ appendEntry() {} });
@@ -753,7 +781,7 @@ test("one completed completion has no group and renders as today's plain line", 
   assert.deepEqual(rendered(component), [completionLine(data, theme)]);
 });
 
-test("two adjacent completed completions form a done-group; the second member's renderer answers with no component at all", () => {
+test("two adjacent completed completions form one activity group; the second member's renderer answers with no component at all", () => {
   const folds = createFolds(() => false);
   const a = { agent: "researcher", task: "Delegation claims", status: "completed", durationMs: 45_000 };
   const b = { id: "t1", command: "npm test", status: "completed", durationMs: 12_000 };
@@ -780,7 +808,7 @@ test("a completion at any other status stands alone and separates the completed 
   assert.equal(doneGroup(folds, b.seq), null);
 });
 
-test("a tool fact or a boundary between two completions prevents them from grouping", () => {
+test("a successful tool between completions joins their one group; a visible boundary still separates them", () => {
   const toolFolds = createFolds(() => false);
   const c = { agent: "researcher", task: "x", status: "completed" };
   const d = { agent: "reviewer", task: "y", status: "completed" };
@@ -788,8 +816,10 @@ test("a tool fact or a boundary between two completions prevents them from group
   addFold(toolFolds, "r1", "read");
   settleFold(toolFolds, "r1", false);
   appendVisible(fakePi(), "workflow-child", d, toolFolds);
-  assert.equal(doneGroup(toolFolds, c.seq), null);
-  assert.equal(doneGroup(toolFolds, d.seq), null);
+  const mixed = doneGroup(toolFolds, c.seq);
+  assert.equal(doneGroup(toolFolds, d.seq), mixed);
+  assert.equal(liveGroup(toolFolds, "r1"), mixed);
+  assert.deepEqual(mixed.entries.map(entry => entry.id), [c.seq, "r1", d.seq]);
 
   const boundaryFolds = createFolds(() => false);
   const e = { agent: "researcher", task: "x", status: "completed" };
@@ -801,7 +831,7 @@ test("a tool fact or a boundary between two completions prevents them from group
   assert.equal(doneGroup(boundaryFolds, f.seq), null);
 });
 
-test("a done fact seals the tool run on its left, exactly like a boundary", () => {
+test("a successful completion extends the live tool group and the next visible boundary seals them together", () => {
   const folds = createFolds(() => false);
   addFold(folds, "r1", "read");
   addFold(folds, "r2", "read");
@@ -810,30 +840,59 @@ test("a done fact seals the tool run on its left, exactly like a boundary", () =
   assert.equal(foldGroup(folds, "r1"), null, "still live, not sealed, before the completion lands");
   const data = { agent: "researcher", task: "x", status: "completed" };
   appendVisible(fakePi(), "workflow-child", data, folds);
-  const group = foldGroup(folds, "r1");
-  assert.deepEqual(group.counts, { read: 2 });
-  assert.equal(group.boundaryId, `done:${data.seq}`);
+  const live = liveGroup(folds, "r1");
+  assert.equal(doneGroup(folds, data.seq), live);
+  assert.deepEqual(live.counts, { read: 2, agentDone: 1 });
+  closeFolds(folds);
+  const sealed = foldGroup(folds, "r1");
+  assert.equal(doneGroup(folds, data.seq), sealed);
+  assert.deepEqual(sealed.entries.map(entry => entry.id), ["r1", "r2", data.seq]);
 });
 
-test("a done-group and the tool run its first completion sealed keep separate open states", () => {
+test("a completion behind a pending call stays rendered whichever way that call settles", () => {
+  for (const failed of [false, true]) {
+    const folds = createFolds(() => false);
+    addFold(folds, "pending", "read");
+    const data = { agent: "researcher", task: "x", status: "completed", durationMs: 1_000 };
+    appendVisible(fakePi(), "workflow-child", data, folds);
+    const component = doneEntryRenderer("workflow-child", folds)({ data }, {}, theme);
+    assert.deepEqual(rendered(component), [completionLine(data, theme)]);
+    settleFold(folds, "pending", failed);
+    assert.deepEqual(rendered(component), [completionLine(data, theme)]);
+    assert.equal(doneGroup(folds, data.seq), null);
+  }
+});
+
+test("a tool-led mixed group owns one handle and one chronological member ladder", () => {
   const folds = createFolds(() => false);
+  const reads = toolRenderers("read", folds);
+  const ctx = id => context({ toolCallId: id });
+  reads.renderCall({ path: "a" }, theme, ctx("r1"));
+  reads.renderCall({ path: "b" }, theme, ctx("r2"));
   addFold(folds, "r1", "read");
   addFold(folds, "r2", "read");
   settleFold(folds, "r1", false);
   settleFold(folds, "r2", false);
-  const a = { agent: "researcher", task: "x", status: "completed" };
-  const b = { agent: "reviewer", task: "y", status: "completed" };
+  const a = { agent: "researcher", task: "x", status: "completed", durationMs: 1_000 };
+  const b = { agent: "reviewer", task: "y", status: "completed", durationMs: 2_000 };
   appendVisible(fakePi(), "workflow-child", a, folds);
   appendVisible(fakePi(), "workflow-child", b, folds);
   closeFolds(folds);
-  assert.notEqual(foldGroup(folds, "r1").boundaryId, doneGroup(folds, a.seq).boundaryId);
-  const completion = doneEntryRenderer("workflow-child", folds)({ data: a }, {}, theme);
-  const reads = toolRenderers("read", folds);
-  reads.renderCall({ path: "a" }, theme, context({ toolCallId: "r1" })).toggle();
-  assert.deepEqual(rendered(completion), ["<muted>▸ 2 agents finished"]);
+
+  assert.equal(doneEntryRenderer("workflow-child", folds)({ data: a }, {}, theme), undefined);
+  const handle = reads.renderCall({ path: "a" }, theme, ctx("r1"));
+  assert.deepEqual(rendered(handle), ["<muted>▸ Read 2 files, finished 2 agents"]);
+  handle.handleMouse({ type: "click", button: "left", x: 0, y: 0 });
+  assert.deepEqual(rendered(reads.renderCall({ path: "a" }, theme, ctx("r1"))), [
+    "<toolTitle>▾ Read 2 files, finished 2 agents",
+    "  <muted>↳ <toolTitle>Read a",
+    "  <muted>↳ <toolTitle>Read b",
+    "  <muted>↳ <toolTitle>researcher finished › x<muted> · 1s",
+    "  <muted>↳ <toolTitle>reviewer finished › y<muted> · 2s",
+  ]);
 });
 
-test("a mixed agent+task done-group shares one sentence in first-appearance order; sealed, clicked, and under ctrl+o", () => {
+test("a completion-led agent+task group shares one sentence; sealed, clicked, and under ctrl+o", () => {
   let toolsExpanded = false;
   const folds = createFolds(() => toolsExpanded);
   const a = { agent: "researcher", task: "Delegation claims", status: "completed", durationMs: 45_000 };
@@ -842,26 +901,26 @@ test("a mixed agent+task done-group shares one sentence in first-appearance orde
   appendVisible(fakePi(), "workflow-task", b, folds);
   const component = doneEntryRenderer(childMapper, folds)({ data: a }, {}, theme);
   const memberLines = [
-    "  <muted>↳ <toolTitle>researcher › Delegation claims<muted> · 45s",
-    "  <muted>↳ <toolTitle>task t1 › npm test<muted> · 12s",
+    "  <muted>↳ <toolTitle>researcher finished › Delegation claims<muted> · 45s",
+    "  <muted>↳ <toolTitle>task t1 finished › npm test<muted> · 12s",
   ];
   // Live: nothing has closed the group yet.
-  assert.deepEqual(rendered(component), ["<success>• <toolTitle>1 agent finished, 1 task finished", ...memberLines]);
+  assert.deepEqual(rendered(component), ["<success>• <toolTitle>Finished 1 agent, finished 1 background task", ...memberLines]);
 
   // Sealed: the dim handle alone.
   closeFolds(folds);
-  assert.deepEqual(rendered(component), ["<muted>▸ 1 agent finished, 1 task finished"]);
+  assert.deepEqual(rendered(component), ["<muted>▸ Finished 1 agent, finished 1 background task"]);
 
   // Clicked open with ctrl+o off: the undimmed handle plus the same member lines.
   assert.deepEqual(component.handleMouse({ type: "click", button: "left", x: 0, y: 0 }), { handled: true });
-  assert.deepEqual(rendered(component), ["<toolTitle>▾ 1 agent finished, 1 task finished", ...memberLines]);
+  assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 1 agent, finished 1 background task", ...memberLines]);
 
   // A click anywhere but the first line, or with the wrong button, changes nothing.
   assert.equal(component.handleMouse({ type: "click", button: "left", x: 0, y: 1 }), undefined);
   assert.equal(component.handleMouse({ type: "click", button: "right", x: 0, y: 0 }), undefined);
 });
 
-test("ctrl+o shows a sealed done-group's members too, since a completion has no output level, and its own toggle is a no-op", () => {
+test("ctrl+o shows a sealed completion-led group's members and its own toggle is a no-op", () => {
   let toolsExpanded = false;
   const folds = createFolds(() => toolsExpanded);
   const a = { agent: "researcher", task: "x", status: "completed", durationMs: 1_000 };
@@ -872,19 +931,26 @@ test("ctrl+o shows a sealed done-group's members too, since a completion has no 
   const component = doneEntryRenderer(childMapper, folds)({ data: a }, {}, theme);
   toolsExpanded = true;
   const memberLines = [
-    "  <muted>↳ <toolTitle>researcher › x<muted> · 1s",
-    "  <muted>↳ <toolTitle>reviewer › y<muted> · 2s",
+    "  <muted>↳ <toolTitle>researcher finished › x<muted> · 1s",
+    "  <muted>↳ <toolTitle>reviewer finished › y<muted> · 2s",
   ];
-  assert.deepEqual(rendered(component), ["<toolTitle>▾ 2 agents finished", ...memberLines]);
+  assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...memberLines]);
   assert.equal(component.handleMouse({ type: "click", button: "left", x: 0, y: 0 }), undefined);
-  assert.deepEqual(rendered(component), ["<toolTitle>▾ 2 agents finished", ...memberLines]);
+  assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...memberLines]);
 });
 
-test("an entry whose seq this process's timeline does not know renders as today's plain line", () => {
+test("resumed completions whose seqs this process does not know all render as plain lines", () => {
   const folds = createFolds(() => false);
-  const foreign = { agent: "ghost", task: "z", status: "completed", seq: "other-process-1", durationMs: 500 };
-  const component = doneEntryRenderer(childMapper, folds)({ data: foreign }, {}, theme);
-  assert.deepEqual(rendered(component), [completionLine(foreign, theme)]);
+  const foreign = [
+    { agent: "ghost", task: "z", status: "completed", seq: "other-process-1", durationMs: 500 },
+    { agent: "reviewer", task: "y", status: "completed", seq: "other-process-2", durationMs: 1_000 },
+  ];
+  const render = doneEntryRenderer(childMapper, folds);
+  for (const data of foreign) {
+    const component = render({ data }, {}, theme);
+    assert.ok(component);
+    assert.deepEqual(rendered(component), [completionLine(data, theme)]);
+  }
 });
 
 test("a completion's seq carries this process's own nonce; two folds in one process may share it", () => {

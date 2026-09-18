@@ -9,7 +9,7 @@ import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, a
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
 import { rootTools, canonical, expand, publicToolName, unsandboxed } from "./policy.mjs";
 import { reviewAction } from "./approval.mjs";
-import { checkChildLaunch, narrowSubagentSchema } from "./children.mjs";
+import { allowedChildAgents, checkChildLaunch, narrowSubagentSchema } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
@@ -406,7 +406,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     try {
       if (!ready || !permitted(event.toolName)) throw new Error("Tool not available in this managed scope");
       if (event.toolName === "mcp" && event.input.action) throw new Error("MCP authentication/UI actions are user-operated, not model tools");
-      if (event.toolName === "subagent") await checkChildLaunch(event.input, config, role, ctx, resolveSubagentLaunchContract);
+      if (event.toolName === "subagent") {
+        const mode = isRoot ? broker.policy.mode : (await requestBroker(env, role, { action: "state" })).mode;
+        await checkChildLaunch(event.input, config, role, ctx, resolveSubagentLaunchContract, mode);
+      }
       // The adapter's broker handles resolved MCP operations, not proxy arguments.
     } catch (error) { return { block: true, reason: error.message }; }
   });
@@ -457,6 +460,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     }
     await broker.setMode(mode);
     publishEpoch();
+    ceiling?.update({ allowedAgents: allowedChildAgents(config, role, broker.policy.mode), allowedTools: permittedTools });
     ready = true;
     refreshActiveTools();
     pi.setThinkingLevel(mode === "plan" ? config.models.planEffort : config.models.defaultEffort);
@@ -490,9 +494,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     currentContext = ctx;
     shuttingDown = false;
-    const allowedAgents = Object.entries(config.agents).filter(([, child]) => isRoot || !config.agents[role].readonly || child.readonly).map(([name]) => name);
+    const mode = isRoot ? broker.policy.mode : (await requestBroker(env, role, { action: "state" })).mode;
     ceiling?.dispose();
-    ceiling = registerSubagentCapabilityCeiling({ sessionId: ctx.sessionManager.getSessionId(), source: "managed-workflow", ceiling: { allowedAgents, allowedTools: permittedTools } });
+    ceiling = registerSubagentCapabilityCeiling({ sessionId: ctx.sessionManager.getSessionId(), source: "managed-workflow", ceiling: { allowedAgents: allowedChildAgents(config, role, mode), allowedTools: permittedTools } });
     fleet?.attachContext(ctx);
     if (broker) await setMode("plan", ctx, { cleanup: false });
     else {

@@ -6,6 +6,7 @@ Agents (models are pinned; pass model only to escalate after an observed failure
 {{ end -}}
 {{- end }}
 Notes:
+- Discover capabilities once with {action:"list", capabilities:true}, then reuse that result for this session's launches. Refresh after agent configuration changes/reloads or a capability mismatch, not before every invocation; launch preflight remains authoritative.
 - Children start with fresh context: state objective, scope, files and output format in the task. Pass context:"fork" only when the child should reason over what this session already read (for example a second review of the same diff).
 - Completion arrives as a native notification. Call bg_wait only when this turn cannot proceed without the result. Management actions: status (view fleet or transcript), interrupt, stop, steer.
 - Not available here: workflowScript, workflowScriptPath, tasks, chain, and models outside the managed tiers. Read-only roles cannot write or launch writers.

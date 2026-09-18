@@ -89,10 +89,13 @@ consumers are sessions editing this repo, not runtime pi sessions.
   block under one blank line (`docs/pi-design.md` rule 8). Pinned in
   `stability.test.mjs`; `transcript.test.mjs` mounts the real component and
   asserts the lines, blanks included, at every level of detail (2026-09-18).
-- Completion groups: an entry renderer gets no invalidate handle, so a group's
-  first completion is a component that reads the timeline at paint time and
-  repaints through the footer's `tui.requestRender()`; a later member's
-  renderer returns `undefined`. Rests on `CustomEntryComponent` adding its
+- Unified activity groups: tools and successful completions share one timeline.
+  An entry renderer gets no invalidate handle, so a completion-led group reads
+  the timeline at paint time and repaints through the footer's `tui.requestRender()`;
+  later completion members return `undefined`. Under Ctrl+O each tool result carries
+  only the completions immediately following it, preserving order after its output.
+  A completion arriving behind a pending call starts a new group: otherwise that
+  call's later failure could strand an entry whose component was already omitted. Rests on `CustomEntryComponent` adding its
   spacer only around a returned component, on `addCustomEntryToChat` skipping
   an entry without content, and on pi-tui's `Container` dispatching a click to
   the child under it (the group's handle). All pinned in `stability.test.mjs`;

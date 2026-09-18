@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Container } from "@earendil-works/pi-tui";
 import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { addFold, appendVisible, closeFolds, createFolds, doneEntryRenderer, settleFold, toolRenderers } from "./rows.mjs";
+import { addFold, appendVisible, closeFolds, createFolds, doneEntryRenderer, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -96,11 +96,105 @@ test("a completion's own component moves through the same levels a tool group do
   appendVisible(pi, "workflow-child", b, folds);
   assert.equal(render({ data: b }, {}, theme), undefined);
   assert.deepEqual(first.render(80).map(strip), [
-    "<success>• <toolTitle>2 agents finished",
-    "  <muted>↳ <toolTitle>researcher › Delegation claims<muted> · 45s",
-    "  <muted>↳ <toolTitle>reviewer › Type audit<muted> · 12s",
+    "<success>• <toolTitle>Finished 2 agents",
+    "  <muted>↳ <toolTitle>researcher finished › Delegation claims<muted> · 45s",
+    "  <muted>↳ <toolTitle>reviewer finished › Type audit<muted> · 12s",
   ]);
 
   closeFolds(folds);
-  assert.deepEqual(first.render(80).map(strip), ["<muted>▸ 2 agents finished"]);
+  assert.deepEqual(first.render(80).map(strip), ["<muted>▸ Finished 2 agents"]);
+});
+
+test("ctrl+o keeps interleaved completions after their preceding tool output, live and sealed", () => {
+  const folds = createFolds(() => true);
+  const container = new Container();
+  const plainTheme = { fg: (_color, text) => text, bold: text => text };
+  const finish = agent => {
+    const data = { agent, status: "completed", durationMs: 1000 };
+    appendVisible({ appendEntry() {} }, "workflow-child", data, folds);
+    const component = doneEntryRenderer("workflow-child", folds)({ data }, {}, plainTheme);
+    if (component) container.addChild(component);
+  };
+  const tool = (name, id, args, key, result) => {
+    const definition = name === "read" ? toolRenderers(name, folds) : pluginRenderers(name, { folds });
+    const component = new ToolExecutionComponent(name, id, args, {}, definition, { requestRender() {} }, "/repo");
+    component.markExecutionStarted();
+    component.setExpanded(true);
+    container.addChild(component);
+    addFold(folds, id, key);
+    component.updateResult(result);
+    settleFold(folds, id, false, result);
+    return component;
+  };
+  finish("first");
+  const read = tool("read", "r1", { path: "a" }, "read", { content: [{ type: "text", text: "alpha" }], details: {} });
+  finish("second");
+  const launch = tool("subagent", "s1", { agent: "reviewer", task: "Audit" }, "agent", { content: [], details: { asyncId: "run" } });
+  finish("third");
+  for (const sealed of [false, true]) {
+    if (sealed) closeFolds(folds);
+    read.invalidate();
+    launch.invalidate();
+    const lines = container.render(120).map(strip).filter(Boolean);
+    assert.deepEqual(lines.slice(1), [
+      "  ↳ first finished · 1s",
+      "• Read a", "  ↳ 1 line", "  alpha",
+      "  ↳ second finished · 1s",
+      "• reviewer › Audit", "  ↳ launched",
+      "  ↳ third finished · 1s",
+    ]);
+  }
+});
+
+test("a tool-led mixed group keeps one blank line, hides completion host spacers, and restores full tool output under ctrl+o", () => {
+  let toolsExpanded = false;
+  const folds = createFolds(() => toolsExpanded);
+  const ui = { requestRender() {} };
+  const definition = toolRenderers("read", folds);
+  const container = new Container();
+  const draw = () => container.render(120).map(strip);
+  const mount = (id, path, text) => {
+    const component = new ToolExecutionComponent("read", id, { path }, {}, definition, ui, "/repo");
+    component.markExecutionStarted();
+    container.addChild(component);
+    addFold(folds, id, "read");
+    const result = { content: [{ type: "text", text }], details: {}, isError: false };
+    component.updateResult(result);
+    settleFold(folds, id, false, result);
+    return component;
+  };
+
+  const r1 = mount("r1", "a", "alpha");
+  const r2 = mount("r2", "b", "beta");
+  const done = { agent: "researcher", task: "Audit rows", status: "completed", durationMs: 45_000 };
+  appendVisible({ appendEntry() {} }, "workflow-child", done, folds);
+  assert.equal(doneEntryRenderer("workflow-child", folds)({ data: done }, {}, theme), undefined, "a later completion adds neither content nor its custom-entry spacer");
+  assert.deepEqual(draw(), [
+    "",
+    "• Read 2 files, finished 1 agent",
+    "  ↳ Read a · 1 line",
+    "  ↳ Read b · 1 line",
+    "  ↳ researcher finished › Audit rows · 45s",
+  ]);
+
+  closeFolds(folds);
+  assert.deepEqual(draw(), ["", "▸ Read 2 files, finished 1 agent"]);
+
+  toolsExpanded = true;
+  for (const component of [r1, r2]) {
+    component.setExpanded(true);
+    component.invalidate();
+  }
+  assert.deepEqual(draw(), [
+    "",
+    "▾ Read 2 files, finished 1 agent",
+    "• Read a",
+    "  ↳ 1 line",
+    "  alpha",
+    "",
+    "• Read b",
+    "  ↳ 1 line",
+    "  beta",
+    "  ↳ researcher finished › Audit rows · 45s",
+  ]);
 });

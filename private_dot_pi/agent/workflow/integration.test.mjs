@@ -27,9 +27,12 @@ function fixture(t) {
   mkdirSync(join(agentDir, "agents"), { recursive: true });
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const role = { readonly: true, tools: ["workspace_read"], model: "openai-codex/gpt-5.6-luna", thinking: "low", agentPath: join(agentDir, "agents", "fixture-reader.md"), extensionPath: join(agentDir, "reader.ts") };
+  const writer = { ...role, readonly: false, agentPath: join(agentDir, "agents", "fixture-writer.md"), extensionPath: join(agentDir, "writer.ts") };
   writeFileSync(role.extensionPath, "export default function () {}\n");
   writeFileSync(role.agentPath, `---\nname: fixture-reader\ndescription: Fixture\nmodel: ${role.model}\nthinking: low\ntools: workspace_read\nextensions: ${role.extensionPath}\n---\nRead only.\n`);
-  const config = { version: 1, agentDir, models: { provider: "openai-codex", default: "gpt-5.6-sol", defaultEffort: "medium", planEffort: "high", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role }, mcp: {} };
+  writeFileSync(writer.extensionPath, "export default function () {}\n");
+  writeFileSync(writer.agentPath, `---\nname: fixture-writer\ndescription: Fixture\nmodel: ${writer.model}\nthinking: low\ntools: workspace_read\nextensions: ${writer.extensionPath}\n---\nWrite enabled.\n`);
+  const config = { version: 1, agentDir, models: { provider: "openai-codex", default: "gpt-5.6-sol", defaultEffort: "medium", planEffort: "high", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {} };
   return { root, config };
 }
 
@@ -43,6 +46,23 @@ test("active tool exposure follows root mode and UI without changing child autho
   assert.deepEqual(root({ ready: false }), []);
   assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name === "workspace_read", isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read"]);
   assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name.startsWith("workspace_"), isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read", "workspace_write", "workspace_edit"]);
+});
+
+test("plan mode rejects configured writers before resolving a child contract", async t => {
+  const { config } = fixture(t);
+  let resolved = 0;
+  const ctx = { cwd: process.cwd(), model: { provider: "openai-codex", id: "gpt-5.6-sol" }, modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] } };
+  const resolve = async request => {
+    resolved++;
+    const child = config.agents[request.agent];
+    return { ok: true, contract: { agent: { filePath: child.agentPath }, tools: { configuredExtensions: [child.extensionPath], effectiveAllowlist: child.tools }, digest: "fixture" } };
+  };
+  await checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture" }, config, "root", ctx, resolve, "plan");
+  await assert.rejects(checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "root", ctx, resolve, "plan"), /plan mode/i);
+  assert.equal(resolved, 1);
+  await checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "root", ctx, resolve, "execute");
+  await assert.rejects(checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "fixture-reader", ctx, resolve, "execute"), /delegate to writers/);
+  assert.equal(resolved, 2);
 });
 
 test("broker does not expose its credential to the classifier and invalidates pending approval", { skip }, async t => {
@@ -128,31 +148,31 @@ test("pinned upstream packages register against the managed extension and prefli
   const { resolveSubagentLaunchContract } = await jiti.import("pi-subagents/preflight");
   const ctx = { cwd: process.cwd(), modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [{ provider: "openai-codex", id: "gpt-5.6-luna" }] } };
   const args = { agent: "fixture-reader", task: "Inspect fixture" };
-  await checkChildLaunch(args, config, "root", ctx, resolveSubagentLaunchContract);
+  await checkChildLaunch(args, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(args.agentScope, "user");
   const blocking = { agent: "fixture-reader", task: "Inspect fixture", async: false };
-  await checkChildLaunch(blocking, config, "root", ctx, resolveSubagentLaunchContract);
+  await checkChildLaunch(blocking, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(blocking.async, true);
-  await assert.rejects(checkChildLaunch({ ...args, workflowScript: "bad" }, config, "root", ctx, resolveSubagentLaunchContract), /workflow scripts/);
+  await assert.rejects(checkChildLaunch({ ...args, workflowScript: "bad" }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /workflow scripts/);
   // Keys the upstream schema advertises are dropped, not refused: every observed
   // first launch carried some of them and the refusal cost a turn per batch.
   const noisy = { ...args, cwd: "/elsewhere", toolBudget: { hard: 20 }, acceptance: false, context: "fork" };
-  await checkChildLaunch(noisy, config, "root", ctx, resolveSubagentLaunchContract);
+  await checkChildLaunch(noisy, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.deepEqual(Object.keys(noisy).sort(), ["agent", "agentScope", "async", "context", "task"]);
   assert.equal(noisy.context, "fork");
   const profile = { ...args, context: "profile" };
-  await checkChildLaunch(profile, config, "root", ctx, resolveSubagentLaunchContract);
+  await checkChildLaunch(profile, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal("context" in profile, false);
   const transcript = { action: "status", id: "run", view: "transcript", lines: 50 };
-  await checkChildLaunch(transcript, config, "root", ctx, resolveSubagentLaunchContract);
+  await checkChildLaunch(transcript, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(transcript.steeringRecovery, false);
-  await assert.rejects(checkChildLaunch({ action: "status", id: "run", view: "events" }, config, "root", ctx, resolveSubagentLaunchContract), /not enabled/);
+  await assert.rejects(checkChildLaunch({ action: "status", id: "run", view: "events" }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
   // Session-varying values would change pi-mcp-adapter's cache key every launch.
   assert.deepEqual(mcpServerDefinitions({ mcp: { docs: { policy: { denied_tools: ["x"] } } } }, "root").docs.env, { PI_WORKFLOW_ROLE: "root" });
   const list = { action: "list", capabilities: true };
-  await checkChildLaunch(list, config, "root", ctx, resolveSubagentLaunchContract);
+  await checkChildLaunch(list, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(list.agentScope, "user");
-  await assert.rejects(checkChildLaunch({ action: "list", view: "fleet" }, config, "root", ctx, resolveSubagentLaunchContract), /not enabled/);
+  await assert.rejects(checkChildLaunch({ action: "list", view: "fleet" }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
 
 });
 
@@ -226,6 +246,10 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
   };
   for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
+  const jiti = createJiti(import.meta.url);
+  const { resolveCurrentSubagentCapabilityCeiling } = await jiti.import("pi-subagents/capability-ceiling");
+  const ceiling = () => resolveCurrentSubagentCapabilityCeiling(ctx.sessionManager.getSessionId());
+  assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader"]);
   assert.equal(broker.policy.mode, "plan");
   assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_bash", "workspace_grep", "workspace_find", "workspace_ls", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
@@ -246,11 +270,13 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   ctx.ui.confirm = async () => true;
   await commands.get("execute").handler("", ctx);
   assert.equal(broker.policy.mode, "execute");
+  assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader", "fixture-writer"]);
   assert.ok(activeTools.at(-1).includes("workspace_write"));
   assert.ok(activeTools.at(-1).includes("workspace_edit"));
   assert.equal(activeTools.at(-1).includes("ask_user_question"), false, "RPC UI cannot show the TUI questionnaire");
   await commands.get("plan").handler("", ctx);
   assert.equal(broker.policy.mode, "plan");
+  assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader"]);
   assert.equal(activeTools.at(-1).includes("workspace_write"), false);
   assert.equal(activeTools.at(-1).includes("workspace_edit"), false);
   running = true;
@@ -397,11 +423,11 @@ test("an inherit-model child resolves to the parent's model before the tier chec
   const launch = () => ({ agent: "fixture-worker", task: "Do the thing" });
   const ctxFor = id => ({ cwd: process.cwd(), model: { provider: "openai-codex", id }, modelRegistry: registry });
   const resolved = launch();
-  await checkChildLaunch(resolved, config, "root", ctxFor("gpt-5.6-sol"), resolve);
+  await checkChildLaunch(resolved, config, "root", ctxFor("gpt-5.6-sol"), resolve, "execute");
   assert.deepEqual([resolve.model, resolved.model], ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-sol"]);
-  await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-5-other"), resolve), /tier policy/);
-  await assert.rejects(checkChildLaunch(launch(), config, "fixture-reader", ctxFor("gpt-5.6-sol"), resolve), /delegate to writers/);
+  await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-5-other"), resolve, "execute"), /tier policy/);
+  await assert.rejects(checkChildLaunch(launch(), config, "fixture-reader", ctxFor("gpt-5.6-sol"), resolve, "execute"), /delegate to writers/);
   // The frontier tier is in the catalog but never a child's, requested or inherited.
-  await assert.rejects(checkChildLaunch({ ...launch(), model: "openai-codex/gpt-6-astra" }, config, "root", ctxFor("gpt-5.6-sol"), resolve), /frontier/);
-  await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-6-astra"), resolve), /frontier/);
+  await assert.rejects(checkChildLaunch({ ...launch(), model: "openai-codex/gpt-6-astra" }, config, "root", ctxFor("gpt-5.6-sol"), resolve, "execute"), /frontier/);
+  await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-6-astra"), resolve, "execute"), /frontier/);
 });

@@ -173,10 +173,11 @@ function renderBody(name, result, options, theme, context) {
   return new Text(lines.map(indent).join("\n"), 0, 0);
 }
 
-// Folding, as Claude Code does it: the workspace and MCP rows between two
-// things that stay visible form a group, which collapses to one line
-// ("Read 3 files, ran 2 shell commands"); clicking it or ctrl+o brings the rows
-// back. State is per process — a resumed session renders its old rows unfolded.
+// Grouping, as Claude Code does it: successful activity facts between two
+// things that stay visible form one chronological group, which collapses to a
+// count sentence ("Read 3 files, launched 2 agents"); clicking it restores the
+// member ladder and ctrl+o restores full tool output. State is per process — a
+// resumed session renders its old rows and completions unfolded.
 //
 // The extent is derived, never edited (docs/pi-design.md rule 2, 2026-09-10).
 // The timeline holds ordered facts — one per tool row plus its outcome, one
@@ -185,18 +186,34 @@ function renderBody(name, result, options, theme, context) {
 // producer of a visible line failed to close the group it interrupted; a fact
 // that has to be appended for the line to be drawn at all cannot be forgotten
 // the same way.
-const WORDS = { read: ["read", "file"], bash: ["ran", "shell command"], grep: ["searched for", "pattern"], edit: ["edited", "file"], write: ["wrote", "file"], list: ["listed", "path"], mcp: ["called", "MCP tool"], agent: ["launched", "agent"], task: ["started", "background command"] };
+const WORDS = {
+  read: ["read", "file"],
+  bash: ["ran", "shell command"],
+  grep: ["searched for", "pattern"],
+  edit: ["edited", "file"],
+  write: ["wrote", "file"],
+  list: ["listed", "path"],
+  mcp: ["called", "MCP tool"],
+  web: ["ran", "web search", "web searches"],
+  discovery: ["ran", "agent discovery", "agent discoveries"],
+  agent: ["launched", "agent"],
+  task: ["started", "background command"],
+  agentDone: ["finished", "agent"],
+  taskDone: ["finished", "background task"],
+};
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
 const isMcp = name => name === "mcp" || name.startsWith("mcp__");
-// `workspace_task` and subagent management calls (an `action`, or no agent and
-// task yet) stay out: each is a visible row whose result is the thing that was
-// asked for. A launch — the subagent call itself, and a backgrounded bash call
-// once it outlives its grace period (keyed at `settleFold`, once its result is
-// known) — folds instead: the fleet already shows the running child (rule 6)
-// and the completion line names the agent and task itself (rule 4), so the
-// sentence only needs to count it.
+// `workspace_task` and subagent management other than discovery stay out: each
+// is a visible boundary row. Calls that are transcript housekeeping — including
+// launches, list discovery, provider web search, and backgrounded bash calls
+// that outlive their grace period — share the activity group with successful
+// child/task completions appended below.
 const foldKey = (name, args = {}) => {
-  if (name === "subagent") return args.agent && args.task ? "agent" : null;
+  if (name === "subagent") {
+    if (args.agent && args.task) return "agent";
+    return args.action === "list" ? "discovery" : null;
+  }
+  if (name === "web_search" || name === "url_context") return "web";
   return name.startsWith("workspace_") && name !== "workspace_task" ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null;
 };
 
@@ -222,7 +239,7 @@ const nextSeq = folds => `${folds.nonce}-${++folds.doneSeq}`;
 // `list` — `settleFold` needs that name back to compute the fact's summary.
 export function addFold(folds, id, tool) {
   refold(folds, () => {
-    folds.timeline.push({ kind: "tool", id, key: countKey(tool), tool, outcome: "pending" });
+    folds.timeline.push({ kind: "activity", source: "tool", id, key: countKey(tool), tool, outcome: "pending" });
     folds.revision += 1;
   });
 }
@@ -234,7 +251,7 @@ export function addFold(folds, id, tool) {
 // pending fact already holds its whole run back (see `derive`). A success also
 // records its summary for the group's member line.
 export function settleFold(folds, id, failed, result) {
-  const fact = folds.timeline.find(entry => entry.kind === "tool" && entry.id === id);
+  const fact = folds.timeline.find(entry => entry.kind === "activity" && entry.source === "tool" && entry.id === id);
   if (!fact || fact.outcome !== "pending") return;
   refold(folds, () => {
     fact.outcome = failed ? "failed" : "success";
@@ -261,39 +278,28 @@ const tally = entries => {
   return counts;
 };
 
-// A run is a maximal stretch of successful foldable rows, every outcome
-// settled, with a separator on its right — a failed row is that separator, not
-// a member of what it interrupts. Sealed on those terms a run can never need
-// splitting: by the time one exists, every fact that could have divided it is
-// already in the timeline. It is keyed by that right-hand boundary, the one
-// part of it that is fixed from the moment it seals, which is what lets the
-// view state below outlive a re-derivation.
+// A group is one maximal chronological stretch of successful activity facts:
+// workspace/MCP/search/discovery calls, launches, and successful child/task
+// completions. A failed fact or an explicit visible boundary seals the stretch
+// on its left and is never a member. Every member has to be settled before a
+// sealed group can exist, because a pending call may still split the stretch.
 //
-// The live group is the other end of the same run: the leading stretch of
-// settled successes at the very end of the timeline, before its first pending
-// fact (if any) — a pending fact blocks only what follows it, not what already
-// preceded it, so the block's first member never changes and it only grows.
-// It has no boundary yet, so it is keyed by its own first member instead.
-//
-// A `done` fact (a `completed` completion, rule 4) ends a tool run on its
-// left exactly like a boundary, and groups with the other done facts
-// adjacent to it the same way tool facts group into a run — except it seals
-// on any other kind of fact, not only a boundary, and stays addressable
-// under one id (`sealed` true or false) rather than moving between two maps.
-// That id is `finished:`, not `done:`: the group's first fact may also have
-// sealed the tool run before it, and `view` keys both by id.
+// The live group is the leading settled-success stretch at the end of the
+// timeline. A pending fact blocks only what follows it, so already-settled work
+// above a still-running row can remain the newest visible group. Both tool rows
+// and completion entries read these same maps; there is no second completion
+// grouping layer.
 function derive(folds) {
   if (folds.derived?.revision === folds.revision) return folds.derived;
   const byId = new Map();
-  const doneById = new Map();
+  const liveById = new Map();
   let run = [];
   let waiting = false;
   let live = [];
   let blocked = false;
-  let doneRun = [];
   const seal = boundaryId => {
     if (!waiting && run.length >= MIN_RUN) {
-      const group = { boundaryId, entries: run, counts: tally(run) };
+      const group = { boundaryId, entries: run, counts: tally(run), sealed: true };
       for (const entry of run) byId.set(entry.id, group);
     }
     run = [];
@@ -301,103 +307,88 @@ function derive(folds) {
     live = [];
     blocked = false;
   };
-  const sealDone = () => {
-    if (doneRun.length >= MIN_RUN) {
-      const group = { boundaryId: `finished:${doneRun[0].id}`, entries: doneRun, counts: tally(doneRun), sealed: true };
-      for (const entry of doneRun) doneById.set(entry.id, group);
-    }
-    doneRun = [];
-  };
   for (const fact of folds.timeline) {
-    if (fact.kind === "done") {
-      seal(`done:${fact.id}`);
-      doneRun.push(fact);
-      continue;
-    }
-    sealDone();
     if (fact.kind === "boundary") seal(fact.id);
     else if (fact.outcome === "success") {
       run.push(fact);
       if (!blocked) live.push(fact);
     }
     else if (fact.outcome === "failed") seal(`failed:${fact.id}`);
-    // A pending row holds its whole run back rather than just the rows after it:
-    // its outcome decides both whether it is a member and where the run starts,
-    // and a run that sealed without it would grow a row and move its handle when
-    // it lands. It only blocks the live block from that point on, though — the
-    // successes ahead of it already stand.
+    // A pending row holds its whole sealed run back rather than only the rows
+    // after it. It blocks the live block only from its own position onward.
     else { waiting = true; blocked = true; }
   }
-  const liveById = new Map();
   if (live.length >= MIN_RUN) {
-    const group = { boundaryId: `live:${live[0].id}`, entries: live, counts: tally(live) };
+    const group = { boundaryId: `live:${live[0].id}`, entries: live, counts: tally(live), sealed: false };
     for (const entry of live) liveById.set(entry.id, group);
   }
-  if (doneRun.length >= MIN_RUN) {
-    const group = { boundaryId: `finished:${doneRun[0].id}`, entries: doneRun, counts: tally(doneRun), sealed: false };
-    for (const entry of doneRun) doneById.set(entry.id, group);
-  }
-  folds.derived = { revision: folds.revision, byId, liveById, doneById };
+  folds.derived = { revision: folds.revision, byId, liveById };
   return folds.derived;
 }
 
-// The read side of the model: which sealed run, if any, owns a row.
+// The read side of the model: sealed and live membership. `doneGroup` retains
+// its public name for the entry-renderer callers, but reads the same activity
+// group as a tool row.
 export const foldGroup = (folds, id) => derive(folds).byId.get(id) ?? null;
-// The run still forming at the end of the transcript, if any — never a sealed
-// one, so a caller cannot see a row as both.
 export const liveGroup = (folds, id) => derive(folds).liveById.get(id) ?? null;
-// A completion's group, live or sealed — the two are one map here, since a
-// completion component has to keep reading it under the same key either way.
-export const doneGroup = (folds, seq) => derive(folds).doneById.get(seq) ?? null;
+export const doneGroup = (folds, seq) => groupFor(derive(folds), seq);
 const signature = group => (group ? `${group.boundaryId} ${group.sealed} ${group.entries.map(entry => entry.id).join(",")}` : "");
 const groupFor = (derived, id) => derived.byId.get(id) ?? derived.liveById.get(id) ?? null;
 
-// Membership is recomputed rather than edited, so a fact only has to wake the
-// rows whose group changed — and the cache is whole before any of them render,
-// since pi's invalidate rebuilds a row synchronously. A missed wake leaves a
-// stale line; it cannot put a separator inside a group. Live and sealed
-// membership are woken the same way, so a row is invalidated whether it joins,
-// leaves, or watches its own group (live or sealed) gain another member. A
-// completion has no such handle (`doneEntryRenderer`), so any change to any
-// done-group repaints the whole TUI instead — once, however many changed.
+// Membership is recomputed rather than edited. Tool rows have their own
+// invalidators; completion entries do not, so a changed completion membership
+// requests one whole-TUI repaint. Both paths read the same derived group before
+// any renderer runs, preventing a stale separator inside a mixed group.
 function refold(folds, mutate) {
   const derivedBefore = derive(folds);
   const beforeIds = new Set([...derivedBefore.byId.keys(), ...derivedBefore.liveById.keys()]);
   const before = new Map([...beforeIds].map(id => [id, groupFor(derivedBefore, id)]));
-  const doneBefore = derivedBefore.doneById;
   mutate();
   const derivedAfter = derive(folds);
   const afterIds = new Set([...derivedAfter.byId.keys(), ...derivedAfter.liveById.keys()]);
+  let repaint = false;
   for (const id of new Set([...beforeIds, ...afterIds])) {
-    if (signature(before.get(id)) !== signature(groupFor(derivedAfter, id))) folds.invalidate.get(id)?.();
+    if (signature(before.get(id)) === signature(groupFor(derivedAfter, id))) continue;
+    const fact = folds.timeline.find(entry => entry.kind === "activity" && entry.id === id);
+    if (fact?.source === "completion") repaint = true;
+    else folds.invalidate.get(id)?.();
   }
-  const doneAfter = derivedAfter.doneById;
-  for (const id of new Set([...doneBefore.keys(), ...doneAfter.keys()])) {
-    if (signature(doneBefore.get(id)) !== signature(doneAfter.get(id))) { folds.repaint(); break; }
-  }
+  if (repaint) folds.repaint();
 }
 
-// Appending the entry is what draws the line, so the boundary rides with it and
-// no call site has to remember one. `stability.test.mjs` holds the rest of the
-// producers to this path. A `completed` completion is the one exception: it
-// may join the completion above it (rule 4), so it gets a `done` fact and a
-// `seq`, written into the entry it persists, rather than a boundary.
+// Appending an entry is what draws its line, so visible non-activity entries
+// carry their own boundary. A successful child/task completion instead appends
+// one activity fact and can extend the same chronological group as tool rows.
+//
+// Custom-entry renderers must decide once whether an entry has a component. If
+// a completion lands behind a pending tool, that tool's later failure could
+// otherwise turn a hidden completion into a standalone row. Preserve the old
+// boundary at that unresolved event-order edge; once the pending call settles,
+// later successes can form the next group without ever dropping the completion.
+const tailHasPending = folds => {
+  for (let i = folds.timeline.length - 1; i >= 0; i--) {
+    const fact = folds.timeline[i];
+    if (fact.kind === "boundary" || fact.outcome === "failed") return false;
+    if (fact.outcome === "pending") return true;
+  }
+  return false;
+};
+
 export function appendVisible(pi, type, data, folds = defaultFolds) {
   const done = data.status === "completed" && DONE[type];
   if (done) {
+    if (tailHasPending(folds)) closeFolds(folds);
     data.seq = nextSeq(folds);
     refold(folds, () => {
-      folds.timeline.push({ kind: "done", id: data.seq, key: done.key, data: done.line(data) });
+      folds.timeline.push({ kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) });
       folds.revision += 1;
     });
-  } else {
-    closeFolds(folds);
-  }
+  } else closeFolds(folds);
   pi.appendEntry(type, data);
 }
 
 export function summarise(counts) {
-  const text = Object.entries(WORDS).filter(([key]) => counts[key]).map(([key, [verb, noun]]) => `${verb} ${plural(counts[key], noun)}`).join(", ");
+  const text = Object.entries(WORDS).filter(([key]) => counts[key]).map(([key, [verb, noun, nouns]]) => `${verb} ${plural(counts[key], noun, nouns)}`).join(", ");
   return text ? text[0].toUpperCase() + text.slice(1) : "";
 }
 
@@ -471,15 +462,48 @@ function toggleFold(folds, group, rendering) {
   for (const entry of group.entries) if (entry.id !== rendering) folds.invalidate.get(entry.id)?.();
 }
 
-// A group's member line, live or sealed: the row's title and its settled
-// summary. Each part is coloured on its own, for the reason above `paintCounts`.
+// A group's member line, live or sealed. Completion members keep the status
+// word that distinguishes them from launch members, plus their task and
+// duration; tool members retain the row's own settled summary.
+function completionMemberLine(entry, theme) {
+  const { agent, task, durationMs } = entry.data;
+  const title = `${agent} finished${task ? ` › ${shortTitle(task, SUMMARY_WIDTH)}` : ""}`;
+  const duration = durationText(durationMs);
+  const tail = duration ? theme.fg("muted", ` · ${duration}`) : "";
+  return indent(`${theme.fg("muted", SUB)} ${theme.fg("toolTitle", title)}${tail}`);
+}
+
 function memberLine(folds, entry, theme) {
+  if (entry.source === "completion") return completionMemberLine(entry, theme);
   const title = theme.fg("toolTitle", folds.titles.get(entry.id));
   const summary = entry.summary ?? "";
   if (!summary) return indent(`${theme.fg("muted", SUB)} ${title}`);
   const isDiff = (entry.tool === "edit" || entry.tool === "write") && summary.split(" ").length === 2;
   const tail = `${theme.fg("muted", " · ")}${isDiff ? paintCounts(summary, theme) : theme.fg("muted", summary)}`;
   return indent(`${theme.fg("muted", SUB)} ${title}${tail}`);
+}
+
+// Under ctrl+o, each tool result carries only the completions immediately
+// after it; a completion-led group carries only its leading completions.
+// Hidden custom entries cannot reappear, so these existing slots preserve order.
+function completionMemberLines(group, theme, after) {
+  const lines = [];
+  const start = after === undefined ? 0 : group.entries.findIndex(entry => entry.id === after) + 1;
+  for (const entry of group.entries.slice(start)) {
+    if (entry.source !== "completion") break;
+    lines.push(completionMemberLine(entry, theme));
+  }
+  return lines;
+}
+
+function withFollowingCompletions(body, folds, id, theme) {
+  const group = folds.toolsExpanded() && (foldGroup(folds, id) ?? liveGroup(folds, id));
+  const lines = group ? completionMemberLines(group, theme, id) : [];
+  if (!lines.length) return body;
+  const block = new Container();
+  block.addChild(body);
+  block.addChild(new Text(lines.join("\n"), 0, 0));
+  return block;
 }
 
 // Below output level a member's own result slot draws nothing: the group's
@@ -525,9 +549,14 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
         if (state.open) for (const entry of group.entries) lines.push(memberLine(folds, entry, theme));
         return new FoldHandle(lines.join("\n"), toggle);
       }
-      const live = folds.toolsExpanded() ? null : liveGroup(folds, id);
+      const live = liveGroup(folds, id);
       if (live) {
-        if (live.entries[0].id !== id) return new Text("", 0, 0);
+        const first = live.entries[0].id === id;
+        if (folds.toolsExpanded()) {
+          if (!first) return new Text(line, 0, 0);
+          return new Text(line, 0, 0);
+        }
+        if (!first) return new Text("", 0, 0);
         const lines = [`${theme.fg("success", BULLET)} ${theme.fg("toolTitle", summarise(live.counts))}`, ...live.entries.map(entry => memberLine(folds, entry, theme))];
         return new Text(lines.join("\n"), 0, 0);
       }
@@ -544,7 +573,7 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
       }
       const context = status(rawContext);
       if (hidden(folds, context.toolCallId)) return new Text("", 0, 0);
-      return renderBody(name, result, options, theme, context);
+      return withFollowingCompletions(renderBody(name, result, options, theme, context), folds, context.toolCallId, theme);
     },
   };
 }
@@ -569,7 +598,7 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
     ...renderers,
     renderResult(result, options, theme, context) {
       if (hidden(folds, context.toolCallId)) return new Text("", 0, 0);
-      if (result?.details?.asyncId && !context.isError) return new Text(indent(theme.fg("muted", `${SUB} launched`)), 0, 0);
+      if (result?.details?.asyncId && !context.isError) return withFollowingCompletions(new Text(indent(theme.fg("muted", `${SUB} launched`)), 0, 0), folds, context.toolCallId, theme);
       return renderers.renderResult(result, options, theme, context);
     },
   };
@@ -686,39 +715,19 @@ export function completionLine({ agent, task, status, durationMs }, theme) {
   return `${theme.fg(colour, BULLET)} ${theme.fg("toolTitle", title)}${tail ? theme.fg("muted", tail) : ""}`;
 }
 
-// Adjacent `completed` completions are a group on the same ladder as a tool
-// run (docs/pi-design.md rule 4, 2026-09-18): no output level, since a
-// completion has no body, so ctrl+o only ever shows members. Mixed classes
-// share one sentence in first-appearance order — `tally` builds `counts` by
-// encounter order, and object key order preserves it.
-// What each completion entry type counts as, and its data in completionLine's shape.
+// Successful completion entries use distinct count keys from launches while
+// carrying completionLine's shape for both their plain row and group member.
 const DONE = {
-  "workflow-child": { key: "agent", line: data => data },
-  "workflow-task": { key: "task", line: data => ({ agent: `task ${data.id}`, task: data.command, status: data.status, durationMs: data.durationMs }) },
+  "workflow-child": { key: "agentDone", line: data => data },
+  "workflow-task": { key: "taskDone", line: data => ({ agent: `task ${data.id}`, task: data.command, status: data.status, durationMs: data.durationMs }) },
 };
 
-function summariseDone(counts) {
-  const text = Object.entries(counts).map(([key, n]) => `${plural(n, key)} finished`).join(", ");
-  return text ? text[0].toUpperCase() + text.slice(1) : "";
-}
-
-// A done-group's member line: completionLine's own title and duration, minus
-// the status word only a `completed` entry ever carries in a group.
-function doneMemberLine(entry, theme) {
-  const { agent, task, durationMs } = entry.data;
-  const title = task ? `${agent} › ${shortTitle(task, SUMMARY_WIDTH)}` : agent;
-  const duration = durationText(durationMs);
-  const tail = duration ? theme.fg("muted", ` · ${duration}`) : "";
-  return indent(`${theme.fg("muted", SUB)} ${theme.fg("toolTitle", title)}${tail}`);
-}
-
-// A completion that might lead a group forming after it: entry renderers get
-// no invalidate handle of their own, so `render` re-reads the group fresh at
-// every paint instead — `repaint` (see `appendVisible`) covers the redraw a
-// later completion or a click needs. A non-first member never reaches here
-// (see `doneEntryRenderer`), so there is no case to hide here as `hidden`
-// does for a tool row.
-class DoneEntryComponent extends Text {
+// A completion can own a mixed group when it is the first fact. Entry renderers
+// have no invalidate handle, so the component re-reads the shared timeline on
+// every paint and whole-TUI repaint wakes it when later activity joins. Under
+// ctrl+o it keeps leading completion members visible; later completions ride
+// the preceding tool's result, after its full output, in chronological order.
+class ActivityEntryComponent extends Text {
   constructor(folds, seq, mapped, theme) {
     super("", 0, 0);
     this.folds = folds;
@@ -729,16 +738,20 @@ class DoneEntryComponent extends Text {
   lines() {
     const group = doneGroup(this.folds, this.seq);
     if (!group) return [completionLine(this.mapped, this.theme)];
-    const sentence = summariseDone(group.counts);
-    const members = () => group.entries.map(entry => doneMemberLine(entry, this.theme));
-    if (!group.sealed) return [`${this.theme.fg("success", BULLET)} ${this.theme.fg("toolTitle", sentence)}`, ...members()];
+    const sentence = summarise(group.counts);
+    const members = () => group.entries.map(entry => memberLine(this.folds, entry, this.theme));
+    const completionMembers = () => completionMemberLines(group, this.theme);
+    if (!group.sealed) {
+      return [`${this.theme.fg("success", BULLET)} ${this.theme.fg("toolTitle", sentence)}`, ...(this.folds.toolsExpanded() ? completionMembers() : members())];
+    }
     const state = view(this.folds, group);
     const toolsExpanded = this.folds.toolsExpanded();
     if (toolsExpanded !== state.expandedAt) {
       state.expandedAt = toolsExpanded;
       state.open = toolsExpanded;
     }
-    if (toolsExpanded || state.open) return [handleLine(sentence, state, this.theme), ...members()];
+    if (toolsExpanded) return [handleLine(sentence, state, this.theme), ...completionMembers()];
+    if (state.open) return [handleLine(sentence, state, this.theme), ...members()];
     return [handleLine(sentence, state, this.theme)];
   }
   render(width) {
@@ -756,18 +769,19 @@ class DoneEntryComponent extends Text {
   }
 }
 
-// The entry renderer for both completion types. An entry this process's
-// timeline does not know (another process, another status) is the plain line.
-// A later member has no component at all, which pi draws as nothing, spacer
-// included; the timeline only grows, so that is decided once, here.
+// A resumed/foreign completion has no fact in this process and always renders
+// as a plain line. For live entries, only the group's first fact owns a
+// component; returning undefined for later completion members removes their
+// host spacer as well as their content.
 export function doneEntryRenderer(type, folds = defaultFolds) {
   const map = DONE[type].line;
   return (entry, _options, theme) => {
     const seq = entry.data.seq;
-    const index = seq == null ? -1 : folds.timeline.findIndex(fact => fact.kind === "done" && fact.id === seq);
-    if (index === -1) return new Text(completionLine(map(entry.data), theme), 0, 0);
-    if (index > 0 && folds.timeline[index - 1].kind === "done") return undefined;
-    return new DoneEntryComponent(folds, seq, map(entry.data), theme);
+    const fact = seq == null ? null : folds.timeline.find(item => item.kind === "activity" && item.source === "completion" && item.id === seq);
+    if (!fact) return new Text(completionLine(map(entry.data), theme), 0, 0);
+    const group = doneGroup(folds, seq);
+    if (group && group.entries[0].id !== seq) return undefined;
+    return new ActivityEntryComponent(folds, seq, map(entry.data), theme);
   };
 }
 

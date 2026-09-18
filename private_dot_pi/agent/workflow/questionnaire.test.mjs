@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { CURSOR_MARKER, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { QuestionnaireComponent, questionnaireResult, registerQuestionnaire, validateQuestionnaire } from "./questionnaire.mjs";
 
-const theme = { fg: (_color, text) => text, bold: text => text, italic: text => text, strikethrough: text => text, underline: text => text };
+const theme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: text => text, italic: text => text, strikethrough: text => text, underline: text => text };
 const keybindings = { matches(data, action) { return ({ "tui.select.cancel": ["escape"], "tui.select.up": ["up"], "tui.select.down": ["down"], "tui.select.confirm": ["enter"], "tui.input.submit": ["enter"], "tui.input.tab": ["tab"], "tui.input.newLine": ["shift+enter", "ctrl+j"] }[action] ?? []).some(key => matchesKey(data, key)); } };
 const questions = [{ question: "Choose a direction without exposing this prose.", header: "Direction", options: [{ label: "Fast", description: "Quick path", preview: "# Fast\n\n`code`" }, { label: "Safe", description: "Careful path" }] }, { question: "Pick all that apply", header: "Scope", multiSelect: true, options: [{ label: "Tests", description: "Cover it" }, { label: "Docs", description: "Explain it" }] }];
 
@@ -50,6 +50,56 @@ test("multi-select custom inclusion can be toggled and cancellation submits no d
   const cancelled = prompt(); cancelled.component.handleInput("\x1b");
   assert.equal(cancelled.result(), null);
   assert.deepEqual(questionnaireResult(questions, [], true).details, { cancelled: true, answers: [] });
+});
+
+test("single-question browse hides navigation and preserves the framed blank-row layout", () => {
+  const p = questionnaire([questions[0]], 8);
+  const lines = p.component.render(80);
+  assert.equal(lines.length, 8);
+  assert.equal(lines[1], "");
+  assert.doesNotMatch(lines.join("\n"), /Direction|Review|\[/);
+  assert.equal(p.component.pageSize, 3);
+});
+
+test("multi-question browse and review use a full-width padded themed tab band", () => {
+  const calls = [];
+  const palette = {
+    ...theme,
+    fg(color, text) { calls.push(["fg", color, text]); return `\x1b[36m${text}\x1b[0m`; },
+    bg(color, text) { calls.push(["bg", color, text]); return `\x1b[44m${text}\x1b[0m`; },
+    bold(text) { calls.push(["bold", text]); return `\x1b[1m${text}\x1b[22m`; },
+  };
+  const p = questionnaire(questions, 8, palette);
+  for (const mode of ["browse", "review"]) {
+    if (mode === "review") p.component.goTo(questions.length);
+    calls.length = 0;
+    const lines = p.component.render(40);
+    const band = lines[1];
+    assert.equal(visibleWidth(band), 40);
+    assert.match(band, /Direction|Review/);
+    assert.doesNotMatch(band.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), /\[/);
+    assert.ok(calls.some(([kind, color, text]) => kind === "bg" && color === "userMessageBg" && visibleWidth(text) === 40));
+    assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "accent" && (/Direction|Review/).test(text)));
+    assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "muted" && text === "Scope"));
+    assert.ok(calls.some(([kind, text]) => kind === "bold" && (text === "Direction" || text === "Review")));
+    assert.equal(lines.length, 8);
+    assert.equal(p.component.pageSize, 2);
+    assert.equal(lines[2], "");
+    assert.equal(lines.at(-3), "");
+  }
+});
+
+test("narrow multi-question headers keep every active tab and Review visible", () => {
+  const items = ["First long title", "Second long name", "Third long label", "Fourth long name"].map(header => ({ ...questions[0], header }));
+  const palette = { ...theme, fg: (color, text) => color === "accent" ? `\x1b[36m${text}\x1b[39m` : text, bold: text => `\x1b[1m${text}\x1b[22m` };
+  const p = questionnaire(items, 12, palette);
+  for (let index = 0; index <= items.length; index++) {
+    p.component.goTo(index);
+    const header = index === items.length ? "Review" : items[index].header;
+    const band = p.component.render(20)[1];
+    assert.ok(band.includes(`\x1b[36m\x1b[1m${header}\x1b[22m\x1b[39m`), `active header missing: ${header}`);
+    assert.equal(visibleWidth(band), 20);
+  }
 });
 
 test("layout honors ANSI and Unicode widths, preview placement, narrow stacking, resize, and native cursor", () => {

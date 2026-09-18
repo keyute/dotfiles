@@ -27,8 +27,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    pair, `4 matches`, `31 lines`, `no output`), never output. A failed shell
    command shows its first two and last two lines with `… N more lines` between
    and the exit status last; other errors show in full. The rows between two
-   things that stay visible — `workspace_*` and MCP calls, subagent launches,
-   background shell launches — are a group: one sentence that counts them
+   things that stay visible — successful workspace/MCP/search calls, agent discovery,
+   launches and child/task completions — are one group: a sentence that counts them
    ("Read 3 files, ran 9 shell commands, launched 3 agents"). While the group
    is the newest thing in the transcript it lists its members under a `•`
    sentence, one `↳` line per row in the row's own words (`↳ Ran npm test · 31
@@ -39,7 +39,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    has nothing to change. A row still running is a plain row below the group
    and joins it when it succeeds. Whatever stays visible closes the group:
    assistant text, a `workspace_task` or other plugin row, a failed row (never
-   a member), a completion line, the turn line, the next run. One row is not a
+   a member), an unsuccessful completion, the turn line, the next run. One row is not a
    group. *Why:* Codex's per-step reasoning summaries and head/tail previews
    were the "too verbose" the owner named; what was done stays a keystroke away.
    - *2026-09-08, night:* a shell row that ran outside the sandbox (Claude
@@ -119,9 +119,9 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-12:* the completion notice does not draw: the plugin wrapper sends
      it with `display` off, pi-subagents' quiet-background-success path; content
      is untouched.
-   - *2026-09-18:* adjacent `completed` lines are a group on rule 2's ladder
-     (`• 3 agents finished` over `↳ researcher › title · 45s`); any other
-     status stands alone, and a resumed session shows them ungrouped.
+   - *2026-09-18, later decision:* `completed` lines join successful calls on rule 2's
+     chronological ladder, superseding completion-only groups. Other statuses stay visible;
+     resumed rows stay ungrouped. *Why:* separate completion milestones fragmented activity.
 5. **Composer = the user box, and the user box = the composer.** A shaded block
    in pi's `userMessageBg`: one blank shaded row above and below the content,
    `❯` at column 0 on the first content line, no rule lines, no placeholder;
@@ -175,17 +175,17 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      dot column, so the handle lines up with the `•` rows it owns.
    - *2026-09-18:* a group is one block: one blank line above, none inside; a
      row that draws nothing takes no line (`docs/pi-coupling.md`).
-9. **Background = the user's sent messages and the composer.** pi's user box
-   keeps its background and the composer takes the same one (rule 5); nothing
-   else the extension draws has one: no tool card (every plugin registration
-   takes the row renderer), no coloured summary. pi's rare compaction and
+9. **Background = user messages, composer and questionnaire navigation.** The user
+   box and composer share rule 5's shade; the multi-question header is the explicit
+   2026-09-18 exception (rule 10). No tool card (every plugin takes the row renderer)
+   or activity summary has a background. pi's rare compaction and
    branch notices are pi's. *Why (2026-09-08):* `bg_wait`'s green card was a
    third background and read as a different program; the composer's shade came
    back the same afternoon because the owner wants the place they type to look
    like what they typed.
 10. **A pinned plugin earns a tool row, not a panel.** `web_search`
-    (pi-web-search) is a plain row, `• Searched "query"` with the answer's
-    first line under it, and the `π` voice also records workspace changes
+    (pi-web-search) uses `• Searched "query"`, joining rule 2's group on success;
+    alone it has the answer's first line below. The `π` voice records workspace changes
     (`π Added … to the workspace`). The one panel above the composer is the
     working row (rule 3). *Why (2026-09-08, evening):* `@juicesharp/rpiv-todo`
     drew Claude Code's task list there and restyling its panel would have meant
@@ -193,8 +193,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
     - *2026-09-08, night:* the todo plugin was removed — both reference CLIs
       dropped the surface the panel existed to mirror — and `○` means one thing
       again.
-    - *2026-09-17:* own the questionnaire: framed choices, previews centred in the
-      remaining width (stack narrow), Tab notes below each option, literal free answers.
-      Arrows edit inside native `Editor`, switch tabs outside; retain its whole
-      block (minimum eight rows). PgUp/PgDn scroll long forms and previews.
-      *Why:* the owner's hybrid interaction needs lack a public plugin layout seam.
+    - *2026-09-18, updated:* own framed choices, centred previews (stack narrow), Tab notes
+      and literal free answers. Single questions have no header; multiple questions use a
+      full-width `userMessageBg` tab band, bold accent active tab, no brackets. Leave one blank
+      below header/top frame and above help/footer. Keep native `Editor` whole (eight-row
+      minimum), arrow navigation and paging. *Why:* navigation only when needed, with room to read.

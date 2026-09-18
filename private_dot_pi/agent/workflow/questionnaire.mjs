@@ -245,10 +245,17 @@ export class QuestionnaireComponent {
       // Reserve the complete native editor block; never crop its cursor or borders.
       return [heading, ...(space ? context.map(clip) : []), ...editor];
     }
-    const tabs = this.questions.map((item, index) => this.mode === "browse" && index === this.questionIndex ? `[${item.header}]` : item.header);
-    if (this.questions.length > 1) tabs.push(this.mode === "review" ? "[Review]" : "Review");
+    const multiQuestion = this.questions.length > 1;
     const frame = this.theme.fg("borderAccent", "─".repeat(usable));
-    const heading = clip(this.theme.fg("accent", tabs.join("  ")));
+    let heading;
+    if (multiQuestion) {
+      const active = this.mode === "review" ? this.questions.length : this.questionIndex;
+      const tabs = [...this.questions.map(item => item.header), "Review"].map((label, index) =>
+        index === active ? this.theme.fg("accent", this.theme.bold(label)) : this.theme.fg("muted", label));
+      // When the full strip does not fit, start at the active tab, not a hidden predecessor.
+      const visible = visibleWidth(tabs.join("  ")) > usable ? tabs.slice(active) : tabs;
+      heading = this.theme.bg("userMessageBg", pad(clip(visible.join("  ")), usable));
+    }
     const body = [];
     let focus = 0;
     let hint;
@@ -283,7 +290,7 @@ export class QuestionnaireComponent {
       hint = question.multiSelect ? "Space toggle · Enter continue · Tab edit · Esc cancel" : "Enter choose · Tab note · Esc cancel";
       if (this.questions.length > 1) hint = `←/→ tabs · ${hint}`;
     }
-    this.pageSize = rows - 4;
+    this.pageSize = Math.max(1, rows - (multiQuestion ? 6 : 5));
     const maximum = Math.max(0, body.length - this.pageSize);
     this.scroll = Math.max(0, Math.min(this.scroll, maximum));
     if (this.followChoice) {
@@ -292,7 +299,7 @@ export class QuestionnaireComponent {
     }
     this.scroll = Math.min(this.scroll, maximum);
     if (maximum) hint = `PgUp/PgDn scroll · ${hint}`;
-    return [frame, heading, ...body.slice(this.scroll, this.scroll + this.pageSize).map(clip), clip(this.theme.fg(this.notice ? "warning" : "dim", this.notice || hint)), frame];
+    return [frame, ...(heading ? [heading] : []), "", ...body.slice(this.scroll, this.scroll + this.pageSize).map(clip), "", clip(this.theme.fg(this.notice ? "warning" : "dim", this.notice || hint)), frame];
   }
   invalidate() { this.editor.invalidate(); }
   dispose() {

@@ -49,7 +49,7 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   pi believes, deferring compaction and occupancy warnings until the provider
   rejects requests. (Revisit at the next SDK pin bump, or if it reports ≠ 272K.)
 
-## Specialists and skills (last verified 2026-09-11)
+## Specialists and skills (last verified 2026-09-18)
 
 - Specialists under `~/.pi/agent/agents` render from the shared roster, each with
   an explicit OpenAI model, tool list and mandatory child policy extension. Native
@@ -57,10 +57,10 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   specialists stay read-only even when the root enters execution. They are leaf
   roles: only `general-purpose` (every tool, the top worker tier) may launch
   children, to the same depth as Claude Code's built-in general-purpose agent.
-- Use named `subagent` launches with an agent and a bounded task; the roster is
-  in the tool description, so no `list` call is needed. Children run in the
-  background, up to twenty sharing the root policy (Claude Code's default), so
-  batch the independent launches that each repay their handoff into one turn.
+- Named `subagent` launches use the roster in the tool description; capability
+  discovery follows that tool's reuse guidance, while every launch still preflights.
+  Children run in the background, up to twenty sharing the root policy (Claude
+  Code's default); batch independent launches that each repay their handoff.
 - Children start fresh; `context: "fork"` branches this session's transcript into
   the child, as Codex's forked children do, for a second pass over material
   already read. They have no channel back: the pi-subagents intercom bridge is

@@ -23,7 +23,12 @@ export function narrowSubagentSchema(schema) {
   };
 }
 
-export async function checkChildLaunch(args, config, role, ctx, resolveContract) {
+export function allowedChildAgents(config, role, mode) {
+  return Object.entries(config.agents).filter(([, child]) => child.readonly || (mode !== "plan" && (role === "root" || !config.agents[role].readonly))).map(([name]) => name);
+}
+
+export async function checkChildLaunch(args, config, role, ctx, resolveContract, mode) {
+  if (!new Set(["plan", "execute"]).has(mode)) throw new Error("An authoritative workflow mode is required");
   if (args.action) {
     if (args.action === "list") {
       if (Object.keys(args).some(key => !listKeys.has(key))) throw new Error("This child management operation is not enabled");
@@ -41,7 +46,10 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract)
   for (const key of Object.keys(args)) if (!launchKeys.has(key)) delete args[key];
   const child = config.agents[args.agent];
   if (!child || typeof args.task !== "string" || !args.task.trim()) throw new Error("A configured agent and bounded task are required");
-  if (role !== "root" && config.agents[role].readonly && !child.readonly) throw new Error("Read-only children cannot delegate to writers");
+  if (!allowedChildAgents(config, role, mode).includes(args.agent)) {
+    if (mode === "plan") throw new Error("Plan mode only permits read-only child agents");
+    throw new Error("Read-only children cannot delegate to writers");
+  }
   args.agentScope = "user";
   if (args.context !== undefined && !launchContexts.has(args.context)) delete args.context;
   let selected = args.model ?? child.model;

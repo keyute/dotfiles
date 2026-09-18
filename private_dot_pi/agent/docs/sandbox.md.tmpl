@@ -7,7 +7,7 @@ measurements and audit baselines live in the chezmoi repo's
 `docs/agents-audit-log.md`, not here. If behavior seems changed, verify
 against the source repository and update this file.
 
-## Planning and permissions (last verified 2026-09-16)
+## Planning and permissions (last verified 2026-09-18)
 
 - New sessions start in plan mode with auto-reviewed approvals. In the normal
   sandbox, source writes remain disabled; temporary build/cache artifacts use
@@ -17,6 +17,10 @@ against the source repository and update this file.
   a plan unprompted, delegate the independent exploration, ask where different
   readings would lead to materially different work, then submit the plan without
   being asked for it (2026-09-16).
+- Plan mode admits only configured read-only child roles; writers (including
+  `general-purpose`) are refused before launch preflight. The existing capability
+  ceiling follows mode transitions; approval restores writer admission without
+  widening read-only roles (2026-09-18).
 - `/execute` or approval of `submit_plan` explicitly enables scoped execution.
   Every mode switch revokes child sessions and sandbox processes before the
   new mode takes effect — `/plan` before enabling planning, and approval of
