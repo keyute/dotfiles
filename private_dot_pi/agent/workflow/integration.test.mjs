@@ -111,6 +111,11 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.has("ask_user_question"));
   assert.ok(!tools.has("ask_user"));
   assert.ok(!tools.has("read"));
+  const blocked = [];
+  events.on("herdr:blocked", data => blocked.push(data));
+  for (const handler of handlers.get("ui_prompt_start")) handler({ type: "ui_prompt_start", kind: "custom", title: "Plan" });
+  for (const handler of handlers.get("ui_prompt_end")) handler({ type: "ui_prompt_end", kind: "custom" });
+  assert.deepEqual(blocked, [{ active: true, label: "Plan" }, { active: false }]);
   await assert.rejects(tools.get("workspace_read").execute("test", { path: "fixture" }), /not ready/);
   // The unsandboxed flag is offered to root and withheld from a read-only role (policy refuses it regardless).
   assert.ok(tools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox);

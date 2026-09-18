@@ -435,6 +435,11 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     });
   });
 
+  // herdr's pi extension reports `blocked` only on this bus event; pi's prompt
+  // span is the one signal covering plan approval, questions and broker confirms.
+  pi.on("ui_prompt_start", event => pi.events.emit("herdr:blocked", { active: true, label: event.title }));
+  pi.on("ui_prompt_end", () => pi.events.emit("herdr:blocked", { active: false }));
+
   // Mode and approval reach the status line as one string so the two can never
   // drift; the footer paints it, where the theme is live.
   const publishStatus = ctx => ctx.ui.setStatus("workflow", `${broker.policy.mode} ${broker.policy.approval}`);

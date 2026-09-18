@@ -138,3 +138,12 @@ consumers are sessions editing this repo, not runtime pi sessions.
   openai/codex `c210f4c`, 2026-09-11). Re-verify trigger: segments missing on
   a live turn with a fresh login — check the response shape, not the parser.
   A failed read only drops the segments.
+- Outside the npm pin: herdr's bundled pi extension (integration v9, herdr
+  0.9.1) is the pane's lifecycle authority and reports `blocked` only on the
+  `herdr:blocked` `{ active, label }` bus event, ref-counted — it does not read
+  pi's `ui_prompt_*`. `index.mjs` bridges the prompt span to it so plan
+  approval, questions and broker confirms raise herdr's needs-input
+  notification; pi-subagents emits the same event for async children
+  (`extension-api.md`). Re-check when the herdr integrations script re-fires
+  on an upgrade; delete the bridge once herdr's extension subscribes to
+  `ui_prompt_*` itself, or each prompt counts twice (2026-09-18).
