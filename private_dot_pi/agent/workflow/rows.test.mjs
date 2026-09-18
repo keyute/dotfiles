@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, appendVisible, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, installFolding, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, settleFold, summarise, toolRenderers } from "./rows.mjs";
+import { addFold, answerLines, appendVisible, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, hideStreamingReasoning, installFolding, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, settleFold, summarise, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -697,6 +697,23 @@ test("reasoning is blanked only where the provider replays it from the opaque it
   assert.equal(blankReasoning(unsigned), undefined);
   assert.equal(unsigned.content[0].thinking, "weighing it up");
   assert.equal(blankReasoning({ role: "user", content: [] }), undefined);
+});
+
+test("hideStreamingReasoning blanks a copy of the thinking block without touching the original or unrelated messages", () => {
+  const thinkingBlock = { type: "thinking", thinking: "weighing it up" };
+  const textBlock = { type: "text", text: "hi" };
+  const message = { role: "assistant", api: "openai-responses", content: [thinkingBlock, textBlock] };
+  hideStreamingReasoning(message);
+  assert.equal(message.content[0].thinking, "");
+  assert.equal(thinkingBlock.thinking, "weighing it up");
+  assert.equal(message.content[1], textBlock);
+  const anthropic = { role: "assistant", api: "anthropic-messages", content: [{ type: "thinking", thinking: "weighing it up" }] };
+  hideStreamingReasoning(anthropic);
+  assert.equal(anthropic.content[0].thinking, "weighing it up");
+  const user = { role: "user", content: [] };
+  const userContent = user.content;
+  hideStreamingReasoning(user);
+  assert.equal(user.content, userContent);
 });
 
 test("answers, completion and turn lines format", () => {

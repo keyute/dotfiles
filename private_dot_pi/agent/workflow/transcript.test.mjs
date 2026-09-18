@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Container } from "@earendil-works/pi-tui";
-import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { addFold, appendVisible, closeFolds, createFolds, doneEntryRenderer, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
+import { AssistantMessageComponent, getMarkdownTheme, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, hideStreamingReasoning, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
 
-const strip = line => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
+// OSC133 shell-integration markers ride on the first/last line alongside SGR
+// colour codes; a real mount needs both stripped to compare rendered text.
+const strip = line => line.replace(/\x1b\][^\x07]*\x07/g, "").replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
 // pi's own theme singleton (what a real mount would hand a registered entry
 // renderer) is not exported; this direct call takes rows.test.mjs's own stub.
 const theme = { fg: (color, text) => `<${color}>${text}`, bold: text => text };
@@ -197,4 +199,20 @@ test("a tool-led mixed group keeps one blank line, hides completion host spacers
     "  beta",
     "  ↳ researcher finished › Audit rows · 45s",
   ]);
+});
+
+// pi's component decides its spacers from the raw thinking text, ahead of
+// bulletMarkdown's zero-line transform.
+test("hideStreamingReasoning removes the streaming component's extra blank line above a reply, and its only line for reasoning alone", () => {
+  const withReply = { role: "assistant", api: "openai-responses", content: [{ type: "thinking", thinking: "weighing it up" }, { type: "text", text: "Done." }] };
+  hideStreamingReasoning(withReply);
+  const replyComponent = new AssistantMessageComponent(undefined, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
+  replyComponent.updateContent(withReply, true);
+  assert.deepEqual(replyComponent.render(40).map(strip), ["", "• Done."]);
+
+  const thinkingOnly = { role: "assistant", api: "openai-responses", content: [{ type: "thinking", thinking: "still thinking" }] };
+  hideStreamingReasoning(thinkingOnly);
+  const thinkingComponent = new AssistantMessageComponent(undefined, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
+  thinkingComponent.updateContent(thinkingOnly, true);
+  assert.deepEqual(thinkingComponent.render(40).map(strip), []);
 });

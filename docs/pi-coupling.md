@@ -144,8 +144,12 @@ consumers are sessions editing this repo, not runtime pi sessions.
   which is why the handler is gated on `message.api`. Accepted cost:
   `transformMessages` keeps a signed block only where provider, api and model
   id all match and drops one whose text is empty, so after a model change the
-  earlier reasoning no longer reaches the new model as plain text. All pinned
-  in `stability.test.mjs`.
+  earlier reasoning no longer reaches the new model as plain text. A
+  `message_update` handler swaps blanked copies into the event's message too,
+  so the streaming component spaces the same way while it is still typing;
+  this rests on pi emitting to extensions before listeners with the same
+  per-event shallow-copied message. All pinned in `stability.test.mjs`
+  (2026-09-18).
 - Outside the npm pin: the status line's usage segments come from
   `GET chatgpt.com/backend-api/wham/usage` — the read behind codex's own
   usage display, but called directly so pi needs no codex binary — with pi's

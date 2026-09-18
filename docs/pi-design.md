@@ -49,8 +49,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-08, night:* a `message_end` handler blanks the settled message's
      thinking text, taking pi's reasoning spacer (earendil-works/pi#8154) with
      it; gated on the message's `api`, as only the OpenAI Responses replay
-     sends the opaque item. Cost: after a model change the new model no longer
-     sees the earlier summaries.
+     sends the opaque item. Cost: after a model change the new model no longer sees the earlier summaries.
+   - *2026-09-18, later:* the reasoning is blanked in the streaming message too, so the gap above a reply is one line from its first token.
    - *2026-09-09:* the `· ctrl+o to expand` hints went and the caret plus an
      undimmed handle carry the open state; ctrl+o became two-way. Residual:
      pi's own `Tool output: expanded` line is unreachable.

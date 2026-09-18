@@ -694,6 +694,18 @@ export function blankReasoning(message) {
   return blanked ? message : undefined;
 }
 
+// The streaming component spaces from raw reasoning too. The update event's
+// message is a per-event shallow copy that pi hands to extensions before the
+// UI, so swapping its content array changes only what is drawn — the provider
+// is still appending to the original blocks, hence copies, not mutation. No
+// signature check: a block is unsigned until it ends. Same API gate as
+// blankReasoning so streaming matches the settled message.
+export function hideStreamingReasoning(message) {
+  if (message?.role !== "assistant" || !OPAQUE_REASONING_APIS.has(message.api)) return;
+  if (!message.content?.some(block => block.type === "thinking" && block.thinking)) return;
+  message.content = message.content.map(block => (block.type === "thinking" && block.thinking ? { ...block, thinking: "" } : block));
+}
+
 export function answerLines(answers, theme) {
   const head = `${theme.fg("success", BULLET)} ${theme.fg("toolTitle", `User answered pi's ${answers.length === 1 ? "question" : "questions"}`)}`;
   const line = (label, text) => indent(`${theme.fg("muted", SUB)} ${label} ${theme.fg("muted", "→")} ${text}`);

@@ -16,7 +16,7 @@ import { installFleet } from "./fleet.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, doneEntryRenderer, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, doneEntryRenderer, hideStreamingReasoning, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 // The classifier's only evidence source: a shell command's record (command,
@@ -610,12 +610,14 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     pi.registerMarkdownTransformer(bulletMarkdown);
     // Reasoning leaves the settled message as well as the transcript; the
     // markdown transformer only reaches the render, and pi spaces the message
-    // from its raw content (see blankReasoning).
+    // from its raw content (see blankReasoning). The same holds while the
+    // message streams (see hideStreamingReasoning).
     pi.on("message_end", event => {
       const isolated = isolatePlanApproval(event.message);
       const message = blankReasoning(isolated ?? event.message);
       return isolated || message ? { message: message ?? isolated } : undefined;
     });
+    pi.on("message_update", event => { hideStreamingReasoning(event.message); });
     pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), executionMode: "sequential", ...planRenderers, async execute(_id, args, signal) {
       const ctx = currentContext;
       // The plan itself is the row above (planRenderers), not the approval UI's body.
