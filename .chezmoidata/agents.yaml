@@ -104,12 +104,13 @@ agents:
       reasoning_effort: high
       plan_reasoning_effort: high
       # Approval classifier in Anthropic's two-stage shape: the filter answers
-      # every reviewed action; a verdict other than allow is re-judged on the
-      # same prompt. Luna is OpenAI's routing/classification tier, Terra its
-      # judgment tier.
+      # every reviewed action; anything but allow is re-judged on the same
+      # prompt. Both stages run one model so the judge's prompt is a cache hit
+      # (Claude Code and Codex gate on one model too); `none` because 5.6 has
+      # no `minimal` (pi-ai sends `low` for it). Terra over Luna: injection evals.
       classifier_filter:
-        model: gpt-5.6-luna
-        reasoning_effort: minimal
+        model: gpt-5.6-terra
+        reasoning_effort: none
       classifier_judge:
         model: gpt-5.6-terra
         reasoning_effort: medium

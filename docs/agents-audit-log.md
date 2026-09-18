@@ -85,14 +85,73 @@ and the outcome agree: the shape fits the filter stage only, never the judge.
 - Latency p50 257 ms, p90 364 ms, max 843 ms; 466k input tokens, $0.02.
 - Decision: not adopted (`docs/pi-implementation.md` 2026-09-18) — the
   addressable slice is too small for a second vendor, key, egress and client
-  inside the security gate. **Open**: the 2026-09-09 per-stage latency
-  measurement and Luna-low trial still come first. Reconsider only if that
-  trial misses, escalations stop dominating reviews, and a fresh replay clears
+  inside the security gate. **Open**: the per-stage measurement of the
+  single-model classifier (next entry) comes first. Reconsider only if it
+  misses, escalations stop dominating reviews, and a fresh replay clears
   the escalation slice at ≥ 0.7 with zero wrong allows. Separate lever seen
   here: the retry-after-sandboxed-failure shape is detectable in code from
   `history`; handing the judge that fact instead of leaving it to infer it
   is the cheaper latency experiment before any model swap.
 
+### (pi) Classifier pairing and second-vendor evaluation
+
+Research pass over both vendors' approval gates, OpenAI's GPT-5.6 system
+card, plan and model pages and OpenCode Go, plus a trace of pi-ai's Codex
+driver; decisions in `docs/pi-implementation.md` 2026-09-18.
+
+- Vendor gates: Claude Code auto mode runs both stages on Sonnet 4.6, stage
+  two reusing stage one's prompt as a cache hit with only the final
+  instruction changed (Anthropic engineering post, 2026-03-25). Codex
+  auto-review is one call on the `codex-auto-review` slug, `gpt-5.6-luna`
+  on the API-key path (`codex-rs/model-provider/src/provider.rs`, read
+  2026-09-18); no accuracy figures are published and its issue record is
+  plumbing (#44808 byte limit), not misjudgement.
+- Wire check: the 5.6 model pages list `none, low, medium, high, xhigh,
+  max`; pi-ai's `providers/data/openai-codex.json` maps `minimal` to `low`
+  and `model-runtime.js` passes effort through unclamped, so the configured
+  `minimal` filter had run at `low` since 2026-09-09 and the "Luna-low
+  trial" was never a change. `none` reaches the request body as `none`.
+  The filter's `maxTokens: 256` also holds reasoning tokens; a truncated
+  reply parses as `ask`, an unmeasured forward path. `prompt_cache_key`
+  comes from the `sessionId` option (`openai-codex-responses.js:169`);
+  the classifier passed none until this change. The same id keys the
+  driver's WebSocket continuation cache (`acquireWebSocket`,
+  `buildCachedWebSocketRequestBody`), where a request with a different body
+  clears the root's `previous_response_id` delta, so the classifier is
+  pinned to SSE (Codex review, 2026-09-18).
+- System card (deploymentsafety.openai.com/gpt-5-6, 2026-07-09; GPT-Red
+  section 2026-08-03): search/function-call injection defence Terra 0.946,
+  Luna 0.897, Sol 0.910; direct instruction-hierarchy attack success Terra
+  0.061%, Luna 0.11%; indirect agentic injection Luna 2.94%, Terra 3.32%.
+  No independent benchmark scores both tiers. Non-reasoning throughput
+  Luna 109 vs Terra 92.6 tok/s (Artificial Analysis); matched-effort
+  time-to-first-token published for neither.
+- Classifier cost bound: the TypeSafe corpus's 466k input tokens are ≈ 23
+  credits on Terra and ≈ 2 on Luna per 560 sessions.
+- Spend by tier (the 2026-09-16/17 sweep above): root ≈ 75%; children Sol
+  ≈ $29, Terra ≈ $54 (≈ 16% of the total), Luna < $1. Derived: rate-card
+  credits equal API dollars at 4¢ (Astra 250 credits ↔ $10/MTok input), so
+  pi's `usage.cost` is credits × 0.04. No weekly Pro limit is on record as
+  having bound.
+- Second-vendor options: OpenCode Go $10/month, 34 open models including
+  GPT-5.6 Luna, per-model monthly caps $15–60 with 5 h = 20% and week = 50%,
+  pi a listed validated client (opencode.ai/docs/go, 2026-09-18); the Terra
+  roles' heavy 2-day window, ≈ $14–27 at open-model rates, would spend a
+  week of one model's cap. Zen pay-per-token from $0.14/$0.28 (DeepSeek V4
+  Flash). GLM and Qwen coding plans plausible but secondary-sourced; Copilot
+  and Gemini ruled out on third-party-client terms. Open coders score 78–81%
+  SWE-bench Verified on a secondary board, with no Terra comparison. Claude
+  Code takes no non-Anthropic child without a gateway; Codex's
+  `model_provider` is machine-local with OAuth/API-key coexistence
+  undocumented; Anthropic bans subscription OAuth in third-party clients
+  (The Register, 2026-02-20). Only pi could host a second vendor, via
+  pi-subagents' per-agent `provider/model` behind `children.mjs`'s guard.
+- **Open**: after apply, per-stage latency of the Terra pairing with the
+  filter's `stopReason`, filter forward rate, judge verdicts on escalations
+  after a failed sandboxed attempt, cached-input tokens on the judge call,
+  and whether the Codex route accepts `none` (the model page says yes).
+  The fallback trigger and the second-vendor trigger are recorded in
+  `docs/pi-implementation.md`.
 
 ## 2026-09-16
 
@@ -360,7 +419,10 @@ the two measurements still carrying a trigger moved here.
   same-prompt run records per-stage latency, how many actions reached the
   judge, and the judge's verdict on escalations after a failed sandboxed
   attempt; if the filter still forwards read-only escalations more than
-  occasionally, raise its effort to low before touching the prompt. Not done:
+  occasionally, raise its effort to low before touching the prompt.
+  Resolved 2026-09-18: `minimal` was already `low` on the wire and the
+  pairing above is superseded; the measurement continues under the
+  2026-09-18 classifier entry. Not done:
   denials carry no rationale, no fallback to prompting after repeated blocks,
   new network hosts are never reviewed, no per-rule allow/ask list.
 - pi harness `## Web search` is still annotated "unapplied" (2026-09-08);

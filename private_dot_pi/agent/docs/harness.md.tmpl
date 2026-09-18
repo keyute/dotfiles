@@ -24,13 +24,13 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   Authentication and session files stay unmanaged — sign in through Pi's normal
   OpenAI subscription login, and do not import another harness's auth files.
 
-## Models (last verified 2026-09-10; revisit pricing 2026-11-21)
+## Models (last verified 2026-09-18; revisit pricing 2026-11-21)
 
 - Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`, {{ .agents.pi.defaults.reasoning_effort }} reasoning; planning uses {{ .agents.pi.defaults.plan_reasoning_effort }}.
 - The approval classifier (MCP calls, remote-mutating shell verbs and unsandboxed
   requests) runs in two stages with no tools: `{{ .agents.pi.defaults.classifier_filter.model }}` at {{ .agents.pi.defaults.classifier_filter.reasoning_effort }} reasoning
   screens each reviewed action, and anything but allow goes to `{{ .agents.pi.defaults.classifier_judge.model }}` at
-  {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt, whose verdict is final.
+  {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt — one model, so a cache hit — whose verdict is final.
 - Worker tiers: {{ $sep := "" }}{{ range $tier, $model := .subagent_tiers.pi }}{{ $sep }}{{ $tier }} `{{ $model }}`{{ $sep = ", " }}{{ end }}.
 - The default is the frontier tier as the driver (shared `frontier_driver` rule in
   AGENTS.md, decision 2026-09-15). No child runs it: `workflow/children.mjs`

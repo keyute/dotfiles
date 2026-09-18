@@ -16,10 +16,15 @@ async function classify(ctx, config, stage, content) {
   const model = ctx.modelRegistry.find(config.models.provider, stage.model);
   if (!model || !ctx.modelRegistry.isUsingOAuth(model)) return "ask";
   try {
+    // The session id becomes the provider's prompt_cache_key, so the judge's
+    // re-read of the filter's prompt routes to the cache that holds it. SSE,
+    // not the default WebSocket: pi-ai keys the root's WebSocket continuation
+    // by the same id, and a request with another body on it drops the delta.
+    const sessionId = ctx.sessionManager?.getSessionId?.();
     return parseDecision(await ctx.modelRegistry.complete(model, {
       systemPrompt: SYSTEM_PROMPT,
       messages: [{ role: "user", content, timestamp: Date.now() }],
-    }, { reasoningEffort: stage.reasoningEffort, maxTokens: 256, signal: AbortSignal.timeout(30_000) }));
+    }, { reasoningEffort: stage.reasoningEffort, maxTokens: 256, signal: AbortSignal.timeout(30_000), sessionId, transport: "sse" }));
   } catch { return "ask"; }
 }
 
@@ -28,8 +33,8 @@ export async function reviewAction(ctx, config, task, request) {
   if (request.approval === "auto") {
     const { history = [], ...action } = request;
     const content = JSON.stringify({ task: task.slice(-8000), history, action });
-    // Anthropic's classifier shape: a cheap filter answers the common allow and
-    // only a block pays for judgment, on the same prompt.
+    // Anthropic's classifier shape: a no-reasoning filter answers the common
+    // allow and only a block pays for reasoning, on the same prompt.
     decision = await classify(ctx, config, config.models.classifierFilter, content);
     if (decision !== "allow") decision = await classify(ctx, config, config.models.classifierJudge, content);
   }

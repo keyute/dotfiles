@@ -41,7 +41,7 @@ test("an unsandboxed request the dialog cannot show in full is refused without p
 test("the classifier sees the session's shell history beside the action, and a filter block is re-judged", async () => {
   const calls = [];
   const answers = ['{"decision":"deny"}', '{"decision":"allow"}'];
-  const ctx = { hasUI: false, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async (model, request, options) => { calls.push({ model, request, options }); return { content: [{ type: "text", text: answers[calls.length - 1] }] }; } } };
+  const ctx = { hasUI: false, sessionManager: { getSessionId: () => "s1" }, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async (model, request, options) => { calls.push({ model, request, options }); return { content: [{ type: "text", text: answers[calls.length - 1] }] }; } } };
   const history = [{ command: "gh pr list", sandboxed: true, exitCode: 1 }];
   assert.equal(await reviewAction(ctx, config, "list the open PRs", { approval: "auto", tool: "bash", args: { command: "gh pr list", dangerouslyDisableSandbox: true }, history }), true);
   assert.deepEqual(calls.map(call => [call.model.id, call.options.reasoningEffort]), [["filter", "minimal"], ["judge", "medium"]]);
@@ -53,6 +53,8 @@ test("the classifier sees the session's shell history beside the action, and a f
   // The judge re-reads the same prompt and message.
   assert.equal(calls[1].request.messages[0].content, calls[0].request.messages[0].content);
   assert.equal(calls[1].request.systemPrompt, calls[0].request.systemPrompt);
+  // Both stages carry the session id as the prompt cache key, off the root's WebSocket.
+  assert.deepEqual(calls.map(call => [call.options.sessionId, call.options.transport]), [["s1", "sse"], ["s1", "sse"]]);
 });
 
 test("a filter allow ends the review, and a judge that cannot answer asks the UI", async () => {

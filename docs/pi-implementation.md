@@ -73,9 +73,24 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   must-not-allow case at p90 364 ms, but the only slice it fast-allows safely
   (sandboxed reviewed verbs, 11/13 at confidence ≥ 0.7) is 11% of reviews;
   escalations, 89% of them, clear ≥ 0.7 for 5 of 91. Reversal trigger: the
-  Luna-low trial misses its latency target, escalations stop dominating, and
-  a fresh replay clears the escalation slice with zero wrong allows (audit
-  log 2026-09-18).
+  single-model classifier's per-stage measurement misses its latency target,
+  escalations stop dominating, and a fresh replay clears the escalation slice
+  with zero wrong allows (audit log 2026-09-18).
+- 2026-09-18: the approval classifier runs both stages on Terra, the filter
+  at `none` and the judge at `medium`. One model for the whole gate, as Claude
+  Code's auto mode and Codex's auto-review both run, makes the judge's re-read
+  a prompt-cache hit; `none` replaces `minimal`, which the 5.6 family lacks and pi-ai
+  silently sent as `low`. Terra rather than Luna because the judge's verdict
+  is final and OpenAI's own card scores Terra higher on tool-borne and direct
+  injection; classifier cost is negligible either way. Fallback, on the live
+  per-stage numbers only: a Terra filter median over ~2 s that a Luna probe
+  beats moves both stages to Luna (audit log 2026-09-18).
+- 2026-09-18: no second model vendor for children. Children are a quarter of
+  pi spend and the Terra roles that could move about a sixth; a weaker
+  substitute repays its saving through repairs in the Astra context, and no
+  Pro limit has been seen binding. Trigger: a weekly limit binds two weeks
+  running with children at or above 30% of spend — then trial OpenCode Go
+  (pi-validated, $10) on explore-deep alone (audit log 2026-09-18).
 - The host copies the settings `editorPaddingX` (default 0) onto custom editors
   right after the factory runs and on settings reloads; `CaretEditor` clamps
   `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`
