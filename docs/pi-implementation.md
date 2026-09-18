@@ -68,6 +68,14 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   implementation; a third implementer that changed nothing was rejected
   correctly, which is why the guard stays on for write roles (audit log
   2026-09-18).
+- 2026-09-18: TypeSafe Jev is not adopted for the approval classifier. An
+  offline replay of 137 reviewed actions plus 16 labelled cases held every
+  must-not-allow case at p90 364 ms, but the only slice it fast-allows safely
+  (sandboxed reviewed verbs, 11/13 at confidence ≥ 0.7) is 11% of reviews;
+  escalations, 89% of them, clear ≥ 0.7 for 5 of 91. Reversal trigger: the
+  Luna-low trial misses its latency target, escalations stop dominating, and
+  a fresh replay clears the escalation slice with zero wrong allows (audit
+  log 2026-09-18).
 - The host copies the settings `editorPaddingX` (default 0) onto custom editors
   right after the factory runs and on settings reloads; `CaretEditor` clamps
   `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`
