@@ -1,6 +1,6 @@
 # Pi TUI design language
 
-Last verified 2026-09-16 (pi 0.85.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`;
+Last verified 2026-09-18 (pi 0.85.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`;
 change a rule only with a dated decision here, never by re-wording.
 
 The intent, set on 2026-09-07 from a side-by-side of pi, Codex and Claude
@@ -10,14 +10,12 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
 
 1. **Transcript = Claude Code's shape, pi's glyphs.** `•` rows coloured by
    state for every row (tool calls, subagent launches and actions, child
-   completion lines), `○` only on a fleet row, `↳` for the line under a row,
+   completion lines), `○` only on a fleet row, `↳` for the line under a row and for a group's member line (rule 2),
    `π` for anything the harness says in its own voice (turn line), `❭` for the
    fleet cursor, `❯` for the prompt and for the message it sent (rule 5),
    `▸`/`▾` for a fold handle's state (rule 2). No `⏺`/`✻`/`◯` (Claude's
    signatures), no Codex `Called`/`Explored` headers. *Why:* a borrowed
    signature reads as a clone; a glyph set that is ours reads as pi.
-   - *2026-09-08:* `○` chosen over `⊙` for subagents, then retired from the
-     transcript the same day — one glyph for all tool calls.
    - *2026-09-10:* the fleet cursor moved `›`→`❭`; `›` is the row's own
      `agent › title` separator and too small at the accent colour.
 2. **Quiet while working.** Reasoning renders as nothing and takes no space:
@@ -28,23 +26,22 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    one `↳` summary line (`+12 −4`, the counts in the theme's own success/error
    pair, `4 matches`, `31 lines`, `no output`), never output. A failed shell
    command shows its first two and last two lines with `… N more lines` between
-   and the exit status last; other errors show in full. The `workspace_*` and
-   MCP rows between two things that stay visible fold to one dim, dotless line
-   at the text column ("Read 3 files, ran 9 shell commands, called 2 MCP
-   tools"); that line is the group's handle in both states — it sits above the
-   group and opens with `▸` closed, `▾` open, and a click on it opens or closes
-   the group. ctrl+o drives every group to match it, so a group clicked open
-   against the flag follows it again at the next press. Whatever stays visible
-   closes the group: assistant text, a subagent or other plugin row, a failed
-   row (it renders as its group's last row), a child's completion line, the
-   turn line, the next run. A group holds hidden rows only, so a run of one is
-   not a group and a failed row separates the runs around it. *Why:* Codex's
-   per-step reasoning summaries and head/tail previews were the "too verbose"
-   the owner named; what was done stays one keystroke away.
-   - *2026-09-08:* plugin rows take the same shape through a `registerTool`
-     wrapper that swaps only their renderers; the questionnaire tool renders
-     nothing, subagent rows never fold, the fold summary lost its dot and error
-     rows their full dump.
+   and the exit status last; other errors show in full. The rows between two
+   things that stay visible — `workspace_*` and MCP calls, subagent launches,
+   background shell launches — are a group: one sentence that counts them
+   ("Read 3 files, ran 9 shell commands, launched 3 agents"). While the group
+   is the newest thing in the transcript it lists its members under a `•`
+   sentence, one `↳` line per row in the row's own words (`↳ Ran npm test · 31
+   lines`, `↳ researcher › title`); once anything visible lands after it, it
+   closes to the sentence alone, dim, behind `▸`. A click on that handle moves
+   the one group between sentence and members (`▸`/`▾`); ctrl+o shows every
+   group's rows in full and is the only way to output — while it is on, a click
+   has nothing to change. A row still running is a plain row below the group
+   and joins it when it succeeds. Whatever stays visible closes the group:
+   assistant text, a `workspace_task` or other plugin row, a failed row (never
+   a member), a completion line, the turn line, the next run. One row is not a
+   group. *Why:* Codex's per-step reasoning summaries and head/tail previews
+   were the "too verbose" the owner named; what was done stays a keystroke away.
    - *2026-09-08, night:* a shell row that ran outside the sandbox (Claude
      Code's `dangerouslyDisableSandbox`) carries `· unsandboxed` on its title,
      background launch row included — the classifier may allow the escalation
@@ -71,14 +68,19 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      after two close-trigger fixes six call sites had to remember and four did
      not. Residual: a visible custom message pi appends outside the agent
      stream registers no boundary and can still be swallowed.
+   - *2026-09-18:* the fold became the group and launches joined it, reversing
+     the 2026-09-08 exemption of subagent rows: the fleet holds the running
+     child (rule 6) and the completion line names agent and task (rule 4). Not
+     taken from Claude Code's grouped launch row: `├`/`└`, `Agent (title)`, the
+     `↓ to manage` hint, members listed for good. *Why:* the reader needs the
+     list while it is happening and the count once it has passed; one rule for
+     every class of row leaves nothing to remember per tool.
 3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the
    mode on the right, nothing transient. *Why:* the clock on the status line
    duplicated the spinner two rows above it.
-   - *2026-09-08:* the spinner moved into the composer's top shaded row (pi's
-     documented `embedWorkingStatus`).
-   - *2026-09-08, night:* it moved back out to its own line at column 0 above
+   - *2026-09-08, night:* the spinner sits on its own line at column 0 above
      the composer — a `Loader` subclass without pi-tui's hardcoded pad, docked
      through `setWidget` at `placement: "aboveEditor"` with pi's own row off via
      `setWorkingVisible(false)` — and stands down for pi's compaction indicator.
@@ -105,8 +107,6 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    finished · command · 12s`. *Why:* pi's `agent_settled` is honest about the
    root run, not about the work; printing "done" while a child still ran was
    the complaint.
-   - *2026-09-08:* the completion line returned, since pi-subagents notices
-     only failures and finished children should stay visible with their time.
    - *2026-09-08, evening:* background shell tasks joined children as running
      work (`• Started cmd in background`, `↳ task t1 · running`), and the
      in-progress bullet stays static.
@@ -119,6 +119,9 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-12:* the completion notice does not draw: the plugin wrapper sends
      it with `display` off, pi-subagents' quiet-background-success path; content
      is untouched.
+   - *2026-09-18:* adjacent `completed` lines are a group on rule 2's ladder
+     (`• 3 agents finished` over `↳ researcher › title · 45s`); any other
+     status stands alone, and a resumed session shows them ungrouped.
 5. **Composer = the user box, and the user box = the composer.** A shaded block
    in pi's `userMessageBg`: one blank shaded row above and below the content,
    `❯` at column 0 on the first content line, no rule lines, no placeholder;
@@ -149,17 +152,12 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    shows `❭`, Enter peeks the child's transcript, Esc or up returns. *Why:* the
    owner wants the Claude Code panel with its Enter peek and asked for
    pi-flavoured markers in place of `⏺`/`◯`.
-   - *2026-09-08:* the `π main` root row went (pi has no thread to switch
-     into); the agent name went with it that morning and came back in the
-     afternoon, `agent › title` being the launch row's shape already.
 7. **Stability over fidelity.** Build on a documented pi or plugin API. An
    undocumented export or heuristic is allowed only with an entry in the
    coupling inventory (`docs/pi-coupling.md`) and a test that fails on the pin
    bump; `stability.test.mjs` enforces the import and event side mechanically
    and pins the source text every heuristic assumes. *Why:* pi breaks extension
    APIs across 0.x releases; prose fails silently, tests fail loudly.
-   - *2026-09-12:* the inventory moved out of `~/.pi/agent/docs/harness.md`
-     into the repository, whose sessions are its only consumers.
 8. **Glyph at the edge, text two in.** A line that opens with a glyph (`•`,
    `π`, `❯`, `▸`/`▾`) starts at column 0; a line without one (`↳`, the status
    line, the fleet rows) starts two columns in. pi's `outputPad` is 0 so its
@@ -175,6 +173,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      leaving the bullet on a line of its own.
    - *2026-09-09:* the fold handle stopped being dotless — its caret takes the
      dot column, so the handle lines up with the `•` rows it owns.
+   - *2026-09-18:* a group is one block: one blank line above, none inside; a
+     row that draws nothing takes no line (`docs/pi-coupling.md`).
 9. **Background = the user's sent messages and the composer.** pi's user box
    keeps its background and the composer takes the same one (rule 5); nothing
    else the extension draws has one: no tool card (every plugin registration

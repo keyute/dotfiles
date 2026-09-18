@@ -328,6 +328,12 @@ test("rows poll while children run, name the task from the launch, peek each sib
   // The result file's run-level duration rides along; a payload without one leaves it out.
   assert.equal(entries[4].data.durationMs, 134_000);
   assert.equal(entries[0].data.durationMs, undefined);
+  // A `completed` completion carries a seq of its own (rule 4); the failed
+  // one between them, like every other status, carries none.
+  assert.ok(entries[0].data.seq);
+  assert.ok(entries[4].data.seq);
+  assert.notEqual(entries[0].data.seq, entries[4].data.seq);
+  assert.equal(entries[3].data.seq, undefined);
   bus.entries = [];
   await sleep(20);
   assert.equal(fleet.activeCount(), 1, "logical completion does not prove runner exit");

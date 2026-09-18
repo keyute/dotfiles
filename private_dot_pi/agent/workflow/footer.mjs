@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { PAD, appendVisible, createTurnClock, formatTurn, paintCounts } from "./rows.mjs";
+import { PAD, appendVisible, createTurnClock, defaultFolds, formatTurn, paintCounts, setRepaint } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 
 // Usage comes from the ChatGPT backend's usage endpoint, the read behind
@@ -138,7 +138,7 @@ class WorkingRow extends Loader {
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
-export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000, readLimits = readRateLimits } = {}) {
+export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000, readLimits = readRateLimits, folds = defaultFolds } = {}) {
   const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false, working: null, compacting: false };
 
   const refreshUsage = async () => {
@@ -229,6 +229,9 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     uiCtx.ui.setFooter((tui, theme, footerData) => {
       state.tui = tui;
       fleet?.attach(tui);
+      // Completion rows have no per-entry invalidate of their own (rule 4); a
+      // click or a later completion joining their group repaints through here.
+      setRepaint(folds, () => tui.requestRender());
       const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
       const separator = theme.fg("dim", " · ");
       return {

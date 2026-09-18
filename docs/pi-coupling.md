@@ -83,6 +83,25 @@ consumers are sessions editing this repo, not runtime pi sessions.
   renders no line when the transformer returns "" (an empty hidden-thinking
   label is not empty: pi wraps it in colour codes, which rendered an
   invisible clickable line). Pinned in `stability.test.mjs`.
+- Row spacing: pi's `ToolExecutionComponent` puts one spacer above each row
+  and returns no lines at all, spacer included, for a self-shelled row whose
+  content renders none; a group's hidden members lean on it, so a group is one
+  block under one blank line (`docs/pi-design.md` rule 8). Pinned in
+  `stability.test.mjs`; `transcript.test.mjs` mounts the real component and
+  asserts the lines, blanks included, at every level of detail (2026-09-18).
+- Completion groups: an entry renderer gets no invalidate handle, so a group's
+  first completion is a component that reads the timeline at paint time and
+  repaints through the footer's `tui.requestRender()`; a later member's
+  renderer returns `undefined`. Rests on `CustomEntryComponent` adding its
+  spacer only around a returned component, on `addCustomEntryToChat` skipping
+  an entry without content, and on pi-tui's `Container` dispatching a click to
+  the child under it (the group's handle). All pinned in `stability.test.mjs`;
+  `CustomEntryComponent` is not exported, so `transcript.test.mjs` asserts the
+  block's own lines and the blank above it rests on the pin. Residuals: a
+  transcript rebuilt from a branch that lacks a group's first entry drops that
+  group's later members; pi inserts a completion above a streaming reply while
+  the timeline is event-ordered, so two completions with a text chunk between
+  them sit adjacent but ungrouped, as before this change (2026-09-18).
 - Heuristic: fleet rows pair with async runs by agent label, a 30 s start
   window and sibling rank (`fleet.mjs` `runIdFor`); the DTO's keys are opaque
   and its `goal` is never filled in 0.66.0. `fleet.test.mjs` pins it; the

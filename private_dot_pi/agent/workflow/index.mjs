@@ -16,7 +16,7 @@ import { installFleet } from "./fleet.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, completionLine, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, doneEntryRenderer, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 // The classifier's only evidence source: a shell command's record (command,
@@ -342,7 +342,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     notify: text => pi.sendMessage({ customType: "workflow-task", content: text, display: false }, { deliverAs: "steer", triggerTurn: true }),
     record: entry => appendVisible(pi, "workflow-task", entry),
   });
-  pi.registerEntryRenderer("workflow-task", (entry, _options, theme) => new Text(completionLine({ agent: `task ${entry.data.id}`, task: entry.data.command, status: entry.data.status, durationMs: entry.data.durationMs }, theme), 0, 0));
+  pi.registerEntryRenderer("workflow-task", doneEntryRenderer("workflow-task"));
   const background = permittedTools.includes("workspace_task");
   const TASK_GRACE_MS = 10_000;
 
