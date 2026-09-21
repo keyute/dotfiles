@@ -17,7 +17,8 @@ function prompt(signal) {
 test("single choice, notes, and multiline custom input follow native Editor interactions", () => {
   const p = prompt(); const c = p.component;
   c.handleInput("\t"); c.handleInput("private note"); c.handleInput("\x1b[13;2~"); c.handleInput("line two");
-  assert.match(c.render(80).join("\n"), /private note/);
+  // The preview column narrows the inline note field, so only the cursor's own line is guaranteed visible.
+  assert.match(c.render(80).join("\n"), /line two/);
   assert.ok(c.render(80).join("\n").includes(CURSOR_MARKER));
   c.handleInput("\r");
   c.handleInput("\r"); // selects Fast and proceeds to Scope
@@ -30,7 +31,7 @@ test("single choice, notes, and multiline custom input follow native Editor inte
 test("note drafts are isolated, deselected notes are omitted, and custom text is unparsed", () => {
   const p = prompt(); const c = p.component;
   c.handleInput("\t"); c.handleInput("one"); c.handleInput("\r"); c.handleInput("\x1b[B"); c.handleInput("\t"); c.handleInput("two"); c.handleInput("\r");
-  c.handleInput("\x1b[B"); c.handleInput("\r"); c.handleInput(" options 1 and 3\n "); c.handleInput("\r");
+  c.handleInput("\x1b[B"); c.handleInput(" options 1 and 3\n "); c.handleInput("\r");
   const first = c.drafts[0];
   assert.equal(first.custom, " options 1 and 3\n ");
   assert.equal(first.notes.get(0), "one"); assert.equal(first.notes.get(1), "two");
@@ -41,9 +42,13 @@ test("note drafts are isolated, deselected notes are omitted, and custom text is
 
 test("multi-select custom inclusion can be toggled and cancellation submits no drafts", () => {
   const p = prompt(); const c = p.component;
-  c.handleInput("\r"); c.handleInput(" "); c.handleInput("\x1b[B"); c.handleInput("\x1b[B"); c.handleInput("\r"); c.handleInput("custom"); c.handleInput("\r");
-  c.handleInput(" "); // toggle custom off
-  c.handleInput("\x1b[A"); c.handleInput("\r"); c.handleInput("\r");
+  c.handleInput("\r"); // selects Fast, advances to Scope
+  c.handleInput(" "); // selects Tests
+  c.handleInput("\x1b[B"); c.handleInput("\x1b[B"); // Docs, then the custom row (typing starts immediately)
+  c.handleInput("custom");
+  c.handleInput("\x01"); c.handleInput("\x0b"); // clear the draft to exclude it
+  c.handleInput("\x1b[A"); // leave the custom row
+  c.handleInput("\r");
   const result = questionnaireResult(questions, c.drafts);
   assert.deepEqual(JSON.parse(result.content[0].text).answers[1].selected, [{ number: 1, label: "Tests" }]);
   assert.equal(JSON.parse(result.content[0].text).answers[1].custom, undefined);
@@ -156,9 +161,9 @@ test("an empty multi-select cannot advance out of bounds or count an excluded cu
   keys(p.component, "\r");
   assert.doesNotThrow(() => p.component.render(80));
   assert.equal(p.result(), undefined);
-  keys(p.component, "\x1b[B", "\x1b[B", "\r", "draft", "\r", " ", "\x1b[A", "\r");
+  keys(p.component, "\x1b[B", "\x1b[B", "draft", "\x01", "\x0b", "\r");
   assert.equal(p.result(), undefined);
-  keys(p.component, " ", "\r");
+  keys(p.component, "\x1b[A", " ", "\r");
   const answer = JSON.parse(questionnaireResult([questions[1]], p.result()).content[0].text).answers[0];
   assert.deepEqual(answer.selected, [{ number: 2, label: "Docs" }]);
   assert.equal(answer.custom, undefined);
@@ -168,7 +173,7 @@ test("large native pastes return expanded text for both custom answers and notes
   const text = Array.from({ length: 20 }, (_, index) => `line ${index}`).join("\n");
   for (const note of [false, true]) {
     const p = questionnaire([questions[0]]);
-    keys(p.component, ...(note ? ["\t"] : ["\x1b[B", "\x1b[B", "\r"]));
+    keys(p.component, ...(note ? ["\t"] : ["\x1b[B", "\x1b[B"]));
     keys(p.component, `\x1b[200~${text}\x1b[201~`, "\r");
     if (note) keys(p.component, "\r");
     const answer = JSON.parse(questionnaireResult([questions[0]], p.result()).content[0].text).answers[0];
@@ -189,7 +194,7 @@ test("eight-row editor viewport keeps the native cursor visible through resize",
 
 test("single-choice revisiting returns either its choice or literal custom text, not stale alternatives", () => {
   const p = questionnaire(questions);
-  keys(p.component, "\r", "\x1b[D", "\x1b[B", "\x1b[B", "\r", "1,3", "\r");
+  keys(p.component, "\r", "\x1b[D", "\x1b[B", "\x1b[B", "1,3", "\r");
   let answer = JSON.parse(questionnaireResult(questions, p.component.drafts).content[0].text).answers[0];
   assert.equal(answer.custom, "1,3");
   assert.equal(answer.selected, undefined);
@@ -210,6 +215,52 @@ test("notes reopen, cancel and clear independently; editor arrows do not change 
   keys(p.component, "\x01", "\x0b", "\r");
   assert.equal(p.component.drafts[0].notes.size, 0);
   assert.equal(p.component.drafts[0].selected.size, 0);
+});
+
+test("focusing the custom row starts typing immediately without pressing Enter", () => {
+  const p = questionnaire(questions);
+  keys(p.component, "\x1b[B", "\x1b[B", "hello");
+  const output = p.component.render(80).join("\n");
+  assert.match(output, /1\. Fast/);
+  assert.match(output, /2\. Safe/);
+  assert.match(output, /hello/);
+  assert.ok(output.includes(CURSOR_MARKER));
+});
+
+test("leaving the custom row without submitting keeps the typed draft", () => {
+  const p = questionnaire(questions);
+  keys(p.component, "\x1b[B", "\x1b[B", "keep me", "\x1b[A");
+  assert.equal(p.component.drafts[0].custom, "keep me");
+  assert.match(p.component.render(80).join("\n"), /keep me/);
+});
+
+test("Enter on an empty custom row shows the notice over the open field until typing resumes", () => {
+  const p = questionnaire([questions[0]]);
+  keys(p.component, "\x1b[B", "\x1b[B", "\r");
+  assert.equal(p.result(), undefined);
+  assert.match(p.component.render(80).join("\n"), /Choose an option or enter an answer\./);
+  keys(p.component, "x");
+  const output = p.component.render(80).join("\n");
+  assert.doesNotMatch(output, /Choose an option/);
+  assert.ok(output.includes(CURSOR_MARKER));
+});
+
+test("an open note renders under its option with the other option still visible", () => {
+  const p = questionnaire(questions);
+  keys(p.component, "\t", "why fast");
+  const output = p.component.render(80).join("\n");
+  assert.match(output, /1\. Fast/);
+  assert.match(output, /2\. Safe/);
+  assert.match(output, /note: /);
+  assert.match(output, /why fast/);
+});
+
+test("Left and Right switch question tabs from the custom row only while it is empty", () => {
+  const p = questionnaire(questions);
+  keys(p.component, "\x1b[B", "\x1b[B", "\x1b[C");
+  assert.equal(p.component.questionIndex, 1);
+  keys(p.component, "\x1b[D", "x", "\x1b[C");
+  assert.equal(p.component.questionIndex, 0);
 });
 
 test("short previews are centred in remaining space and ANSI borders stay aligned", () => {
@@ -243,7 +294,7 @@ test("long preview content is accessible by paging on a short terminal", () => {
 
 test("multi-select custom text can accompany selections and be confirmed from its own row", () => {
   const p = questionnaire([questions[1]]);
-  keys(p.component, " ", "\x1b[B", "\x1b[B", "\r", " 1,3 \n", "\r", "\r");
+  keys(p.component, " ", "\x1b[B", "\x1b[B", " 1,3 \n", "\r", "\r");
   const answer = JSON.parse(questionnaireResult([questions[1]], p.result()).content[0].text).answers[0];
   assert.equal(answer.custom, " 1,3 \n");
   assert.deepEqual(answer.selected, [{ number: 1, label: "Tests" }]);

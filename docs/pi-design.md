@@ -194,7 +194,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
     - *2026-09-08, night:* the todo plugin was removed — both reference CLIs
       dropped the surface the panel existed to mirror — and `○` means one thing
       again.
-    - *2026-09-18, updated:* own framed choices, centred previews (stack narrow), Tab notes
-      and literal free answers. Single questions have no header. Leave one blank below header/top frame and above help/footer.
-      Keep native `Editor` whole (eight-row minimum), arrow navigation and paging. *Why:* navigation only when needed, with room to read.
+    - *2026-09-18, updated:* own framed choices, centred previews (stack narrow), Tab notes and literal free answers. Single questions have no header.
+      Leave one blank below header/top frame and above help/footer. Keep arrow navigation and paging. *Why:* navigation only when needed, with room to read.
     - *2026-09-21:* superseding the full-width band, multi-question tabs are ` label ` cells with `userMessageBg` on the active one only (bold accent; others muted, no brackets). *Why:* the owner found the band heavy; RPIV's focused-tab highlight says the same.
+    - *2026-09-21, later:* superseding the whole-`Editor` screen, the free answer is typed in its own row on focus and a Tab note under its option, through the borderless native editor as plan approval does (rule 2); the eight-row minimum stays. *Why:* the owner wants to answer without leaving the option list.

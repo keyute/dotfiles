@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { Editor, Key, Markdown, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Key, Markdown, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 const CUSTOM_LABEL = "Type something.";
 const RESERVED_LABELS = new Set(["other", CUSTOM_LABEL.toLowerCase()]);
@@ -114,6 +114,7 @@ export class QuestionnaireComponent {
     if (this.mode === "browse") {
       this.questionIndex = index;
       this.row = this.draft().row;
+      if (this.isCustom()) this.openEditor("custom");
     }
     this.scroll = 0;
     this.followChoice = true;
@@ -124,21 +125,33 @@ export class QuestionnaireComponent {
     this.mode = kind;
     this.editingOption = this.row;
     this.editor.setText(kind === "custom" ? this.draft().custom : this.draft().notes.get(this.row) ?? "");
+    this.followChoice = true;
+    this.notice = "";
     this.refresh();
+  }
+  // Custom text is committed on every keystroke so leaving the row (Up, tab switch) keeps the draft.
+  syncCustom() {
+    if (this.mode !== "custom") return;
+    this.draft().custom = this.editor.getExpandedText();
+    if (this.question().multiSelect) this.draft().customIncluded = Boolean(this.draft().custom.trim());
   }
   saveEditor() {
     const text = this.editor.getExpandedText();
-    const custom = this.mode === "custom";
-    if (custom) {
+    if (this.mode === "custom") {
       this.draft().custom = text;
-      this.draft().customIncluded = Boolean(text.trim());
-      if (!this.question().multiSelect && text.trim()) this.draft().selected.clear();
-    } else if (text.trim()) this.draft().notes.set(this.editingOption, text);
+      if (!this.question().multiSelect) {
+        this.draft().customIncluded = Boolean(text.trim());
+        if (text.trim()) this.draft().selected.clear();
+      }
+      // Stay in custom mode: advance() either leaves the question or shows its notice over the open field.
+      this.advance();
+      return;
+    }
+    if (text.trim()) this.draft().notes.set(this.editingOption, text);
     else this.draft().notes.delete(this.editingOption);
     this.mode = "browse";
     this.followChoice = true;
-    if (custom && !this.question().multiSelect && text.trim()) this.advance();
-    else this.refresh();
+    this.refresh();
   }
   advance() {
     if (!this.answered(this.questionIndex)) {
@@ -159,15 +172,35 @@ export class QuestionnaireComponent {
     const matches = action => this.keybindings.matches(data, action);
     const cancel = matches("tui.select.cancel") || matchesKey(data, Key.escape);
     if (cancel) {
-      if (this.editing()) { this.mode = "browse"; this.followChoice = true; this.refresh(); }
+      // A note discards back to browse; the custom row cancels like any other browse row.
+      if (this.mode === "note") { this.mode = "browse"; this.followChoice = true; this.refresh(); }
       else this.finish(null);
       return;
     }
     if (this.tui.terminal.rows < 8) return;
     if (this.editing()) {
-      if (matches("tui.input.newLine")) this.editor.handleInput(data);
-      else if (matches("tui.input.submit") || matches("tui.select.confirm") || matchesKey(data, Key.enter)) { this.saveEditor(); return; }
-      else this.editor.handleInput(data);
+      if (matches("tui.input.tab") || matchesKey(data, Key.tab)) {
+        if (this.mode === "note") this.saveEditor();
+        return;
+      }
+      if (matches("tui.input.newLine")) { this.editor.handleInput(data); this.syncCustom(); this.refresh(); return; }
+      if (matches("tui.input.submit") || matches("tui.select.confirm") || matchesKey(data, Key.enter)) { this.saveEditor(); return; }
+      if (this.mode === "custom") {
+        if ((matches("tui.select.up") || matchesKey(data, Key.up)) && this.editor.getCursor().line === 0) {
+          this.mode = "browse";
+          this.row = Math.max(0, this.row - 1);
+          this.followChoice = true;
+          this.refresh();
+          return;
+        }
+        if (!this.draft().custom.trim()) {
+          if (matchesKey(data, Key.left)) { if (this.questionIndex > 0) this.goTo(this.questionIndex - 1); return; }
+          if (matchesKey(data, Key.right)) { if (this.questionIndex < this.questions.length - 1 || this.questions.length > 1) this.goTo(this.questionIndex + 1); return; }
+        }
+      }
+      this.editor.handleInput(data);
+      this.syncCustom();
+      this.notice = "";
       this.refresh();
       return;
     }
@@ -190,14 +223,13 @@ export class QuestionnaireComponent {
       return;
     }
     if (matches("tui.select.up") || matchesKey(data, Key.up)) this.row = Math.max(0, this.row - 1);
-    else if (matches("tui.select.down") || matchesKey(data, Key.down)) this.row = Math.min(this.question().options.length, this.row + 1);
-    else if (matches("tui.input.tab") || matchesKey(data, Key.tab)) { this.openEditor(this.isCustom() ? "custom" : "note"); return; }
+    else if (matches("tui.select.down") || matchesKey(data, Key.down)) { this.row = Math.min(this.question().options.length, this.row + 1); if (this.isCustom()) { this.openEditor("custom"); return; } }
+    else if (matches("tui.input.tab") || matchesKey(data, Key.tab)) { if (!this.isCustom()) this.openEditor("note"); return; }
     else if (matchesKey(data, Key.space) && this.question().multiSelect) {
-      if (this.isCustom()) { if (this.draft().custom.trim()) this.draft().customIncluded = !this.draft().customIncluded; }
-      else if (this.draft().selected.has(this.row)) this.draft().selected.delete(this.row);
+      if (this.draft().selected.has(this.row)) this.draft().selected.delete(this.row);
       else this.draft().selected.add(this.row);
     } else if (enter) {
-      if (this.isCustom() && !(this.question().multiSelect && this.draft().customIncluded)) this.openEditor("custom");
+      if (this.isCustom()) this.openEditor("custom");
       else this.confirm();
       return;
     } else return;
@@ -205,23 +237,52 @@ export class QuestionnaireComponent {
     this.notice = "";
     this.refresh();
   }
-  choices(width) {
+  // `live` renders the active native editor (with its cursor); disable it for the natural-width
+  // measuring pass so a huge width is never handed to Editor.render.
+  choices(width, live = true) {
     const draft = this.draft();
+    const question = this.question();
     const lines = [];
     let focus = 0;
-    const options = [...this.question().options, { label: CUSTOM_LABEL, description: draft.custom }];
-    for (const [index, option] of options.entries()) {
-      const custom = index === this.question().options.length;
-      const selected = custom ? draft.customIncluded : draft.selected.has(index);
-      const marker = this.question().multiSelect ? (selected ? "[x]" : "[ ]") : (selected ? "●" : "○");
-      const title = `${index === this.row ? "→" : " "} ${marker} ${custom ? "" : `${index + 1}. `}${option.label}`;
-      if (index === this.row) focus = lines.length;
-      lines.push(...wrapTextWithAnsi(index === this.row ? this.theme.fg("accent", title) : title, width));
-      for (const text of [option.description, !custom && draft.notes.get(index) ? `note: ${draft.notes.get(index)}` : ""]) {
-        if (text) lines.push(...wrapTextWithAnsi(text, Math.max(1, width - 4)).map(line => `${" ".repeat(Math.min(4, width - 1))}${this.theme.fg("muted", line)}`));
+    const marker = selected => question.multiSelect ? (selected ? "[x]" : "[ ]") : (selected ? "●" : "○");
+    const describe = (text, indent) => wrapTextWithAnsi(text, Math.max(1, width - indent)).map(line => `${" ".repeat(Math.min(indent, width - 1))}${this.theme.fg("muted", line)}`);
+    question.options.forEach((option, index) => {
+      const focused = index === this.row;
+      const title = `${focused ? "→" : " "} ${marker(draft.selected.has(index))} ${index + 1}. ${option.label}`;
+      if (focused) focus = lines.length;
+      lines.push(...wrapTextWithAnsi(focused ? this.theme.fg("accent", title) : title, width));
+      lines.push(...describe(option.description, 4));
+      if (this.mode === "note" && this.editingOption === index) {
+        const prefix = "note: ";
+        const indent = Math.min(4, width - 1) + visibleWidth(prefix);
+        const noteLines = live && this.focused
+          ? this.editor.render(Math.max(1, width - indent)).slice(1, -1)
+          : wrapTextWithAnsi(live ? this.editor.getText() : (draft.notes.get(index) ?? ""), Math.max(1, width - indent));
+        lines.push(`${" ".repeat(Math.min(4, width - 1))}${this.theme.fg("muted", prefix)}${noteLines[0] ?? ""}`, ...noteLines.slice(1).map(line => `${" ".repeat(indent)}${line}`));
+      } else {
+        const note = draft.notes.get(index);
+        if (note) lines.push(...describe(`note: ${note}`, 4));
       }
+    });
+    const editingCustom = this.mode === "custom";
+    const focused = question.options.length === this.row;
+    const rawPrefix = `${focused ? "→" : " "} ${marker(draft.customIncluded)} `;
+    const indent = visibleWidth(rawPrefix);
+    if (focused) focus = lines.length;
+    let bodyLines;
+    if (draft.custom) {
+      bodyLines = editingCustom && live && this.focused
+        ? this.editor.render(Math.max(1, width - indent)).slice(1, -1)
+        : wrapTextWithAnsi(draft.custom, Math.max(1, width - indent));
+    } else if (editingCustom && live && this.focused) {
+      // Mirrors PlanApprovalComponent's empty-feedback placeholder: dim label, marker cursor on the first glyph.
+      bodyLines = [this.theme.fg("dim", `${CURSOR_MARKER}\x1b[7m${CUSTOM_LABEL[0]}\x1b[27m${CUSTOM_LABEL.slice(1)}`)];
+    } else {
+      bodyLines = [CUSTOM_LABEL];
     }
-    return { lines, focus };
+    lines.push(`${focused ? this.theme.fg("accent", rawPrefix) : rawPrefix}${bodyLines[0] ?? ""}`, ...bodyLines.slice(1).map(line => `${" ".repeat(Math.min(indent, width - 1))}${line}`));
+    const cursor = lines.findIndex(line => line.includes(CURSOR_MARKER));
+    return { lines, focus: cursor >= 0 ? cursor : focus };
   }
   renderPreview(preview, width) {
     if (width < 3) return new Markdown(preview, 0, 0, markdownTheme(this.theme)).render(width);
@@ -236,15 +297,6 @@ export class QuestionnaireComponent {
     const clip = line => truncateToWidth(line, usable, "");
     if (rows < 8) return [clip("Resize to at least 8 rows · Esc cancel")];
     const question = this.question();
-    if (this.editing()) {
-      const editor = this.editor.render(usable);
-      const label = this.mode === "custom" ? "Custom answer" : `Note for ${this.editingOption + 1}. ${question.options[this.editingOption].label}`;
-      const heading = clip(this.theme.fg("accent", `${question.header} · ${label}`));
-      const space = Math.max(0, rows - editor.length - 1);
-      const context = [...wrapTextWithAnsi(question.question, usable), "Enter save · Shift+Enter newline · Esc back"].slice(-space);
-      // Reserve the complete native editor block; never crop its cursor or borders.
-      return [heading, ...(space ? context.map(clip) : []), ...editor];
-    }
     const multiQuestion = this.questions.length > 1;
     const frame = this.theme.fg("borderAccent", "─".repeat(usable));
     let heading;
@@ -275,7 +327,7 @@ export class QuestionnaireComponent {
     } else {
       body.push(...wrapTextWithAnsi(question.question, usable), "");
       const preview = !question.multiSelect && !this.isCustom() ? question.options[this.row].preview : undefined;
-      const natural = this.choices(Number.MAX_SAFE_INTEGER);
+      const natural = this.choices(Number.MAX_SAFE_INTEGER, false);
       const choiceWidth = Math.min(Math.max(...natural.lines.map(visibleWidth)), Math.floor((usable - 2) / 2));
       if (preview && usable >= 64) {
         const choices = this.choices(choiceWidth);
@@ -291,8 +343,10 @@ export class QuestionnaireComponent {
         body.push(...choices.lines);
         if (preview) body.push("", ...this.renderPreview(preview, usable));
       }
-      hint = question.multiSelect ? "Space toggle · Enter continue · Tab edit · Esc cancel" : "Enter choose · Tab note · Esc cancel";
-      if (this.questions.length > 1) hint = `←/→ tabs · ${hint}`;
+      if (this.mode === "note") hint = "Enter save · Shift+Enter newline · Esc back";
+      else if (this.mode === "custom") hint = "Enter submit · Shift+Enter newline · ↑ options · Esc cancel";
+      else hint = question.multiSelect ? "Space toggle · Enter continue · Tab note · Esc cancel" : "Enter choose · Tab note · Esc cancel";
+      if (multiQuestion && this.mode !== "note") hint = `←/→ tabs · ${hint}`;
     }
     this.pageSize = Math.max(1, rows - (multiQuestion ? 6 : 5));
     const maximum = Math.max(0, body.length - this.pageSize);
@@ -302,7 +356,7 @@ export class QuestionnaireComponent {
       else if (focus >= this.scroll + this.pageSize) this.scroll = focus - this.pageSize + 1;
     }
     this.scroll = Math.min(this.scroll, maximum);
-    if (maximum) hint = `PgUp/PgDn scroll · ${hint}`;
+    if (maximum && !this.editing()) hint = `PgUp/PgDn scroll · ${hint}`;
     return [frame, ...(heading ? [heading] : []), "", ...body.slice(this.scroll, this.scroll + this.pageSize).map(clip), "", clip(this.theme.fg(this.notice ? "warning" : "dim", this.notice || hint)), frame];
   }
   invalidate() { this.editor.invalidate(); }
