@@ -11,6 +11,94 @@ history keeps it.
 
 ## 2026-09-21
 
+### Context floor and tier routing — three-harness transcript count
+
+Counts only, session files modified in the prior 11 days (Claude 211, pi 675,
+Codex 75). First-turn context = first assistant usage record per file (Claude:
+input + cache write + cache read; pi: same three; Codex: `last_token_usage`).
+
+- First-turn median tokens. Claude root 37.6k (22k–48k, n=43), children 12.0k
+  small / 16.3k mid / 14.2k top. pi root 11.4k (min 8.6k, n=51), children
+  4.4k–4.8k (n=312). Codex root 13.7k–21.0k, children ≈22.6k.
+- pi verdict: no further meaningful saving. MCP is lazy (one `mcp` proxy;
+  `addedToolNames` fired in 17 sessions for context7, 3 for Exa); the two
+  remaining always-loaded items — the ≈1k-token roster in the `subagent` tool
+  description and the ≈1.5k-token baseline children inherit — are deliberate.
+- Pins. Claude child messages: mid 2136, small 637, top 505, frontier 0. Codex
+  children all ran their preset model and effort (17 sampled first turns) — no
+  #32587 inheritance; 2 built-in `worker` spawns on top/low, feeding open (d)
+  of the delegation audit below.
+- Implementer open (c), measured before this day's description change applies:
+  dispatches Claude 20, pi 52, Codex 7; Claude writes Sep 17–21 root 231 /
+  child 280 (Sep 20 alone: 112 / 64).
+- Claude local-only decision (harness.md): 0 invocations of any account-synced,
+  Chrome, scheduling or dataviz skill in the window; skills used were
+  codex-review 10, codex-advisor 5, claude-api 1, agent-instructions-audit 1.
+  Effort-per-role research (one published config: same-tier implementer medium
+  / reviewer high; no source measures effort against review yield) changed
+  nothing in the roster.
+- **Open**: re-count Claude root first-turn context after the local-only
+  settings apply (baseline 37.6k); decide `run` / `claude-api` visibility then.
+
+### Implementer roster — no top-tier implementer; mid remit widened
+
+Decision: one write-capable specialist stays. Its description now covers any
+bounded slice of a settled design, not only mechanical change; the baseline
+already assigned that work to "the lowest capable pinned worker", so the
+description was narrower than the intent and the baseline is unchanged. The
+repair rule ("finish a failed worker's piece yourself, not via promotion")
+stands. Evidence: four `researcher` runs; Willison, Cognition and CodeRescue
+re-fetched by the driver, the rest as reported.
+
+- Executor tier. Willison's memory file (simonwillison.net/2026/jul/3/judgement/,
+  first-hand): Sonnet for "substantive implementation", Haiku for
+  "trivial/mechanical edits", main model keeps "design, auditing… anything
+  judgment-heavy"; "implementation work rarely needs the top-tier model".
+  Claude Code `opusplan` (code.claude.com/docs/en/model-config): strongest
+  model plans, Sonnet executes — design intent, not a benchmark. Aider
+  architect/editor (2024-09-26, 2025-01-24; controlled, pre-2026 models):
+  strong planner + cheap editor 85.0% vs 79.7% solo; R1+Sonnet at 14× lower
+  cost than the o1 SOTA. Leiva (andresleiva.com, 2026-07-11): Opus
+  orchestrates, Sonnet implements from file-and-symbol-level briefs. No
+  credible setup found delegating implementation to a near-frontier worker
+  under a stronger orchestrator.
+- Contradiction the change removes. The old description said "NOT for …
+  judgment-heavy implementation" while the projection told the driver to
+  delegate every non-trivial settled slice. OpenAI's Astra guide: the model is
+  "more sensitive" to conflicting guidance and "may delegate less often than
+  desired… specify when and how much"; Anthropic's Fable 5 guide: "provide
+  explicit guidance about when delegation is appropriate".
+- Failure handling. Neither vendor documents what to do when a worker's output
+  fails verification (Claude Code covers API-error retry only). CodeRescue
+  (arXiv:2607.19338): cheap recovery and escalation "exhibit complementary
+  success patterns", same solve rate as always-escalate at 35% of its recovery
+  cost — GPT-5.4-nano/GPT-5.4, and the paper is withdrawn, so low weight.
+  Cognition (Yan, 2026-04-22): multi-agent works where "writes stay
+  single-threaded"; a weaker primary fails at "knowing when to escalate".
+  Steinberger's write-free orchestrator is known only through secondhand
+  summaries. Nothing supports a mid → top → frontier ladder.
+- Break-even. One practitioner figure (dev.to/rulestack, 2026-08-20): spawn
+  fixed cost ~54k tokens, self-corrected from 436k in its own thread —
+  direction only. arXiv:2606.17099 (n=64): explicit delegation contracts left
+  task success unchanged and raised reviewability, +13% tokens, effect ~2×
+  larger on the weaker tier.
+- Unmeasured anywhere found: orchestrators over-selecting the most expensive
+  worker tier; brief detail required per worker tier.
+- OpenAI tier positioning (Codex subagents doc): Sol "for ambiguous,
+  multi-step work", Terra for "exploration, read-heavy scans", Luna for
+  "clear, repeatable, or high-volume work" — the OpenAI-side implementer sits
+  below that positioning, against 36 pi implementer runs on Terra with no
+  tier-attributable quality finding (2026-09-18 sweep; one run changed
+  nothing and was rejected).
+- **Open**: (a) add a top-tier implementer only if a sweep shows recurring
+  model overrides or failed round-trips on `implementer` dispatches for
+  settled-design slices; (b) count Terra implementer failures on codex/pi
+  separately — a per-harness tier, not a new role, is the first lever there;
+  (c) re-measure `implementer` dispatches and root inline edits after the
+  description change (baselines: 0 dispatches / 374 inline edits Sep 11–12; 4
+  dispatches, 86 root / 61 child writes Sep 15; 20 dispatches, 231 root / 280
+  child writes Sep 17–21, entry above).
+
 ### Delegation audit over the paired replay (scoped run)
 
 Scope: delegation contract, delegation wait, review stacking, initiative,

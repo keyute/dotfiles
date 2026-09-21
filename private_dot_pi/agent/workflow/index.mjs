@@ -8,6 +8,7 @@ import * as sdk from "@earendil-works/pi-coding-agent";
 import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, acquireChild } from "./broker.mjs";
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
 import { rootTools, canonical, expand, publicToolName, unsandboxed } from "./policy.mjs";
+import { hostEnvironment } from "./sandbox-runner.mjs";
 import { reviewAction } from "./approval.mjs";
 import { allowedChildAgents, checkChildLaunch, narrowSubagentSchema } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
@@ -260,7 +261,8 @@ export class CaretEditor extends sdk.CustomEditor {
     // Content sits between the two shaded rows; autocomplete follows the
     // bottom one and stays unshaded.
     const end = lines.lastIndexOf(this.bottomRow);
-    if (end > 1 && lines[1].startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = this.palette.fg("accent", `${PROMPT} `) + lines[1].slice(PROMPT_PADDING);
+    // pi shows bash mode through the border this composer does not draw.
+    if (end > 1 && lines[1].startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = this.palette.fg(this.getText().trimStart().startsWith("!") ? "bashMode" : "accent", `${PROMPT} `) + lines[1].slice(PROMPT_PADDING);
     for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
     return lines;
   }
@@ -413,20 +415,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       // The adapter's broker handles resolved MCP operations, not proxy arguments.
     } catch (error) { return { block: true, reason: error.message }; }
   });
-  pi.on("user_bash", async event => {
-    let client;
-    try {
-      const { ticket } = await authorize("bash", { command: event.command });
-      client = startToolWorker("bash", { cwd: currentContext.cwd, env: workerEnv, ticket });
-      let output = "";
-      // Recorded like a model command: a `!` run that fails sandboxed is evidence too.
-      const exec = recordingExec(shellHistory, { command: event.command }, (params, options) => client.call("exec", params, options));
-      const { exitCode } = await exec({ command: event.command, cwd: currentContext.cwd }, { onChunk: chunk => { output += chunk; } });
-      return { result: { output, exitCode: exitCode ?? 1, cancelled: false, truncated: false } };
-    } catch (error) {
-      return { result: { output: error.message, exitCode: 1, cancelled: false, truncated: false } };
-    } finally { await client?.close(); }
-  });
+  // A `!` command is the user's own: host shell and environment, no sandbox or
+  // review (Claude Code's `!`), minus the broker credentials.
+  const localShell = sdk.createLocalBashOperations();
+  pi.on("user_bash", () => ({ operations: {
+    exec: (command, cwd, options) => localShell.exec(command, cwd, { ...options, env: hostEnvironment() }),
+  } }));
 
   pi.events.on("pi-mcp-adapter:tool-approval-request", request => {
     request.claim(async () => {

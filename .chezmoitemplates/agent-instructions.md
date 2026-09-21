@@ -62,6 +62,11 @@
     one pass, naming the snapshot and the gates already green. Skip it when
     gates cover the requirements and the surface is not high-stakes; a
     cross-model review does not replace it; a re-review verifies the fixes only.
+{{- if hasKey $ag "user_shell_prefix" }}
+  - Give a command I must run myself as a bare `{{ $ag.user_shell_prefix }}<command>` line: I paste it into
+    the composer and its output returns here. It runs unsandboxed on the host
+    with no terminal; when it needs one, say so and I will run it in mine.
+{{- end }}
 {{ if not (has "docs_mcp" $native) -}}
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
   library/API docs — resolve the library id and fetch unprompted.

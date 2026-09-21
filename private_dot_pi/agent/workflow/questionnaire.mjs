@@ -251,10 +251,14 @@ export class QuestionnaireComponent {
     if (multiQuestion) {
       const active = this.mode === "review" ? this.questions.length : this.questionIndex;
       const tabs = [...this.questions.map(item => item.header), "Review"].map((label, index) =>
-        index === active ? this.theme.fg("accent", this.theme.bold(label)) : this.theme.fg("muted", label));
+        index === active
+          ? this.theme.bg("userMessageBg", ` ${this.theme.fg("accent", this.theme.bold(label))} `)
+          : this.theme.fg("muted", ` ${label} `));
+      // Each tab pads itself, so joining without a separator still leaves a
+      // two-column gap between labels.
       // When the full strip does not fit, start at the active tab, not a hidden predecessor.
-      const visible = visibleWidth(tabs.join("  ")) > usable ? tabs.slice(active) : tabs;
-      heading = this.theme.bg("userMessageBg", pad(clip(visible.join("  ")), usable));
+      const visible = visibleWidth(tabs.join("")) > usable ? tabs.slice(active) : tabs;
+      heading = clip(visible.join(""));
     }
     const body = [];
     let focus = 0;

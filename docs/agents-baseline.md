@@ -73,6 +73,10 @@ my actual intent changes, never to track harness churn.
   the Exa MCP — search or fetch — when built-in results are sparse, stale,
   miss community sources, or a fetch is refused. *Why: route by strength,
   meter by price; the built-in tools' misses are the tools', not the web's.*
+- **User-run commands**: hand a command I must run myself over in the
+  harness's user-shell form so its output returns to the conversation, and say
+  when it needs a terminal or access that form lacks. *Why: a prose handoff
+  adds an external-terminal round trip and the result never reaches the model.*
 
 ## Engineering discipline
 

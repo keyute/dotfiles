@@ -55,6 +55,21 @@ behavior seems changed, verify with that agent and update this file.
 - The codex-review trigger is risk-or-breadth, never blanket (decision
   2026-09-03); the audit log tracks findings the session actually fixed.
 
+## Local-only surface (decision 2026-09-21)
+
+- The CLI carries no claude.ai-product surface: account skill and plugin sync,
+  claude.ai connectors and Remote Control are off in settings; the cron
+  scheduler is disabled by env;
+  `{{ .agents.claude.denied_tools | join "`, `" }}` are bare-denied, which
+  removes them from the tool list. Bundled skills hidden via `skillOverrides` and the
+  deny list live in agents.yaml (`agents.claude.skill_overrides`,
+  `denied_tools`). Web search, Exa, context7 and Playwright stay — research
+  subagents depend on them.
+- Plugin skills ignore `skillOverrides` (`enabledPlugins` owns them), and
+  `disableBundledSkills` is unused because it also drops the review skills.
+  `/code-review ultra` and `claude --cloud` have no disable knob; both are
+  user-invoked only.
+
 ## Codex transport: owned MCP bridge (decision 2026-09-05)
 
 - `codex mcp-server` was deprecated in codex-cli 0.149.1, so the `codex` MCP

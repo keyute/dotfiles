@@ -146,6 +146,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      an addable slash-ended path comes first, children below, preserving relative, `~/…` and absolute spelling.
      Empty input starts at siblings; policy exclusions still apply. Tab accepting unchanged text closes the menu;
      accepting a different directory opens its level. *Why:* automatic descent selected the wrong directory; literal paths also remove the climbing heuristic.
+   - *2026-09-21:* while the input starts with `!` the `❯` takes the theme's `bashMode` colour; glyph and shade stay. *Why:* pi signals user-shell mode on the border this composer does not draw.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then `↓ N
    more`; Down from the prompt's last line enters the rows, the highlighted row
@@ -177,7 +178,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      row that draws nothing takes no line (`docs/pi-coupling.md`).
 9. **Background = user messages, composer and questionnaire navigation.** The user
    box and composer share rule 5's shade; the multi-question header is the explicit
-   2026-09-18 exception (rule 10). No tool card (every plugin takes the row renderer)
+   2026-09-21 exception (rule 10). No tool card (every plugin takes the row renderer)
    or activity summary has a background. pi's rare compaction and
    branch notices are pi's. *Why (2026-09-08):* `bg_wait`'s green card was a
    third background and read as a different program; the composer's shade came
@@ -194,7 +195,6 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
       dropped the surface the panel existed to mirror — and `○` means one thing
       again.
     - *2026-09-18, updated:* own framed choices, centred previews (stack narrow), Tab notes
-      and literal free answers. Single questions have no header; multiple questions use a
-      full-width `userMessageBg` tab band, bold accent active tab, no brackets. Leave one blank
-      below header/top frame and above help/footer. Keep native `Editor` whole (eight-row
-      minimum), arrow navigation and paging. *Why:* navigation only when needed, with room to read.
+      and literal free answers. Single questions have no header. Leave one blank below header/top frame and above help/footer.
+      Keep native `Editor` whole (eight-row minimum), arrow navigation and paging. *Why:* navigation only when needed, with room to read.
+    - *2026-09-21:* superseding the full-width band, multi-question tabs are ` label ` cells with `userMessageBg` on the active one only (bold accent; others muted, no brackets). *Why:* the owner found the band heavy; RPIV's focused-tab highlight says the same.

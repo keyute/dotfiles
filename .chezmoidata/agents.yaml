@@ -43,6 +43,23 @@ agents:
     plugins:
       "frontend-design@claude-plugins-official": true
     marketplaces: {}
+    # Local-only CLI (decision 2026-09-21): claude.ai-product surface is off —
+    # settings.json.tmpl stops account skill/plugin sync and drops the cloud
+    # tools; these bundled skills and denied tools leave the model's listing.
+    # Reverse per entry once one is wanted in the CLI.
+    skill_overrides:
+      claude-in-chrome: "off"
+      schedule: "off"
+      loop: "off"
+      dataviz: "off"
+      # feature-gated; pairs with the DesignSync tool denied below
+      design-sync: "off"
+    # bare names leave the model's tool list, not just block the call
+    denied_tools:
+      - "DesignSync"
+      - "RemoteTrigger"
+      - "PushNotification"
+      - "Agent(isolation:remote)"
   codex:
     home: "~/.codex"
     audit:
@@ -92,6 +109,12 @@ agents:
         - private_dot_pi/agent/workflow/index.mjs
         - private_dot_pi/agent/subagent-tool-description.md.tmpl
     native_coverage: []
+    # composer prefix that runs a command I typed and feeds its output to the
+    # model; set only where the harness prompt does not already teach it
+    # (Claude's does). pi runs it on the host outside the sandbox, output
+    # captured, no TTY.
+    # Codex: unset until its prefix's context behaviour is documented.
+    user_shell_prefix: "!"
     # pi-web-search: OpenAI's server-side web_search tool through the same
     # Codex Responses endpoint and token as model calls; search_model keeps it
     # off the default model's quota (the plugin's ~/.pi/agent/web-search.json).
@@ -231,14 +254,16 @@ subagents:
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
   implementer:
-    # the only write-capable entry: executor for spec-complete leaf work. Mid,
+    # the only write-capable entry: executor for settled-design leaf work. Mid,
     # not small — small-tier executors regress on anything needing judgment,
-    # and a failed attempt round-trips back through the expensive parent context
+    # and a failed attempt round-trips back through the expensive parent context.
+    # One writer, not a second top-tier one (decision 2026-09-21): add that
+    # only on the override/round-trip trigger in the audit log.
     tier: mid
     reasoning_effort: medium
     readonly: false
     tools: "Read, Grep, Glob, Bash, Edit, Write"
-    description: "Execute a fully-specified, bounded mechanical change — renames, translations, boilerplate, pattern-repeat edits, spec'd fixes — against explicit acceptance criteria and a verification command. Makes no design decisions and stops to report when one surfaces. NOT for exploratory or judgment-heavy implementation; never commits."
+    description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. Works out the how within its scope; makes no design, API, or cross-scope decisions and stops to report when one surfaces. NOT for exploratory work or an unsettled design; never commits."
   # pi only (no per-harness file renders elsewhere): Claude Code and Codex
   # ship an equivalent built-in. Mirrors Claude's general-purpose agent — every
   # tool and the only role that may launch children; the specialists stay leaf

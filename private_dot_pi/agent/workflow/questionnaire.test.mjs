@@ -61,7 +61,7 @@ test("single-question browse hides navigation and preserves the framed blank-row
   assert.equal(p.component.pageSize, 3);
 });
 
-test("multi-question browse and review use a full-width padded themed tab band", () => {
+test("multi-question browse and review paint a background only on the active tab", () => {
   const calls = [];
   const palette = {
     ...theme,
@@ -75,12 +75,14 @@ test("multi-question browse and review use a full-width padded themed tab band",
     calls.length = 0;
     const lines = p.component.render(40);
     const band = lines[1];
-    assert.equal(visibleWidth(band), 40);
+    assert.ok(visibleWidth(band) <= 40);
     assert.match(band, /Direction|Review/);
     assert.doesNotMatch(band.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), /\[/);
-    assert.ok(calls.some(([kind, color, text]) => kind === "bg" && color === "userMessageBg" && visibleWidth(text) === 40));
+    const activeLabel = mode === "review" ? " Review " : " Direction ";
+    assert.ok(calls.some(([kind, color, text]) => kind === "bg" && color === "userMessageBg" && visibleWidth(text) === visibleWidth(activeLabel) && text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "") === activeLabel));
+    assert.ok(!calls.some(([kind, color, text]) => kind === "bg" && visibleWidth(text) === 40));
     assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "accent" && (/Direction|Review/).test(text)));
-    assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "muted" && text === "Scope"));
+    assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "muted" && text === " Scope "));
     assert.ok(calls.some(([kind, text]) => kind === "bold" && (text === "Direction" || text === "Review")));
     assert.equal(lines.length, 8);
     assert.equal(p.component.pageSize, 2);
@@ -98,7 +100,7 @@ test("narrow multi-question headers keep every active tab and Review visible", (
     const header = index === items.length ? "Review" : items[index].header;
     const band = p.component.render(20)[1];
     assert.ok(band.includes(`\x1b[36m\x1b[1m${header}\x1b[22m\x1b[39m`), `active header missing: ${header}`);
-    assert.equal(visibleWidth(band), 20);
+    assert.ok(visibleWidth(band) <= 20);
   }
 });
 

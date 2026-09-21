@@ -12,7 +12,7 @@
 {{- $allowedDomains := concat .agent_sandbox.network.allowed_domains $extras.allowed_domains -}}
 {{- $uid := output "id" "-u" | trim -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
-{{- $permDeny := list -}}
+{{- $permDeny := .agents.claude.denied_tools -}}
 {{- range $sb.denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
        resolving their op secrets here would make settings.json depend on
@@ -42,7 +42,8 @@
          (v2.1.251+ resolution order, harness.md), and the PreToolUse hook
          below is what stops a per-call frontier override. */}}
   "env": {
-    "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }}
+    "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
+    "CLAUDE_CODE_DISABLE_CRON": "1"
   },
   {{- /* Mirrors herdr's canonical SessionStart entry (structural JSON equality)
          so `herdr integration install claude` leaves this file untouched; the
@@ -106,5 +107,8 @@
   "theme": "auto",
   "disableDeepLinkRegistration": "disable",
   "enableArtifact": false,
-  "disableClaudeAiConnectors": true
+  "disableClaudeAiConnectors": true,
+  "syncClaudeAiSkills": false,
+  "syncClaudeAiPlugins": false,
+  "skillOverrides": {{ .agents.claude.skill_overrides | toPrettyJson | indent 2 | trim }}
 }

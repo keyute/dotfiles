@@ -52,8 +52,8 @@ against the source repository and update this file.
   under auto approvals, the confirm dialog (`Approve this unsandboxed action
   once?`) under ask or on a classifier `ask`. Read-only roles are refused. The
   row reads `Ran … · unsandboxed`. The model sets it only after a
-  sandbox-attributable failure of that command or on request, per command;
-  `!` commands stay sandboxed. The docker socket is one such failure: no
+  sandbox-attributable failure of that command or on request, per command.
+  The docker socket is one such failure: no
   `--config` or `DOCKER_HOST` workaround reaches it from inside the profile
   (verified 2026-09-10).
 - Temp files inside the profile: `$TMPDIR` is the lease's scratch directory
@@ -123,8 +123,10 @@ shell operations, so effects and subprocess execution are sandboxed — not all
 file I/O (path probes, diff generation, and output temp files stay host-side).
 Every lease consumes a single-use ticket minted by its approval, so a mode
 change between approval and execution invalidates the lease. Interactive `!`
-commands use the same worker boundary. MCP stdio servers other than Playwright
-run inside SRT; OAuth stays in the trusted host Pi process.
+commands are the user's own (Claude Code's `!`): pi's local shell on the host,
+the host environment minus the workflow's own variables, no sandbox, no
+review, in any mode (owner decision 2026-09-21). MCP stdio servers other than
+Playwright run inside SRT; OAuth stays in the trusted host Pi process.
 
 Sensitive paths come from the shared denylist. File tools additionally resolve
 symlinks and confine edits to the workspace; git metadata and live-loaded code
@@ -137,6 +139,6 @@ an explicit denylist, not a guarantee against unknown credential locations. Add
 new credential paths to shared policy before exposing them to a session.
 
 Extensions are trusted host code. Per-tool SRT is not containment against a
-malicious extension. Reviewed host-shell runs and the managed Playwright server
-are the unsandboxed exceptions. Linux needs bubblewrap, socat and ripgrep;
+malicious extension. Reviewed host-shell runs, the user's own `!` commands and
+the managed Playwright server are the unsandboxed exceptions. Linux needs bubblewrap, socat and ripgrep;
 macOS needs sandbox-exec.

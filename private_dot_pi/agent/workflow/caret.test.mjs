@@ -43,6 +43,14 @@ test("padding clamp still honours a larger configured padding", () => {
   assert.ok(caret.render(40)[1].startsWith(`${BG}<accent>❯    `));
 });
 
+test("the prompt glyph switches to bashMode while the text is in ! mode", () => {
+  const caret = editor();
+  caret.setText("!ls");
+  assert.ok(caret.render(40)[1].startsWith(`${BG}<bashMode>❯ `));
+  caret.setText("ls");
+  assert.ok(caret.render(40)[1].startsWith(`${BG}<accent>❯ `));
+});
+
 test("down enters fleet navigation only when the editor could not move, and other keys fall back to typing", () => {
   const actions = [];
   let focused = false;
