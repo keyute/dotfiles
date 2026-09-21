@@ -49,6 +49,24 @@
   small tier here stays on Luna (bounded extraction-shaped presets, far cheaper)
   — revisit if explorer output quality disappoints.
 
+## Waiting on children (last verified 2026-09-21, codex-cli 0.154.0)
+
+- `wait_agent` is event-driven: it returns as soon as any child finishes, a
+  child messages the parent, or I type — `timeout_ms` is only the ceiling
+  (upstream min 10 s, default 30 s, max 1 h), so a long wait costs nothing.
+- A finished child does not wake a parent that has ended its turn
+  (openai/codex#46120, open): block in `wait_agent`, never end the turn to wait.
+- `features.multi_agent_v2.{min,default}_wait_timeout_ms` are managed to 5 min,
+  so shorter requests are clamped up; the built-in "prefer longer waits" hint
+  did not stop 10 s polling. Reverse when #46120 ships or a stalled child makes
+  a 5-minute block hurt.
+
+## Command output (last verified 2026-09-21, codex-cli 0.154.0)
+
+- `exec_command` returns at `yield_time_ms` with whatever output exists; a
+  result carrying a `session_id` is still running, and its empty output is not
+  a pass — collect the exit code with `write_stdin` before reporting a check.
+
 ## Frontier driver (decision 2026-09-15)
 
 - The frontier tier `{{ .subagent_tiers.codex.frontier }}` is the session default (shared `frontier_driver`

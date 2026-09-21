@@ -9,6 +9,150 @@ carries the numbers and open triggers behind those annotations (rule in
 baseline no longer serves a future sweep is deleted, not archived — git
 history keeps it.
 
+## 2026-09-21
+
+### Delegation audit over the paired replay (scoped run)
+
+Scope: delegation contract, delegation wait, review stacking, initiative,
+roster. Evidence: the 2026-09-20 replay's `rows.json` plus tool-call metadata
+from its transcripts (Codex message bodies are encrypted). Probes: Claude
+self-probe (Fable 5.1), Codex via MCP (thread `01a0c12d`), pi static; worker
+classes skipped — every scoped rule is driver-only. n=6, one run per arm.
+
+- Corrections to the 2026-09-20 reading. Codex root `wait_agent` 53: 31 at
+  10 000 ms (the harness floor — a 1 280 ms request came back "clamped to the
+  minimum of 10000ms", so sub-floor requests are raised, not rejected), 19 at
+  60 000, 2 at 50 000, 1 at 20 000; 39 of
+  57 waits across all rollouts timed out. Every completed wait returned early
+  (a 3 600 000 ms wait in 7 s; 60 s waits in 0–41 s). The 37 root
+  `send_message` bodies are unreadable, so "status messages" is unproven. pi
+  had one multi-implementer run, not three: in runs 2, 4 and 6 the second
+  `implementer` launch replaced one plan mode had refused; pagination's second
+  slice consumed the first. pi has no concurrency guard (limits 20, launches
+  forced async) and made 0 `bg_wait` calls. Codex's 4 questions were all
+  `request_user_input` in plan mode, each with its own recommended option.
+- Codex wait facts (openai/codex main and the 0.154.0 binary): min 10 s,
+  default 30 s, max 1 h under `features.multi_agent_v2.*_wait_timeout_ms`,
+  validated min ≤ default ≤ max; the schema already says "prefer longer waits
+  (minutes)"; an idle parent is not woken (openai/codex#46120, open).
+  `multi_agent_v2` defaults off in 0.154.0 and a table without `enabled`
+  leaves it off.
+- Matrix. Wait-once: Claude covered, pi covered (tool description), Codex
+  partial and failing → no ADD; enforced in Codex config (gate 4), whole key
+  owned with `enabled`, floor and default 300 000 ms. Spawn-together: Claude
+  and pi covered, Codex partial → ADD-candidate by rule, not added — no
+  failure where coverage is partial (Codex ran three implementers in one
+  worktree for the largest diff), `call_batching` overlaps, and the clause
+  left the projection in 7de30aa with no reason recorded, so re-adding it six
+  days later is oscillation. Initiative: Codex probe partial (covered on
+  2026-09-15) → un-shaved for Codex on the probe verdict; the replay's 4
+  questions without the line vs 1 with it is same-model but cross-harness, so
+  it corroborates rather than decides. Self-review and cross-model review: both fired as
+  written, each line already reworded twice → KEEP. Roster: `worker` with Sol
+  named explicitly in 1 of 6 Codex runs → KEEP.
+- Codex cross-check agreed on all but the config form: a table replacing a
+  boolean `multi_agent_v2` would disable it. Adopted — a timeouts-only table
+  left the feature off under a scratch `CODEX_HOME`, so the managed table
+  carries `enabled`. The rendered merge script then ran against boolean, table
+  and absent inputs: all end enabled with the floor; other leaves of that
+  table are dropped, as whole-key ownership implies.
+- Not wording: test over-building is equal on both GPT arms with the line
+  projected; the false "TypeScript checks passed" is a yielded-command quirk,
+  now a dated note in Codex's harness doc; pi's refused early implementer
+  launches (3 of 6 runs) are a workflow follow-up.
+- Counts carried forward: codex-review 2 reviews / 0 survived (2026-09-12
+  trigger); one more zero-finding spec-reviewer run, 11 min on Opus, on a
+  test-gated non-high-stakes 10-file body (skip-clause re-measure).
+- **Open**: (a) next Codex sweep — root `wait_agent` and `send_message` per
+  run under the floor, and classify `send_message` from a live Codex session;
+  (b) spawn-together gets an ADD only if a sweep shows independent,
+  exclusive-scope strands run serially; (c) Codex questions per plan-mode
+  session after the un-shave — re-shave if unchanged; (d) alias a Codex
+  `worker` role to the implementer preset only on recurring
+  implementer-shaped misrouting.
+
+## 2026-09-20
+
+### (pi trial) Paired replay — protocol declared before any run
+
+Decision: no standing benchmark. The passive sweep cannot decide the trial
+(2026-09-12 status: pi usage is mostly self-development), so the keep/drop
+call gets a one-off same-prompt replay, run by hand; working files stay under
+`$TMPDIR`, only this entry is kept. Codex advisor read concurred (thread
+`01a0bdd7`): per-principle scoring of the baseline at affordable n is noise.
+
+- Cases: six shipped commits from repos in daily use — 2 bugfixes with a test
+  gate, 2 small features, 1 refactor, 1 config/infra. Each is parent SHA +
+  a prompt written from the commit message + gate command + the shipped diff
+  as reference. No transcript reads, no synthetic tasks.
+- Arms: pi and Codex on all six (both `gpt-6-astra`, same effort — a harness
+  comparison); Claude on three as a ceiling reference only, since that arm
+  confounds the model. Fresh worktree at the parent SHA, fresh interactive
+  session, pi/Codex order interleaved in one window; record model, effort,
+  harness version. Answer only when asked; log each intervention.
+- Grading, in order: (1) deterministic — gate green, files outside the
+  reference diff's scope, diff size vs reference, tests edited or skipped,
+  commit attempted, unrequested files/helpers/flags; (2) trace —
+  interventions, wall-clock, credits, summary claims vs commands actually run,
+  narration comments; (3) one blinded pairwise "which would I merge" per task
+  (labels stripped, order randomised): win / tie / loss. Read per behaviour
+  family, never as a composite score; results are a package comparison, not an
+  instruction-quality claim.
+- Decision rule: pi is daily-driver-worthy if gate-green ≥ Codex's, pairwise
+  wins+ties ≥ 4/6, and interventions and cost not materially worse. A
+  discordant task gets one rerun on both arms; a flip counts as a tie. Short
+  of that: "no detectable difference", decided on ergonomics and cost.
+- Kill: fewer than six cases with an objective gate, or a rubric that cannot
+  be written before seeing outputs → run nothing.
+- Cases picked (all production work repos; pi's own source excluded as
+  self-development): korvix/dashboard `f9b1e33` (bugfix), echelon
+  backend `91aa624` (bugfix), echelon dashboard `4eaf918` and `4b4d908`
+  (features), echelon backend `82e1b16` (refactor), kubecity/infrastructure
+  `7dfdad5` (infra; render-only gate). Claude arm on the first, third and
+  last. Each arm runs in a standalone clone cut at the parent with the shipped
+  commit pruned — a worktree would leak the fix through `git log --all`.
+  Baseline gates green at every parent; the shipped test hunk is a hidden gate
+  for four cases (fails at parent, passes with the shipped diff; passes at
+  both for the refactor), while `4b4d908`'s test is coupled to the shipped
+  symbol names and is not used. Prompts are reconstructed from the commits:
+  the session-store read for the original wording was classifier-denied.
+- Results (15 sessions, run concurrently, one run per arm; metrics from the
+  session stores, credits from the 2026-09-15 rate card, guardian priced as
+  Terra). Gates: pi 6/6 green, Codex 5/6 — Codex's nationality tests carry two
+  TS2769 errors that fail `npm run build`, and its summary claimed TypeScript
+  passed after reading the empty output of a `tsc` call that had yielded at
+  1 s. Hidden tests pass for every arm once grader artifacts are removed
+  (relocated Go tests redeclared by the shipped file; Claude's pagination
+  measures width where the shipped test mocks `getComputedStyle`). Production
+  fixes were byte-identical or near-identical between pi and Codex in five of
+  six cases, down to new file names — same model, same ideas; differences sit
+  in tests and orchestration. Blinded pairwise (spec-reviewer, labels
+  stripped; the pairwise was delegated rather than owner-judged): pi 2 wins, 2
+  ties, 2 slight losses — one tie adjudicated from a slight loss because the
+  reviewer penalised pi for a test move the repo's own instructions require.
+- Cost and time, pi vs Codex over the six cases: credits 347 vs 598 (−42%);
+  root model calls 151 vs 252; root peak context 24–67k vs 42–92k; questions
+  to the user 1 vs 4; active turn time 73.7 vs 57.4 min (+28%). Codex's extra
+  cost is root polling at Astra rates (53 `wait_agent`, 37 `send_message`
+  calls) plus a guardian session; pi's extra time is child wait (42.6 vs 20.3
+  min) — pi ran implementers strictly in sequence where Codex fanned out two
+  or three, while pi's root spent less model time (23.6 vs 32.9 min).
+- Projection read: commits 0/15; no frontier child in any arm; spec-reviewer
+  fired on the larger bodies and was skipped on small test-gated ones in all
+  three; Claude ran codex-review on its 10-file body. Both GPT arms over-build
+  tests alike (added lines 2.8× and 3.5× the shipped diff; Claude 1.2× on its
+  three), so that is the model, not a projection gap. Codex spawned an
+  unnamed `worker` role twice and followed the repo's test-placement rule in
+  one of two cases (pi two of two).
+- Decision rule met for pi on every clause except time. **Open**: my
+  keep/drop call; if pi stays, the sequential-child wait is the thing to fix
+  or accept. n=6 with one run per arm — a canary, not a measurement.
+  Codify the protocol into the audit skill only after it has run twice
+  unchanged for a second decision, and script a runner only after that. A
+  why-ablation (one why, one harness, ~10 paired transfer cases including
+  over-application negatives, blinded) waits for a specific why to be up for
+  deletion — at that n it detects only a large effect.
+
 ## 2026-09-18
 
 ### (pi) Delegation sweep and completion-guard false failures

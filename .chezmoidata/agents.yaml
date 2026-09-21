@@ -50,7 +50,7 @@ agents:
       docs: private_dot_codex/docs
       sessions: { path: "~/.codex/sessions/*/*/*/rollout-*.jsonl", shape: codex-rollout }
       probe: mcp
-    native_coverage: [initiative]
+    native_coverage: []
     defaults:
       # frontier driver (decision 2026-09-15); `review_model` and `[agents]
       # default_subagent_model` render from subagent_tiers.codex.top so /review

@@ -46,6 +46,7 @@
       "features.network_proxy"
       "features.apps"
       "features.remote_plugin"
+      "features.multi_agent_v2"
       "apps._default.enabled"
       "mcp_servers.codex_app"
       "permissions.chezmoi-workspace"
@@ -109,6 +110,13 @@
        once already (enable_mcp_apps -> features.apps), and a rename reads as
        default-on. Only its _default.enabled leaf is claimed: apps.<id>.* is
        Desktop-GUI-owned, like skills.config. */ -}}
+{{- /* features.multi_agent_v2: wait_agent returns the moment a child finishes, so
+       the 5-minute floor costs nothing and only stops short-timer polling, which
+       re-reads the root context on every wake-up (audit log 2026-09-21). The whole
+       key is owned, enabled included: 0.154.0 defaults it off, and a table without
+       `enabled` replacing a boolean `true` would switch the feature off. Drop the
+       floor once openai/codex#46120 lets a finished child wake an idle parent, or
+       if a stalled child makes a 5-minute block hurt. */ -}}
 {{- /* notice: the rest of that table is Codex runtime state (dismissals,
        model_migrations, migration-prompt timestamps), so only the one leaf that
        suppresses the near-usage-limit model-switch nudge is claimed here. */ -}}
@@ -128,7 +136,11 @@
           "network_proxy" (dict "enabled" true)
           "hooks" true
           "apps" false
-          "remote_plugin" false)
+          "remote_plugin" false
+          "multi_agent_v2" (dict
+              "enabled" true
+              "min_wait_timeout_ms" 300000
+              "default_wait_timeout_ms" 300000))
       "apps" (dict "_default" (dict "enabled" false))
       "permissions" (dict "chezmoi-workspace" (dict
           "description" "Workspace writes with shared sensitive-path and network controls"
