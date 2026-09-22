@@ -1,6 +1,6 @@
 # Pi TUI design language
 
-Last verified 2026-09-18 (pi 0.85.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,index}.mjs`;
+Last verified 2026-09-21 (pi 0.85.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,index,dialog,questionnaire,plan-approval}.mjs`;
 change a rule only with a dated decision here, never by re-wording.
 
 The intent, set on 2026-09-07 from a side-by-side of pi, Codex and Claude
@@ -12,12 +12,13 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    state for every row (tool calls, subagent launches and actions, child
    completion lines), `○` only on a fleet row, `↳` for the line under a row and for a group's member line (rule 2),
    `π` for anything the harness says in its own voice (turn line), `❭` for the
-   fleet cursor, `❯` for the prompt and for the message it sent (rule 5),
+   selection cursor (fleet, dialogs), `✔` for a chosen answer (rule 11), `❯` for the prompt and for the message it sent (rule 5),
    `▸`/`▾` for a fold handle's state (rule 2). No `⏺`/`✻`/`◯` (Claude's
    signatures), no Codex `Called`/`Explored` headers. *Why:* a borrowed
    signature reads as a clone; a glyph set that is ours reads as pi.
    - *2026-09-10:* the fleet cursor moved `›`→`❭`; `›` is the row's own
      `agent › title` separator and too small at the accent colour.
+   - *2026-09-21:* `❭` became the one selection cursor and `✔` joined, replacing the dialogs' unlisted `→` and `●`/`○` (rule 11).
 2. **Quiet while working.** Reasoning renders as nothing and takes no space:
    pi's `hideThinkingBlock` stays off and the markdown transformer returns ""
    for `assistant-thinking` while the stream runs, so the block has no lines
@@ -57,11 +58,6 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-09, later:* `workspace_task` left the fold set (a background task
      is running work under rule 4), and the plan row took the tool's own
      `Plan approval` label.
-   - *2026-09-16, later decision:* restore the native-style horizontal frame: title, vertical Yes/No, inline input immediately on No; no explanatory copy.
-     Blank Enter or Esc stops without another model turn; submitted text requests revision. Tab returns to Yes without submitting a draft.
-     Pending plan markdown (`isPartial`) and RPC stay unchanged. *Why:* the owner rejected both intervening approval layouts and chose the older minimal shape.
-   - *2026-09-17, updated:* render feedback beside No without an editor box; empty feedback shows dim `What should change?` (shortened at the owner's request; no angle brackets).
-     Typing replaces it. Up from the first logical line or Tab anywhere returns to Yes, retaining the visible draft; later lines retain cursor-up editing. *Why:* questionnaire-style inline typing and arrow navigation should preserve multiline drafts.
    - *2026-09-10:* fold extent is derived from `rows.mjs`'s ordered timeline of
      facts — a maximal stretch of settled successful rows with a separator on
      its right, keyed by that boundary so ctrl+o and click state survive —
@@ -160,7 +156,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    and pins the source text every heuristic assumes. *Why:* pi breaks extension
    APIs across 0.x releases; prose fails silently, tests fail loudly.
 8. **Glyph at the edge, text two in.** A line that opens with a glyph (`•`,
-   `π`, `❯`, `▸`/`▾`) starts at column 0; a line without one (`↳`, the status
+   `π`, `❯`, `❭`, `▸`/`▾`) starts at column 0; a line without one (`↳`, the status
    line, the fleet rows) starts two columns in. pi's `outputPad` is 0 so its
    own lines (assistant text, the user box, "Operation aborted") share column
    0; pi allows only 0 or 1 there. Pi's own surfaces are re-applied on every
@@ -176,9 +172,9 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      dot column, so the handle lines up with the `•` rows it owns.
    - *2026-09-18:* a group is one block: one blank line above, none inside; a
      row that draws nothing takes no line (`docs/pi-coupling.md`).
-9. **Background = user messages, composer and questionnaire navigation.** The user
-   box and composer share rule 5's shade; the multi-question header is the explicit
-   2026-09-21 exception (rule 10). No tool card (every plugin takes the row renderer)
+9. **Background = user messages, composer and a dialog's active tab.** The user
+   box and composer share rule 5's shade; a dialog's active tab is the explicit
+   2026-09-21 exception (rule 11). No tool card (every plugin takes the row renderer)
    or activity summary has a background. pi's rare compaction and
    branch notices are pi's. *Why (2026-09-08):* `bg_wait`'s green card was a
    third background and read as a different program; the composer's shade came
@@ -194,7 +190,11 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
     - *2026-09-08, night:* the todo plugin was removed — both reference CLIs
       dropped the surface the panel existed to mirror — and `○` means one thing
       again.
-    - *2026-09-18, updated:* own framed choices, centred previews (stack narrow), Tab notes and literal free answers. Single questions have no header.
-      Leave one blank below header/top frame and above help/footer. Keep arrow navigation and paging. *Why:* navigation only when needed, with room to read.
-    - *2026-09-21:* superseding the full-width band, multi-question tabs are ` label ` cells with `userMessageBg` on the active one only (bold accent; others muted, no brackets). *Why:* the owner found the band heavy; RPIV's focused-tab highlight says the same.
-    - *2026-09-21, later:* superseding the whole-`Editor` screen, the free answer is typed in its own row on focus and a Tab note under its option, through the borderless native editor as plan approval does (rule 2); the eight-row minimum stays. *Why:* the owner wants to answer without leaving the option list.
+11. **A dialog is one frame, one cursor, one accent.** Every surface we draw that takes the keyboard follows this: plan approval and the questionnaire through
+    `dialog.mjs`, the fleet peek on the same grid; pi's native `confirm`/`select` stay pi's (rule 7) until owned. *Why (2026-09-21):* each dialog had collected exceptions under rules 2, 9 and 10 and drifted
+    from rules 1 and 8; the accent discipline the owner liked in RPIV's questionnaire — one accent that always means "here" — needs none of its glyphs or boxes.
+    - Frame and grid: top and bottom `borderAccent` rules, no side walls; `❭` at column 0 and everything else two in (rule 8). Nested content (a preview) is a `borderMuted` box centred in the free width, stacked when narrow.
+    - Accent = focus (cursor, focused label, active tab on `userMessageBg`); bold = title, question and chosen, both when both; muted = descriptions and `↳ note:` lines; dim = hint and placeholder; success = answered inactive tab; warning = missing answer; answers plain.
+    - Marks: single-select none, the chosen row ends ` ✔`; multi-select `[✔]` accent, `[ ]` muted. Text is typed inline through the borderless native editor behind a dim placeholder, never in an editor box.
+    - Plan approval: title, vertical Yes/No, feedback beside No, no hint. Blank Enter or Esc stops without another model turn; Up from the first line or Tab returns to Yes keeping the draft.
+    - Questionnaire: a single question has no header; tabs are ` label ` cells; Tab opens the note under its option; the free answer is typed, and kept literal, in its own last row; one blank below the header or top rule and above the one dim ` · `-joined hint; eight-row minimum; arrows move, PgUp/PgDn page.

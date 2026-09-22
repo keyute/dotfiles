@@ -158,7 +158,7 @@ test("approval renders its placeholder inline and focuses No immediately", async
   const component = prompt.component();
   const initial = component.render(80).join("\n");
   assert.match(initial, /Approve the current plan\?/);
-  assert.match(initial, /→ Yes/);
+  assert.match(initial, /❭ Yes/);
   assert.match(initial, /  No  What should change\?/);
   assert.equal(initial.split("\n")[0], "─".repeat(80));
   assert.equal(initial.split("\n").at(-1), "─".repeat(80));
@@ -168,7 +168,7 @@ test("approval renders its placeholder inline and focuses No immediately", async
   component.handleInput("\x1b[B");
   const selected = component.render(80).join("\n");
   assert.equal(component.editor.focused, true);
-  assert.match(selected.replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /→ No  What should change\?/);
+  assert.match(selected.replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /❭ No  What should change\?/);
   assert.ok(selected.includes(CURSOR_MARKER));
   assert.equal(selected.split("\n").length, initial.split("\n").length, "No adds no editor spacer or box");
   component.handleInput("ab");
@@ -178,7 +178,7 @@ test("approval renders its placeholder inline and focuses No immediately", async
   component.handleInput("second");
   component.handleInput("\x1b[A");
   component.handleInput("X");
-  assert.match(component.render(80).join("\n"), /→ No  aXX/);
+  assert.match(component.render(80).join("\n"), /❭ No  aXX/);
   component.handleInput("\r");
   assert.deepEqual(await prompt.promise, { decision: PLAN_REVISION, feedback: "aXX\nsecondb" });
   assert.ok(prompt.stats().renders >= 6);
@@ -194,7 +194,7 @@ test("empty No shows a visible cursor and wrapped feedback keeps editor navigati
   component.handleInput("0123456789012345");
   component.render(18);
   component.handleInput("\x1b[A");
-  assert.deepEqual(component.editor.getCursor(), { line: 1, col: 6 });
+  assert.deepEqual(component.editor.getCursor(), { line: 1, col: 5 });
   component.handleInput("\x1b");
 });
 
@@ -203,18 +203,18 @@ test("inline draft replaces and restores the No placeholder without losing it on
   const component = prompt.component();
   component.handleInput("\x1b[B");
   component.handleInput("draft");
-  assert.match(component.render(80).join("\n"), /→ No  draft/);
+  assert.match(component.render(80).join("\n"), /❭ No  draft/);
   assert.equal(component.render(80).length, 6, "native editor contributes only its inline content row");
   component.handleInput("\x7f");
   component.handleInput("\x7f");
   component.handleInput("\x7f");
   component.handleInput("\x7f");
   component.handleInput("\x7f");
-  assert.match(component.render(80).join("\n").replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /→ No  What should change\?/);
+  assert.match(component.render(80).join("\n").replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /❭ No  What should change\?/);
   component.handleInput("draft");
   component.handleInput("\t");
   const onYes = component.render(80).join("\n");
-  assert.match(onYes, /→ Yes/);
+  assert.match(onYes, /❭ Yes/);
   assert.match(onYes, /  No  draft/);
   assert.ok(!onYes.includes(CURSOR_MARKER));
   component.handleInput("\x1b");
@@ -230,7 +230,7 @@ test("inline No input wraps multiline Unicode text after its prefix", () => {
   assert.match(unicodeCursor, /\x1b\[7m👩‍💻\x1b\[(?:0|27)m/);
   component.handleInput("e\u0301 long feedback");
   const focused = component.render(18).join("\n");
-  assert.match(focused, /→ No  /);
+  assert.match(focused, /❭ No  /);
   assert.ok(focused.includes(CURSOR_MARKER));
   component.handleInput("\x1b[13;2~");
   component.handleInput("second line");
@@ -248,9 +248,19 @@ test("Tab returns from No to Yes without submitting its draft", async () => {
   component.handleInput("\t");
   component.handleInput("draft");
   component.handleInput("\t");
-  assert.match(component.render(80).join("\n"), /→ Yes/);
+  assert.match(component.render(80).join("\n"), /❭ Yes/);
   component.handleInput("\r");
   assert.deepEqual(await prompt.promise, { decision: PLAN_APPROVED });
+});
+
+test("a retained draft keeps its wrapping when focus moves from No to Yes", () => {
+  const component = tuiApproval().component();
+  component.handleInput("\x1b[B");
+  component.handleInput("aaaaaaa bbbbbb");
+  const editing = component.render(20).length;
+  component.handleInput("\t");
+  assert.equal(component.render(20).length, editing);
+  component.handleInput("\x1b");
 });
 
 test("Up from the first No feedback line returns to Yes without submitting its draft", async () => {
@@ -293,6 +303,23 @@ test("framed approval rendering stays within narrow widths", () => {
   component.handleInput("draft");
   for (const width of [1, 2, 14, 80]) {
     for (const line of component.render(width)) assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}: ${line}`);
+  }
+  component.handleInput("\x1b");
+});
+
+test("no legacy glyphs remain and every non-frame line sits at the cursor column or column 2", () => {
+  const prompt = tuiApproval();
+  const component = prompt.component();
+  component.handleInput("\x1b[B");
+  component.handleInput("draft");
+  const stripCsi = text => text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+  for (const width of [14, 40, 80]) {
+    const lines = component.render(width).map(stripCsi);
+    assert.ok(!lines.some(line => /[○●]|→/.test(line)));
+    for (const line of lines) {
+      if (!line || /^─+$/.test(line)) continue;
+      assert.ok(line.startsWith("❭ ") || line.startsWith("  "), `column violation: ${JSON.stringify(line)}`);
+    }
   }
   component.handleInput("\x1b");
 });

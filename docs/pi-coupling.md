@@ -71,11 +71,11 @@ consumers are sessions editing this repo, not runtime pi sessions.
   `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
   render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
   `setPaddingX`, the first content line's padding columns).
-- The owned questionnaire directly uses public `custom`, `Editor` and `Markdown`;
+- The owned questionnaire directly uses public `custom` and `Markdown`;
   native paste expansion preserves complete notes and free answers (2026-09-17).
-- Inline plan feedback retains `Editor.render()` for wrapping, cursor and navigation geometry,
-  dropping its first/last border rows. `plan-approval.test.mjs` pins that render shape,
-  Unicode cursor and wrapped navigation alongside the placeholder (2026-09-17).
+- Inline dialog text (plan feedback, questionnaire notes and free answers) retains `Editor.render()` for wrapping, cursor and navigation geometry,
+  dropping its first/last border rows at one site, `dialog.mjs`'s field. `plan-approval.test.mjs` pins that render shape,
+  Unicode cursor and wrapped navigation alongside the placeholder (2026-09-21).
 - Mouse: the fold handle answers clicks on its summary line from its own
   `handleMouse`; rests on pi-tui's `MouseRegion` asking the child before its
   own handler and on `ToolExecutionComponent` forwarding self-shell mouse

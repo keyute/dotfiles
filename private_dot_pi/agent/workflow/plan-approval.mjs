@@ -1,4 +1,5 @@
-import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { Dialog } from "./dialog.mjs";
 
 export const PLAN_APPROVED = "approved";
 export const PLAN_REVISION = "revision_requested";
@@ -61,56 +62,22 @@ export function isolatePlanApproval(message) {
   return message;
 }
 
-export class PlanApprovalComponent {
+export class PlanApprovalComponent extends Dialog {
   constructor(tui, theme, keybindings, done, signal) {
-    this.tui = tui;
-    this.theme = theme;
-    this.keybindings = keybindings;
-    this.done = done;
+    super(tui, theme, keybindings, done, signal, { decision: PLAN_CANCELLED });
     this.selected = 0;
     this.editing = false;
-    this.isFocused = true;
-    this.finished = false;
-    this.editor = new Editor(tui, {
-      borderColor: text => theme.fg("borderMuted", text),
-      selectList: {
-        selectedPrefix: text => theme.fg("accent", text),
-        selectedText: text => theme.fg("accent", text),
-        description: text => theme.fg("muted", text),
-        scrollInfo: text => theme.fg("dim", text),
-        noMatch: text => theme.fg("warning", text),
-      },
-    });
-    this.onAbort = () => this.finish({ decision: PLAN_CANCELLED });
-    signal?.addEventListener("abort", this.onAbort, { once: true });
-    this.signal = signal;
-    if (signal?.aborted) this.onAbort();
   }
 
-  get focused() { return this.isFocused; }
-  set focused(value) {
-    this.isFocused = value;
-    this.editor.focused = value && this.editing;
-  }
-
-  finish(result) {
-    if (this.finished) return;
-    this.finished = true;
-    this.done(result);
-  }
-
-  refresh() {
-    this.editor.focused = this.isFocused && this.editing;
-    this.tui.requestRender();
-  }
+  editingNow() { return this.editing; }
 
   handleInput(data) {
-    const kb = this.keybindings;
-    if (kb.matches(data, "tui.select.cancel") || matchesKey(data, Key.escape)) {
+    const keys = this.keys(data);
+    if (keys.cancel) {
       this.finish({ decision: PLAN_CANCELLED });
       return;
     }
-    if (kb.matches(data, "tui.input.tab") || matchesKey(data, Key.tab)) {
+    if (keys.tab) {
       if (this.editing) {
         this.editing = false;
         this.selected = 0;
@@ -121,29 +88,29 @@ export class PlanApprovalComponent {
       this.refresh();
       return;
     }
-    if ((!this.editing || this.editor.getCursor().line === 0) && (kb.matches(data, "tui.select.up") || matchesKey(data, Key.up))) {
+    if ((!this.editing || this.editor.getCursor().line === 0) && keys.up) {
       this.editing = false;
       this.selected = 0;
       this.refresh();
       return;
     }
-    if (!this.editing && (kb.matches(data, "tui.select.down") || matchesKey(data, Key.down))) {
+    if (!this.editing && keys.down) {
       this.selected = 1;
       this.editing = true;
       this.refresh();
       return;
     }
     if (!this.editing) {
-      if (!(kb.matches(data, "tui.select.confirm") || kb.matches(data, "tui.input.submit") || matchesKey(data, Key.enter))) return;
+      if (!keys.enter) return;
       this.finish({ decision: PLAN_APPROVED });
       return;
     }
-    if (kb.matches(data, "tui.input.newLine")) {
+    if (keys.newline) {
       this.editor.handleInput(data);
       this.refresh();
       return;
     }
-    if (kb.matches(data, "tui.input.submit") || kb.matches(data, "tui.select.confirm") || matchesKey(data, Key.enter)) {
+    if (keys.enter) {
       const feedback = this.editor.getText();
       this.finish(trimFeedback(feedback) ? { decision: PLAN_REVISION, feedback } : { decision: PLAN_CANCELLED });
       return;
@@ -154,41 +121,19 @@ export class PlanApprovalComponent {
 
   render(width) {
     const usable = Math.max(1, width);
-    const inset = usable > 1 ? " " : "";
-    const contentWidth = usable - inset.length;
-    const option = (index, label) => index === this.selected
-      ? this.theme.fg("accent", `→ ${label}`)
-      : `  ${label}`;
-    const noPrefix = `${option(1, "No")}  `;
-    const prefixWidth = visibleWidth(noPrefix);
-    const feedbackWidth = Math.max(1, contentWidth - prefixWidth);
-    const feedback = this.editor.getText();
-    const focused = this.isFocused && this.editing;
-    let feedbackLines;
-    if (!feedback) {
-      const placeholder = focused
-        ? `${CURSOR_MARKER}\x1b[7m${FEEDBACK_PLACEHOLDER[0]}\x1b[27m${FEEDBACK_PLACEHOLDER.slice(1)}`
-        : FEEDBACK_PLACEHOLDER;
-      feedbackLines = [this.theme.fg("dim", placeholder)];
-    } else if (focused) {
-      // Keep native wrapping and navigation geometry; omit only its two borders.
-      feedbackLines = this.editor.render(feedbackWidth).slice(1, -1);
-    } else {
-      feedbackLines = wrapTextWithAnsi(feedback, Math.max(1, feedbackWidth - 1));
-    }
+    const yesFocused = this.selected === 0;
+    const noFocused = this.selected === 1;
+    const noPrefix = `${this.gutter(noFocused)}${this.label("No  ", { focused: noFocused })}`;
+    const active = this.focused && this.editing;
+    const feedback = this.field({ width: Math.max(1, usable - visibleWidth(noPrefix)), active, text: this.editor.getText(), placeholder: FEEDBACK_PLACEHOLDER });
     const content = [
-      ...wrapTextWithAnsi(this.theme.bold(this.theme.fg("accent", "Approve the current plan?")), contentWidth),
+      ...this.line(this.theme.bold("Approve the current plan?"), usable),
       "",
-      option(0, "Yes"),
-      ...feedbackLines.map((line, index) => `${index === 0 ? noPrefix : " ".repeat(prefixWidth)}${line}`),
+      ...this.line(this.label("Yes", { focused: yesFocused }), usable, yesFocused),
+      ...this.hang(noPrefix, feedback),
     ];
-    const border = this.theme.fg("borderAccent", "─".repeat(usable));
-    return [border, ...content.map(line => truncateToWidth(`${inset}${line}`, usable, "")), border];
+    return this.frame(content, usable);
   }
-
-  invalidate() { this.editor.invalidate(); }
-
-  dispose() { this.signal?.removeEventListener("abort", this.onAbort); }
 }
 
 export async function requestPlanApproval(ctx, signal) {

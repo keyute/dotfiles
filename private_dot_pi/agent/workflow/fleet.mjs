@@ -275,7 +275,7 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     const { agent, goal, model, effort } = rowFor(state, entry);
     const header = [goal ? `${agent}${NAME_SEP}${oneLine(goal)}` : agent, modelLabel(model, effort)].filter(Boolean).join(" · ");
     await current.ui.custom((_tui, theme, _keybindings, done) => {
-      const body = new Text(`${theme.fg("accent", header)}\n\n${reply.text}\n\n${theme.fg("dim", "esc close")}`, 1, 0);
+      const body = new Text(`${theme.fg("accent", header)}\n\n${reply.text}\n\n${theme.fg("dim", "esc close")}`, 2, 0);
       return { render: width => body.render(width), invalidate: () => body.invalidate(), handleInput: () => done() };
     }, { overlay: true, overlayOptions: { anchor: "center", width: "90%", maxHeight: "80%", margin: 1 } });
   };

@@ -255,6 +255,12 @@ test("an open note renders under its option with the other option still visible"
   assert.match(output, /why fast/);
 });
 
+test("a retained free answer stays on one line beside a preview", () => {
+  const p = questionnaire(questions);
+  keys(p.component, "\x1b[B", "\x1b[B", "my own custom answer text here", "\x1b[A", "\x1b[A");
+  assert.match(p.component.render(80).join("\n"), /my own custom answer text here/);
+});
+
 test("Left and Right switch question tabs from the custom row only while it is empty", () => {
   const p = questionnaire(questions);
   keys(p.component, "\x1b[B", "\x1b[B", "\x1b[C");
@@ -298,6 +304,40 @@ test("multi-select custom text can accompany selections and be confirmed from it
   const answer = JSON.parse(questionnaireResult([questions[1]], p.result()).content[0].text).answers[0];
   assert.equal(answer.custom, " 1,3 \n");
   assert.deepEqual(answer.selected, [{ number: 1, label: "Tests" }]);
+});
+
+const stripCsi = text => text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+
+test("no legacy glyphs remain and every non-frame line sits at the cursor column or column 2", () => {
+  const p = questionnaire(questions);
+  keys(p.component, "\t", "a note");
+  for (const width of [18, 40, 80]) {
+    const lines = p.component.render(width).map(stripCsi);
+    assert.ok(!lines.some(line => /[○●]|→/.test(line)));
+    for (const line of lines) {
+      if (!line || /^─+$/.test(line)) continue;
+      assert.ok(line.startsWith("❭ ") || line.startsWith("  "), `column violation: ${JSON.stringify(line)}`);
+    }
+  }
+});
+
+test("revisiting an answered single-select question marks only the chosen row", () => {
+  const p = questionnaire(questions);
+  keys(p.component, "\x1b[B", "\r", "\x1b[D");
+  const lines = p.component.render(80);
+  assert.doesNotMatch(lines.find(line => line.includes("1. Fast")), /✔/);
+  assert.match(lines.find(line => line.includes("2. Safe")), /✔/);
+});
+
+test("an answered inactive tab paints success while an unanswered one stays muted", () => {
+  const calls = [];
+  const palette = { ...theme, fg(color, text) { calls.push(["fg", color, text]); return text; } };
+  const p = questionnaire(questions, 24, palette);
+  keys(p.component, "\r", "\x1b[C"); // answer Direction, then move off Scope onto Review so both are inactive
+  calls.length = 0;
+  p.component.render(60);
+  assert.ok(calls.some(([, color, text]) => color === "success" && text === " Direction "));
+  assert.ok(calls.some(([, color, text]) => color === "muted" && text === " Scope "));
 });
 
 test("validation refuses tabbed or multiline headers while allowing multiline content", () => {
