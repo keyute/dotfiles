@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CombinedAutocompleteProvider } from "@earendil-works/pi-tui";
+import { readFileSync } from "node:fs";
+import { Theme } from "@earendil-works/pi-coding-agent";
+import { CombinedAutocompleteProvider, CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { CaretEditor, argumentCompletions } from "./index.mjs";
 
-const keybindings = { matches: (data, id) => ({ "tui.editor.cursorDown": "\x1b[B", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b", "tui.input.tab": "\t" })[id] === data };
+const keybindings = { matches: (data, id) => ({ "app.interrupt": "\x1b", "tui.editor.cursorUp": "\x1b[A", "tui.editor.cursorDown": "\x1b[B", "tui.editor.cursorLineStart": "\x01", "tui.editor.deleteCharBackward": "\x7f", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b", "tui.input.submit": "\r", "tui.input.tab": "\t" })[id] === data };
 // The host hands the editor factory an EditorTheme; the full palette arrives
 // separately, so the mocks stay split or the test stops matching the runtime.
 const editorTheme = { borderColor: text => `<border>${text}`, selectList: { selectedText: text => text, unselectedText: text => text, description: text => text, noMatch: text => text, scrollInfo: text => text } };
@@ -43,12 +45,143 @@ test("padding clamp still honours a larger configured padding", () => {
   assert.ok(caret.render(40)[1].startsWith(`${BG}<accent>❯    `));
 });
 
-test("the prompt glyph switches to bashMode while the text is in ! mode", () => {
+test("the prompt glyph becomes a red shell marker while the text is in ! mode", () => {
   const caret = editor();
   caret.setText("!ls");
-  assert.ok(caret.render(40)[1].startsWith(`${BG}<bashMode>❯ `));
+  assert.match(caret.render(40)[1], /<error>! /);
   caret.setText("ls");
   assert.ok(caret.render(40)[1].startsWith(`${BG}<accent>❯ `));
+});
+
+test("leading ! is a shell composer mode without becoming command text", () => {
+  const caret = editor();
+  caret.handleInput("!");
+  caret.handleInput("l");
+  caret.handleInput("s");
+  const rendered = caret.render(40)[1];
+  assert.match(rendered, /<error>! /);
+  assert.doesNotMatch(rendered, />!ls/);
+  assert.match(rendered, /<userMessageText>/);
+  assert.match(rendered.replace(/<\w+>/g, ""), /! ls/);
+  assert.equal(caret.getText(), "!ls");
+});
+
+test("shell mode leaves native submission, history text, and backspace semantics intact", () => {
+  const caret = editor();
+  const changes = [];
+  const submitted = [];
+  caret.onChange = text => changes.push(text);
+  caret.onSubmit = text => submitted.push(text);
+  caret.setText("!!pwd");
+  assert.equal(caret.getText(), "!!pwd");
+  assert.doesNotMatch(caret.render(40)[1], /!pwd/);
+  caret.handleInput("\r");
+  assert.deepEqual(submitted, ["!!pwd"]);
+  assert.equal(changes.at(-1), "");
+  caret.setText("!ls");
+  caret.handleInput("\x1b[D");
+  caret.handleInput("\x1b[D");
+  caret.handleInput("\x7f");
+  assert.equal(caret.getText(), "ls");
+  assert.match(caret.render(40)[1], /<accent>❯ /);
+  caret.setText("say !later");
+  assert.match(caret.render(40)[1], /<accent>❯ /);
+});
+
+test("shell prefixes consume no layout columns, including wrapping, scrolling and the native cursor", () => {
+  const plain = { fg: (_color, text) => text, bg: (_color, text) => text };
+  for (const prefix of ["!", "!!"]) {
+    for (const width of [8, 14, 40]) {
+      const command = "界abcdef ghijkl mnopqrstuvwxyz\nsecond line";
+      const regular = editor({ palette: plain });
+      const shell = editor({ palette: plain });
+      regular.focused = shell.focused = true;
+      regular.setText(command);
+      shell.setText(prefix + command);
+      const draw = caret => caret.render(width).map(row => row.replace(/^[!❯]/, ">"));
+      assert.deepEqual(draw(shell), draw(regular));
+      for (const key of ["\x1b[A", "\x01", "\x1b[D", "\x1b[B", "\x1b[A"]) {
+        regular.handleInput(key);
+        shell.handleInput(key);
+        assert.deepEqual(draw(shell), draw(regular), `${prefix} width ${width}, key ${JSON.stringify(key)}`);
+      }
+      assert.ok(draw(shell).some(row => row.includes(CURSOR_MARKER)));
+      assert.ok(draw(shell).every(row => visibleWidth(row) === width));
+    }
+  }
+});
+
+test("Home and Backspace exit either shell prefix without deleting the command", () => {
+  const caret = editor();
+  for (const prefix of ["!", "!!"]) {
+    caret.setText(`${prefix}pwd`);
+    caret.handleInput("\x01");
+    caret.handleInput("\x7f");
+    assert.equal(caret.getText(), "pwd");
+    caret.handleInput("\x1f");
+    assert.equal(caret.getText(), `${prefix}pwd`, "native undo restores shell mode");
+  }
+});
+
+test("history, paste expansion, external-editor text and clear retain native shell semantics", () => {
+  const caret = editor();
+  caret.addToHistory("!!pwd");
+  caret.handleInput("\x1b[A");
+  assert.equal(caret.getText(), "!!pwd");
+  caret.setText("!");
+  const command = "printf test\n".repeat(15);
+  caret.handleInput(`\x1b[200~${command}\x1b[201~`);
+  assert.equal(caret.getExpandedText(), "!" + command);
+  let submitted;
+  caret.onSubmit = text => { submitted = text; };
+  caret.handleInput("\r");
+  assert.equal(submitted, ("!" + command).trim());
+  assert.equal(caret.getText(), "");
+  caret.setText("!!echo restored");
+  assert.equal(caret.getExpandedText(), "!!echo restored");
+  caret.onEscape = () => caret.setText("");
+  caret.handleInput("\x1b");
+  assert.equal(caret.shellMode(), false);
+});
+
+test("Up at the visible shell-command start recalls history and Down restores its draft", () => {
+  const caret = editor();
+  caret.addToHistory("!!older");
+  caret.setText("!current");
+  caret.handleInput("\x01");
+  caret.handleInput("\x1b[A");
+  assert.equal(caret.getText(), "!!older");
+  caret.handleInput("\x1b[B");
+  assert.equal(caret.getText(), "!current");
+});
+
+test("both Catppuccin variants tint the whole shell box and keep command text readable after a theme switch", () => {
+  const caret = editor();
+  caret.setText("!echo hi");
+  for (const name of ["mocha", "latte"]) {
+    const { colors } = JSON.parse(readFileSync(new URL(`../../../node_modules/catppuccin-pi-theme/themes/catppuccin-${name}.json`, import.meta.url), "utf8"));
+    const theme = new Theme(colors, colors, "truecolor");
+    caret.palette = theme;
+    caret.invalidate();
+    const rows = caret.render(40);
+    assert.ok(rows.every(row => row.startsWith(theme.getBgAnsi("toolErrorBg"))));
+    assert.ok(rows[1].includes(theme.fg("error", "! ")));
+    assert.ok(rows[1].includes(theme.getFgAnsi("userMessageText") + "echo hi"));
+    assert.ok(rows.every(row => visibleWidth(row) === 40));
+  }
+});
+
+test("shell-mode command text keeps its colour after the cursor's reset mid-command", () => {
+  const caret = editor();
+  caret.setText("!echo hi");
+  caret.handleInput("\x1b[D");
+  caret.handleInput("\x1b[D");
+  const { colors } = JSON.parse(readFileSync(new URL("../../../node_modules/catppuccin-pi-theme/themes/catppuccin-mocha.json", import.meta.url), "utf8"));
+  const theme = new Theme(colors, colors, "truecolor");
+  caret.palette = theme;
+  caret.invalidate();
+  const row = caret.render(40)[1];
+  assert.ok(row.includes(`\x1b[0m${theme.getBgAnsi("toolErrorBg")}${theme.getFgAnsi("userMessageText")}i`), row);
 });
 
 test("down enters fleet navigation only when the editor could not move, and other keys fall back to typing", () => {

@@ -26,7 +26,7 @@
     {{- end -}}
     {{- if $needsMcp -}}{{- $tools = append $tools "mcp" -}}{{- end -}}
     {{- $nests := default false (get $meta "nests") -}}
-    {{- if $nests -}}{{- $tools = append $tools "subagent" -}}{{- end -}}
+    {{- if $nests -}}{{- $tools = concat $tools (list "subagent" "bg_wait") -}}{{- end -}}
     {{- /* `inherit` is pi-subagents' frontmatter value for the parent's model */ -}}
     {{- $model := "inherit" -}}
     {{- if ne $meta.tier "inherit" -}}

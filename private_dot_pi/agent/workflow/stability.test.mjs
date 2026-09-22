@@ -110,6 +110,7 @@ if (existsSync(indexPath)) {
 // (docs/pi-design.md rule 7). Each names the text the code assumes; a pin bump
 // that rewrites it fails here before the row does on screen.
 const pins = [
+  ["shell layout and navigation use the same native editor state without changing submission or undo", "@earendil-works/pi-tui/dist/components/editor.js", [/layoutText\(contentWidth\)/, /buildVisualLineMap\(width\)/, /this\.state\.lines\[i\]/, /logicalLine: i,/, /startCol: chunk\.startIndex/, /handleBackspace\(\)/, /this\.state\.cursorCol === 0/, /navigateHistory\(direction\)/, /pushUndoSnapshot\(\)/, /this\.undoStack\.push\(\{ state: this\.state,/, /this\.expandPasteMarkers\(this\.state\.lines\.join\("\\n"\)\)\.trim\(\)/]],
   ["pi-subagents registers `subagent` with its own renderers through the API it is handed", "pi-subagents/src/extension/index.js", [/name: "subagent"/, /renderCall\(args, theme\)/, /renderResult\(result, options, theme, context\)/, /pi\.registerTool\(tool\)/]],
   ["pi-mcp-adapter registers direct tools with its own renderers through the API it is handed", "pi-mcp-adapter/index.ts", [/name: spec\.prefixedName/, /renderCall: createMcpDirectToolCallRenderer\(/, /renderResult: renderMcpToolResult/]],
   ["pi-mcp-adapter reports failures in details.error without isError", "pi-mcp-adapter/direct-tools.ts", [/details: \{ error: "auth_required"/, /details: \{ error: "server_unavailable"/]],

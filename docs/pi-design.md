@@ -69,9 +69,11 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      `↓ to manage` hint, members listed for good. *Why:* the reader needs the
      list while it is happening and the count once it has passed; one rule for
      every class of row leaves nothing to remember per tool.
+   - *2026-09-22, input:* user input closes the preceding group immediately, including queued steer/follow-up input; extension input does not. Pending/error rows and manual/Ctrl+O expansion keep their existing behavior.
    - *2026-09-22:* subagent management calls (steer, status, interrupt, stop) joined the group (`steered 1 agent`,
      `checked on 2 agents`), reversing their boundary-row exemption; `bg_wait` and `workspace_task` stay visible, each a
      blocking wait whose own sentence is the information. *Why:* a steer between two reads split the group for a row that says nothing its completion line does not.
+   - *2026-09-22, images and shell:* `terminal.showImages: false` suppresses native inline previews, not model image input; image results obey the same folding rules as text results. A user shell command closes the preceding group because Pi draws its native block outside normal message events.
 3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the
@@ -94,14 +96,10 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-16:* the right footer prepends live background shells (`2 shells · execute · auto`), omits zero, and yields them first when narrow.
      It counts no subagents or MCP; completion notices stay normal except actual-shutdown shell settlements, which are silent.
 4. **A turn ends when nothing is running.** The turn line prints at
-   `agent_settled` only when no background child or task is live; with either
-   running it waits for the follow-up run to settle (or the user to type) and
-   then prints the total. An aborted run prints `π Interrupted after …` at
-   once. Each async child that ends prints `• agent finished · task · 2m 14s`
-   (the run's own `durationMs`, launch to end), or its status word
-   (`failed`/`stopped` in the error colour, `paused`/`partial`/`detached` in
-   the warning colour); a background task ends the same way, `• task t1
-   finished · command · 12s`. *Why:* pi's `agent_settled` is honest about the
+   `agent_settled` only when no background child or task is live; with either running it waits for the follow-up run to settle (or the user to type) and
+   then prints the total. An aborted run prints `π Interrupted after …` at once. Each async child that ends prints `• agent finished · task · 2m 14s`
+   (the run's own `durationMs`, launch to end), or its status word (`failed`/`stopped` in the error colour, `paused`/`partial`/`detached` in
+   the warning colour); a background task ends the same way, `• task t1 finished · command · 12s`. *Why:* pi's `agent_settled` is honest about the
    root run, not about the work; printing "done" while a child still ran was
    the complaint.
    - *2026-09-08, evening:* background shell tasks joined children as running
@@ -119,6 +117,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-18, later decision:* `completed` lines join successful calls on rule 2's
      chronological ladder, superseding completion-only groups. Other statuses stay visible;
      resumed rows stay ungrouped. *Why:* separate completion milestones fragmented activity.
+   - *2026-09-22, settled root:* with background work still live, the existing working row shows a frozen `π <verb> for <duration>` snapshot instead of a spinner. A child wake reuses that row; only the final settle appends a turn entry. *Why:* root inactivity must be visible without a fresh transcript milestone for every staggered completion.
 5. **Composer = the user box, and the user box = the composer.** A shaded block
    in pi's `userMessageBg`: one blank shaded row above and below the content,
    `❯` at column 0 on the first content line, no rule lines, no placeholder;
@@ -143,6 +142,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      Empty input starts at siblings; policy exclusions still apply. Tab accepting unchanged text closes the menu;
      accepting a different directory opens its level. *Why:* automatic descent selected the wrong directory; literal paths also remove the climbing heuristic.
    - *2026-09-21:* while the input starts with `!` the `❯` takes the theme's `bashMode` colour; glyph and shade stay. *Why:* pi signals user-shell mode on the border this composer does not draw.
+   - *2026-09-22, shell mode:* superseding the previous `bashMode` colour decision, a leading `!`/`!!` moves into a red (`error`) `!` prompt, with command text in `userMessageText` and the whole composer in subtle `toolErrorBg`. Backspace at command start exits the mode; native submission and `!!` context exclusion stay intact. *Why:* the owner wants the mode in the prompt, not an extra character in the command; normal text keeps the tinted surface readable. The native shell-output block remains upstream-owned pending a renderer hook.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then `↓ N
    more`; Down from the prompt's last line enters the rows, the highlighted row
@@ -203,5 +203,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
     - Accent = focus (cursor, focused label, active tab on `userMessageBg`); bold = title, question and chosen, both when both; muted = descriptions and `↳ note:` lines; dim = hint and placeholder; success = answered inactive tab; warning = missing answer; answers plain.
     - Marks: single-select none, the chosen row ends ` ✔`; multi-select `[✔]` accent, `[ ]` muted. Text is typed inline through the borderless native editor behind a dim placeholder, never in an editor box.
     - Plan approval: title, vertical Yes/No, feedback beside No, no hint. Blank Enter or Esc stops without another model turn; Up from the first line or Tab returns to Yes keeping the draft.
-    - Questionnaire: a single question has no header; tabs are ` label ` cells; Tab opens the note under its option; the free answer is typed, and kept literal, in its own last row; one blank below the header or top rule and above the one dim ` · `-joined hint; eight-row minimum; arrows move, PgUp/PgDn page.
+    - Questionnaire: a single question has no header; tabs are padded cells; Tab opens the note under its option; the free answer is typed, and kept literal, in its own last row; one blank below the header or top rule and above the one dim ` · `-joined hint; eight-row minimum; arrows move, PgUp/PgDn page.
+    - *2026-09-22, questionnaire:* question tabs use `☐`/`☑` for unanswered/answered; the action tab is `✔ Submit`, retaining review-before-confirmation and missing-answer checks. No bracketed tabs; narrow headers keep the active tab visible.
     - *2026-09-22:* the fleet peek's composer takes rule 5's shade and `❯`, not the dim inline field: it is a composer, and its sent steers sit above it in the same shade.
+    - *2026-09-22, free answer:* the custom row carries the next option number (`N. Type something.`), including during editing; the number is presentation, never part of the answer.
+12. **Use semantic theme colours, not literal palette values.** Accent means identity/focus; success/error/warning mean outcome or state; muted/dim carry hierarchy. Plan=warning and execute=success are local conventions, not Catppuccin requirements. Shell-red is rule 5's explicit mode exception; backgrounds remain confined to rule 9's surfaces. *Why (2026-09-22):* one semantic mapping survives the Latte/Mocha switch without recolouring already-consistent surfaces. Raw SGR is only reset repair or cursor styling, not a second palette.

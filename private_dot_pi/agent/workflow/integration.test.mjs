@@ -2,11 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createConnection, createServer } from "node:net";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
 import { Type } from "typebox";
+import { normalizeContext } from "@earendil-works/pi-ai";
+import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
+import { streamSimple } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { activeToolNames } from "./index.mjs";
@@ -25,10 +28,17 @@ function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-integration-test-"));
   const agentDir = join(root, "agent");
   mkdirSync(join(agentDir, "agents"), { recursive: true });
+  writeFileSync(join(agentDir, "subagent-tool-description.md"), "Managed fixture: named asynchronous children only.\n");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  t.after(() => {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  });
   // Mirrors the applied extensions/subagent/config.json: with the bridge on,
   // pi-subagents adds contact_supervisor to every child's allowlist.
   mkdirSync(join(agentDir, "extensions", "subagent"), { recursive: true });
-  writeFileSync(join(agentDir, "extensions", "subagent", "config.json"), JSON.stringify({ intercomBridge: { mode: "off" } }));
+  writeFileSync(join(agentDir, "extensions", "subagent", "config.json"), readFileSync(new URL("../extensions/subagent/config.json", import.meta.url)));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const role = { readonly: true, tools: ["workspace_read"], model: "openai-codex/gpt-5.6-luna", thinking: "low", agentPath: join(agentDir, "agents", "fixture-reader.md"), extensionPath: join(agentDir, "reader.ts") };
   const writer = { ...role, readonly: false, agentPath: join(agentDir, "agents", "fixture-writer.md"), extensionPath: join(agentDir, "writer.ts") };
@@ -50,6 +60,86 @@ test("active tool exposure follows root mode and UI without changing child autho
   assert.deepEqual(root({ ready: false }), []);
   assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name === "workspace_read", isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read"]);
   assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name.startsWith("workspace_"), isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read", "workspace_write", "workspace_edit"]);
+});
+
+test("Codex Responses payloads retain distinct workflow and project-context patches with mode tools", async () => {
+  const model = { ...openaiCodexProvider().getModels().find(model => model.id === "gpt-6-astra"), baseUrl: "https://example.test" };
+  assert.equal(model.id, "gpt-6-astra");
+  const token = `x.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture" } })).toString("base64url")}.x`;
+  const read = { name: "workspace_read", description: "Read", parameters: Type.Object({ path: Type.String() }) };
+  const write = { name: "workspace_write", description: "Write", parameters: Type.Object({ path: Type.String() }) };
+  const providerTool = tool => ({ type: "function", name: tool.name, description: tool.description, parameters: tool.parameters, strict: null });
+  const capture = async messages => {
+    let payload;
+    const response = streamSimple(model, normalizeContext({ messages }), {
+      apiKey: token, transport: "sse", reasoning: "high", maxRetries: 0,
+      onPayload: value => { payload = value; },
+      fetch: async () => new Response("fixture", { status: 400 }),
+    });
+    await response.result();
+    return payload;
+  };
+  const prefix = [{ role: "system", content: "base prompt", sections: { workflow: "Workflow mode: plan.", projectContext: "Project context: fixture." }, toolsAdded: [read], timestamp: 1 }, { role: "user", content: "Plan it", timestamp: 2 }];
+  const plan = await capture(prefix);
+  assert.deepEqual(await capture(prefix), plan, "repeated requests are byte-stable before transport");
+  const planPatch = await capture([...prefix, { role: "system", content: "", sections: { workflow: "Workflow mode: plan; expanded.", projectContext: "Project context: expanded." }, timestamp: 3 }, { role: "user", content: "Continue", timestamp: 4 }]);
+  const execute = await capture([...prefix, { role: "system", content: "", sections: { workflow: "Workflow mode: execute." }, toolsAdded: [write], timestamp: 5 }, { role: "user", content: "Implement", timestamp: 6 }]);
+  const backToPlan = await capture([...prefix, { role: "system", content: "", sections: { workflow: "Workflow mode: execute." }, toolsAdded: [write], timestamp: 5 }, { role: "user", content: "Implement", timestamp: 6 }, { role: "system", content: "", sections: { workflow: "Workflow mode: plan." }, toolsRemoved: [{ name: "workspace_write" }], timestamp: 7 }, { role: "user", content: "Plan again", timestamp: 8 }]);
+  const commonInput = [{ role: "user", content: [{ type: "input_text", text: "Plan it" }] }];
+  const commonTools = [providerTool(read)];
+  assert.equal(plan.instructions, "base prompt\n\nWorkflow mode: plan.\n\nProject context: fixture.");
+  assert.deepEqual(plan.input, commonInput);
+  assert.deepEqual(plan.tools, commonTools);
+  for (const payload of [planPatch, execute, backToPlan]) {
+    assert.equal(payload.instructions, plan.instructions);
+    assert.deepEqual(payload.input.slice(0, plan.input.length), plan.input);
+    assert.deepEqual(payload.reasoning, plan.reasoning);
+  }
+  assert.deepEqual(planPatch.tools, plan.tools);
+  assert.match(JSON.stringify(planPatch.input), /Updated system prompt section \\"workflow\\"/);
+  assert.match(JSON.stringify(planPatch.input), /Workflow mode: plan; expanded\./);
+  assert.match(JSON.stringify(planPatch.input), /Updated system prompt section \\"projectContext\\"/);
+  assert.match(JSON.stringify(planPatch.input), /Project context: expanded\./);
+  assert.deepEqual(execute.tools, commonTools);
+  assert.deepEqual(execute.input.slice(0, 2), [...commonInput, { type: "additional_tools", role: "developer", tools: [providerTool(write)] }]);
+  assert.deepEqual(backToPlan.tools, commonTools, "execute-to-plan restores the stable tool prefix");
+  assert.ok(!backToPlan.input.some(message => message.type === "additional_tools"), "execute-to-plan invalidates the additive tools prefix");
+});
+
+test("missing or empty managed descriptions stop root installation before broker startup", async t => {
+  const { config } = fixture(t);
+  const configPath = join(config.agentDir, "workflow-policy.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const descriptionPath = join(config.agentDir, "subagent-tool-description.md");
+  const { installWorkflow } = await import("./index.mjs");
+  const runtime = { startBroker: () => assert.fail("broker must not start") };
+  rmSync(descriptionPath);
+  await assert.rejects(installWorkflow({}, configPath, "root", runtime), /ENOENT/);
+  writeFileSync(descriptionPath, "  \n");
+  await assert.rejects(installWorkflow({}, configPath, "root", runtime), /description is empty/);
+});
+
+test("nested preflight retains bg_wait and loads the managed runtime backstop", async t => {
+  const { config } = fixture(t);
+  const role = config.agents["fixture-writer"];
+  role.nests = true;
+  role.tools = ["workspace_read", "subagent", "bg_wait"];
+  writeFileSync(role.agentPath, `---\nname: fixture-writer\ndescription: Fixture\nmodel: ${role.model}\ntools: ${role.tools.join(", ")}\nextensions: ${role.extensionPath}\nallowNestedSubagents: true\n---\nCoordinate.\n`);
+  const jiti = createJiti(import.meta.url);
+  const { loadConfig } = await jiti.import(new URL("src/extension/config.js", import.meta.resolve("pi-subagents")).pathname);
+  const defaults = loadConfig();
+  assert.equal(defaults.timeoutMs, 7_200_000);
+  assert.equal(defaults.checkpointBeforeDeadlineMs, 300_000);
+  const { resolveSubagentLaunchContract } = await jiti.import("pi-subagents/preflight");
+  const resolved = await resolveSubagentLaunchContract({ agent: "fixture-writer", task: "Coordinate", agentScope: "user", cwd: process.cwd(), availableModels: [{ provider: "openai-codex", id: "gpt-5.6-luna" }] });
+  assert.equal(resolved.ok, true, JSON.stringify(resolved));
+  assert.ok(resolved.contract.tools.effectiveAllowlist.includes("bg_wait"));
+  const { registerWaitTool } = await jiti.import(new URL("src/runs/background/wait-tool.js", import.meta.resolve("pi-subagents")).pathname);
+  let wait;
+  registerWaitTool({ registerTool: tool => { wait = tool; } }, {}, true, undefined, undefined, { nestedRootRunId: "fixture" });
+  assert.equal(wait.name, "bg_wait");
+  assert.match(wait.description, /This child runtime does not install the root session's native completion notifier/);
+  assert.match(wait.description, /Use blocking bg_wait/);
 });
 
 test("plan mode rejects configured writers before resolving a child contract", async t => {
@@ -93,14 +183,8 @@ test("broker does not expose its credential to the classifier and invalidates pe
   await assert.rejects(requestBroker({ ...broker.env, PI_WORKFLOW_TOKEN: "invalid" }, "root", { action: "state" }), /Unavailable/);
 });
 
-test("pinned upstream packages register against the managed extension and preflight custom child tools", { skip }, async t => {
+test("pinned upstream packages register against the managed extension and preflight custom child tools", async t => {
   const { config } = fixture(t);
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = config.agentDir;
-  t.after(() => {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-  });
   const configPath = join(config.agentDir, "workflow.json");
   config.agents["fixture-shell"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "workspace_bash"] };
   writeFileSync(configPath, JSON.stringify(config));
@@ -116,7 +200,19 @@ test("pinned upstream packages register against the managed extension and prefli
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, setThinkingLevel() {},
   };
   const { installWorkflow, mcpServerDefinitions } = await import("./index.mjs");
-  await installWorkflow(pi, configPath, "root", { startBroker, requestBroker });
+  config.mcp = Object.fromEntries(["context7", "exa", "playwright"].map(name => [name, { policy: { denied_tools: [], direct_tools: name === "context7" } }]));
+  writeFileSync(configPath, JSON.stringify(config));
+  const jiti = createJiti(import.meta.url);
+  const { computeServerHash } = await jiti.import(new URL("metadata-cache.ts", import.meta.resolve("pi-mcp-adapter")).pathname);
+  writeFileSync(join(config.agentDir, "mcp-cache.json"), JSON.stringify({ version: 1, servers: Object.fromEntries(Object.entries(mcpServerDefinitions(config, "root")).map(([name, definition]) => [name, {
+    configHash: computeServerHash(definition), cachedAt: Date.now(), resources: [],
+    tools: [{ name: "fixture_search", description: "Fixture search", inputSchema: { type: "object", properties: {} } }],
+  }])) }));
+  const runtime = {
+    startBroker: async () => ({ env: {}, policy: { mode: "plan", epoch: 1 }, async close() {} }),
+    requestBroker: async () => ({ mode: "plan" }),
+  };
+  await installWorkflow(pi, configPath, "root", runtime);
   // Upstream lifecycle callbacks require a real Pi session; this registration
   // fixture never starts one, but must always release our broker.
   t.after(() => handlers.get("session_shutdown").find(handler => handler.name === "shutdown")());
@@ -128,7 +224,11 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.deepEqual(subagentSchema.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
   assert.deepEqual(subagentSchema.properties.context.enum, ["fresh", "fork"]);
   assert.deepEqual(subagentSchema.properties.agentScope.enum, ["user"]);
-  assert.ok(tools.get("subagent").description);
+  assert.equal(tools.get("subagent").description, "Managed fixture: named asynchronous children only.");
+  assert.doesNotMatch(tools.get("subagent").description, /workflowScript|runs\.|SAFETY-CRITICAL/);
+  assert.ok(tools.has("mcp"));
+  assert.ok(tools.has("mcp__context7_fixture_search"));
+  for (const name of ["mcp__context7", "mcp__exa", "mcp__playwright", "mcpScript"]) assert.equal(tools.has(name), false, name);
   assert.ok(tools.has("submit_plan"));
   assert.equal(tools.get("submit_plan").executionMode, "sequential");
   assert.equal(tools.get("submit_plan").description, "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.");
@@ -145,10 +245,9 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox);
   const childHandlers = new Map();
   const childTools = new Map();
-  await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); }, registerTool(tool) { childTools.set(tool.name, tool); } }, configPath, "fixture-shell", { startBroker, requestBroker });
+  await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); }, registerTool(tool) { childTools.set(tool.name, tool); } }, configPath, "fixture-shell", runtime);
   assert.equal(childTools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox, undefined);
   await childHandlers.get("session_shutdown").at(-1)();
-  const jiti = createJiti(import.meta.url);
   const { resolveSubagentLaunchContract } = await jiti.import("pi-subagents/preflight");
   const ctx = { cwd: process.cwd(), modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [{ provider: "openai-codex", id: "gpt-5.6-luna" }] } };
   const args = { agent: "fixture-reader", task: "Inspect fixture" };
@@ -255,6 +354,10 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   const ceiling = () => resolveCurrentSubagentCapabilityCeiling(ctx.sessionManager.getSessionId());
   assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader"]);
   assert.equal(broker.policy.mode, "plan");
+  const promptEvent = { systemPromptOptions: { sections: {}, contextFiles: [] } };
+  for (const handler of handlers.get("before_agent_start")) assert.equal(await handler(promptEvent, ctx), undefined);
+  assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
+  assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
   assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_bash", "workspace_grep", "workspace_find", "workspace_ls", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
   for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);

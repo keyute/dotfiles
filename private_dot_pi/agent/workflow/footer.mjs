@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { PAD, appendVisible, createTurnClock, defaultFolds, formatTurn, paintCounts, setRepaint } from "./rows.mjs";
+import { PAD, TURN_GLYPH, appendVisible, createTurnClock, defaultFolds, formatTurn, paintCounts, setRepaint } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 
 // Usage comes from the ChatGPT backend's usage endpoint, the read behind
@@ -124,6 +124,12 @@ class WorkingRow extends Loader {
     this.paddingX = 0;
     this.stop();
   }
+  snapshot(message) {
+    this.stop();
+    this.message = message;
+    this.setText(this.messageColorFn(`${TURN_GLYPH} ${message}`));
+    this.ui?.requestRender();
+  }
   // Loader prefixes a blank line of its own; the row takes a trailing one
   // instead, so it stands off the composer. Between turns the row is nothing,
   // so no gap opens where the spinner is not running.
@@ -166,8 +172,15 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   // stays open until the follow-up run settles (or the user types). An
   // aborted run closes at once as "Interrupted".
   const label = () => (state.prompting ? "Waiting for you…" : clock.label());
-  // The tick keeps calling this, so the stood-down state has to survive it.
-  const showLabel = () => state.working?.setMessage(clock.running() && !state.compacting ? label() : "");
+  const clearTick = () => {
+    clearInterval(state.tick);
+    state.tick = null;
+  };
+  const showLabel = () => {
+    if (!clock.running() || state.compacting) state.working?.setMessage("");
+    else if (state.waiting) state.working?.snapshot(state.waiting);
+    else state.working?.setMessage(label());
+  };
   const stopWorking = () => {
     state.working?.setMessage("");
     state.working?.stop();
@@ -175,12 +188,11 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   const startWorking = () => {
     state.compacting = false;
     if (!clock.running()) return;
-    state.working?.start();
+    if (!state.waiting) state.working?.start();
     showLabel();
   };
   const close = options => {
-    clearInterval(state.tick);
-    state.tick = null;
+    clearTick();
     state.waiting = false;
     stopWorking();
     const turn = clock.stop(Date.now(), options);
@@ -199,8 +211,11 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   });
   pi.on("agent_settled", () => {
     if (!clock.running()) return;
-    if ((fleet?.activeCount?.() ?? 0) + (tasks?.live?.() ?? 0) > 0) state.waiting = true;
-    else close();
+    if ((fleet?.activeCount?.() ?? 0) + (tasks?.live?.() ?? 0) > 0) {
+      state.waiting = clock.settledLabel();
+      clearTick();
+      showLabel();
+    } else close();
   });
   pi.on("input", event => { if (state.waiting && event.source !== "extension") close(); return { action: "continue" }; });
   pi.on("ui_prompt_start", () => { state.prompting = true; showLabel(); });
@@ -212,7 +227,7 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   pi.on("session_before_compact", () => { state.compacting = true; stopWorking(); });
   pi.on("session_compact", () => startWorking());
   pi.on("session_compact_failed", () => startWorking());
-  pi.on("session_shutdown", () => { clearInterval(state.tick); state.tick = null; stopWorking(); });
+  pi.on("session_shutdown", () => { clearTick(); stopWorking(); });
   pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
   void refreshUsage();

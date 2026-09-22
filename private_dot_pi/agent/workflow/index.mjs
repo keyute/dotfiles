@@ -55,7 +55,7 @@ const GUIDELINES = {
   ],
 };
 
-// Definitions must be identical across sessions: pi-mcp-adapter keys its
+// Definitions stay stable across sessions of the same role: pi-mcp-adapter keys its
 // metadata cache on them, env included, and a cold cache costs a connect and
 // describe round trip per server per session. The runner takes the broker
 // socket and token from the inherited process environment, never from here.
@@ -64,6 +64,7 @@ export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.
   excludeTools: entry.policy.denied_tools, ...(entry.policy.allowed_tools?.length ? { includeTools: entry.policy.allowed_tools } : {}), approveTools: true,
   directTools: entry.policy.direct_tools === true,
 }]));
+export const mcpAdapterSettings = { hostConfigDiscovery: "off", directTools: false, freezeDirectTools: true, toolPrefix: "mcp", namespaceProxyTools: false, scriptMode: false, jev: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false };
 // Direct MCP tools carry the adapter's mcp__<server> prefix; the proxy stays
 // for servers left behind it (playwright).
 const isDirectMcpTool = name => name.startsWith("mcp__");
@@ -97,7 +98,8 @@ export const controlNotice = (message, _options, theme) => {
 // Plugins register their tools and their custom message renderers through the
 // API they are handed and pi keeps what they pass, so a Proxy that decorates
 // every registration gives their rows the transcript's shape without touching
-// schema, execution or message content. A message renderer we own is composed
+// execution or message content. The subagent schema and description reflect
+// only the managed launch/control surface. A message renderer we own is composed
 // over the plugin's, which stays as the fallback: ours answers undefined for a
 // payload it does not recognise, so a plugin that changes its details shape
 // renders its own way again rather than losing its notice. A customType in
@@ -105,12 +107,13 @@ export const controlNotice = (message, _options, theme) => {
 // context, never drawn. Everything else
 // (events included) is the original, and the raw function is called on the raw
 // API because the adapter extracts it.
-export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = [], narrowSchema, isShuttingDown = () => false) {
+export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = [], narrowSchema, isShuttingDown = () => false, subagentDescription) {
   return new Proxy(pi, {
     get(target, key, receiver) {
       if (key === "registerTool") return tool => target.registerTool({
         ...tool,
         ...(tool.name === "subagent" && narrowSchema ? { parameters: narrowSchema(tool.parameters) } : {}),
+        ...(tool.name === "subagent" && subagentDescription !== undefined ? { description: subagentDescription } : {}),
         ...renderersFor(tool.name),
       });
       if (key === "sendMessage") return (message, options) => {
@@ -182,7 +185,42 @@ export class CaretEditor extends sdk.CustomEditor {
   // The palette is pi's live theme (a theme switch invalidates this editor
   // rather than rebuilding it), so the sequence is read per render, never cached.
   shade(line) {
-    return shade(this.palette, line);
+    return this.shellMode() ? shade(this.palette, line, "toolErrorBg", "userMessageText") : shade(this.palette, line);
+  }
+  shellPrefix() {
+    return this.state.lines[0].match(/^!{1,2}/)?.[0].length ?? 0;
+  }
+  shellMode() {
+    return this.shellPrefix() > 0;
+  }
+  // Keep native text, history, paste expansion and dispatch untouched. Layout
+  // and visual navigation see only the command; their columns map back below.
+  commandView(draw) {
+    const prefix = this.shellPrefix();
+    if (!prefix) return draw();
+    const state = this.state;
+    this.state = { ...state, lines: [state.lines[0].slice(prefix), ...state.lines.slice(1)], cursorCol: state.cursorLine === 0 ? Math.max(0, state.cursorCol - prefix) : state.cursorCol };
+    try { return draw(); } finally { this.state = state; }
+  }
+  layoutText(width) {
+    return this.commandView(() => super.layoutText(width));
+  }
+  buildVisualLineMap(width) {
+    const prefix = this.shellPrefix();
+    return this.commandView(() => super.buildVisualLineMap(width)).map(line => line.logicalLine === 0 ? { ...line, startCol: line.startCol + prefix } : line);
+  }
+  setCursorCol(col) {
+    super.setCursorCol(Math.max(this.state.cursorLine === 0 ? this.shellPrefix() : 0, col));
+  }
+  handleBackspace() {
+    const prefix = this.shellPrefix();
+    if (!prefix || this.state.cursorLine !== 0 || this.state.cursorCol !== prefix) return super.handleBackspace();
+    this.exitHistoryBrowsing();
+    this.lastAction = null;
+    this.pushUndoSnapshot();
+    this.state.lines[0] = this.state.lines[0].slice(prefix);
+    this.setCursorCol(0);
+    this.onChange?.(this.getText());
   }
   // Fleet navigation is an editor-owned mode (widgets cannot take focus). Down
   // enters it only when the editor itself had nothing left to do with the key,
@@ -196,6 +234,12 @@ export class CaretEditor extends sdk.CustomEditor {
       const before = JSON.stringify([this.getCursor(), this.getLines()]);
       super.handleInput(data);
       if (JSON.stringify([this.getCursor(), this.getLines()]) === before) fleet.handleKey("enter");
+      return;
+    }
+    // Native history uses logical column zero; shell mode starts after its
+    // hidden prefix instead.
+    if (this.shellMode() && this.keybindings.matches(data, "tui.editor.cursorUp") && !this.isShowingAutocomplete() && this.state.cursorLine === 0 && this.state.cursorCol === this.shellPrefix()) {
+      this.navigateHistory(-1);
       return;
     }
     // Accepting an item with Tab closes the menu and nothing re-opens it, so the
@@ -258,9 +302,12 @@ export class CaretEditor extends sdk.CustomEditor {
     // Content sits between the two shaded rows; autocomplete follows the
     // bottom one and stays unshaded.
     const end = lines.lastIndexOf(this.bottomRow);
-    // pi shows bash mode through the border this composer does not draw.
-    if (end > 1 && lines[1].startsWith(" ".repeat(PROMPT_PADDING))) lines[1] = this.palette.fg(this.getText().trimStart().startsWith("!") ? "bashMode" : "accent", `${PROMPT} `) + lines[1].slice(PROMPT_PADDING);
-    for (let i = 1; i < end; i++) lines[i] = this.shade(lines[i]);
+    const shell = this.shellMode();
+    for (let i = 1; i < end; i++) {
+      const prompt = i === 1 && lines[i].startsWith(" ".repeat(PROMPT_PADDING));
+      const content = prompt ? lines[i].slice(PROMPT_PADDING) : lines[i];
+      lines[i] = this.shade((prompt ? this.palette.fg(shell ? "error" : "accent", `${shell ? "!" : PROMPT} `) : "") + (shell ? this.palette.fg("userMessageText", content) : content));
+    }
     return lines;
   }
 }
@@ -287,6 +334,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const requestBroker = runtime.requestBroker ?? callPolicyBroker;
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   const isRoot = role === "root";
+  const subagentDescription = isRoot ? readFileSync(join(sdk.getAgentDir(), "subagent-tool-description.md"), "utf8").trim() : undefined;
+  if (isRoot && !subagentDescription) throw new Error("Managed subagent description is empty");
   let currentContext;
   let userTask = "";
   // This process's recent shell commands (command, sandboxed, exit code; never
@@ -528,7 +577,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (!model || model.provider !== config.models.provider || !Object.values(config.models.tiers).includes(model.id) || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error("Select an available managed OpenAI subscription model; API fallback is disabled");
     const state = await requestBroker(env, role, { action: "state" });
     // A returned systemPrompt forces the whole prompt and rewrites the
-    // request's leading instructions on every change (a prompt-cache miss);
+    // request's leading instructions on every change;
     // sections and context files are diffed against the transcript and
     // patched in one mid-conversation system message instead.
     const options = event.systemPromptOptions;
@@ -545,7 +594,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
-  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY], narrowSubagentSchema, () => shuttingDown);
+  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY], narrowSubagentSchema, () => shuttingDown, subagentDescription);
   // Fleet owns detached-run lifecycle for every root, including headless roots;
   // only its footer rendering is conditional on UI. Register our shutdown
   // before pi-subagents installs its hook, which disposes the RPC bridge.
@@ -645,7 +694,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
   if (permittedTools.includes("mcp")) {
     const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
-    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: { hostConfigDiscovery: "off", directTools: false, toolPrefix: "mcp", scriptMode: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false } } })(styled);
+    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: mcpAdapterSettings } })(styled);
   }
   // Plugin session hooks may refresh their own registrations, so ours runs
   // last and restores the managed exposure after every startup or resume.

@@ -234,6 +234,62 @@ test("the turn line waits for background tasks as it waits for children", () => 
   h.done();
 });
 
+test("a settled root waits on active work with a fixed completion snapshot, not an animated clock", async () => {
+  const h = harness({ active: 1 });
+  h.fire("agent_start");
+  await sleep(12);
+  h.fire("agent_settled");
+  const snapshot = h.widget.row.message;
+  assert.match(snapshot, /^Iterated for \d+s$/);
+  assert.equal(h.widget.row.intervalId, null);
+  await sleep(12);
+  assert.equal(h.widget.row.message, snapshot);
+  assert.equal(h.entries.length, 0);
+  h.done();
+});
+
+test("a waiting snapshot survives prompts and compaction without restarting animation", () => {
+  const h = harness({ active: 1 });
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  const snapshot = h.widget.row.render(80);
+  assert.match(snapshot[0], /π Iterated for/);
+  h.fire("ui_prompt_start");
+  h.fire("ui_prompt_end");
+  assert.deepEqual(h.widget.row.render(80), snapshot);
+  h.fire("session_before_compact");
+  h.fire("session_compact");
+  assert.deepEqual(h.widget.row.render(80), snapshot);
+  assert.equal(h.widget.row.intervalId, null);
+  h.done();
+});
+
+test("staggered child and shell wakes keep one turn open until the final settle", () => {
+  let active = 1;
+  let live = 0;
+  const h = harness();
+  h.fleet.activeCount = () => active;
+  h.tasks.live = () => live;
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  const childSnapshot = h.widget.row.message;
+  active = 0;
+  live = 1;
+  h.fire("agent_start");
+  assert.notEqual(h.widget.row.intervalId, null);
+  h.fire("agent_settled");
+  assert.match(h.widget.row.message, /^Iterated for \d+s$/);
+  assert.equal(h.widget.row.intervalId, null);
+  assert.equal(h.entries.length, 0);
+  active = 0;
+  live = 0;
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 1);
+  assert.match(childSnapshot, /^Iterated for \d+s$/);
+  h.done();
+});
+
 test("a typed prompt while waiting on children closes the turn", () => {
   const h = harness({ active: 1 });
   h.fire("agent_start");

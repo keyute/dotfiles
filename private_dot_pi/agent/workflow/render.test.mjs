@@ -68,7 +68,8 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   // catch-all and the reviewer are both pinned to the top worker tier.
   assert.deepEqual([workflow.agents["general-purpose"].model, workflow.agents["general-purpose"].nests], ["openai-codex/gpt-5.6-sol", true]);
   assert.deepEqual([workflow.agents["spec-reviewer"].model, workflow.agents["spec-reviewer"].readonly], ["openai-codex/gpt-5.6-sol", true]);
-  assert.ok(["workspace_write", "mcp", "subagent"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
+  assert.ok(["workspace_write", "mcp", "subagent", "bg_wait"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
+  for (const role of Object.values(workflow.agents)) assert.equal(role.tools.includes("bg_wait"), role.nests);
   assert.equal(workflow.mcp.context7.policy.direct_tools, true);
   assert.equal(workflow.mcp.exa.policy.direct_tools, false);
   assert.equal(workflow.mcp.playwright.policy.direct_tools, false);
@@ -77,6 +78,18 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.match(description, /^- diff-reviewer: Review a changed diff/m);
   assert.match(description, /^- general-purpose: /m);
   assert.doesNotMatch(description, /^- Explore:/m);
+  assert.match(description, /only when authorized by the current user request or applicable user\/project instructions/);
+  assert.match(description, /Children always run in the background/);
+  assert.match(description, /Plan mode may launch read-only agents only/);
+  assert.match(description, /Writers and nested agents require execute mode/);
+  assert.match(description, /native notification/);
+  assert.match(description, /Discover capabilities once/);
+  assert.match(description, /launch preflight remains authoritative/);
+  assert.match(description, /One writer owns each write scope/);
+  assert.match(description, /Children start with fresh context/);
+  assert.match(description, /capture its partial diff before retrying/);
+  assert.match(description, /Do not silently substitute another agent, model, protocol or execution mode/);
+  assert.doesNotMatch(description, /workflowScript|runs\.|guide|resume|CLI/);
   assert.match(run("cat", target(".pi/agent/agents/general-purpose.md")), /^allowNestedSubagents: true$/m);
   assert.match(run("cat", target(".pi/agent/agents/explorer.md")), /^allowNestedSubagents: false$/m);
   assert.equal(piSettings.defaultProvider, "openai-codex");
@@ -85,12 +98,17 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   assert.equal(piSettings.quietStartup, true);
   assert.equal(piSettings.hideThinkingBlock, false);
   assert.equal(piSettings.outputPad, 0);
+  assert.equal(piSettings.terminal.showImages, false);
+  const subagents = JSON.parse(run("cat", target(".pi/agent/extensions/subagent/config.json")));
+  assert.equal(subagents.timeoutMs, 7_200_000);
+  assert.equal(subagents.checkpointBeforeDeadlineMs, 300_000);
   assert.match(piSettings.themes[0], /\/node_modules\/catppuccin-pi-theme\/themes$/);
 
   for (const role of Object.keys(workflow.agents)) {
     const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
     const shim = run("cat", target(`.pi/agent/policy-roles/${role}.ts`));
     assert.match(agent, new RegExp(`^name: ${role}$`, "m"));
+    assert.equal(/^tools: .*\bbg_wait\b/m.test(agent), workflow.agents[role].nests);
     assert.match(agent, new RegExp(`extensions: .*/policy-roles/${role}\\.ts`));
     assert.match(shim, new RegExp(`, ${JSON.stringify(role)}\\);`));
   }
@@ -163,8 +181,10 @@ test("diff renders each affected harness target against an isolated destination"
     ".pi/agent/docs/sandbox.md",
     ".pi/agent/subagent-tool-description.md",
     ".pi/agent/extensions/subagent/config.json",
+    ".pi/agent/agents/general-purpose.md",
     ".pi/agent/extensions/workflow.ts",
     ".pi/agent/workflow/index.mjs",
+    ".pi/agent/workflow/footer.mjs",
     ".pi/agent/workflow/questionnaire.mjs",
     ".pi/agent/workflow/rows.mjs",
     ".pi/agent/node_modules",

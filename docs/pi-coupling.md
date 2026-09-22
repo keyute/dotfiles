@@ -24,16 +24,30 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
 - Plugin rows: pi-subagents, pi-mcp-adapter and web-search receive a Proxy of
   the extension API whose `registerTool` swaps `renderShell`/`renderCall`/
   `renderResult` and, for `subagent` only, narrows its schema from managed
-  accepted-key definitions (`index.mjs` `pluginApi`; `subagent`, `bg_wait`, the
+  accepted-key definitions and replaces its description from the trusted
+  rendered `subagent-tool-description.md` (missing/empty fails installation;
+  `index.mjs` `pluginApi`; `subagent`, `bg_wait`, the
   supervisor channel, `mcp`, `mcpScript`, `mcp__*`, `web_search`,
-  `url_context`). The wrapper retains executor and description, and launch/
+  `url_context`). The wrapper retains the executor, and launch/
   control enforcement is unchanged; it rests on plugins registering through
   the API they are handed and pi keeping the definition object (`loader.js`).
   Rows read `args` and the result text; the two `details` reads are the
   adapter's `error` (failures it reports without `isError`) and pi-subagents'
   `asyncId` (a launch; the fleet also keeps its documented `asyncDir`). `stability.test.mjs` pins registrations and both fields;
-  `plugin-api.test.mjs` and `integration.test.mjs` gate the schema narrowing
-  without a dependency fork (2026-09-16).
+  `plugin-api.test.mjs`, `render.test.mjs` and `integration.test.mjs` gate schema,
+  description safety and actual package registration without a fork (2026-09-22).
+  No upstream prose slicing; revisit this override when the plugin exposes a
+  description option that can omit disabled workflow APIs and their guidance.
+- MCP public settings `namespaceProxyTools: false`, `jev: false` and
+  `freezeDirectTools: true` keep gateway/direct Context7 exposure, lexical search
+  and a stable tool surface after initialization. The initial sync may still
+  notify, including on a deferred first connection; proxy metadata remains live.
+  `mcp-lifecycle.test.mjs` uses local stdio fixtures to cover cold/warm caches,
+  peer cache writes, reconnects and peer shutdown. Cache schema/hash helpers are
+  test-only internals. This is not complete cache isolation: the adapter's shared
+  name-keyed cache still races and hashes the wrapper rather than the resolved
+  broker connection. Revisit when upstream supports connection-scoped or
+  instance-scoped metadata storage (2026-09-22).
 - Acceptance and mutation names: pi-subagents 0.70.1 dropped its completion
   guard (the read-then-prose failure the roles were tuned for on 2026-09-18) for
   acceptance inference keyed on `acceptanceRole` alone — `writer` infers checked
@@ -75,7 +89,13 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   test covers the export). `CustomEditor` is documented since pi 0.87.0, but the
   render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
   `setPaddingX`, the first content line's padding columns — is not;
-  `caret.test.mjs` pins it.
+  `caret.test.mjs` pins it. Shell mode additionally relies on Editor's `state`,
+  `layoutText`, `buildVisualLineMap`, `setCursorCol`, `handleBackspace` and undo
+  snapshot methods: layout reads a temporary prefix-free state, visual columns
+  map back to native text, and Backspace removes the mode prefix atomically.
+  Native history, paste and submission retain their original text. Real-editor
+  wrapping/navigation/undo tests and `stability.test.mjs` pin these seams; retire
+  them when Pi exposes a shell-mode/prompt-prefix editor API (2026-09-22).
 - The owned questionnaire directly uses public `custom` and `Markdown`;
   native paste expansion preserves complete notes and free answers (2026-09-17).
 - Inline dialog text (plan feedback, questionnaire notes and free answers) retains `Editor.render()` for wrapping, cursor and navigation geometry,
@@ -94,6 +114,11 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   block under one blank line (`docs/pi-design.md` rule 8). Pinned in
   `stability.test.mjs`; `transcript.test.mjs` mounts the real component and
   asserts the lines, blanks included, at every level of detail (2026-09-18).
+  Native tool images render outside the self-shell row; managed
+  `terminal.showImages: false` removes their preview components without changing
+  result content. A real-component test gates folding without stray previews or
+  gaps. User-shell boundaries use the documented `user_bash` event because
+  `recordBashResult` does not emit a normal `message_end` (2026-09-22).
 - Unified activity groups: tools and successful completions share one timeline.
   An entry renderer gets no invalidate handle, so a completion-led group reads
   the timeline at paint time and repaints through the footer's `tui.requestRender()`;

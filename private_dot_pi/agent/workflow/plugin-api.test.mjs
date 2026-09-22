@@ -20,6 +20,20 @@ test("the plugin API decorates every registration and forwards everything else u
   assert.equal(styled.on, pi.on);
 });
 
+test("the plugin API replaces only the subagent description without changing its executor or schema", () => {
+  const tools = new Map();
+  const execute = () => {};
+  const parameters = { type: "object", properties: { agent: {} } };
+  const managed = "Managed subagent description.";
+  const styled = pluginApi({ registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, [], undefined, undefined, managed);
+  styled.registerTool({ name: "subagent", description: "upstream", parameters, execute });
+  styled.registerTool({ name: "other", description: "other upstream", parameters, execute });
+  assert.equal(tools.get("subagent").description, managed);
+  assert.equal(tools.get("subagent").parameters, parameters);
+  assert.equal(tools.get("subagent").execute, execute);
+  assert.equal(tools.get("other").description, "other upstream");
+});
+
 test("the subagent schema exposes only the managed launch and control surface", () => {
   const supported = ["agent", "task", "async", "model", "context", "agentScope", "action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery", "capabilities"];
   const upstream = { type: "object", description: "upstream safety description", properties: Object.fromEntries([...supported, "cwd", "workflowScript"].map(name => [name, { description: `${name} definition` }])) };

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Container } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, hideStreamingReasoning, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
+import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, hideStreamingReasoning, installFolding, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -73,6 +73,40 @@ test("a stretch of rows takes one blank line per plain row, then one for the who
   toolsExpanded = true;
   for (const component of [r1, r2, r3]) component.invalidate();
   assert.deepEqual(draw(), ["", "▾ Read 3 files", "• Read a", "", "• Read b", "", "• Read c"]);
+});
+
+test("queued user input collapses the live group before pending output, without closing manual expansion", () => {
+  let toolsExpanded = false;
+  const folds = createFolds();
+  const handlers = {};
+  installFolding({ on: (name, handler) => { handlers[name] = handler; } }, { ui: { getToolsExpanded: () => toolsExpanded } }, folds);
+  const container = new Container();
+  const components = ["a", "b", "pending"].map(id => {
+    const component = new ToolExecutionComponent("read", id, { path: id }, {}, toolRenderers("read", folds), { requestRender() {} }, "/repo");
+    component.markExecutionStarted();
+    container.addChild(component);
+    handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
+    return component;
+  });
+  for (const [index, id] of ["a", "b"].entries()) {
+    const result = { content: [{ type: "text", text: `output ${id}` }], details: {} };
+    components[index].updateResult(result);
+    handlers.tool_execution_end({ toolCallId: id, result });
+  }
+  const draw = () => container.render(80).map(strip);
+  assert.ok(draw().includes("• Read 2 files"));
+  handlers.input({ source: "extension", text: "notification" });
+  assert.ok(draw().includes("• Read 2 files"));
+  handlers.input({ source: "interactive", streamingBehavior: "steer", text: "next request" });
+  assert.deepEqual(draw(), ["", "▸ Read 2 files", "", "• Read pending"]);
+  components[0].handleMouse({ type: "click", button: "left", x: 0, y: 1, height: 10 });
+  assert.ok(draw().includes("▾ Read 2 files"));
+  handlers.input({ source: "rpc", streamingBehavior: "followUp", text: "another request" });
+  assert.ok(draw().includes("▾ Read 2 files"), "older manually opened groups stay open");
+  toolsExpanded = true;
+  for (const component of components) { component.setExpanded(true); component.invalidate(); }
+  handlers.input({ source: "interactive", text: "keep expanded" });
+  assert.ok(draw().includes("  output a"), "Ctrl+O remains authoritative");
 });
 
 // pi-coding-agent's `CustomEntryComponent` (the host for a registered entry
@@ -199,6 +233,46 @@ test("a tool-led mixed group keeps one blank line, hides completion host spacers
     "  beta",
     "  ↳ researcher finished › Audit rows · 45s",
   ]);
+});
+
+test("parallel tools retain call order when their results finish in reverse", () => {
+  const folds = createFolds();
+  const container = new Container();
+  const components = ["first", "second", "third"].map(id => {
+    const component = new ToolExecutionComponent("read", id, { path: id }, {}, toolRenderers("read", folds), { requestRender() {} }, "/repo");
+    component.markExecutionStarted();
+    container.addChild(component);
+    addFold(folds, id, "read");
+    return { id, component };
+  });
+  for (const { id, component } of components.toReversed()) {
+    const result = { content: [{ type: "text", text: id }], details: {} };
+    component.updateResult(result);
+    settleFold(folds, id, false, result);
+  }
+  assert.deepEqual(container.render(80).map(strip), ["", "• Read 3 files", "  ↳ Read first · 1 line", "  ↳ Read second · 1 line", "  ↳ Read third · 1 line"]);
+});
+
+test("a folded image result with image display disabled adds neither preview nor gap", () => {
+  const folds = createFolds(() => false);
+  const container = new Container();
+  const ui = { requestRender() {} };
+  const mount = id => {
+    const component = new ToolExecutionComponent("read", id, { path: id }, { showImages: false }, toolRenderers("read", folds), ui, "/repo");
+    component.markExecutionStarted();
+    container.addChild(component);
+    addFold(folds, id, "read");
+    const result = { content: [{ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }], details: {}, isError: false };
+    component.updateResult(result);
+    settleFold(folds, id, false, result);
+    return component;
+  };
+  const first = mount("image", "a");
+  const second = mount("text", "b");
+  assert.equal(first.imageComponents.length, 0);
+  assert.equal(second.imageComponents.length, 0);
+  assert.equal(first.result.content[0].type, "image");
+  assert.deepEqual(container.render(80).map(strip), ["", "• Read 2 files", "  ↳ Read image", "  ↳ Read text"]);
 });
 
 // pi's component decides its spacers from the raw thinking text, ahead of

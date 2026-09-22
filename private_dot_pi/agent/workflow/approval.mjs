@@ -16,10 +16,9 @@ async function classify(ctx, config, stage, content) {
   const model = ctx.modelRegistry.find(config.models.provider, stage.model);
   if (!model || !ctx.modelRegistry.isUsingOAuth(model)) return "ask";
   try {
-    // The session id becomes the provider's prompt_cache_key, so the judge's
-    // re-read of the filter's prompt routes to the cache that holds it. SSE,
-    // not the default WebSocket: pi-ai keys the root's WebSocket continuation
-    // by the same id, and a request with another body on it drops the delta.
+    // The shared prompt_cache_key aligns routing, not guaranteed cache reuse:
+    // the judge changes reasoning effort. SSE avoids pi-ai's root WebSocket
+    // continuation, keyed by the same id, where another body drops the delta.
     const sessionId = ctx.sessionManager?.getSessionId?.();
     return parseDecision(await ctx.modelRegistry.complete(model, {
       systemPrompt: SYSTEM_PROMPT,

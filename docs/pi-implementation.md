@@ -1,7 +1,6 @@
 # Pi implementation working record
 
-The durable decisions behind the managed pi setup; read before changing its
-architecture, policy or package pins. Dated design history through 2026-09-15
+The durable decisions behind the managed pi setup; read before changing its architecture, policy or package pins. Dated design history through 2026-09-15
 is in git history (`git log -p docs/pi-implementation.md`) and, where a
 measurement still has an open trigger, in `docs/agents-audit-log.md`.
 
@@ -40,15 +39,13 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - Managed zsh launch runs the repo-pinned CLI in fullscreen TUI (mouse
   click-to-expand), disables native tools and ambient extensions, and loads
   workflow plus the existing Herdr lifecycle extension when present.
-- pi-subagents registers unwrapped (the former registerTool Proxy was an
-  undocumented composition); launch policy runs in the blocking `tool_call`
-  hook (documented mutable input), bounded by the capability ceiling and
-  enforced at the broker's child leases. MCP script mode and arbitrary
-  subagent workflow/management paths stay disabled; `list` discovery, named
-  launches and lifecycle controls are enabled. Reversal triggers: own the
-  launch/status surface if its coupling-register rows still grow after two
-  consecutive bumps (2026-09-18); re-judge the plugin when a pi release ships
-  native subagents (2026-09-22).
+- pi-subagents retains its executor; the existing registration proxy owns
+  presentation, narrowed schema and managed description (2026-09-22). Launch
+  policy stays in `tool_call` and broker leases. Scripts/arbitrary management
+  stay disabled; `list`, named launches and lifecycle controls remain enabled.
+  Own launch/status only if coupling rows grow across two consecutive bumps; re-judge when Pi ships native subagents.
+  Keep existing plugins and owned UI: catalog alternatives do not remove these policy/presentation seams; reconsider
+  adoption when a public API covers them without a wrapper or workaround.
 - No agent LSP or semantic-navigation integration (decision 2026-09-17):
   Serena's startup and language-server provisioning add maintenance without a
   demonstrated need. Navigation uses file/search tools; diagnostics use project
@@ -63,13 +60,15 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   tuned for on 2026-09-18; the driver's diff check is the gate. Roles carry
   `acceptanceRole: read-only` or `acceptance: {"level":"none",…}` with
   `mutationTools` (reasons in `docs/pi-coupling.md`).
-- 2026-09-22: the workflow prompt fills pi's structured prompt options (a
-  `workflow` section, `contextFiles` for `/add-dir`) instead of returning
-  `systemPrompt`: a returned prompt is forced whole and rewrites the leading
-  instructions on every mode switch or `/add-dir` — a prompt-cache miss over
-  the root context — while sections patch in one mid-conversation system
-  message and `/execute`'s added tools anchor as additions, so the cached
-  prefix survives plan → execute (`/plan` from execute still misses once).
+- 2026-09-22: keep structured `workflow`/`contextFiles` prompt options, not a
+  forced `systemPrompt`. Offline pinned Codex request fixtures preserve initial
+  instructions/input for section patches and plan → execute tool additions;
+  execute → plan retracts earlier tool declarations, changing the prefix.
+  These are request-shape guarantees, not live subscription cache/billing proof.
+  No cache plugin or long-TTL override: this Codex builder does not request one.
+- 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization; the proxy stays live and the initial sync may still notify. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
+- 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The two-hour runtime backstop with a five-minute checkpoint/stop steer replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts (runtime semantics in the harness reference).
+- 2026-09-22: no installed-package patches. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. Revisit when the hook ships; the native block remains unchanged until then.
 - 2026-09-18: TypeSafe Jev is not adopted for the approval classifier. An
   offline replay of 137 reviewed actions plus 16 labelled cases held every
   must-not-allow case at p90 364 ms, but the only slice it fast-allows safely
@@ -80,8 +79,9 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   with zero wrong allows (audit log 2026-09-18).
 - 2026-09-18: the approval classifier runs both stages on Terra, the filter
   at `none` and the judge at `medium`. One model for the whole gate, as Claude
-  Code's auto mode and Codex's auto-review both run, makes the judge's re-read
-  a prompt-cache hit; `none` replaces `minimal`, which the 5.6 family lacks and pi-ai
+  Code's auto mode and Codex's auto-review both run, keeps model, text and cache
+  key aligned, not a guaranteed hit: reasoning changes (clarified 2026-09-22).
+  `none` replaces `minimal`, which the 5.6 family lacks and pi-ai
   silently sent as `low`. Terra rather than Luna because the judge's verdict
   is final and OpenAI's own card scores Terra higher on tool-borne and direct
   injection; classifier cost is negligible either way. Fallback, on the live
@@ -111,7 +111,7 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   targets were removed from the machine directly (2026-09-06) instead of via
   `.chezmoiremove`, which is gone.
 - Actual Unix sockets/SRT cannot run in this session (socket binding returns
-  EPERM). Broker tests use an explicit memory transport; the opt-in live test is
+  EPERM). Socket fixtures skip explicitly; lifecycle-only tests stub the broker. The opt-in live test is
   not evidence of a successful sandbox run until executed on the user's host.
 - Live OAuth, foreground/background children, cancellation, the fleet widget and
   MCP remain acceptance gates. Do not treat fixture tests as full DX parity.

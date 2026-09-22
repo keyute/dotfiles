@@ -300,6 +300,62 @@ test("grouping closes on assistant text and visible rows; MCP, discovery, launch
   assert.deepEqual(foldGroup(folds, "d1").counts, { edit: 2 });
 });
 
+test("interactive and RPC input seal only the successful prefix before a pending tool", () => {
+  for (const [source, failed] of [["interactive", false], ["rpc", true]]) {
+    const folds = createFolds();
+    const handlers = {};
+    installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+    for (const id of ["a", "b", "pending"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
+    for (const id of ["a", "b"]) handlers.tool_execution_end({ toolCallId: id, isError: false, result: { details: {} } });
+    handlers.input({ source, text: "follow-up" });
+    assert.deepEqual(folds.timeline.map(fact => fact.kind === "boundary" ? fact.kind : fact.id), ["a", "b", "boundary", "pending"]);
+    assert.deepEqual(foldGroup(folds, "a").counts, { read: 2 });
+    handlers.tool_execution_end({ toolCallId: "pending", isError: failed, result: { details: {} } });
+    assert.equal(foldGroup(folds, "pending"), null);
+  }
+});
+
+test("queued input separates even one successful row from a pending tool", () => {
+  const folds = createFolds();
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  for (const id of ["settled", "pending"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
+  handlers.tool_execution_end({ toolCallId: "settled", result: { details: {} } });
+  handlers.input({ source: "interactive", streamingBehavior: "steer", text: "next request" });
+  assert.deepEqual(folds.timeline.map(fact => fact.kind === "boundary" ? fact.kind : fact.id), ["settled", "boundary", "pending"]);
+  handlers.tool_execution_end({ toolCallId: "pending", result: { details: {} } });
+  assert.equal(foldGroup(folds, "settled"), null);
+  assert.equal(liveGroup(folds, "settled"), null);
+  assert.equal(foldGroup(folds, "pending"), null);
+  assert.equal(liveGroup(folds, "pending"), null);
+});
+
+test("extension input does not seal a live group", () => {
+  const folds = createFolds();
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  for (const id of ["r1", "r2"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
+  for (const id of ["r1", "r2"]) handlers.tool_execution_end({ toolCallId: id, isError: false, result: { details: {} } });
+  handlers.input({ source: "extension", text: "internal" });
+  assert.ok(liveGroup(folds, "r1"));
+  handlers.input({ source: "interactive", text: "user" });
+  assert.ok(foldGroup(folds, "r1"));
+});
+
+test("user shell commands close successful calls before and after them", () => {
+  const folds = createFolds();
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  for (const id of ["r1", "r2"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
+  for (const id of ["r1", "r2"]) handlers.tool_execution_end({ toolCallId: id, result: { details: {} } });
+  handlers.user_bash({ command: "pwd" });
+  for (const id of ["r3", "r4"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
+  for (const id of ["r3", "r4"]) handlers.tool_execution_end({ toolCallId: id, result: { details: {} } });
+  closeFolds(folds);
+  assert.deepEqual(foldGroup(folds, "r1").entries.map(entry => entry.id), ["r1", "r2"]);
+  assert.deepEqual(foldGroup(folds, "r3").entries.map(entry => entry.id), ["r3", "r4"]);
+});
+
 test("subagent steer and status checks fold with launches; a steer member line carries no output tail, and a failed stop is never a member", () => {
   const folds = createFolds(() => false);
   const subagent = pluginRenderers("subagent", { folds });

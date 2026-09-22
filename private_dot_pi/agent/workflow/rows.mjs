@@ -50,10 +50,11 @@ const indent = line => `${PAD}${line}`;
 export const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
 
 // The editor's fake cursor ends in a full SGR reset, which also drops the
-// background; re-open it after every reset so the shade spans the line.
-export function shade(theme, line) {
-  const open = theme.bg("userMessageBg", "").replace(/\x1b\[49m$/, "");
-  return theme.bg("userMessageBg", line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
+// background and any foreground the caller painted; re-open both after every
+// reset so the shade and the text colour span the line.
+export function shade(theme, line, background = "userMessageBg", foreground) {
+  const open = theme.bg(background, "").replace(/\x1b\[49m$/, "") + (foreground ? theme.fg(foreground, "").replace(/\x1b\[39m$/, "") : "");
+  return theme.bg(background, line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
 }
 
 export function shortTitle(text, width = TITLE_WIDTH) {
@@ -283,11 +284,11 @@ export function settleFold(folds, id, failed, result) {
 
 // Every line that stays visible ends the run above it. Two of them in a row
 // need only one boundary — there is no run between them to seal.
-export function closeFolds(folds) {
-  const last = folds.timeline[folds.timeline.length - 1];
+export function closeFolds(folds, index = folds.timeline.length) {
+  const last = folds.timeline[index - 1];
   if (!last || last.kind === "boundary") return;
   refold(folds, () => {
-    folds.timeline.push({ kind: "boundary", id: `b${(folds.boundaries += 1)}` });
+    folds.timeline.splice(index, 0, { kind: "boundary", id: `b${(folds.boundaries += 1)}` });
     folds.revision += 1;
   });
 }
@@ -342,7 +343,7 @@ function derive(folds) {
     const group = { boundaryId: `live:${live[0].id}`, entries: live, counts: tally(live), sealed: false };
     for (const entry of live) liveById.set(entry.id, group);
   }
-  folds.derived = { revision: folds.revision, byId, liveById };
+  folds.derived = { revision: folds.revision, byId, liveById, liveTail: live.at(-1) };
   return folds.derived;
 }
 
@@ -430,9 +431,19 @@ export function installFolding(pi, ctx, folds = defaultFolds) {
   // The adapter reports some failures in `details.error` without `isError`.
   pi.on("tool_execution_end", event => settleFold(folds, event.toolCallId, Boolean(event.isError || event.result?.details?.error), event.result));
   pi.on("agent_start", () => closeFolds(folds));
+  pi.on("input", event => {
+    if (event.source !== "extension") {
+      // A pending tool must stay outside the collapsed success group; a
+      // boundary after it would hold the whole group open until it settles.
+      const tail = derive(folds).liveTail;
+      closeFolds(folds, tail ? folds.timeline.indexOf(tail) + 1 : undefined);
+    }
+    return { action: "continue" };
+  });
   // Streaming replies announce their text in updates; non-streaming ones only at the end.
   pi.on("message_update", event => { if (speaks(event)) closeFolds(folds); });
   pi.on("message_end", event => { if (speaks(event) || displays(event)) closeFolds(folds); });
+  pi.on("user_bash", () => closeFolds(folds));
 }
 
 // The group's first row draws the summary line whether the group is open or
@@ -870,6 +881,9 @@ export function createTurnClock(verbs = TURN_VERBS, pick = () => Math.floor(Math
     running: () => startedAt != null,
     label(now = Date.now()) {
       return startedAt == null ? "" : `${verb[0]}… ${formatDuration(now - startedAt)}`;
+    },
+    settledLabel(now = Date.now()) {
+      return startedAt == null ? "" : `${verb[1]} for ${formatDuration(now - startedAt)}`;
     },
     stop(now = Date.now(), { aborted = false } = {}) {
       if (startedAt == null) return null;

@@ -62,7 +62,7 @@ test("single-question browse hides navigation and preserves the framed blank-row
   const lines = p.component.render(80);
   assert.equal(lines.length, 8);
   assert.equal(lines[1], "");
-  assert.doesNotMatch(lines.join("\n"), /Direction|Review|\[/);
+  assert.doesNotMatch(lines.join("\n"), /Direction|Submit|\[/);
   assert.equal(p.component.pageSize, 3);
 });
 
@@ -81,14 +81,14 @@ test("multi-question browse and review paint a background only on the active tab
     const lines = p.component.render(40);
     const band = lines[1];
     assert.ok(visibleWidth(band) <= 40);
-    assert.match(band, /Direction|Review/);
+    assert.match(band, /Direction|Submit/);
     assert.doesNotMatch(band.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), /\[/);
-    const activeLabel = mode === "review" ? " Review " : " Direction ";
+    const activeLabel = mode === "review" ? " ✔ Submit " : " ☐ Direction ";
     assert.ok(calls.some(([kind, color, text]) => kind === "bg" && color === "userMessageBg" && visibleWidth(text) === visibleWidth(activeLabel) && text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "") === activeLabel));
     assert.ok(!calls.some(([kind, color, text]) => kind === "bg" && visibleWidth(text) === 40));
-    assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "accent" && (/Direction|Review/).test(text)));
-    assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "muted" && text === " Scope "));
-    assert.ok(calls.some(([kind, text]) => kind === "bold" && (text === "Direction" || text === "Review")));
+    assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "accent" && (/Direction|Submit/).test(text)));
+    assert.ok(calls.some(([kind, color, text]) => kind === "fg" && color === "muted" && text === " ☐ Scope "));
+    assert.ok(calls.some(([kind, text]) => kind === "bold" && (text === "☐ Direction" || text === "✔ Submit")));
     assert.equal(lines.length, 8);
     assert.equal(p.component.pageSize, 2);
     assert.equal(lines[2], "");
@@ -96,16 +96,50 @@ test("multi-question browse and review paint a background only on the active tab
   }
 });
 
-test("narrow multi-question headers keep every active tab and Review visible", () => {
+test("tab glyphs track unanswered and answered questions, including Submit", () => {
+  const p = questionnaire(questions, 12);
+  let header = p.component.render(40)[1];
+  assert.match(header, /☐ Direction/);
+  assert.match(header, /☐ Scope/);
+  assert.match(header, /✔ Submit/);
+  keys(p.component, "\r");
+  header = p.component.render(40)[1];
+  assert.match(header, /☑ Direction/);
+  assert.match(header, /☐ Scope/);
+  assert.match(header, /✔ Submit/);
+  for (const width of [12, 20]) assert.ok(p.component.render(width).every(line => visibleWidth(line) <= width));
+});
+
+test("completion glyphs follow custom answers and deselection, not notes", () => {
+  const { component: c } = prompt();
+  const header = () => c.render(80)[1];
+  keys(c, "\t", "note", "\r");
+  assert.match(header(), /☐ Direction/);
+  keys(c, "\x1b[B", "\x1b[B", "custom");
+  assert.match(header(), /☐ Direction/);
+  keys(c, "\r");
+  assert.match(header(), /☑ Direction/);
+  keys(c, " ");
+  assert.match(header(), /☑ Scope/);
+  keys(c, " ");
+  assert.match(header(), /☐ Scope/);
+  assert.match(header(), /✔ Submit/);
+});
+
+test("narrow multi-question headers keep the active tab identifiable", () => {
   const items = ["First long title", "Second long name", "Third long label", "Fourth long name"].map(header => ({ ...questions[0], header }));
   const palette = { ...theme, fg: (color, text) => color === "accent" ? `\x1b[36m${text}\x1b[39m` : text, bold: text => `\x1b[1m${text}\x1b[22m` };
   const p = questionnaire(items, 12, palette);
   for (let index = 0; index <= items.length; index++) {
     p.component.goTo(index);
-    const header = index === items.length ? "Review" : items[index].header;
-    const band = p.component.render(20)[1];
-    assert.ok(band.includes(`\x1b[36m\x1b[1m${header}\x1b[22m\x1b[39m`), `active header missing: ${header}`);
-    assert.ok(visibleWidth(band) <= 20);
+    const mark = index === items.length ? "✔" : "☐";
+    const label = index === items.length ? "Submit" : items[index].header;
+    for (const width of [24, 20, 8]) {
+      const band = p.component.render(width)[1];
+      assert.ok(band.includes(`\x1b[36m\x1b[1m${mark} `), `active tab glyph missing: ${mark}`);
+      if (width === 24) assert.ok(band.includes(label), `active label missing: ${label}`);
+      assert.ok(visibleWidth(band) <= width);
+    }
   }
 });
 
@@ -227,6 +261,14 @@ test("focusing the custom row starts typing immediately without pressing Enter",
   assert.ok(output.includes(CURSOR_MARKER));
 });
 
+test("the literal custom answer has the next option number while editing", () => {
+  const p = questionnaire([questions[0]]);
+  keys(p.component, "\x1b[B", "\x1b[B", "literal");
+  const output = p.component.render(80).join("\n");
+  assert.match(output, /3\. literal/);
+  assert.equal(p.component.drafts[0].custom, "literal");
+});
+
 test("leaving the custom row without submitting keeps the typed draft", () => {
   const p = questionnaire(questions);
   keys(p.component, "\x1b[B", "\x1b[B", "keep me", "\x1b[A");
@@ -336,8 +378,8 @@ test("an answered inactive tab paints success while an unanswered one stays mute
   keys(p.component, "\r", "\x1b[C"); // answer Direction, then move off Scope onto Review so both are inactive
   calls.length = 0;
   p.component.render(60);
-  assert.ok(calls.some(([, color, text]) => color === "success" && text === " Direction "));
-  assert.ok(calls.some(([, color, text]) => color === "muted" && text === " Scope "));
+  assert.ok(calls.some(([, color, text]) => color === "success" && text === " ☑ Direction "));
+  assert.ok(calls.some(([, color, text]) => color === "muted" && text === " ☐ Scope "));
 });
 
 test("validation refuses tabbed or multiline headers while allowing multiline content", () => {

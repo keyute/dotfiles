@@ -238,7 +238,7 @@ export class QuestionnaireComponent extends Dialog {
     });
     const editingCustom = this.mode === "custom";
     const focused = question.options.length === this.row;
-    const rawPrefix = `${this.gutter(focused)}${mark(draft.customIncluded)}`;
+    const rawPrefix = `${this.gutter(focused)}${mark(draft.customIncluded)}${question.options.length + 1}. `;
     const indent = visibleWidth(rawPrefix);
     if (focused) focus = lines.length;
     const active = editingCustom && live && this.focused;
@@ -267,10 +267,13 @@ export class QuestionnaireComponent extends Dialog {
     let heading;
     if (multiQuestion) {
       const active = this.mode === "review" ? this.questions.length : this.questionIndex;
-      const tabs = [...this.questions.map(item => item.header), "Review"].map((label, index) =>
-        index === active
-          ? this.theme.bg("userMessageBg", ` ${this.theme.fg("accent", this.theme.bold(label))} `)
-          : this.theme.fg(index < this.questions.length && this.answered(index) ? "success" : "muted", ` ${label} `));
+      const tabs = [...this.questions.map(item => item.header), "Submit"].map((label, index) => {
+        const mark = index === this.questions.length ? "✔" : this.answered(index) ? "☑" : "☐";
+        const text = `${mark} ${label}`;
+        return index === active
+          ? this.theme.bg("userMessageBg", ` ${this.theme.fg("accent", this.theme.bold(text))} `)
+          : this.theme.fg(index < this.questions.length && this.answered(index) ? "success" : "muted", ` ${text} `);
+      });
       // Each tab pads itself, so joining without a separator still leaves a
       // two-column gap between labels.
       // When the full strip does not fit, start at the active tab, not a hidden predecessor.

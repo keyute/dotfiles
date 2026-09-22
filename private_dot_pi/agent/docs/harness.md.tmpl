@@ -24,13 +24,14 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   Authentication and session files stay unmanaged — sign in through Pi's normal
   OpenAI subscription login, and do not import another harness's auth files.
 
-## Models (last verified 2026-09-18; revisit pricing 2026-11-21)
+## Models (last verified 2026-09-22; revisit pricing 2026-11-21)
 
 - Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`, {{ .agents.pi.defaults.reasoning_effort }} reasoning; planning uses {{ .agents.pi.defaults.plan_reasoning_effort }}.
 - The approval classifier (MCP calls, remote-mutating shell verbs and unsandboxed
   requests) runs in two stages with no tools: `{{ .agents.pi.defaults.classifier_filter.model }}` at {{ .agents.pi.defaults.classifier_filter.reasoning_effort }} reasoning
   screens each reviewed action, and anything but allow goes to `{{ .agents.pi.defaults.classifier_judge.model }}` at
-  {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt — one model, so a cache hit — whose verdict is final.
+  {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt; its verdict is final. Model, text and cache key
+  align, but changing reasoning means cache reuse is not guaranteed.
 - Worker tiers: {{ $sep := "" }}{{ range $tier, $model := .subagent_tiers.pi }}{{ $sep }}{{ $tier }} `{{ $model }}`{{ $sep = ", " }}{{ end }}.
 - The default is the frontier tier as the driver (shared `frontier_driver` rule in
   AGENTS.md, decision 2026-09-15). No child runs it: `workflow/children.mjs`
@@ -49,7 +50,7 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   pi believes, deferring compaction and occupancy warnings until the provider
   rejects requests. (Revisit at the next SDK pin bump, or if it reports ≠ 272K.)
 
-## Specialists and skills (last verified 2026-09-18)
+## Specialists and skills (last verified 2026-09-22)
 
 - Specialists under `~/.pi/agent/agents` render from the shared roster, each with
   an explicit OpenAI model, tool list and mandatory child policy extension. Native
@@ -65,14 +66,14 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   the child, as Codex's forked children do, for a second pass over material
   already read. They have no channel back: the pi-subagents intercom bridge is
   off in `extensions/subagent/config.json` (decision 2026-09-10).
-- The upstream launch schema is narrowed from the same managed accepted-key
-  definitions, so unsupported keys it advertises (`cwd`, `toolBudget`, …) are not
-  offered; executor and description are retained, and launch/control enforcement
-  is unchanged. Workflow scripts, task lists and chains are refused. Status (fleet
-  or transcript view), stop, interrupt and non-recovering steer are enabled;
-  project role overrides, revival and mutating management are not, and results
-  arrive as notifications — `bg_wait` only when the turn depends on them
-  (2026-09-16).
+- Schema and description expose managed keys/APIs only; executor and enforcement stay unchanged.
+  Scripts/chains are refused. Status (fleet or transcript), stop, interrupt and non-recovering steer
+  are enabled; project role overrides, revival and mutating management are not. Roots receive native
+  notifications; nesting children lack that notifier and use blocking `bg_wait` to collect descendants
+  before synthesis. Only nesting roles have that tool (2026-09-22).
+- Runs have a two-hour hard backstop and a best-effort checkpoint/stop steer five minutes before it.
+  `bg_wait` window expiry is non-terminal; the separate headless `agent_end` auto-drain still has a
+  30-minute limit. A nesting child collects results during its turn, not through that drain (2026-09-22).
 - Launched children's scope is off-limits to the parent (AGENTS.md).
 - Transcript and status-line rendering follows the source repo's `docs/pi-design.md`;
   the undocumented surfaces it leans on are inventoried in `docs/pi-coupling.md`.
@@ -95,7 +96,7 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   and Playwright; OpenAI's search accepts extra `urls` to analyse
   alongside the query.
 
-## MCP and code intelligence (last verified 2026-09-17)
+## MCP and code intelligence (last verified 2026-09-22)
 
 - Context7 tools stay direct (e.g. `mcp__context7_query-docs`); Exa and Playwright
   stay behind the `mcp` proxy: `mcp({ search: "…" })` finds a tool in the cached
@@ -106,8 +107,12 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   with `fetch failed`, check that setting, then the allowed domains. The browser
   exception and its permissions are documented in `sandbox.md`.
 - Configuration is explicit; other harnesses' private config is not imported. MCP
-  scripting, sampling and automatic OAuth discovery are disabled; the approval
-  broker checks the resolved server/tool/arguments, not just the outer proxy call.
+  scripting, namespace proxies, semantic search (`jev: false`), sampling and
+  automatic OAuth discovery are disabled; the approval broker checks resolved
+  server/tool/arguments, not just the outer proxy call.
+- `freezeDirectTools: true` freezes registration after initialization, not cache updates: new tools
+  remain reachable through `mcp`. Initial refresh can occur on first lazy connect; live owners are
+  session-local, shared metadata caching is not fully isolated (2026-09-22).
 - No LSP here: diagnostics come from project toolchains via `workspace_bash`
   (`tsc --noEmit`, `go vet`, pyright, linters); rationale in the
   Decisions block of `docs/pi-implementation.md`.
