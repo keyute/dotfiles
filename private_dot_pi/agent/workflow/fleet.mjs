@@ -66,6 +66,9 @@ export function navigate(state, action, open) {
   if (action === "up") { if (state.cursor > 0) state.cursor--; else state.focused = false; return true; }
   const selected = state.entries[state.cursor];
   state.focused = false;
+  // Confirm hands the row to the caller's open callback and leaves focus
+  // cleared; the caller restores focus and the cursor once its peek settles,
+  // so Down/Up resume from the peeked row without pressing Enter again.
   if (action === "confirm") { open?.(selected); return true; }
   return action === "cancel";
 }
@@ -84,7 +87,7 @@ export function runIdFor(state, entry) {
   return candidates[siblings.indexOf(entry)]?.id ?? null;
 }
 
-// pi-subagents 0.66.0 never fills the DTO's `goal`; the task comes from the
+// pi-subagents 0.70.1 never fills the DTO's `goal`; the task comes from the
 // launch this session recorded against the run id.
 export function rowFor(state, entry) {
   return entry.goal ? entry : { ...entry, goal: state.launches.get(runIdFor(state, entry))?.task };
@@ -124,7 +127,10 @@ export function rpcCall(events, method, params = {}, timeoutMs = 2_000) {
 
 // The rows render inside the footer (attach/render): pi's dock order is fixed
 // with the footer last, so a widget could only sit above the status line.
-export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeoutMs = 2_000, cleanupTimeoutMs = 5_000, folds = defaultFolds } = {}) {
+export function installFleet(pi, ctx, {
+  pollMs = 1_000, quietMs = 10_000, timeoutMs = 2_000, cleanupTimeoutMs = 5_000, folds = defaultFolds,
+  openPeek = async (...args) => (await import("./peek.mjs")).openPeek(...args),
+} = {}) {
   const state = { ...createFleetState(), pending: new Map(), active: new Set(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
 
   const shape = () => [state.totalActive, ...state.entries.map(entry => `${entry.agent}|${entry.status}|${entry.goal}|${entry.tokens?.total ?? entry.tokens}`)].join("\n");
@@ -156,7 +162,9 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     void poll();
   };
   // The launch's own events are the only place the task text and the async run
-  // id appear together (the DTO redacts one and hides the other).
+  // id appear together (the DTO redacts one and hides the other); the same
+  // result also carries the run's artifact directory (`asyncDir`), the peek's
+  // way into its events.jsonl.
   pi.on("tool_execution_start", event => {
     if (event.toolName === "subagent" && event.args?.agent) state.pending.set(event.toolCallId, { agent: event.args.agent, task: String(event.args.task ?? "") });
   });
@@ -165,7 +173,7 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     const launch = state.pending.get(event.toolCallId);
     state.pending.delete(event.toolCallId);
     const id = event.result?.details?.runId ?? event.result?.details?.asyncId;
-    if (launch && id) state.launches.set(id, launch);
+    if (launch && id) state.launches.set(id, { ...launch, asyncDir: event.result?.details?.asyncDir });
     wake();
   });
   // The install-time and ready-time polls cover jobs restored with the session.
@@ -195,6 +203,8 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
   pi.on("session_shutdown", () => {
     state.stopped = true;
     clearTimeout(state.timer);
+    state.peek?.abort();
+    state.peek = undefined;
     show(null);
   });
   if (ctx) wake();
@@ -263,13 +273,48 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     if (failures.length) throw new Error(`Subagent cleanup failed: ${failures.join("; ")}`);
   };
 
-  // Enter shows the highlighted child's transcript tail (pi-subagents' own
-  // status view) in an overlay, and says so when there is none yet — Enter is
-  // never silent.
+  // The peek's live facts for a run id, re-read from the current poll every
+  // time the caller asks (the dialog's own clock is this fleet's poll).
+  const describe = id => {
+    const entry = state.entries.find(candidate => runIdFor(state, candidate) === id);
+    const run = state.runs.find(item => item.id === id);
+    const launch = state.launches.get(id);
+    return {
+      agent: entry?.agent ?? launch?.agent,
+      task: launch?.task,
+      model: entry?.model,
+      effort: entry?.effort,
+      tokens: entry?.tokens,
+      startedAt: entry?.startedAt,
+      state: run?.state,
+      currentTool: run?.activity?.currentTool,
+      // A run absent from the snapshot (evicted, or never seen) is terminal.
+      terminal: !run || !ACTIVE_RUN_STATES.has(run.state),
+    };
+  };
+  // Enter peeks the highlighted child: a live rule-11 dialog over its
+  // events.jsonl when this process saw the launch (`asyncDir` came back with
+  // it) and pi is rendering a TUI, otherwise pi-subagents' own transcript
+  // tail in an overlay — and says so when there is none yet, Enter is never
+  // silent.
   const peek = async entry => {
     const current = state.ctx;
     if (!current) return;
     const id = runIdFor(state, entry);
+    const launch = id ? state.launches.get(id) : undefined;
+    if (current.mode === "tui" && launch?.asyncDir) {
+      const controller = new AbortController();
+      state.peek = controller;
+      try {
+        await openPeek(current, {
+          id, asyncDir: launch.asyncDir, describe: () => describe(id), events: pi.events, rpcCall, timeoutMs,
+          signal: controller.signal,
+        });
+      } finally {
+        if (state.peek === controller) state.peek = undefined;
+      }
+      return;
+    }
     const reply = id ? await rpcCall(pi.events, "status", { id, view: "transcript", lines: 40 }, timeoutMs) : null;
     if (!reply?.text || !current.hasUI) return current.ui.notify(`No transcript yet for ${entry.agent}`, "info");
     const { agent, goal, model, effort } = rowFor(state, entry);
@@ -280,7 +325,21 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
     }, { overlay: true, overlayOptions: { anchor: "center", width: "90%", maxHeight: "80%", margin: 1 } });
   };
   const handleKey = action => {
-    const consumed = navigate(state, action, entry => { void peek(entry); });
+    const consumed = navigate(state, action, entry => {
+      // navigate() cleared focus for this callback; restore it and the
+      // cursor to the peeked row once the peek settles, so Down/Up resume
+      // without another Enter. The row is found again by the DTO's opaque
+      // key (a sibling can land above it while the peek is open), the saved
+      // index clamped to the panel is the fallback.
+      const { key } = entry;
+      const index = state.cursor;
+      void peek(entry).catch(error => state.ctx?.ui?.notify?.(String(error?.message ?? error), "error")).then(() => {
+        state.focused = state.entries.length > 0;
+        const at = key === undefined ? -1 : state.entries.findIndex(candidate => candidate.key === key);
+        state.cursor = at >= 0 ? at : Math.min(index, Math.max(0, state.entries.length - 1));
+        state.tui?.requestRender();
+      });
+    });
     state.tui?.requestRender();
     return consumed;
   };
@@ -288,7 +347,7 @@ export function installFleet(pi, ctx, { pollMs = 1_000, quietMs = 10_000, timeou
   return {
     wake,
     stopAll: () => stopping ??= stopAll().finally(() => { stopping = undefined; }),
-    attachContext: current => { state.ctx = current; state.stopped = false; wake(); },
+    attachContext: current => { state.peek?.abort(); state.peek = undefined; state.ctx = current; state.stopped = false; wake(); },
     handleKey,
     // Runs restored with the session never emit async-started; the poll's
     // count covers them (it lags a completion by one poll, so the event set

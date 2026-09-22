@@ -74,11 +74,6 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   arrive as notifications — `bg_wait` only when the turn depends on them
   (2026-09-16).
 - Launched children's scope is off-limits to the parent (AGENTS.md).
-- A child result "completed without making edits for an implementation task"
-  is pi-subagents' completion guard, which accepts only a declared
-  `mutationTools` call or a tracked-file diff; write roles declare their shell,
-  edit and write names and read-only roles opt out. A run that still fails this
-  way made no tool call beyond reads — read its report (2026-09-18).
 - Transcript and status-line rendering follows the source repo's `docs/pi-design.md`;
   the undocumented surfaces it leans on are inventoried in `docs/pi-coupling.md`.
 - Shared skills stay discoverable under `~/.agents/skills`; explicit skill

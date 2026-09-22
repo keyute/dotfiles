@@ -17,7 +17,7 @@ import { installFleet } from "./fleet.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, doneEntryRenderer, hideStreamingReasoning, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { PAD, PROMPT, answerLines, appendVisible, blankReasoning, bulletMarkdown, doneEntryRenderer, hideStreamingReasoning, installFolding, noteLine, noticeLine, planRenderers, pluginRenderers, shade, taskRenderers, toolRenderers } from "./rows.mjs";
 
 const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 // The classifier's only evidence source: a shell command's record (command,
@@ -91,7 +91,7 @@ export const controlNotice = (message, _options, theme) => {
   // A goal mission's body is several lines opening "Goal mission needs attention:",
   // which the row's "<agent> <state>" strip cannot read; the plugin's box draws it.
   if (message.details.source === "goal") return undefined;
-  return new Text(noticeLine({ agent: event.agent, failed: event.reason === "completion_guard", message: event.message }, theme), 0, 0);
+  return new Text(noticeLine({ agent: event.agent, message: event.message }, theme), 0, 0);
 };
 
 // Plugins register their tools and their custom message renderers through the
@@ -179,13 +179,10 @@ export class CaretEditor extends sdk.CustomEditor {
     this.fleet = fleet;
     this.palette = palette;
   }
-  // The editor's fake cursor ends in a full SGR reset, which also drops the
-  // background; re-open it after every reset so the shade spans the line. The
-  // palette is pi's live theme (a theme switch invalidates this editor rather
-  // than rebuilding it), so the sequence is read per render, never cached.
+  // The palette is pi's live theme (a theme switch invalidates this editor
+  // rather than rebuilding it), so the sequence is read per render, never cached.
   shade(line) {
-    const open = this.palette.bg("userMessageBg", "").replace(/\x1b\[49m$/, "");
-    return this.palette.bg("userMessageBg", line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
+    return shade(this.palette, line);
   }
   // Fleet navigation is an editor-owned mode (widgets cannot take focus). Down
   // enters it only when the editor itself had nothing left to do with the key,
@@ -271,9 +268,10 @@ export class CaretEditor extends sdk.CustomEditor {
 // `readonly` is also every read-only role's state in execute mode, so the
 // planning workflow is gated on the root in plan mode: a child has neither
 // submit_plan nor ask_user_question (policy.mjs rootTools).
-export function workflowPrompt({ systemPrompt, added = "", mode, readonly, isRoot }) {
+// Fills the `workflow` system prompt section (see before_agent_start).
+export function workflowPrompt({ mode, readonly, isRoot }) {
   const planning = isRoot && mode === "plan" ? " Research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it. Approval switches the mode and revokes running child sessions, aborting their work: settle async children before submitting the plan, or launch them after." : "";
-  return `${systemPrompt}${added}\n\nWorkflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}`;
+  return `Workflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}`;
 }
 
 export function activeToolNames(tools, { ready, permitted, isRoot, mode, currentContext }) {
@@ -529,14 +527,20 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     const model = ctx.model;
     if (!model || model.provider !== config.models.provider || !Object.values(config.models.tiers).includes(model.id) || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error("Select an available managed OpenAI subscription model; API fallback is disabled");
     const state = await requestBroker(env, role, { action: "state" });
-    const added = [...extraDirs].filter(([, text]) => text).map(([dir, text]) => `\n\n# Instructions for ${dir}\n\n${text}`).join("");
-    return { systemPrompt: workflowPrompt({ systemPrompt: event.systemPrompt, added, mode: state.mode, readonly: state.readonly, isRoot }) };
+    // A returned systemPrompt forces the whole prompt and rewrites the
+    // request's leading instructions on every change (a prompt-cache miss);
+    // sections and context files are diffed against the transcript and
+    // patched in one mid-conversation system message instead.
+    const options = event.systemPromptOptions;
+    for (const { path, content } of extraDirs.values()) options.contextFiles.push({ path, content });
+    options.sections.workflow = workflowPrompt({ mode: state.mode, readonly: state.readonly, isRoot });
   });
 
   // /add-dir, Claude Code's added working directory: the policy widens the
-  // edit scope and the directory's AGENTS.md (or CLAUDE.md) rides the system
-  // prompt. Skills under it need a restart with --skill: pi discovers
-  // resources at startup and /reload, and /reload would also restart the broker.
+  // edit scope, and the directory's AGENTS.md (or CLAUDE.md) rides the
+  // prompt's project context. Skills under it need a restart with --skill: pi
+  // discovers resources at startup and /reload, and /reload would also
+  // restart the broker.
   const extraDirs = new Map();
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
@@ -561,18 +565,18 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       const input = args?.trim();
       if (!input) return ctx.ui.notify("Type a directory after /add-dir", "info");
       let dir;
-      let text;
+      let instructions;
       try {
         dir = broker.policy.addRoot(input);
         // Read through the policy; a refusal takes the root back out.
-        try { text = broker.policy.instructions(dir); } catch (error) { broker.policy.removeRoot(dir); throw error; }
+        try { instructions = broker.policy.instructions(dir); } catch (error) { broker.policy.removeRoot(dir); throw error; }
       } catch (error) { ctx.ui.notify(error.message, "error"); return; }
-      extraDirs.set(dir, text);
+      if (instructions?.content) extraDirs.set(dir, instructions); else extraDirs.delete(dir);
       // A wider scope is a new epoch, as an approval change is; running
       // processes keep their narrower profile until their next lease.
       broker.policy.epoch++;
       publishEpoch();
-      appendVisible(pi, "workflow-note", { text: `Added ${dir} to the workspace${extraDirs.get(dir) ? " with its instructions" : ""}` });
+      appendVisible(pi, "workflow-note", { text: `Added ${dir} to the workspace${instructions?.content ? " with its instructions" : ""}` });
     } });
     pi.registerCommand("remove-dir", { description: "Remove an added directory from the workspace", getArgumentCompletions: prefix => completions([...broker.policy.roots.keys()].filter(root => root.startsWith(prefix))), handler: async (args, ctx) => {
       if (!broker.policy.roots.size) return ctx.ui.notify("No added directories", "info");

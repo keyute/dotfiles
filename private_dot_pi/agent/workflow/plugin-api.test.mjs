@@ -91,7 +91,7 @@ test("the control notice row is built from the event pi-subagents puts in detail
   const notice = event => controlNotice({ content: "Subagent needs attention: researcher\nRun: …", details: { event } }, {}, theme)?.render(200)[0].trimEnd();
   assert.equal(notice({ agent: "researcher", message: "researcher is waiting for a supervisor reply", reason: "supervisor_request" }),
     "<warning>• <toolTitle>researcher needs attention<muted> · is waiting for a supervisor reply");
-  assert.equal(notice({ agent: "ts-reviewer", message: "ts-reviewer failed", reason: "completion_guard" }), "<error>• <toolTitle>ts-reviewer failed");
+  assert.equal(notice({ agent: "ts-reviewer", message: "ts-reviewer needs attention (no observed activity for 300s)", reason: "idle" }), "<warning>• <toolTitle>ts-reviewer needs attention<muted> · no observed activity for 300s");
   // A payload the row cannot read is the plugin's to draw.
   assert.equal(controlNotice({ details: { event: { agent: "researcher" } } }, {}, theme), undefined);
   assert.equal(controlNotice({}, {}, theme), undefined);
@@ -101,7 +101,7 @@ test("the control notice row is built from the event pi-subagents puts in detail
 });
 
 test("the plan-mode research addendum is the root's alone, and execute mode carries neither", () => {
-  const base = { systemPrompt: "S", mode: "plan", readonly: true };
+  const base = { mode: "plan", readonly: true };
   const root = workflowPrompt({ ...base, isRoot: true });
   assert.match(root, /Workflow mode: plan\. Investigate only/);
   assert.match(root, /Research the request to the point of a plan without being asked/);
@@ -109,10 +109,10 @@ test("the plan-mode research addendum is the root's alone, and execute mode carr
   // A child in plan mode is read-only too, but has neither submit_plan nor ask_user_question.
   assert.doesNotMatch(workflowPrompt({ ...base, isRoot: false }), /Research the request/);
   // Execute mode replaces the investigate clause outright, so the addendum cannot ride it.
-  const executing = workflowPrompt({ systemPrompt: "S", mode: "execute", readonly: false, isRoot: true });
-  assert.equal(executing, "S\n\nWorkflow mode: execute. Execute only the user-approved task.");
-  // An added directory's instructions sit between the base prompt and the mode line.
-  assert.match(workflowPrompt({ ...base, isRoot: true, added: "\n\n# Instructions for /w\n\nX" }), /^S\n\n# Instructions for \/w\n\nX\n\nWorkflow mode: plan\./);
+  const executing = workflowPrompt({ mode: "execute", readonly: false, isRoot: true });
+  assert.equal(executing, "Workflow mode: execute. Execute only the user-approved task.");
+  // The section body is standalone: no base prompt riding in front of it.
+  assert.match(root, /^Workflow mode:/);
 });
 
 test("the exec recorder passes the call through and records command, sandbox flag and exit code, twenty deep", async () => {

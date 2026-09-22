@@ -160,10 +160,10 @@ export class Policy {
   // symlink cannot carry a denied file into the system prompt.
   instructions(root) {
     const lexical = ["AGENTS.md", "CLAUDE.md"].map(name => join(root, name)).find(existsSync);
-    if (!lexical) return "";
+    if (!lexical) return undefined;
     const path = this.checkPath(lexical);
     if (!inside(path, root)) throw new Error("Instructions file resolves outside the added directory");
-    return readFileSync(path, "utf8");
+    return { path, content: readFileSync(path, "utf8") };
   }
 
   role(name) {

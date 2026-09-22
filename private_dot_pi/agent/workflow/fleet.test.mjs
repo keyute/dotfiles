@@ -234,12 +234,16 @@ test("rows poll while children run, name the task from the launch, peek each sib
   const pi = { events: bus, on: (name, handler) => { events[name] = handler; }, appendEntry: (kind, data) => entries.push({ kind, data }), registerEntryRenderer() {} };
   const overlays = [];
   const notices = [];
-  const ctx = { hasUI: true, ui: {
+  const opened = [];
+  let shift = null;
+  let hold = null;
+  const openPeek = async (_ctx, opts) => { opened.push(opts); await shift?.(); await hold; };
+  const ctx = { hasUI: true, mode: "tui", ui: {
     custom: async (make, options) => { assert.equal(options.overlay, true); const component = make({}, theme, {}, () => overlays.push("closed")); overlays.push(component.render(80).join("\n")); component.handleInput("\x1b"); },
     notify: (message, level) => notices.push(`${level}: ${message}`),
   } };
   bus.entries = [{ agent: "restored", tokens: { total: 0 } }];
-  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 30, timeoutMs: 10 });
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 30, timeoutMs: 10, openPeek });
   const renders = [];
   fleet.attach({ requestRender: () => renders.push(1) });
   await sleep(20);
@@ -266,13 +270,50 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.match(overlays[0], /\*b › Review the diff for correctness\*/);
   assert.match(overlays[0], /transcript of run-b \(transcript, 40\)/);
   assert.equal(overlays[1], "closed");
-  assert.equal(fleet.focused(), false);
-  // Same-agent siblings: the second row peeks the second run.
+  // The text-tail path restores focus and the cursor to the peeked row too,
+  // so Down keeps moving without pressing Enter again.
+  assert.equal(fleet.focused(), true);
+  assert.equal(fleet.render(60, theme)[1], "  *❭* b › Review the diff for correctness");
+
+  // A launch whose result carries an asyncDir opens the injected dialog
+  // instead, with a live describe() sourced from the current poll.
+  events.tool_execution_start({ toolName: "subagent", toolCallId: "c5", args: { agent: "d", task: "Patch the config" } });
+  bus.entries = [{ agent: "d", tokens: { total: 2000 }, model: "openai-codex/m:medium", effort: "medium", startedAt: 7000 }];
+  bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running", activity: { currentTool: "workspace_bash" } }];
+  events.tool_execution_end({ toolName: "subagent", toolCallId: "c5", result: { details: { mode: "async", runId: "run-d", asyncDir: "/tmp/x/run-d" } } });
+  await sleep(20);
+  assert.equal(fleet.handleKey("confirm"), true);
+  await sleep(10);
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].id, "run-d");
+  assert.equal(opened[0].asyncDir, "/tmp/x/run-d");
+  assert.deepEqual(opened[0].describe(), {
+    agent: "d", task: "Patch the config", model: "openai-codex/m:medium", effort: "medium",
+    tokens: { total: 2000 }, startedAt: 7000, state: "running", currentTool: "workspace_bash", terminal: false,
+  });
+  assert.equal(fleet.focused(), true);
+  assert.equal(fleet.render(60, theme)[0], "  *❭* d › Patch the config · 2k tokens · m medium");
+  // Once the run leaves the async snapshot, describe() reports it terminal.
+  bus.runs = [];
+  await sleep(20);
+  assert.equal(opened[0].describe().terminal, true);
+  // A sibling that lands above the peeked row while the peek is open does not
+  // move the cursor off it: the row is found again by its key.
+  bus.entries = [{ key: "k-d", agent: "d", tokens: { total: 0 }, startedAt: 7000 }];
+  bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running" }];
+  await sleep(20);
+  shift = async () => { bus.entries = [{ key: "k-c", agent: "c", tokens: { total: 0 }, startedAt: 6000 }, ...bus.entries]; await sleep(20); };
+  fleet.handleKey("confirm");
+  await sleep(50);
+  shift = null;
+  assert.deepEqual(fleet.render(60, theme), ["  ○ c", "  *❭* d › Patch the config"]);
+
+  // Same-agent siblings: focus already sits on the first row, so Down alone
+  // reaches the second run.
   bus.entries = [{ agent: "b", tokens: { total: 0 }, startedAt: 5000 }, { agent: "b", tokens: { total: 0 }, startedAt: 5100 }];
   bus.runs = [{ id: "run-b", label: "b", startedAt: 5000 }, { id: "run-b2", label: "b", startedAt: 5100 }];
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
-  fleet.handleKey("enter");
   fleet.handleKey("down");
   fleet.handleKey("confirm");
   await sleep(10);
@@ -281,7 +322,6 @@ test("rows poll while children run, name the task from the launch, peek each sib
   bus.runs = [];
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
-  fleet.handleKey("enter");
   fleet.handleKey("confirm");
   await sleep(10);
   assert.deepEqual(notices, ["info: No transcript yet for b"]);
@@ -344,8 +384,20 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.equal(fleet.activeCount(), 1);
   bus.delayMs = 5;
   await sleep(6);
+  // A peek left open when the session shuts down gets its signal aborted.
+  bus.entries = [{ agent: "d", tokens: { total: 0 }, startedAt: 7000 }];
+  bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running" }];
+  await sleep(20);
+  hold = new Promise(() => {});
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  const pending = opened.at(-1);
+  assert.ok(pending.signal instanceof AbortSignal);
+  assert.equal(pending.signal.aborted, false);
   events.session_shutdown();
   assert.deepEqual(fleet.render(60, theme), []);
+  assert.equal(pending.signal.aborted, true);
   const afterShutdown = bus.requests.length;
   await sleep(30);
   assert.deepEqual(fleet.render(60, theme), []);

@@ -45,29 +45,31 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   hook (documented mutable input), bounded by the capability ceiling and
   enforced at the broker's child leases. MCP script mode and arbitrary
   subagent workflow/management paths stay disabled; `list` discovery, named
-  launches and lifecycle controls are enabled. Reversal trigger (2026-09-18):
-  own the launch/status surface only if its coupling-register rows still grow
-  after two consecutive pi-subagents bumps.
+  launches and lifecycle controls are enabled. Reversal triggers: own the
+  launch/status surface if its coupling-register rows still grow after two
+  consecutive bumps (2026-09-18); re-judge the plugin when a pi release ships
+  native subagents (2026-09-22).
 - No agent LSP or semantic-navigation integration (decision 2026-09-17):
   Serena's startup and language-server provisioning add maintenance without a
   demonstrated need. Navigation uses file/search tools; diagnostics use project
   toolchains in `workspace_bash`. Reintroduce only on measured pain.
-- pi-subagents 0.66.0 (bumped 2026-09-07) resolves `@earendil-works/pi-client/unix`
-  only when the host pi is exactly 0.85.0 (`runner-aliases.ts`
-  `PI0850_PEER_ALIASES`, #1944), so the root `@earendil-works/pi-client` pin
-  added for 0.65.1 was removed. Re-check on every pi/pi-subagents bump: the
-  child-preflight test passes without it, live background launch is the gate.
+- No root `@earendil-works/pi-client` pin: pi-subagents 0.70.1 resolves runner
+  imports through the host's packages (`runner-aliases.js`, 2026-09-22).
 - 2026-09-17: an owned questionnaire replaces RPIV and its dependencies using
   public TUI primitives. Root write/edit schemas are hidden during planning;
   Exa moves behind the existing MCP gateway, while Context7 stays direct.
   These exposure changes leave broker enforcement and child permissions intact.
-- 2026-09-18: the pi-subagents completion guard is fed through frontmatter —
-  `mutationTools` (shell, edit, write) on write roles, `completionGuard: false`
-  on read-only roles — after two implementer runs were failed as "no edits"
-  with new files on disk and a read-only explore-deep run was judged as
-  implementation; a third implementer that changed nothing was rejected
-  correctly, which is why the guard stays on for write roles (audit log
-  2026-09-18).
+- 2026-09-22: pi-subagents 0.70.1 removed the completion guard the roles were
+  tuned for on 2026-09-18; the driver's diff check is the gate. Roles carry
+  `acceptanceRole: read-only` or `acceptance: {"level":"none",…}` with
+  `mutationTools` (reasons in `docs/pi-coupling.md`).
+- 2026-09-22: the workflow prompt fills pi's structured prompt options (a
+  `workflow` section, `contextFiles` for `/add-dir`) instead of returning
+  `systemPrompt`: a returned prompt is forced whole and rewrites the leading
+  instructions on every mode switch or `/add-dir` — a prompt-cache miss over
+  the root context — while sections patch in one mid-conversation system
+  message and `/execute`'s added tools anchor as additions, so the cached
+  prefix survives plan → execute (`/plan` from execute still misses once).
 - 2026-09-18: TypeSafe Jev is not adopted for the approval classifier. An
   offline replay of 137 reviewed actions plus 16 labelled cases held every
   must-not-allow case at p90 364 ms, but the only slice it fast-allows safely

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, appendVisible, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, hideStreamingReasoning, installFolding, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, settleFold, summarise, toolRenderers } from "./rows.mjs";
+import { addFold, answerLines, appendVisible, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, hideStreamingReasoning, installFolding, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -85,6 +85,20 @@ test("a row is a title at column 0 and one ↳ line at the text column; the hint
   assert.deepEqual(failed.slice(0, 2), ["  <error>l1", "  <error>l2"]);
   assert.equal(failed[2], "  <muted>… 2 more lines");
   assert.equal(failed.at(-1), "  <error>Command exited with code 1");
+});
+
+test("rowLines is the summary line plus body lines renderBody draws, both indented", () => {
+  assert.deepEqual(rowLines("bash", result("a\nb"), { expanded: false, isError: false }, theme), ["  <muted>↳ 2 lines"]);
+  assert.deepEqual(rowLines("bash", result("a\nb"), { expanded: true, isError: false }, theme), ["  <muted>↳ 2 lines", "  <toolOutput>a", "  <toolOutput>b"]);
+  const failed = result("l1\nl2\nl3\nl4\nl5\nl6\n\nCommand exited with code 1");
+  assert.deepEqual(rowLines("bash", failed, { isError: true }, theme), [
+    "  <error>l1",
+    "  <error>l2",
+    "  <muted>… 2 more lines",
+    "  <error>l5",
+    "  <error>l6",
+    "  <error>Command exited with code 1",
+  ]);
 });
 
 test("folded rows render nothing; the first row carries the caret handle in both states, and ctrl+o drives it both ways", () => {
@@ -216,7 +230,7 @@ test("summary wording", () => {
   assert.equal(summarise({}), "");
 });
 
-test("grouping closes on assistant text and visible rows; MCP, discovery, and launches group, other management and background-task rows do not", () => {
+test("grouping closes on assistant text and visible rows; MCP, discovery, launches, and subagent management group; background-task rows do not", () => {
   const folds = createFolds();
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
@@ -234,17 +248,26 @@ test("grouping closes on assistant text and visible rows; MCP, discovery, and la
   handlers.message_update(says("Done"));
   assert.deepEqual(foldGroup(folds, "m1").counts, { read: 1, mcp: 1 });
   assert.equal(foldGroup(folds, "r1"), foldGroup(folds, "m1"));
-  // A subagent launch joins the run above it like any other foldable fact.
+  // A subagent launch and a status check both join the run above them.
   start("workspace_read", "r4");
   start("workspace_read", "r5");
   ok("r4");
   ok("r5");
   start("subagent", "s1", { agent: "researcher", task: "x" });
   ok("s1");
-  start("subagent", "s2", { action: "status", id: "r1" }); // management: a boundary, seals the run above and joins none
-  assert.equal(foldGroup(folds, "s2"), null);
-  assert.deepEqual(foldGroup(folds, "s1").counts, { read: 2, agent: 1 });
+  start("subagent", "s2", { action: "status", id: "r1" });
+  ok("s2");
+  closeFolds(folds);
+  assert.deepEqual(foldGroup(folds, "s1").counts, { read: 2, agent: 1, check: 1 });
   assert.equal(foldGroup(folds, "r4"), foldGroup(folds, "s1"));
+  // A wait on running work stays a boundary: it seals the run above and joins none.
+  start("workspace_read", "r8");
+  ok("r8");
+  start("bg_wait", "w1", { id: "r1" });
+  ok("w1");
+  closeFolds(folds);
+  assert.equal(foldGroup(folds, "w1"), null);
+  assert.equal(foldGroup(folds, "r8"), null);
   // A background task is running work, not housekeeping: its row stays visible too.
   start("workspace_read", "r6");
   start("workspace_read", "r7");
@@ -275,6 +298,65 @@ test("grouping closes on assistant text and visible rows; MCP, discovery, and la
   ok("d2");
   handlers.message_end(says("Ok"));
   assert.deepEqual(foldGroup(folds, "d1").counts, { edit: 2 });
+});
+
+test("subagent steer and status checks fold with launches; a steer member line carries no output tail, and a failed stop is never a member", () => {
+  const folds = createFolds(() => false);
+  const subagent = pluginRenderers("subagent", { folds });
+  const ctx = id => context({ toolCallId: id });
+  const mount = (id, args, tool) => { subagent.renderCall(args, theme, ctx(id)); addFold(folds, id, tool); };
+  mount("s1", { agent: "researcher", task: "x" }, "agent");
+  mount("s2", { action: "steer", id: "s1" }, "steer");
+  mount("s3", { action: "status", id: "s1" }, "check");
+  settleFold(folds, "s1", false, result("Async run r1", { asyncId: "r1" }));
+  settleFold(folds, "s2", false, result("steered agent s1"));
+  settleFold(folds, "s3", false, result("still running"));
+  closeFolds(folds);
+  const group = foldGroup(folds, "s1");
+  assert.deepEqual(group.counts, { agent: 1, steer: 1, check: 1 });
+  assert.equal(summarise({ agent: 1, steer: 1, check: 2 }), "Launched 1 agent, steered 1 agent, checked on 2 agents");
+  const handle = subagent.renderCall({ agent: "researcher", task: "x" }, theme, ctx("s1"));
+  handle.handleMouse({ type: "click", button: "left", x: 0, y: 0 });
+  assert.deepEqual(rendered(subagent.renderCall({ agent: "researcher", task: "x" }, theme, ctx("s1"))), [
+    "<toolTitle>▾ Launched 1 agent, steered 1 agent, checked on 1 agent",
+    "  <muted>↳ <toolTitle>researcher › x",
+    "  <muted>↳ <toolTitle>subagent steer s1",
+    "  <muted>↳ <toolTitle>subagent status s1",
+  ]);
+
+  // A successful stop and interrupt fold in the same way as steer and check.
+  const stoppedFolds = createFolds(() => false);
+  const stoppedSubagent = pluginRenderers("subagent", { folds: stoppedFolds });
+  const stoppedCtx = id => context({ toolCallId: id });
+  const mountStopped = (id, args, tool) => { stoppedSubagent.renderCall(args, theme, stoppedCtx(id)); addFold(stoppedFolds, id, tool); };
+  mountStopped("p1", { agent: "researcher", task: "x" }, "agent");
+  mountStopped("p2", { action: "stop", id: "p1" }, "stop");
+  mountStopped("p3", { action: "interrupt", id: "p1" }, "interrupt");
+  settleFold(stoppedFolds, "p1", false, result("Async run r1", { asyncId: "r1" }));
+  settleFold(stoppedFolds, "p2", false, result("stopped agent p1"));
+  settleFold(stoppedFolds, "p3", false, result("interrupted agent p1"));
+  closeFolds(stoppedFolds);
+  assert.deepEqual(foldGroup(stoppedFolds, "p1").counts, { agent: 1, stop: 1, interrupt: 1 });
+  assert.deepEqual(rendered(stoppedSubagent.renderCall({ agent: "researcher", task: "x" }, theme, stoppedCtx("p1"))), [
+    "<muted>▸ Launched 1 agent, stopped 1 agent, interrupted 1 agent",
+  ]);
+
+  // A failed stop is never a member, matching every other failed fact.
+  const stopFolds = createFolds(() => false);
+  const stopSubagent = pluginRenderers("subagent", { folds: stopFolds });
+  const stopCtx = id => context({ toolCallId: id });
+  stopSubagent.renderCall({ agent: "researcher", task: "y" }, theme, stopCtx("a1"));
+  addFold(stopFolds, "a1", "agent");
+  stopSubagent.renderCall({ agent: "reviewer", task: "z" }, theme, stopCtx("a2"));
+  addFold(stopFolds, "a2", "agent");
+  stopSubagent.renderCall({ action: "stop", id: "a1" }, theme, stopCtx("st1"));
+  addFold(stopFolds, "st1", "stop");
+  settleFold(stopFolds, "a1", false);
+  settleFold(stopFolds, "a2", false);
+  settleFold(stopFolds, "st1", true);
+  closeFolds(stopFolds);
+  assert.equal(foldGroup(stopFolds, "st1"), null);
+  assert.deepEqual(foldGroup(stopFolds, "a1").counts, { agent: 2 });
 });
 
 test("two subagent launches alone seal into a run, a failed launch is never a member, and a background bash keys as task only once it outlives its grace period", () => {
@@ -773,12 +855,9 @@ test("a control notice is one row: the state, and the signal without what the ti
     "<warning>• <toolTitle>researcher needs attention<muted> · no observed activity for 300s");
   assert.equal(noticeLine({ agent: "researcher", message: "researcher needs attention after repeated mutating tool failures" }, theme),
     "<warning>• <toolTitle>researcher needs attention<muted> · after repeated mutating tool failures");
-  // The completion guard's own signal names neither state, so it survives whole.
-  assert.equal(noticeLine({ agent: "ts-reviewer", failed: true, message: "ts-reviewer completed without making edits for an implementation task" }, theme),
-    "<error>• <toolTitle>ts-reviewer failed<muted> · completed without making edits for an implementation task");
   // A trailing bracket that does not wrap the whole reason stays put.
-  assert.equal(noticeLine({ agent: "ts-reviewer", failed: true, message: "ts-reviewer failed timing out (soft)" }, theme),
-    "<error>• <toolTitle>ts-reviewer failed<muted> · timing out (soft)");
+  assert.equal(noticeLine({ agent: "researcher", message: "researcher needs attention while timing out (soft)" }, theme),
+    "<warning>• <toolTitle>researcher needs attention<muted> · while timing out (soft)");
   assert.equal(noticeLine({ agent: "researcher", message: "" }, theme), "<warning>• <toolTitle>researcher needs attention");
 });
 

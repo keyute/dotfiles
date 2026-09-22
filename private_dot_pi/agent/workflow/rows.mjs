@@ -49,6 +49,13 @@ const plural = (n, noun, nouns = `${noun}s`) => `${n} ${n === 1 ? noun : nouns}`
 const indent = line => `${PAD}${line}`;
 export const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
 
+// The editor's fake cursor ends in a full SGR reset, which also drops the
+// background; re-open it after every reset so the shade spans the line.
+export function shade(theme, line) {
+  const open = theme.bg("userMessageBg", "").replace(/\x1b\[49m$/, "");
+  return theme.bg("userMessageBg", line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
+}
+
 export function shortTitle(text, width = TITLE_WIDTH) {
   const title = oneLine(text);
   if (title.length <= width) return title;
@@ -162,15 +169,21 @@ function summaryLine(name, summary, theme) {
   return `${theme.fg("muted", SUB)} ${paintCounts(summary, theme)}`;
 }
 
-function renderBody(name, result, options, theme, context) {
+// The lines a row's result draws: the summary line first when there is one,
+// then the body, each indented to the text column.
+export function rowLines(name, result, { expanded = false, isError = false } = {}, theme) {
   const lines = [];
-  const summary = context.isError ? "" : resultSummary(name, result);
+  const summary = isError ? "" : resultSummary(name, result);
   if (summary) lines.push(summaryLine(name, summary, theme));
-  for (const line of bodyLines(name, result, { expanded: options.expanded, isError: context.isError })) {
-    if (context.isError && ELIDED.test(line)) lines.push(theme.fg("muted", line));
-    else lines.push(name === "edit" && !context.isError ? line : theme.fg(context.isError ? "error" : "toolOutput", line));
+  for (const line of bodyLines(name, result, { expanded, isError })) {
+    if (isError && ELIDED.test(line)) lines.push(theme.fg("muted", line));
+    else lines.push(name === "edit" && !isError ? line : theme.fg(isError ? "error" : "toolOutput", line));
   }
-  return new Text(lines.map(indent).join("\n"), 0, 0);
+  return lines.map(indent);
+}
+
+function renderBody(name, result, options, theme, context) {
+  return new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError }, theme).join("\n"), 0, 0);
 }
 
 // Grouping, as Claude Code does it: successful activity facts between two
@@ -197,21 +210,28 @@ const WORDS = {
   web: ["ran", "web search", "web searches"],
   discovery: ["ran", "agent discovery", "agent discoveries"],
   agent: ["launched", "agent"],
+  steer: ["steered", "agent"],
+  check: ["checked on", "agent"],
+  stop: ["stopped", "agent"],
+  interrupt: ["interrupted", "agent"],
   task: ["started", "background command"],
   agentDone: ["finished", "agent"],
   taskDone: ["finished", "background task"],
 };
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
 const isMcp = name => name === "mcp" || name.startsWith("mcp__");
-// `workspace_task` and subagent management other than discovery stay out: each
-// is a visible boundary row. Calls that are transcript housekeeping — including
-// launches, list discovery, provider web search, and backgrounded bash calls
-// that outlive their grace period — share the activity group with successful
-// child/task completions appended below.
+// Subagent management calls are transcript housekeeping and group like any
+// other activity fact: launch, list discovery, steer, status check, stop and
+// interrupt. `workspace_task` and `bg_wait` stay out as visible boundary
+// rows: each is a blocking wait on running work whose own sentence is the
+// information.
+const SUBAGENT_ACTIONS = { list: "discovery", steer: "steer", status: "check", stop: "stop", interrupt: "interrupt" };
+// Every subagent fold but discovery carries no summary worth a member line.
+const NO_SUMMARY = new Set(["agent", ...Object.values(SUBAGENT_ACTIONS).filter(key => key !== "discovery")]);
 const foldKey = (name, args = {}) => {
   if (name === "subagent") {
     if (args.agent && args.task) return "agent";
-    return args.action === "list" ? "discovery" : null;
+    return SUBAGENT_ACTIONS[args.action] ?? null;
   }
   if (name === "web_search" || name === "url_context") return "web";
   return name.startsWith("workspace_") && name !== "workspace_task" ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null;
@@ -256,7 +276,7 @@ export function settleFold(folds, id, failed, result) {
   refold(folds, () => {
     fact.outcome = failed ? "failed" : "success";
     if (fact.key === "bash" && result?.details?.taskId) fact.key = "task";
-    if (!failed) fact.summary = fact.key === "agent" ? "" : resultSummary(fact.tool, result);
+    if (!failed) fact.summary = NO_SUMMARY.has(fact.key) ? "" : resultSummary(fact.tool, result);
     folds.revision += 1;
   });
 }
@@ -605,7 +625,8 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 }
 
 // The background-task tool: its result is a status line and the task's output.
-export const taskRenderers = rowRenderers({ name: "plugin", title: args => (args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`) });
+export const taskTitle = args => (args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`);
+export const taskRenderers = rowRenderers({ name: "plugin", title: taskTitle });
 
 // The plan reads as chat, not as a dialog: pi's `confirm` folds its second
 // argument into the selector's title, which renders bold accent with no
@@ -801,15 +822,16 @@ const behind = (text, head) => (text.startsWith(head) ? text.slice(head.length).
 
 // pi-subagents' control notice carries the run id and the four subagent({…})
 // calls the model answers it with; the reader gets the completion line's shape
-// instead, and the message's own content reaches the model untouched. The
-// signal opens by naming the agent and, on the idle and tool-failure notices,
-// its state too — both of which the title has said, and the default idle
-// signal parenthesizes what is left of it.
-export function noticeLine({ agent, failed, message }, theme) {
-  const state = failed ? "failed" : "needs attention";
+// instead, and the message's own content reaches the model untouched. Every
+// notice is a "needs attention" (idle, supervisor request; 0.70.1 has no
+// failure notice). The signal opens by naming the agent and, on the idle
+// notice, its state too — both of which the title has said, and the default
+// idle signal parenthesizes what is left of it.
+export function noticeLine({ agent, message }, theme) {
+  const state = "needs attention";
   const reason = behind(behind(oneLine(message), `${agent} `), state);
   const tail = shortTitle(reason.startsWith("(") && reason.endsWith(")") ? reason.slice(1, -1) : reason, SUMMARY_WIDTH);
-  return `${theme.fg(failed ? "error" : "warning", BULLET)} ${theme.fg("toolTitle", `${agent} ${state}`)}${tail ? theme.fg("muted", ` · ${tail}`) : ""}`;
+  return `${theme.fg("warning", BULLET)} ${theme.fg("toolTitle", `${agent} ${state}`)}${tail ? theme.fg("muted", ` · ${tail}`) : ""}`;
 }
 
 export function formatDuration(ms) {

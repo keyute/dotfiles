@@ -25,6 +25,10 @@ function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-integration-test-"));
   const agentDir = join(root, "agent");
   mkdirSync(join(agentDir, "agents"), { recursive: true });
+  // Mirrors the applied extensions/subagent/config.json: with the bridge on,
+  // pi-subagents adds contact_supervisor to every child's allowlist.
+  mkdirSync(join(agentDir, "extensions", "subagent"), { recursive: true });
+  writeFileSync(join(agentDir, "extensions", "subagent", "config.json"), JSON.stringify({ intercomBridge: { mode: "off" } }));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const role = { readonly: true, tools: ["workspace_read"], model: "openai-codex/gpt-5.6-luna", thinking: "low", agentPath: join(agentDir, "agents", "fixture-reader.md"), extensionPath: join(agentDir, "reader.ts") };
   const writer = { ...role, readonly: false, agentPath: join(agentDir, "agents", "fixture-writer.md"), extensionPath: join(agentDir, "writer.ts") };

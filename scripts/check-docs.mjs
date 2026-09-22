@@ -22,7 +22,8 @@ const PROJECTION_MAX_LINES = 100;
 const YAML_COMMENT_MAX_RUN = 5;
 const LINE_BUDGETS = {
   "docs/pi-implementation.md": 150,
-  "docs/pi-design.md": 200,
+  // 210 since 2026-09-22: rules 2, 6 and 11 took the peek's dated decisions after the superseded bullets were already pruned.
+  "docs/pi-design.md": 210,
   // 130 since 2026-09-18: the plugin-vs-owned convention took the last slack
   "AGENTS.md": 130,
   "docs/agents-baseline.md": 250,

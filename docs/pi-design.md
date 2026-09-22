@@ -1,6 +1,6 @@
 # Pi TUI design language
 
-Last verified 2026-09-21 (pi 0.85.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,index,dialog,questionnaire,plan-approval}.mjs`;
+Last verified 2026-09-22 (pi 0.87.0, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval}.mjs`;
 change a rule only with a dated decision here, never by re-wording.
 
 The intent, set on 2026-09-07 from a side-by-side of pi, Codex and Claude
@@ -16,8 +16,6 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    `▸`/`▾` for a fold handle's state (rule 2). No `⏺`/`✻`/`◯` (Claude's
    signatures), no Codex `Called`/`Explored` headers. *Why:* a borrowed
    signature reads as a clone; a glyph set that is ours reads as pi.
-   - *2026-09-10:* the fleet cursor moved `›`→`❭`; `›` is the row's own
-     `agent › title` separator and too small at the accent colour.
    - *2026-09-21:* `❭` became the one selection cursor and `✔` joined, replacing the dialogs' unlisted `→` and `●`/`○` (rule 11).
 2. **Quiet while working.** Reasoning renders as nothing and takes no space:
    pi's `hideThinkingBlock` stays off and the markdown transformer returns ""
@@ -71,6 +69,9 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      `↓ to manage` hint, members listed for good. *Why:* the reader needs the
      list while it is happening and the count once it has passed; one rule for
      every class of row leaves nothing to remember per tool.
+   - *2026-09-22:* subagent management calls (steer, status, interrupt, stop) joined the group (`steered 1 agent`,
+     `checked on 2 agents`), reversing their boundary-row exemption; `bg_wait` and `workspace_task` stay visible, each a
+     blocking wait whose own sentence is the information. *Why:* a steer between two reads split the group for a row that says nothing its completion line does not.
 3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the
@@ -136,8 +137,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      where it declares none — chosen over an allowlist of completing commands,
      which would take pi's own `/model`, `/thinking` and `/login` off it.
    - *2026-09-09, later still:* the menu also opens on the characters a path is
-     typed with (the command's space, `/`, `~`), first line only, and `..` is
-     offered while the walk climbs; an accept shows the next level and stops.
+     typed with (the command's space, `/`, `~`), first line only; an accept shows the next level and stops.
    - *2026-09-17:* superseding the 2026-09-10 ancestor-skipping decision, `/add-dir` respects explicit paths literally:
      an addable slash-ended path comes first, children below, preserving relative, `~/…` and absolute spelling.
      Empty input starts at siblings; policy exclusions still apply. Tab accepting unchanged text closes the menu;
@@ -149,6 +149,12 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    shows `❭`, Enter peeks the child's transcript, Esc or up returns. *Why:* the
    owner wants the Claude Code panel with its Enter peek and asked for
    pi-flavoured markers in place of `⏺`/`◯`.
+   - *2026-09-22:* the peek is a rule 11 dialog over the child's own transcript: the run's `events.jsonl` replayed
+     through rule 2's row grammar (tool rows with their `↳` summary, bodies under ctrl+o, assistant markdown, sent
+     steers as rule 5 blocks), a live header (`agent › task · model · tokens · elapsed · current tool`), scrolling, a
+     rule 5 composer whose Enter steers the child, `/stop` behind a confirm, Esc back to the row it left. A run whose
+     artifact directory this process never saw (restored, foreground) keeps pi-subagents' text tail. *Why:* the text
+     tail named tools without outcomes; the owner wants to look at and talk to a child as if it were the main thread.
 7. **Stability over fidelity.** Build on a documented pi or plugin API. An
    undocumented export or heuristic is allowed only with an entry in the
    coupling inventory (`docs/pi-coupling.md`) and a test that fails on the pin
@@ -198,3 +204,4 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
     - Marks: single-select none, the chosen row ends ` ✔`; multi-select `[✔]` accent, `[ ]` muted. Text is typed inline through the borderless native editor behind a dim placeholder, never in an editor box.
     - Plan approval: title, vertical Yes/No, feedback beside No, no hint. Blank Enter or Esc stops without another model turn; Up from the first line or Tab returns to Yes keeping the draft.
     - Questionnaire: a single question has no header; tabs are ` label ` cells; Tab opens the note under its option; the free answer is typed, and kept literal, in its own last row; one blank below the header or top rule and above the one dim ` · `-joined hint; eight-row minimum; arrows move, PgUp/PgDn page.
+    - *2026-09-22:* the fleet peek's composer takes rule 5's shade and `❯`, not the dim inline field: it is a composer, and its sent steers sit above it in the same shade.

@@ -149,9 +149,9 @@ test("an added directory's instructions are read through the read policy", t => 
   const p = fixture(t);
   const other = join(p.cwd, "..", "other");
   mkdirSync(other);
-  assert.equal(p.instructions(p.addRoot("../other")), "");
+  assert.equal(p.instructions(p.addRoot("../other")), undefined);
   writeFileSync(join(other, "CLAUDE.md"), "be brief");
-  assert.equal(p.instructions(canonical(other)), "be brief");
+  assert.deepEqual(p.instructions(canonical(other)), { path: join(canonical(other), "CLAUDE.md"), content: "be brief" });
   symlinkSync(join(p.cwd, "..", "secret", "fixture"), join(other, "AGENTS.md"));
   assert.throws(() => p.instructions(canonical(other)), /denied/);
   rmSync(join(other, "AGENTS.md"));

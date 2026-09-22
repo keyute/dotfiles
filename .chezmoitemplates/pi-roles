@@ -32,7 +32,7 @@
     {{- if ne $meta.tier "inherit" -}}
       {{- $model = printf "%s/%s" $root.agents.pi.defaults.provider (index $root.subagent_tiers.pi $meta.tier) -}}
     {{- end -}}
-    {{- /* mutationTools: renamed tools are invisible to pi-subagents' completion guard, so mutation-capable roles declare them; the shell and (for nesting roles) subagent are listed too because only the literal `bash` name gets command inspection upstream, and an untracked file created by a shell command or a delegated child leaves no other evidence */ -}}
+    {{- /* mutationTools: renamed tools are invisible to pi-subagents' long-running guard and mutation evidence, so mutation-capable roles declare them; the shell and (for nesting roles) subagent are listed too because only the literal `bash` name gets command inspection upstream, and an untracked file created by a shell command or a delegated child leaves no other evidence */ -}}
     {{- $mutationTools := list -}}
     {{- if not $meta.readonly -}}
       {{- range $tools -}}

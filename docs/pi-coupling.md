@@ -3,7 +3,10 @@
 The undocumented pi and plugin surfaces the managed workflow leans on
 (`docs/pi-design.md` rule 7). Re-check on every pin bump; `npm run test:pi` is
 the gate. Moved here from `~/.pi/agent/docs/harness.md` on 2026-09-12: its
-consumers are sessions editing this repo, not runtime pi sessions.
+consumers are sessions editing this repo, not runtime pi sessions. Source pins
+name the files a package ships: pi-subagents publishes compiled `src/**/*.js`
+plus `.d.ts` (its `extension-api.md`, "Published package vs source checkout"),
+pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
 
 - Documented pi surfaces: tool renderers (`renderShell: "self"`,
   `context.expanded/toolCallId/invalidate/state`), `registerMarkdownTransformer`,
@@ -28,21 +31,22 @@ consumers are sessions editing this repo, not runtime pi sessions.
   the API they are handed and pi keeping the definition object (`loader.js`).
   Rows read `args` and the result text; the two `details` reads are the
   adapter's `error` (failures it reports without `isError`) and pi-subagents'
-  `asyncId` (a launch). `stability.test.mjs` pins registrations and both fields;
+  `asyncId` (a launch; the fleet also keeps its documented `asyncDir`). `stability.test.mjs` pins registrations and both fields;
   `plugin-api.test.mjs` and `integration.test.mjs` gate the schema narrowing
   without a dependency fork (2026-09-16).
-- Completion guard: pi-subagents fails an implementation-shaped run that shows
-  no mutation attempt, judged from tool names it knows (`edit`, `write`,
-  `bash`) or the agent's `mutationTools`, plus a tracked-files `git diff HEAD`
-  before and after; unknown names such as `workspace_*` count as
-  mutation-capable but never as attempts, only the literal `bash` name gets
-  command inspection, and new files are invisible to the diff. Write roles
-  therefore declare `mutationTools: workspace_bash, workspace_edit,
-  workspace_write` plus `subagent` where they nest (any shell call or launch
-  counts, so the guard now fires only on a read-then-prose run) and read-only
-  roles `completionGuard: false`
-  (`pi-roles`, `agents/*.md.tmpl`); `stability.test.mjs` pins both frontmatter
-  keys and the name check (2026-09-18).
+- Acceptance and mutation names: pi-subagents 0.70.1 dropped its completion
+  guard (the read-then-prose failure the roles were tuned for on 2026-09-18) for
+  acceptance inference keyed on `acceptanceRole` alone — `writer` infers checked
+  evidence plus a required review by its bundled `reviewer`, which would launch
+  outside the tier policy, and an omitted role adds an attestation section to
+  the child prompt. Read-only roles therefore declare `acceptanceRole:
+  read-only` (infers none, adds nothing) and write roles
+  `acceptance: {"level":"none",…}` (the driver verifies from the diff), keeping
+  `mutationTools: workspace_bash, workspace_edit, workspace_write` plus
+  `subagent` where they nest, since renamed tools are otherwise invisible to
+  the long-running guard's mutation check and the run's mutation evidence
+  (`pi-roles`, `subagent-pi.md`); `stability.test.mjs` pins the three
+  frontmatter reads and the name check (2026-09-22).
 - The quiet completion notice: the same `pluginApi` Proxy intercepts
   `sendMessage` and sends pi-subagents' completion notice with `display` off
   (`docs/pi-design.md` rule 4, 2026-09-12). Rests on the plugin sending that
@@ -67,10 +71,11 @@ consumers are sessions editing this repo, not runtime pi sessions.
   separator, since the accept cancels the menu and nothing re-opens it. All
   three behaviours pinned in `stability.test.mjs`; `caret.test.mjs` drives the
   walk through pi's own provider.
-- Exported but undocumented: `renderDiff`, `keyHint`, `getMarkdownTheme`,
-  `CustomEditor` (stability test covers the export; `caret.test.mjs` pins the
+- Exported but undocumented: `renderDiff` and `getMarkdownTheme` (stability
+  test covers the export). `CustomEditor` is documented since pi 0.87.0, but the
   render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
-  `setPaddingX`, the first content line's padding columns).
+  `setPaddingX`, the first content line's padding columns — is not;
+  `caret.test.mjs` pins it.
 - The owned questionnaire directly uses public `custom` and `Markdown`;
   native paste expansion preserves complete notes and free answers (2026-09-17).
 - Inline dialog text (plan feedback, questionnaire notes and free answers) retains `Editor.render()` for wrapping, cursor and navigation geometry,
@@ -107,7 +112,7 @@ consumers are sessions editing this repo, not runtime pi sessions.
   them sit adjacent but ungrouped, as before this change (2026-09-18).
 - Heuristic: fleet rows pair with async runs by agent label, a 30 s start
   window and sibling rank (`fleet.mjs` `runIdFor`); the DTO's keys are opaque
-  and its `goal` is never filled in 0.66.0. `fleet.test.mjs` pins it; the
+  and its `goal` is never filled in 0.70.1. `fleet.test.mjs` pins it; the
   upstream fix is a `goal`-populating DTO. Completion lines take each result's
   resolved `status` from the `subagent:async-complete` payload (the result
   file spread plus `runId`), falling back to `state`, `success` and `agent`,
@@ -118,6 +123,24 @@ consumers are sessions editing this repo, not runtime pi sessions.
   (a body only; a closed fold reopens when the documented
   `ctx.ui.getToolsExpanded()` value changes, i.e. on Ctrl+O). All pinned in
   `stability.test.mjs`.
+- The fleet peek replays `<asyncDir>/events.jsonl`: the file and `asyncDir` (the
+  launch result's `details.asyncDir`, `observability.md`) are documented, and
+  so is the file's content in outline (the child's pi events with
+  `message_update` dropped); the record annotations are not — the events
+  (`tool_execution_start/end`, `message_end`) carry `subagentSource:
+  "child"`, `subagentRunId`, `subagentStepIndex`, `subagentAgent`, `observedAt`,
+  capped at 50 MiB with one `subagent.events.truncated` record and nothing
+  after; the runner's own `subagent.steer.*` receipts share the file through
+  an uncapped writer and carry no annotation, so records are read by `type`.
+  A steer reaches the child as a user message opening `Mid-run steering from
+  the parent orchestrator:` (`Queued follow-up …` for `follow_up`) and closing
+  with the `Incorporate this guidance…` line, which the replay strips; the
+  `steer` RPC blocks up to 3 s for its receipt, so the peek's call outlives
+  the fleet poll's 2 s timeout. The header's current tool is
+  `asyncSnapshot.runs[].activity.currentTool`, a source shape beside the
+  documented `runs[].id`. All pinned in `stability.test.mjs`; each entry
+  retires when pi-subagents documents the shape or serves it over RPC
+  (2026-09-22).
 - srt's `CLAUDE_CODE_TMPDIR` environment variable, read when it wraps a
   command, names the `TMPDIR` it exports into that command; `sandbox-runner.mjs`
   sets it to the lease's scratch path. Documented only in srt's source comment
