@@ -98,6 +98,33 @@ export function runIdFor(state, entry) {
   return id;
 }
 
+// A restored or resumed session never replays this process's own
+// tool_execution_start/end events, so state.launches is rebuilt from the
+// session branch (docs/extensions.md, docs/session-format.md): assistant
+// toolCall parts pair with a later toolResult by toolCallId, and the
+// result's own details carry the run id and asyncDir the peek needs.
+export function launchesFromBranch(entries) {
+  const calls = new Map();
+  for (const entry of entries ?? []) {
+    for (const part of entry?.message?.content ?? []) {
+      if (part?.type === "toolCall" && part.name === "subagent" && part.id) {
+        calls.set(part.id, { agent: part.arguments?.agent, task: String(part.arguments?.task ?? "") });
+      }
+    }
+  }
+  const launches = new Map();
+  for (const entry of entries ?? []) {
+    const message = entry?.message;
+    if (message?.role !== "toolResult" || message.toolName !== "subagent") continue;
+    const details = message.details;
+    const id = details?.runId ?? details?.asyncId;
+    if (!id || typeof details?.asyncDir !== "string") continue;
+    const call = calls.get(message.toolCallId) ?? {};
+    launches.set(id, { agent: call.agent, task: call.task ?? "", asyncDir: details.asyncDir });
+  }
+  return launches;
+}
+
 // pi-subagents 0.70.1 never fills the DTO's `goal`; the task comes from the
 // launch this session recorded against the run id.
 export function rowFor(state, entry) {
@@ -299,7 +326,6 @@ export function installFleet(pi, ctx, {
       tokens: entry?.tokens,
       startedAt: entry?.startedAt,
       state: run?.state,
-      currentTool: run?.activity?.currentTool,
       // A run absent from the snapshot (evicted, or never seen) is terminal.
       terminal: !run || !ACTIVE_RUN_STATES.has(run.state),
     };
@@ -359,7 +385,15 @@ export function installFleet(pi, ctx, {
   return {
     wake,
     stopAll: () => stopping ??= stopAll().finally(() => { stopping = undefined; }),
-    attachContext: current => { state.peek?.abort(); state.peek = undefined; state.bindings.clear(); state.ctx = current; state.stopped = false; wake(); },
+    attachContext: current => {
+      state.peek?.abort(); state.peek = undefined; state.bindings.clear(); state.ctx = current; state.stopped = false;
+      // A live launch recorded from this process's own events wins over the
+      // branch's replay of the same run.
+      for (const [id, launch] of launchesFromBranch(current?.sessionManager?.getBranch?.())) {
+        if (!state.launches.has(id)) state.launches.set(id, launch);
+      }
+      wake();
+    },
     handleKey,
     // Runs restored with the session never emit async-started; the poll's
     // count covers them (it lags a completion by one poll, so the event set

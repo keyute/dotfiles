@@ -235,7 +235,7 @@ const isMcp = name => name === "mcp" || name.startsWith("mcp__");
 const SUBAGENT_ACTIONS = { list: "discovery", steer: "steer", status: "check", stop: "stop", interrupt: "interrupt" };
 // Every subagent fold but discovery carries no summary worth a member line.
 const NO_SUMMARY = new Set(["agent", ...Object.values(SUBAGENT_ACTIONS).filter(key => key !== "discovery")]);
-const foldKey = (name, args = {}) => {
+export const foldKey = (name, args = {}) => {
   if (name === "subagent") {
     if (args.agent && args.task) return "agent";
     return SUBAGENT_ACTIONS[args.action] ?? null;
@@ -253,8 +253,10 @@ const MIN_RUN = 2;
 // process's own completion seqs apart from another process sharing the same
 // session file (rule 4); `repaint` is unset until `setRepaint` wires it to
 // the TUI, since completion rows have no per-entry invalidate of their own.
-export function createFolds(toolsExpanded = () => undefined) {
-  return { timeline: [], invalidate: new Map(), titles: new Map(), views: new Map(), revision: 0, derived: null, boundaries: 0, toolsExpanded, repaint: () => {}, nonce: Math.random().toString(36).slice(2, 8), doneSeq: 0 };
+// `quiet` skips the before/after diff a bulk replay has no components to
+// invalidate for (the fleet peek, see `refold`).
+export function createFolds(toolsExpanded = () => undefined, { quiet = false } = {}) {
+  return { timeline: [], invalidate: new Map(), titles: new Map(), views: new Map(), revision: 0, derived: null, boundaries: 0, toolsExpanded, repaint: () => {}, nonce: Math.random().toString(36).slice(2, 8), doneSeq: 0, quiet };
 }
 export const defaultFolds = createFolds();
 export function setRepaint(folds, repaint) {
@@ -367,6 +369,10 @@ const groupFor = (derived, id) => derived.byId.get(id) ?? derived.liveById.get(i
 // requests one whole-TUI repaint. Both paths read the same derived group before
 // any renderer runs, preventing a stale separator inside a mixed group.
 function refold(folds, mutate) {
+  if (folds.quiet) {
+    mutate();
+    return;
+  }
   const derivedBefore = derive(folds);
   const beforeIds = new Set([...derivedBefore.byId.keys(), ...derivedBefore.liveById.keys()]);
   const before = new Map([...beforeIds].map(id => [id, groupFor(derivedBefore, id)]));
@@ -427,6 +433,15 @@ const speaks = event => event.message?.role === "assistant" && (event.message.co
 // enqueue that can precede it.
 const displays = event => Boolean(event.message?.customType) && Boolean(event.message.display);
 
+// A pending tool must stay outside the collapsed success group; a boundary
+// after it would hold the whole group open until it settles. Shared by
+// `installFolding`'s `input` handler and the fleet peek's replay, so the two
+// close a group at the same point.
+export function closeLive(folds) {
+  const tail = derive(folds).liveTail;
+  closeFolds(folds, tail ? folds.timeline.indexOf(tail) + 1 : undefined);
+}
+
 export function installFolding(pi, ctx, folds = defaultFolds) {
   folds.toolsExpanded = () => ctx.ui.getToolsExpanded();
   pi.on("tool_execution_start", event => {
@@ -438,12 +453,7 @@ export function installFolding(pi, ctx, folds = defaultFolds) {
   pi.on("tool_execution_end", event => settleFold(folds, event.toolCallId, Boolean(event.isError || event.result?.details?.error), event.result));
   pi.on("agent_start", () => closeFolds(folds));
   pi.on("input", event => {
-    if (event.source !== "extension") {
-      // A pending tool must stay outside the collapsed success group; a
-      // boundary after it would hold the whole group open until it settles.
-      const tail = derive(folds).liveTail;
-      closeFolds(folds, tail ? folds.timeline.indexOf(tail) + 1 : undefined);
-    }
+    if (event.source !== "extension") closeLive(folds);
     return { action: "continue" };
   });
   // Streaming replies announce their text in updates; non-streaming ones only at the end.
@@ -489,7 +499,7 @@ function view(folds, group) {
 // when open so a stacked run of groups shows which one is expanded. Takes the
 // sentence text rather than a group, so a completion's own wording (rule 4)
 // draws through the same handle as a tool group's.
-const handleLine = (text, state, theme) =>
+export const handleLine = (text, state, theme) =>
   theme.fg(state.open ? "toolTitle" : "muted", `${state.open ? FOLD_OPEN : FOLD_CLOSED} ${text}`);
 
 function toggleFold(folds, group, rendering) {
@@ -509,7 +519,7 @@ function completionMemberLine(entry, theme) {
   return indent(`${theme.fg("muted", SUB)} ${theme.fg("toolTitle", title)}${tail}`);
 }
 
-function memberLine(folds, entry, theme) {
+export function memberLine(folds, entry, theme) {
   if (entry.source === "completion") return completionMemberLine(entry, theme);
   const title = theme.fg("toolTitle", folds.titles.get(entry.id));
   const summary = entry.summary ?? "";

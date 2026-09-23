@@ -382,6 +382,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let ceiling;
   let fleet;
   let surfaces;
+  // Rebuilt every session_start (pi's own settings re-read point, /reload
+  // included) so the once-built shell runner's exec/prefix getters pick up a
+  // changed shellPath/shellCommandPrefix without reinstalling the runner.
+  let shellConfig;
   let releaseChild;
   let childRevoked = false;
   let broker;
@@ -580,10 +584,17 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     }
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (isRoot && ctx.hasUI) {
+      // pi's own settings, honoured the way its native `!` branch would
+      // (docs/pi-coupling.md's owned `!` block); a session never installs
+      // the shell without a UI, so SettingsManager is only built here. The
+      // trust decision gates the project file as pi's own manager does — an
+      // untrusted checkout's .pi/settings.json must not choose the shell.
+      const settings = sdk.SettingsManager.create(ctx.cwd, undefined, { projectTrusted: ctx.isProjectTrusted() });
+      shellConfig = { ops: sdk.createLocalBashOperations({ shellPath: settings.getShellPath() }), prefix: settings.getShellCommandPrefix() };
       if (!surfaces) {
         installFolding(pi, ctx);
         const footer = installFooter(pi, ctx, { fleet, tasks });
-        const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations().exec, env: hostEnvironment });
+        const shell = installShell(pi, () => currentContext, { working: footer.working, exec: (...args) => shellConfig.ops.exec(...args), env: hostEnvironment, prefix: () => shellConfig.prefix });
         surfaces = { footer, shell };
       }
       // pi resets every extension surface when a session is invalidated

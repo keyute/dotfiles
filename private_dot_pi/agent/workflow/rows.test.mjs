@@ -1118,3 +1118,23 @@ test("a completion's seq carries this process's own nonce; two folds in one proc
   appendVisible(fakePi(), "workflow-child", data2, b);
   assert.equal(data2.seq, `${b.nonce}-1`);
 });
+
+test("a quiet folds instance derives the same groups as a default one for the same add/settle/close sequence", () => {
+  const quiet = createFolds(() => false, { quiet: true });
+  const normal = createFolds(() => false);
+  for (const folds of [quiet, normal]) {
+    for (const [id, tool] of [["a", "workspace_read"], ["b", "workspace_bash"], ["c", "workspace_read"]]) addFold(folds, id, tool);
+    for (const id of ["a", "b"]) settleFold(folds, id, false, { content: [] });
+    settleFold(folds, "c", true, {});
+    closeFolds(folds);
+    for (const id of ["d", "e"]) addFold(folds, id, "workspace_read");
+    for (const id of ["d", "e"]) settleFold(folds, id, false, { content: [] });
+  }
+  assert.equal(quiet.quiet, true);
+  assert.equal(normal.quiet, false);
+  assert.deepEqual(foldGroup(quiet, "a")?.counts, foldGroup(normal, "a")?.counts);
+  assert.equal(foldGroup(quiet, "c"), null);
+  assert.equal(foldGroup(normal, "c"), null);
+  assert.deepEqual(liveGroup(quiet, "d")?.counts, liveGroup(normal, "d")?.counts);
+  assert.ok(liveGroup(normal, "d"));
+});

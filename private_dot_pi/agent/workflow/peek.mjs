@@ -3,15 +3,16 @@ import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { Dialog } from "./dialog.mjs";
 import { formatTokens, modelLabel } from "./fleet.mjs";
-import { PROMPT, formatDuration, oneLine, pad, shade } from "./rows.mjs";
-import { EARLIER_NOTE, createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
+import { WorkingRow } from "./footer.mjs";
+import { PROMPT, oneLine, pad, shade } from "./rows.mjs";
+import { createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 // The fleet's Enter peek (docs/pi-design.md rule 6, 2026-09-22): a rule-11
 // dialog over a background child's own events.jsonl, replayed live through
 // replay.mjs's row grammar, with a rule-5 composer that steers the child.
 
-const CAP = 256 * 1024;
-const MAX_ROWS = 400;
+const CHUNK = 1024 * 1024;
+const MAX_ROWS = 1000;
 const HINT = "enter steer · /stop · ctrl+o output · esc close";
 
 export class PeekDialog extends Dialog {
@@ -29,12 +30,15 @@ export class PeekDialog extends Dialog {
     this.mode = "compose";
     this.flash = "";
     this.busy = false;
-    this.frozenElapsed = null;
+    this.loaded = false;
+    this.working = new WorkingRow(tui, theme);
     this.ready = this.readChunk().then(() => {
       // Esc or a session change can dispose the dialog before the first read
       // lands; a timer started here would poll a closed peek.
       if (this.disposed) return;
+      this.loaded = true;
       this.info = this.describe();
+      this.syncWorking();
       this.lastShape = this.shapeKey();
       this.timer = setInterval(() => void this.tick(), tickMs);
       this.timer.unref?.();
@@ -47,12 +51,12 @@ export class PeekDialog extends Dialog {
   dispose() {
     clearInterval(this.timer);
     this.timer = undefined;
+    this.working.dispose();
     super.dispose();
   }
 
   // Reads only the bytes appended since the last call; a shrink (the file was
-  // replaced) rebuilds the whole tail, and the very first call caps the read
-  // at CAP bytes, dropping the leading partial line it produces. Reads are
+  // replaced) rebuilds the whole file from its start instead. Reads are
   // serialised: a tick that lands while one is in flight would otherwise read
   // the same appended bytes again and replay them twice.
   readChunk() {
@@ -60,7 +64,10 @@ export class PeekDialog extends Dialog {
   }
 
   // The run directory can vanish between the stat and the open (retention
-  // cleanup); any failure ends this read and the next tick retries.
+  // cleanup); any failure ends this read and the next tick retries. No cap:
+  // a late peek reads the whole journal at open, in bounded chunks so a huge
+  // file never holds more than one chunk in memory at a time — `trimRows`
+  // keeps the row list itself bounded as each chunk lands.
   async readOnce() {
     try {
       const { size } = await stat(this.filePath);
@@ -70,29 +77,28 @@ export class PeekDialog extends Dialog {
         this.decoder = undefined;
         this.offset = 0;
       }
-      const capped = this.offset === 0 && size > CAP;
-      const start = capped ? size - CAP : this.offset;
-      const length = size - start;
-      if (length > 0) {
+      if (size > this.offset) {
         const handle = await open(this.filePath, "r");
         try {
-          const buffer = Buffer.alloc(length);
-          await handle.read(buffer, 0, length, start);
-          // A read boundary can split a multi-byte character; the decoder carries
-          // the remainder the way replayEvents carries a partial line.
           this.decoder ??= new StringDecoder("utf8");
-          let text = this.decoder.write(buffer);
-          if (capped) {
-            const nl = text.indexOf("\n");
-            text = nl === -1 ? "" : text.slice(nl + 1);
-            this.replay.rows.unshift({ kind: "note", text: EARLIER_NOTE });
+          while (this.offset < size) {
+            const length = Math.min(CHUNK, size - this.offset);
+            const buffer = Buffer.alloc(length);
+            // A short read (the file shrank after the stat) must advance only
+            // by what arrived; a zero read ends this pass and the next tick's
+            // stat decides between a rebuild and more appends.
+            const { bytesRead } = await handle.read(buffer, 0, length, this.offset);
+            if (bytesRead === 0) break;
+            // A read boundary can split a multi-byte character; the decoder
+            // carries the remainder the way replayEvents carries a partial line.
+            const text = this.decoder.write(buffer.subarray(0, bytesRead));
+            trimRows(replayEvents(this.replay, text), MAX_ROWS);
+            this.offset += bytesRead;
           }
-          trimRows(replayEvents(this.replay, text), MAX_ROWS);
         } finally {
           await handle.close();
         }
       }
-      this.offset = size;
     } catch {
       return;
     }
@@ -100,7 +106,11 @@ export class PeekDialog extends Dialog {
 
   async tick() {
     await this.readChunk();
+    // Esc during the read: syncWorking would otherwise start a spinner
+    // interval nothing stops, dispose having already run.
+    if (this.disposed) return;
     this.info = this.describe();
+    this.syncWorking();
     const shape = this.shapeKey();
     if (shape !== this.lastShape) {
       this.lastShape = shape;
@@ -112,13 +122,19 @@ export class PeekDialog extends Dialog {
     }
   }
 
+  // `state.version` bumps on every settle even when no row is added (a tool
+  // whose fold membership just changed), so a sentence's count catches up
+  // without the length/last-row fields noticing anything happened.
   shapeKey() {
     const rows = this.replay.rows;
     const last = rows.at(-1);
     const pending = rows.reduce((n, row) => n + (row.pending ? 1 : 0), 0);
-    return `${rows.length}|${pending}|${last?.kind}|${last?.text}|${this.headerText()}`;
+    return `${this.replay.version}|${rows.length}|${pending}|${last?.kind}|${last?.text}|${this.headerText()}`;
   }
 
+  // Rule 3, one place per fact: the run's elapsed time rides the working
+  // spinner and the settled turn line, never here, so all this header carries
+  // is identity, cost, and — once the run is over — how it ended.
   headerText() {
     const info = this.info ?? {};
     const head = info.task ? `${info.agent ?? ""} › ${oneLine(info.task)}` : (info.agent ?? "");
@@ -127,20 +143,18 @@ export class PeekDialog extends Dialog {
     if (model) parts.push(model);
     const tokens = formatTokens(info.tokens?.total ?? info.tokens);
     if (tokens) parts.push(`${tokens} tokens`);
-    if (info.startedAt != null) {
-      if (info.terminal) this.frozenElapsed ??= formatDuration(Date.now() - info.startedAt);
-      parts.push(info.terminal ? this.frozenElapsed : formatDuration(Date.now() - info.startedAt));
-    }
-    if (info.terminal) { if (info.state) parts.push(info.state); }
-    else if (info.currentTool) parts.push(info.currentTool.replace(/^workspace_/, ""));
+    if (info.terminal && info.state) parts.push(info.state);
     const rest = parts.join(" · ");
     return `${this.theme.fg("accent", head)}${rest ? this.theme.fg("muted", ` · ${rest}`) : ""}`;
   }
 
+  // The same shaded block userRowLines draws (replay.mjs): a blank shaded row
+  // above and below the content, ❯ on the first content line.
   composerLines(width) {
     const active = this.focused && this.editingNow();
     const lines = this.field({ width: Math.max(1, width - 2), active, text: this.editor.getText() });
-    return lines.map((line, i) => shade(this.theme, pad(`${i === 0 ? `${PROMPT} ` : "  "}${line}`, width)));
+    const content = lines.map((line, i) => (i === 0 ? `${PROMPT} ${line}` : `  ${line}`));
+    return ["", ...content, ""].map(line => shade(this.theme, pad(line, width)));
   }
 
   confirmLine() {
@@ -236,23 +250,45 @@ export class PeekDialog extends Dialog {
     }
   }
 
+  // The working row (rule 3): the same row footer.mjs docks above pi's own
+  // composer, owned here since the peek is its own dialog. Driven from the
+  // tick, never from render: Loader's start() and setMessage() each request a
+  // render, so syncing inside render would re-render the peek every frame and
+  // restart the spinner's interval before it could ever advance. start/stop
+  // fire on the transition only. A run that ends without a settle record
+  // (pi-subagents' forced finish) still stands the row down via `terminal`.
+  syncWorking() {
+    const running = this.replay.clock.running() && !this.info?.terminal;
+    if (running) {
+      if (!this.spinning) { this.working.start(); this.spinning = true; }
+      this.working.setMessage(this.replay.clock.label(Date.now()));
+    } else if (this.spinning) {
+      this.working.setMessage("");
+      this.working.stop();
+      this.spinning = false;
+    }
+  }
+
   render(width) {
     const usable = Math.max(1, width);
     const rows = this.tui.terminal?.rows ?? 24;
     const windowHeight = Math.max(3, Math.floor(rows * 0.8) - 7);
-    const bodyLines = this.replay.rows.length
-      ? renderRows(this.replay.rows, usable, this.theme, { expanded: this.expanded })
-      : [this.theme.fg("dim", "no activity recorded yet")];
+    const bodyLines = !this.loaded
+      ? [this.theme.fg("dim", "loading history…")]
+      : this.replay.rows.length
+        ? renderRows(this.replay, usable, this.theme, { expanded: this.expanded })
+        : [this.theme.fg("dim", "no activity recorded yet")];
     const maxScroll = Math.max(0, bodyLines.length - windowHeight);
     this.maxScroll = maxScroll;
     this.windowHeight = windowHeight;
     if (this.follow) this.scroll = maxScroll;
     this.scroll = Math.max(0, Math.min(this.scroll, maxScroll));
     const window = bodyLines.slice(this.scroll, this.scroll + windowHeight);
+    const working = this.working.render(usable);
     const composer = this.mode === "confirm" ? [this.confirmLine()] : this.composerLines(usable);
     const hintText = this.flash || (this.mode === "confirm" ? "enter confirm · esc back" : HINT);
     const hint = `  ${this.theme.fg(this.flash ? this.flashTone : "dim", hintText)}`;
-    const content = [`  ${this.headerText()}`, "", ...window, "", ...composer, hint];
+    const content = [`  ${this.headerText()}`, "", ...window, ...(working.length ? working : [""]), ...composer, hint];
     return this.frame(content, usable);
   }
 }

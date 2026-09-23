@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import { foldGroup } from "./rows.mjs";
 import { EARLIER_NOTE, createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 // The markdown theme reads pi's own theme; the default one is enough.
@@ -9,13 +10,17 @@ initTheme();
 const theme = { fg: (c, t) => `<${c}>${t}`, bg: (c, t) => `[${c}]${t}`, bold: t => t };
 const WIDTH = 60;
 
-const feed = (...records) => {
-  const state = createReplay();
+// A fixed `pick` (index 0 of rows.mjs's TURN_VERBS: "Integrating"/"Integrated")
+// makes a peek's own turn line deterministic.
+const feedWith = (options, ...records) => {
+  const state = createReplay(options);
   replayEvents(state, records.map(r => JSON.stringify(r)).join("\n") + "\n");
   return state;
 };
+const feed = (...records) => feedWith({}, ...records);
+const feedDeterministic = (...records) => feedWith({ pick: () => 0 }, ...records);
 
-const render = (state, options) => renderRows(state.rows, WIDTH, theme, options);
+const render = (state, options) => renderRows(state, WIDTH, theme, options);
 
 test("trimRows keeps the newest rows behind one note and forgets what fell off", () => {
   const state = createReplay();
@@ -123,14 +128,11 @@ test("a plain user message is the task block", () => {
   assert.ok(lines.some(l => l.includes("Task: fix the bug")));
 });
 
-test("toolResult, agent_* and turn_* events produce no rows", () => {
+test("toolResult and turn_* events produce no rows", () => {
   const state = feed(
     { type: "message_end", message: { role: "toolResult", content: [{ type: "text", text: "x" }] } },
-    { type: "agent_start" },
-    { type: "agent_end" },
     { type: "turn_start" },
     { type: "turn_end" },
-    { type: "agent_settled" },
   );
   assert.equal(state.rows.length, 0);
 });
@@ -190,4 +192,99 @@ test("a 100 KiB result text is capped at 32 KiB in the stored row", () => {
   assert.ok(stored.length < big.length);
   assert.ok(stored.endsWith("… truncated"));
   assert.ok(stored.length <= 32 * 1024 + "… truncated".length);
+});
+
+const readOk = (id, path) => [
+  { type: "tool_execution_start", toolCallId: id, toolName: "workspace_read", args: { path } },
+  { type: "tool_execution_end", toolCallId: id, toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: "hi" }] } },
+];
+const says = text => ({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }] } });
+
+test("two successful tool rows sealed by assistant text collapse to one sentence; ctrl+o expands both full rows", () => {
+  const state = feedDeterministic(
+    ...readOk("c1", "a"),
+    { type: "tool_execution_start", toolCallId: "c2", toolName: "workspace_bash", args: { command: "npm test" } },
+    { type: "tool_execution_end", toolCallId: "c2", toolName: "workspace_bash", isError: false, result: { content: [{ type: "text", text: "ok" }] } },
+    says("Done"),
+  );
+  const closed = render(state);
+  assert.ok(closed.some(l => l.includes("▸") && l.includes("Read 1 file, ran 1 shell command")));
+  assert.ok(!closed.some(l => l.includes("Ran npm test")));
+  const open = render(state, { expanded: true });
+  assert.ok(open.some(l => l.includes("▾") && l.includes("Read 1 file, ran 1 shell command")));
+  assert.ok(open.some(l => /Read a/.test(l)));
+  assert.ok(open.some(l => /Ran npm test/.test(l)));
+});
+
+test("two successes with nothing after form a live group: a sentence plus one member line per row", () => {
+  const state = feedDeterministic(...readOk("c1", "a"), ...readOk("c2", "b"));
+  const lines = render(state);
+  assert.ok(lines.some(l => l.includes("•") && l.includes("Read 2 files")));
+  assert.equal(lines.filter(l => l.includes("↳")).length, 2);
+});
+
+test("a pending third tool renders as a plain row below the live group", () => {
+  const state = feedDeterministic(...readOk("c1", "a"), ...readOk("c2", "b"), { type: "tool_execution_start", toolCallId: "c3", toolName: "workspace_bash", args: { command: "npm test" } });
+  const lines = render(state);
+  assert.ok(lines.some(l => l.includes("Read 2 files")));
+  assert.ok(lines.some(l => /Ran npm test/.test(l)));
+});
+
+test("a failed row seals the run above it and renders in full with the error glyph, never as a member", () => {
+  const state = feedDeterministic(
+    { type: "tool_execution_start", toolCallId: "r1", toolName: "workspace_read", args: { path: "a" } },
+    { type: "tool_execution_start", toolCallId: "r2", toolName: "workspace_read", args: { path: "b" } },
+    { type: "tool_execution_start", toolCallId: "f", toolName: "workspace_bash", args: { command: "boom" } },
+    { type: "tool_execution_end", toolCallId: "r1", toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: "hi" }] } },
+    { type: "tool_execution_end", toolCallId: "r2", toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: "hi" }] } },
+    { type: "tool_execution_end", toolCallId: "f", toolName: "workspace_bash", isError: true, result: { content: [{ type: "text", text: "boom\nCommand exited with code 1" }] } },
+    says("Done"),
+  );
+  assert.equal(foldGroup(state.folds, "f"), null);
+  const lines = render(state);
+  assert.ok(lines.some(l => l.includes("Read 2 files")));
+  assert.ok(lines.some(l => l.includes("<error>") && /Ran boom/.test(l)));
+  assert.ok(lines.some(l => l.includes("Command exited with code 1")));
+});
+
+test("a user block arriving while a tool is pending seals the successes before it, leaving the pending tool outside", () => {
+  const state = feedDeterministic(
+    { type: "tool_execution_start", toolCallId: "r1", toolName: "workspace_read", args: { path: "a" } },
+    { type: "tool_execution_start", toolCallId: "r2", toolName: "workspace_read", args: { path: "b" } },
+    { type: "tool_execution_start", toolCallId: "pending", toolName: "workspace_bash", args: { command: "npm test" } },
+    { type: "tool_execution_end", toolCallId: "r1", toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: "hi" }] } },
+    { type: "tool_execution_end", toolCallId: "r2", toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: "hi" }] } },
+    { type: "message_end", message: { role: "user", content: [{ type: "text", text: "keep going" }] } },
+  );
+  assert.deepEqual(foldGroup(state.folds, "r1")?.counts, { read: 2 });
+  assert.equal(foldGroup(state.folds, "pending"), null);
+  const lines = render(state);
+  assert.ok(lines.some(l => l.includes("Read 2 files")));
+  assert.ok(lines.some(l => l.includes("keep going")));
+});
+
+test("a settled turn 12s after agent_start renders the deterministic verb and duration", () => {
+  const state = feedDeterministic({ type: "agent_start", observedAt: 1000 }, { type: "agent_settled", observedAt: 13000 });
+  const lines = render(state);
+  assert.ok(lines.some(l => /Integrated for 12s · done/.test(l)));
+});
+
+test("an aborted agent_end prints Interrupted at once; the following agent_settled prints no second turn line", () => {
+  const state = feedDeterministic(
+    { type: "agent_start", observedAt: 1000 },
+    { type: "agent_end", observedAt: 5000, messages: [{ role: "assistant", stopReason: "aborted" }] },
+    { type: "agent_settled", observedAt: 9000 },
+  );
+  const lines = render(state);
+  const turnLines = lines.filter(l => l.includes("π"));
+  assert.equal(turnLines.length, 1);
+  assert.ok(turnLines[0].includes("Interrupted after"));
+});
+
+test("trimRows dropping the first row of a group leaves its sentence counting only the retained rows", () => {
+  const state = feedDeterministic(...readOk("r1", "a"), ...readOk("r2", "b"), ...readOk("r3", "c"), ...readOk("r4", "d"), says("Done"));
+  assert.deepEqual(foldGroup(state.folds, "r1")?.counts, { read: 4 });
+  trimRows(state, 4);
+  assert.equal(state.toolRowsById.has("r1"), false);
+  assert.deepEqual(foldGroup(state.folds, "r2")?.counts, { read: 3 });
 });

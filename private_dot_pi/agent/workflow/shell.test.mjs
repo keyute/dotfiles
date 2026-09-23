@@ -124,14 +124,14 @@ test("a run of exactly 20 newline-terminated lines shows all 20 with no more-lin
 });
 
 // The runner: dependencies are injected, so no real shell ever spawns.
-function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds() } = {}) {
+function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds(), prefix } = {}) {
   const sent = [];
   const appended = [];
   const notices = [];
   const workingCalls = [];
   const pi = { sendMessage: (message, options) => sent.push({ message, options }), appendEntry: (type, data) => appended.push({ type, data }) };
   const runner = createShellRunner({
-    pi, folds, exec,
+    pi, folds, exec, prefix,
     cwd: () => "/work",
     notify: (text, level) => notices.push({ text, level }),
     env: () => ({ PATH: "/bin" }),
@@ -140,6 +140,35 @@ function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds() }
   });
   return { runner, sent, appended, notices, workingCalls, folds, pi };
 }
+
+test("a shellCommandPrefix is joined with the command for exec, pi's own composition, but details.command stays the typed command", async () => {
+  const execCalls = [];
+  const exec = async (command, _cwd, { onData }) => { execCalls.push(command); onData(Buffer.from("hi\n")); return { exitCode: 0 }; };
+  const h = harness({ exec, prefix: () => "source ~/.zshrc" });
+  h.runner.submit("!echo hi");
+  await h.runner.pending;
+  assert.deepEqual(execCalls, ["source ~/.zshrc\necho hi"]);
+  assert.equal(h.sent[0].message.details.command, "echo hi");
+});
+
+test("!! joins the prefix too, and its recorded command also stays typed", async () => {
+  const execCalls = [];
+  const exec = async (command) => { execCalls.push(command); return { exitCode: 0 }; };
+  const h = harness({ exec, prefix: () => "export CI=1" });
+  h.runner.submit("!!pwd");
+  await h.runner.pending;
+  assert.deepEqual(execCalls, ["export CI=1\npwd"]);
+  assert.equal(h.appended[0].data.command, "pwd");
+});
+
+test("with no prefix the command reaches exec verbatim", async () => {
+  const execCalls = [];
+  const exec = async command => { execCalls.push(command); return { exitCode: 0 }; };
+  const h = harness({ exec });
+  h.runner.submit("!ls");
+  await h.runner.pending;
+  assert.deepEqual(execCalls, ["ls"]);
+});
 
 test("! sends a visible custom message with the mirrored context text and no turn trigger", async () => {
   const h = harness({ exec: async (_command, _cwd, { onData }) => { onData(Buffer.from("hi\n")); return { exitCode: 0 }; } });

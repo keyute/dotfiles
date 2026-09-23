@@ -1,6 +1,11 @@
 import { Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { PAD, PROMPT, bulletMarkdown, callTitle, glyph, pad, pluginTitle, rowLines, shade, taskTitle } from "./rows.mjs";
+import {
+  BULLET, PAD, PROMPT, TURN_VERBS,
+  addFold, bulletMarkdown, callTitle, closeFolds, closeLive, createFolds, createTurnClock,
+  foldGroup, foldKey, formatTurn, glyph, handleLine, liveGroup, memberLine, pad, pluginTitle,
+  rowLines, settleFold, shade, summarise, taskTitle,
+} from "./rows.mjs";
 
 // The fleet peek replays a background child's own events.jsonl through this
 // extension's row grammar (docs/pi-design.md rule 6, 2026-09-22). Pure: no fs,
@@ -50,24 +55,47 @@ const messageText = message => (message.content ?? []).filter(part => part.type 
 
 const STEER_NOTE = { "subagent.steer.delivered": "steer delivered", "subagent.steer.queued": "steer queued" };
 
+// The row's title and body kind, exactly as the main chat's tool rows
+// resolve them; shared between the fact stored for grouping (`folds.titles`)
+// and the row's own full rendering.
+function toolRowMeta(name, args) {
+  const stripped = name.startsWith("workspace_") ? name.slice("workspace_".length) : null;
+  if (stripped && WORKSPACE_TOOLS.has(stripped)) return { title: callTitle(stripped, args), bodyName: stripped };
+  if (name === "workspace_task") return { title: taskTitle(args), bodyName: "plugin" };
+  if (name === "subagent") return { title: pluginTitle("subagent", args), bodyName: "subagent" };
+  if (isMcp(name)) return { title: pluginTitle(name, args), bodyName: "mcp" };
+  return { title: pluginTitle(name, args), bodyName: "plugin" };
+}
+
 function handleRecord(state, record) {
+  state.version += 1;
   switch (record.type) {
     case "tool_execution_start": {
-      const row = { kind: "tool", id: record.toolCallId, name: record.toolName, args: record.args ?? {}, pending: true };
+      const args = record.args ?? {};
+      const row = { kind: "tool", id: record.toolCallId, name: record.toolName, args, pending: true, version: 0 };
       state.rows.push(row);
       state.toolRowsById.set(record.toolCallId, row);
+      state.folds.titles.set(record.toolCallId, toolRowMeta(record.toolName, args).title);
+      const key = foldKey(record.toolName, args);
+      if (key) addFold(state.folds, record.toolCallId, key);
+      else closeFolds(state.folds);
       return;
     }
     case "tool_execution_end": {
-      const isError = Boolean(record.isError);
+      // The adapter reports some failures in `details.error` without `isError`,
+      // same as `installFolding`; `settleFold` reads the uncapped result so its
+      // summary matches the main chat before the row keeps only the capped one.
+      const isError = Boolean(record.isError || record.result?.details?.error);
+      settleFold(state.folds, record.toolCallId, isError, record.result);
       const result = capResult(record.result);
       const existing = state.toolRowsById.get(record.toolCallId);
       if (existing) {
         existing.pending = false;
         existing.isError = isError;
         existing.result = result;
+        existing.version += 1;
       } else {
-        const row = { kind: "tool", id: record.toolCallId, name: record.toolName, args: {}, pending: false, isError, result };
+        const row = { kind: "tool", id: record.toolCallId, name: record.toolName, args: {}, pending: false, isError, result, version: 0 };
         state.rows.push(row);
         state.toolRowsById.set(record.toolCallId, row);
       }
@@ -77,11 +105,16 @@ function handleRecord(state, record) {
       const message = record.message;
       if (message?.role === "assistant") {
         const text = messageText(message);
-        if (text.trim()) state.rows.push({ kind: "assistant", text });
+        if (text.trim()) {
+          state.rows.push({ kind: "assistant", text });
+          closeFolds(state.folds);
+        }
       } else if (message?.role === "user") {
         const text = messageText(message);
         const body = steerBody(text);
         state.rows.push(body === null ? { kind: "user", text } : { kind: "user", steer: true, text: body });
+        // A pending tool must stay outside the group that closes here (rows.mjs's `input` handler).
+        closeLive(state.folds);
       }
       return;
     }
@@ -89,7 +122,7 @@ function handleRecord(state, record) {
     case "subagent.steer.queued": {
       const text = STEER_NOTE[record.type];
       const existing = state.noteRowsByRequestId.get(record.requestId);
-      if (existing) existing.text = text;
+      if (existing) { existing.text = text; existing.version = (existing.version ?? 0) + 1; }
       else {
         const row = { kind: "note", requestId: record.requestId, text };
         state.rows.push(row);
@@ -101,7 +134,7 @@ function handleRecord(state, record) {
       const reason = record.error ?? record.reason ?? record.message;
       const text = `steer failed${reason ? ` · ${reason}` : ""}`;
       const existing = state.noteRowsByRequestId.get(record.requestId);
-      if (existing) existing.text = text;
+      if (existing) { existing.text = text; existing.version = (existing.version ?? 0) + 1; }
       else {
         const row = { kind: "note", requestId: record.requestId, text };
         state.rows.push(row);
@@ -113,16 +146,52 @@ function handleRecord(state, record) {
       state.rows.push({ kind: "note", text: "further activity not recorded (event log limit)" });
       return;
     }
+    case "agent_start": {
+      closeFolds(state.folds);
+      state.clock.start(record.observedAt ?? Date.now());
+      return;
+    }
+    case "agent_end": {
+      const aborted = record.messages?.findLast(m => m.role === "assistant")?.stopReason === "aborted";
+      if (!aborted) return;
+      const turn = state.clock.stop(record.observedAt ?? Date.now(), { aborted: true });
+      if (turn) {
+        state.rows.push({ kind: "turn", ...turn });
+        closeFolds(state.folds);
+      }
+      return;
+    }
+    case "agent_settled": {
+      const turn = state.clock.stop(record.observedAt ?? Date.now());
+      if (turn) {
+        state.rows.push({ kind: "turn", ...turn });
+        closeFolds(state.folds);
+      }
+      return;
+    }
     default:
       // subagent.steer.requested|routed|scheduled, subagent.steering.notice,
-      // agent_start/end, turn_start/end, agent_settled, compaction_*,
-      // tool_result_end and unknown types carry nothing to replay.
+      // turn_start/end, compaction_*, tool_result_end and unknown types carry
+      // nothing to replay.
       return;
   }
 }
 
-export function createReplay() {
-  return { rows: [], partial: "", toolRowsById: new Map(), noteRowsByRequestId: new Map() };
+// `pick` is injectable so a peek's own turn line is deterministic in tests
+// (see rows.mjs's `createTurnClock`); every persisted record carries its own
+// `observedAt`, so the clock never reads the wall clock itself.
+export function createReplay({ pick } = {}) {
+  return {
+    rows: [],
+    partial: "",
+    toolRowsById: new Map(),
+    noteRowsByRequestId: new Map(),
+    // Quiet: a bulk replay has no rendered components to invalidate, so the
+    // before/after diff `refold` otherwise does is dead weight here.
+    folds: createFolds(() => false, { quiet: true }),
+    clock: createTurnClock(TURN_VERBS, pick),
+    version: 0,
+  };
 }
 
 export const EARLIER_NOTE = "earlier activity not shown";
@@ -133,9 +202,19 @@ export const EARLIER_NOTE = "earlier activity not shown";
 export function trimRows(state, max) {
   const excess = state.rows.length - max;
   if (excess <= 0) return state;
-  for (const row of state.rows.splice(0, excess)) {
-    if (row.kind === "tool") state.toolRowsById.delete(row.id);
+  const trimmed = state.rows.splice(0, excess);
+  const trimmedIds = new Set();
+  for (const row of trimmed) {
+    if (row.kind === "tool") { state.toolRowsById.delete(row.id); trimmedIds.add(row.id); }
     else if (row.kind === "note" && row.requestId !== undefined) state.noteRowsByRequestId.delete(row.requestId);
+  }
+  // A dropped row's fact would otherwise still count toward a sentence that
+  // no longer has the row to show for it; leading boundaries left behind are
+  // harmless (`derive` only seals a run that has members).
+  if (trimmedIds.size) {
+    state.folds.timeline = state.folds.timeline.filter(fact => !(fact.kind === "activity" && trimmedIds.has(fact.id)));
+    for (const id of trimmedIds) state.folds.titles.delete(id);
+    state.folds.revision += 1;
   }
   if (state.rows[0]?.text !== EARLIER_NOTE) state.rows.unshift({ kind: "note", text: EARLIER_NOTE });
   return state;
@@ -157,29 +236,26 @@ export function replayEvents(state, chunk) {
   return state;
 }
 
-function toolRowLines(row, theme, expanded) {
-  const { name, args, pending, isError, result } = row;
-  const stripped = name.startsWith("workspace_") ? name.slice("workspace_".length) : null;
-  let title, bodyName;
-  if (stripped && WORKSPACE_TOOLS.has(stripped)) {
-    title = callTitle(stripped, args);
-    bodyName = stripped;
-  } else if (name === "workspace_task") {
-    title = taskTitle(args);
-    bodyName = "plugin";
-  } else if (name === "subagent") {
-    title = pluginTitle("subagent", args);
-    bodyName = "subagent";
-  } else if (isMcp(name)) {
-    title = pluginTitle(name, args);
-    bodyName = "mcp";
-  } else {
-    title = pluginTitle(name, args);
-    bodyName = "plugin";
+// A row's own lines are cached on the row: the spinner redraws the whole
+// dialog several times a second, and a Markdown parse per assistant row per
+// frame would not keep up. Nothing cached depends on the row's group, so a
+// group forming or sealing around it never invalidates the cache.
+function cached(row, key, compute) {
+  if (row._linesKey !== key) {
+    row._linesKey = key;
+    row._lines = compute();
   }
-  const titleLine = `${glyph(theme, { isPartial: pending, isError })} ${theme.fg("toolTitle", title)}`;
-  if (pending) return [titleLine];
-  return [titleLine, ...rowLines(bodyName, result, { expanded, isError }, theme)];
+  return row._lines;
+}
+
+// A tool row's own full rendering — title line plus its body, never the
+// group's sentence or member line.
+function toolRowLines(row, theme, { width, expanded } = {}) {
+  return cached(row, `${width}|${expanded}|${row.version ?? 0}`, () => {
+    const { title, bodyName } = toolRowMeta(row.name, row.args);
+    const titleLine = `${glyph(theme, { isPartial: row.pending, isError: row.isError })} ${theme.fg("toolTitle", title)}`;
+    return row.pending ? [titleLine] : [titleLine, ...rowLines(bodyName, row.result, { expanded, isError: row.isError }, theme)];
+  });
 }
 
 function userRowLines(row, width, theme) {
@@ -188,42 +264,69 @@ function userRowLines(row, width, theme) {
   return ["", ...content, ""].map(line => shade(theme, pad(line, width)));
 }
 
-function renderRow(row, width, theme, expanded) {
-  switch (row.kind) {
-    case "tool":
-      return toolRowLines(row, theme, expanded);
-    case "assistant":
-      return new Markdown(bulletMarkdown(row.text, { messageType: "assistant" }), 0, 0, getMarkdownTheme()).render(width);
-    case "user":
-      return userRowLines(row, width, theme);
-    case "note":
-      return [`${PAD}${theme.fg("muted", `↳ ${row.text}`)}`];
-    default:
-      return [];
-  }
-}
-
-// Only these two pairs are contiguous (docs/pi-design.md rule 8 applied to
-// the peek): a run of tool rows, and a note that lands directly under the
-// user block it answers. Every other neighbour starts a fresh block, one
-// blank line above it.
-const contiguous = (prev, row) => (prev.kind === "tool" && row.kind === "tool") || (prev.kind === "user" && row.kind === "note");
-
-function groupBlocks(rows) {
-  const blocks = [];
-  for (const row of rows) {
-    const prev = blocks.at(-1)?.at(-1);
-    if (prev && contiguous(prev, row)) blocks.at(-1).push(row);
-    else blocks.push([row]);
-  }
-  return blocks;
-}
-
-export function renderRows(rows, width, theme, { expanded = false } = {}) {
-  const output = [];
-  groupBlocks(rows).forEach((block, i) => {
-    if (i > 0) output.push("");
-    for (const row of block) output.push(...renderRow(row, width, theme, expanded));
+function renderRow(row, width, theme) {
+  return cached(row, `${width}|${row.version ?? 0}`, () => {
+    switch (row.kind) {
+      case "assistant":
+        return new Markdown(bulletMarkdown(row.text, { messageType: "assistant" }), 0, 0, getMarkdownTheme()).render(width);
+      case "user":
+        return userRowLines(row, width, theme);
+      case "note":
+        return [`${PAD}${theme.fg("muted", `↳ ${row.text}`)}`];
+      case "turn":
+        return [formatTurn(row, theme)];
+      default:
+        return [];
+    }
   });
+}
+
+// A tool row's lines and the id of the group it belongs to, if any — rule 2's
+// three levels (docs/pi-design.md), read from `folds` the same way the main
+// chat's row renderers read it (rows.mjs's `rowRenderers.renderCall`). Only
+// group-dependent lines (the sentence, member lines) are recomputed every
+// render; `toolRowLines` caches the row's own full rendering.
+function renderTool(row, folds, width, theme, expanded) {
+  const sealed = foldGroup(folds, row.id);
+  if (sealed) {
+    const first = sealed.entries[0].id === row.id;
+    if (expanded) {
+      const own = toolRowLines(row, theme, { width, expanded });
+      return { lines: first ? [handleLine(summarise(sealed.counts), { open: true }, theme), ...own] : own, groupId: sealed.boundaryId };
+    }
+    return { lines: first ? [handleLine(summarise(sealed.counts), { open: false }, theme)] : [], groupId: sealed.boundaryId };
+  }
+  const live = liveGroup(folds, row.id);
+  if (live) {
+    const first = live.entries[0].id === row.id;
+    if (expanded) return { lines: toolRowLines(row, theme, { width, expanded }), groupId: live.boundaryId };
+    if (!first) return { lines: [], groupId: live.boundaryId };
+    const lines = [`${theme.fg("success", BULLET)} ${theme.fg("toolTitle", summarise(live.counts))}`, ...live.entries.map(entry => memberLine(folds, entry, theme))];
+    return { lines, groupId: live.boundaryId };
+  }
+  return { lines: toolRowLines(row, theme, { width, expanded }), groupId: undefined };
+}
+
+// The blank-line rhythm (docs/pi-design.md rules 2 and 8 applied to the
+// peek): one blank above every block that draws at least one line, none
+// between a group's own members (a member that draws nothing contributes no
+// blank either), and none between a note and the user block it answers.
+export function renderRows(state, width, theme, { expanded = false } = {}) {
+  const output = [];
+  let prevGroupId;
+  let prevRow;
+  for (const row of state.rows) {
+    const { lines, groupId } = row.kind === "tool" ? renderTool(row, state.folds, width, theme, expanded) : { lines: renderRow(row, width, theme), groupId: undefined };
+    if (!lines.length) {
+      prevRow = row;
+      continue;
+    }
+    const sameGroup = groupId !== undefined && groupId === prevGroupId;
+    const notePair = row.kind === "note" && prevRow?.kind === "user";
+    if (output.length && !sameGroup && !notePair) output.push("");
+    output.push(...lines);
+    prevGroupId = groupId;
+    prevRow = row;
+  }
   return output;
 }

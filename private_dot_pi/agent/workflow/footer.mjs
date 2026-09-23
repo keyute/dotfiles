@@ -117,7 +117,7 @@ function readGitChanges(cwd) {
 // and setWidget's string form wraps its lines in that same indent, so the glyph
 // could never reach column 0. As a widget it sits directly above the composer —
 // pi docks widgetsAbove between the status container and the editor.
-class WorkingRow extends Loader {
+export class WorkingRow extends Loader {
   constructor(tui, theme) {
     super(tui, text => theme.fg("accent", text), text => theme.fg("muted", text), "");
     this.paddingX = 0;

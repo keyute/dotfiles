@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import { buildRow, createFleetState, formatTokens, installFleet, modelLabel, navigate, renderFleet, runIdFor, setEntries, shortTitle } from "./fleet.mjs";
+import { buildRow, createFleetState, formatTokens, installFleet, launchesFromBranch, modelLabel, navigate, renderFleet, runIdFor, setEntries, shortTitle } from "./fleet.mjs";
 
 test("rows are the agent, a word-boundary title, compact tokens and the model; the agent alone when the title is missing", () => {
   const entry = { agent: "diff-reviewer", goal: "Review 2051082^..7ebb0ad\n for correctness", tokens: { input: 1, output: 2, total: 22079 }, model: "openai-codex/gpt-5.6-terra:high", effort: "high" };
@@ -351,7 +351,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   // instead, with a live describe() sourced from the current poll.
   events.tool_execution_start({ toolName: "subagent", toolCallId: "c5", args: { agent: "d", task: "Patch the config" } });
   bus.entries = [{ agent: "d", tokens: { total: 2000 }, model: "openai-codex/m:medium", effort: "medium", startedAt: 7000 }];
-  bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running", activity: { currentTool: "workspace_bash" } }];
+  bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running" }];
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c5", result: { details: { mode: "async", runId: "run-d", asyncDir: "/tmp/x/run-d" } } });
   await sleep(20);
   assert.equal(fleet.handleKey("confirm"), true);
@@ -361,7 +361,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.equal(opened[0].asyncDir, "/tmp/x/run-d");
   assert.deepEqual(opened[0].describe(), {
     agent: "d", task: "Patch the config", model: "openai-codex/m:medium", effort: "medium",
-    tokens: { total: 2000 }, startedAt: 7000, state: "running", currentTool: "workspace_bash", terminal: false,
+    tokens: { total: 2000 }, startedAt: 7000, state: "running", terminal: false,
   });
   assert.equal(fleet.focused(), true);
   assert.equal(fleet.render(60, theme)[0], "  *❭* d › Patch the config · 2k tokens · m medium");
@@ -477,4 +477,72 @@ test("rows poll while children run, name the task from the launch, peek each sib
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
   assert.equal(bus.requests.length, afterShutdown);
+});
+
+test("launchesFromBranch pairs a subagent toolCall with its toolResult's runId and asyncDir", () => {
+  const branch = [
+    { type: "message", id: "m1", message: { role: "assistant", content: [
+      { type: "toolCall", id: "call-r", name: "subagent", arguments: { agent: "worker", task: "Review the diff" } },
+    ] } },
+    { type: "message", id: "m2", message: { role: "toolResult", toolCallId: "call-r", toolName: "subagent", details: { runId: "run-r", asyncDir: "/tmp/x/run-r" } } },
+    // No asyncDir: not peekable, so it is dropped.
+    { type: "message", id: "m3", message: { role: "toolResult", toolCallId: "call-none", toolName: "subagent", details: { runId: "run-none" } } },
+    // No id at all.
+    { type: "message", id: "m4", message: { role: "toolResult", toolCallId: "call-noid", toolName: "subagent", details: { asyncDir: "/tmp/x/no-id" } } },
+  ];
+  const launches = launchesFromBranch(branch);
+  assert.deepEqual([...launches.entries()], [["run-r", { agent: "worker", task: "Review the diff", asyncDir: "/tmp/x/run-r" }]]);
+
+  // A toolResult whose call is missing from the branch is still peekable.
+  const orphan = launchesFromBranch([
+    { type: "message", message: { role: "toolResult", toolCallId: "call-missing", toolName: "subagent", details: { runId: "run-o", asyncDir: "/tmp/x/run-o" } } },
+  ]);
+  assert.deepEqual(orphan.get("run-o"), { agent: undefined, task: "", asyncDir: "/tmp/x/run-o" });
+
+  assert.deepEqual([...launchesFromBranch(null).entries()], []);
+  assert.deepEqual([...launchesFromBranch([{}, { message: {} }, { message: { role: "toolResult" } }]).entries()], []);
+});
+
+test("attachContext rehydrates launches from the session branch, so a restored run's peek opens the live dialog", async () => {
+  const bus = fakeBus();
+  const opened = [];
+  const pi = { events: bus, on: () => {}, appendEntry() {}, registerEntryRenderer() {} };
+  const branch = [
+    { type: "message", message: { role: "assistant", content: [
+      { type: "toolCall", id: "call-r", name: "subagent", arguments: { agent: "worker", task: "Review the diff" } },
+    ] } },
+    { type: "message", message: { role: "toolResult", toolCallId: "call-r", toolName: "subagent", details: { runId: "run-r", asyncDir: "/tmp/x/run-r" } } },
+  ];
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {} }, sessionManager: { getBranch: () => branch } };
+  bus.entries = [{ key: "fleet-r", agent: "worker", startedAt: 1000 }];
+  bus.runs = [{ id: "run-r", label: "worker", state: "running", startedAt: 1000 }];
+  const fleet = installFleet(pi, null, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek: async (_ctx, options) => { opened.push(options); } });
+  fleet.attachContext(ctx);
+  await sleep(20);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["run-r", "/tmp/x/run-r"]]);
+});
+
+test("attachContext never overwrites a launch this process already recorded from live events", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const opened = [];
+  const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
+  const branch = [
+    { type: "message", message: { role: "toolResult", toolCallId: "call-r", toolName: "subagent", details: { runId: "run-r", asyncDir: "/tmp/branch/run-r" } } },
+  ];
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {} }, sessionManager: { getBranch: () => branch } };
+  bus.entries = [{ key: "fleet-r", agent: "worker", startedAt: 1000 }];
+  bus.runs = [{ id: "run-r", label: "worker", state: "running", startedAt: 1000 }];
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek: async (_ctx, options) => { opened.push(options); } });
+  hooks.tool_execution_start({ toolName: "subagent", toolCallId: "call-r", args: { agent: "worker", task: "live task" } });
+  hooks.tool_execution_end({ toolName: "subagent", toolCallId: "call-r", result: { details: { runId: "run-r", asyncDir: "/tmp/live/run-r" } } });
+  fleet.attachContext(ctx);
+  await sleep(20);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["run-r", "/tmp/live/run-r"]]);
 });

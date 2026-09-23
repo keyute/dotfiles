@@ -136,9 +136,13 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   `stability.test.mjs` (the pins check text, not order). Not carried:
   `bash_execution_update`, the full-output file on truncation (the block and the
   context text say "truncated"), pi's pending-area display while the agent
-  streams (the record lands at end of turn, as pi's own does), and pi's
-  `shellPath`/`shellCommandPrefix` settings, which no extension API exposes —
-  this repo's settings template sets neither; carry them if it ever does. Retire when pi
+  streams (the record lands at end of turn, as pi's own does). pi's
+  `shellPath`/`shellCommandPrefix` settings are carried through the SDK's exported
+  `SettingsManager` (`create(cwd, agentDir, { projectTrusted })` with the session's
+  `isProjectTrusted()`, so an untrusted checkout's project file cannot pick the shell;
+  `getShellPath`, `getShellCommandPrefix`), read at each `session_start`, the prefix
+  joined by pi's own newline; the ops worker's own
+  `bash -c` keeps the model's tool on bash. Pinned in `stability.test.mjs`. Retire when pi
   exposes a renderer for its shell block or a documented submit hook (2026-09-23).
 - Unified activity groups: tools and successful completions share one timeline.
   An entry renderer gets no invalidate handle, so a completion-led group reads
@@ -189,11 +193,13 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   the parent orchestrator:` (`Queued follow-up …` for `follow_up`) and closing
   with the `Incorporate this guidance…` line, which the replay strips; the
   `steer` RPC blocks up to 3 s for its receipt, so the peek's call outlives
-  the fleet poll's 2 s timeout. The header's current tool is
-  `asyncSnapshot.runs[].activity.currentTool`, a source shape beside the
-  documented `runs[].id`. All pinned in `stability.test.mjs`; each entry
+  the fleet poll's 2 s timeout. All pinned in `stability.test.mjs`; each entry
   retires when pi-subagents documents the shape or serves it over RPC
-  (2026-09-22).
+  (2026-09-22). The replay also reads `agent_start`/`agent_end`/`agent_settled`
+  and each record's `observedAt` for the turn line and the working row, and
+  drives a quiet fold instance (no components to invalidate) through
+  `rows.mjs`'s own mutators; after a resume, `asyncDir` is read back from the
+  session branch's `subagent` tool results (`getBranch`, documented) (2026-09-23).
 - srt's `CLAUDE_CODE_TMPDIR` environment variable, read when it wraps a
   command, names the `TMPDIR` it exports into that command; `sandbox-runner.mjs`
   sets it to the lease's scratch path. Documented only in srt's source comment

@@ -170,7 +170,6 @@ const pins = [
   ["the steer RPC waits up to three seconds for a receipt, longer than the fleet poll's timeout", "pi-subagents/src/runs/foreground/subagent-executor.js", [/waitForSteeringAction\(omitUndefinedProperties\(\{ asyncDir, sourceRunId: run\.id, requestId, timeoutMs: 3_000/]],
   ["fleet rows use opaque generated keys and an active step's agent and start time, falling back to the job's time", "pi-subagents/src/extension/rpc.js", [/let key = keyState\.keys\.get\(candidate\.internalKey\);\s*if \(!key\) \{\s*key = `fleet-\$\{\+\+keyState\.next\}`;\s*keyState\.keys\.set\(candidate\.internalKey, key\);\s*\}/, /if \(!activeState\(step\.status\)\)\s*continue;/, /agent: step\.agent,/, /startedAt: step\.startedAt \?\? startedAt,/, /const startedAt = job\.startedAt \?\? job\.updatedAt;/]],
   ["async status projects raw run and immediate step labels and timestamps with active state names", "pi-subagents/src/runs/shared/async-status-projection.js", [/function projectStep\(step, index, depth, ctx\) \{\s*const state = normalizeState\(step\.status\);\s*const startedAt = publicTime\(step\.startedAt\);/, /label: publicText\("label" in step && step\.label \? step\.label : step\.agent,/, /function projectRun\(job, ctx, depth, childrenByParent, liveRoots, omitSteps = false\) \{\s*const state = normalizeState\(job\.status\);\s*const startedAt = publicTime\(job\.startedAt\);/, /label: labelForAgents\(job\.agents, job\.mode \?\? "subagent"/, /const stepChildren = steps\.map\(\(step, index\) => projectLane\(step, step\.index \?\? index\)\)/]],
-  ["the async snapshot's runs carry their current tool", "pi-subagents/src/runs/shared/async-status-projection.d.ts", [/interface AsyncStatusSnapshotActivity \{[\s\S]{0,120}currentTool\?: string;/, /activity\?: AsyncStatusSnapshotActivity;/]],
   ["a launch answers with its run id and artifact directory together", "pi-subagents/src/runs/background/async-execution.js", [/details: \{ mode: "single", runId: id, results: \[\], asyncId: id, asyncDir,/]],
   ["a container dispatches a mouse event to whichever child sits under event.y", "@earendil-works/pi-tui/dist/tui.js", [/for \(const \{ component: child, height: childHeight \} of mouseChildren\) \{\s*if \(event\.y >= childY && event\.y < childY \+ childHeight\) \{\s*const result = dispatchMouseEvent\(child, \{/]],
   ["pi wires the custom editor's submit callback to its own default editor's, so a subclass has to intercept the property itself", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/newEditor\.onSubmit = this\.defaultEditor\.onSubmit;/]],
@@ -182,6 +181,17 @@ const pins = [
   ["Alt+Enter on a non-streaming session acts like plain Enter, calling the editor's own onSubmit directly", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/else if \(this\.editor\.onSubmit\) \{\s*this\.editor\.setText\(""\);\s*this\.editor\.onSubmit\(text\);/]],
   ["ExtensionContext declares isIdle, the signal this editor's Esc precedence and the shell runner's abortable() gate on", "@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts", [/isIdle\(\): boolean;/]],
   ["pi-tui's main-screen renderer throws when a rendered line's visible width exceeds the terminal's, which is why every row here wraps to width", "@earendil-works/pi-tui/dist/tui-main-screen.js", [/`Rendered line \$\{i\} exceeds terminal width \(\$\{visibleWidth\(line\)\} > \$\{width\}\)\.`/]],
+  // The shell runner's shellPath/shellCommandPrefix wiring (docs/pi-coupling.md's
+  // owned `!` block): the bash tool's own prefix composition, the lazy shell
+  // resolution createLocalBashOperations wraps, SettingsManager's shell getters
+  // and export, and the model's workspace_bash tool staying on bash regardless
+  // of the setting.
+  ["the bash tool joins commandPrefix and command with a newline before spawning, the composition the shell runner mirrors", "@earendil-works/pi-coding-agent/dist/core/tools/bash.js", [/const resolvedCommand = commandPrefix \? `\$\{commandPrefix\}\\n\$\{command\}` : command;/]],
+  ["createLocalBashOperations resolves shellPath through getShellConfig lazily, at exec time, not at construction", "@earendil-works/pi-coding-agent/dist/core/tools/bash.js", [/export function createLocalBashOperations\(options\) \{\s*return createLocalShellOperations\("bash", \(\) => getShellConfig\(options\?\.shellPath\)\);/]],
+  ["SettingsManager exposes getShellPath and getShellCommandPrefix", "@earendil-works/pi-coding-agent/dist/core/settings-manager.d.ts", [/getShellPath\(\): string \| undefined;/, /getShellCommandPrefix\(\): string \| undefined;/]],
+  ["SettingsManager is exported from the package index", "@earendil-works/pi-coding-agent/dist/index.js", [/export \{ SettingsManager, \} from "\.\/core\/settings-manager\.js";/]],
+  ["SettingsManager.create defaults projectTrusted to true and skips the project file when it is false, so the shell settings read must pass the session's trust decision", "@earendil-works/pi-coding-agent/dist/core/settings-manager.js", [/const projectTrusted = options\.projectTrusted \?\? true;/, /if \(scope === "project" && !projectTrusted\) \{/]],
+  ["ExtensionContext declares isProjectTrusted, the decision the shell settings read is gated on", "@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts", [/isProjectTrusted\(\): boolean;/]],
 ];
 for (const [claim, file, patterns] of pins) {
   test(`pin: ${claim} (${file})`, () => {
@@ -206,4 +216,11 @@ for (const api of declaredApis) {
 test("pi.appendEntry is only reached through appendVisible", () => {
   const offenders = sourceFiles.filter(file => file !== "rows.mjs" && readFileSync(join(dir, file), "utf8").includes("pi.appendEntry("));
   assert.deepEqual(offenders, [], `these call pi.appendEntry directly instead of appendVisible: ${offenders.join(", ")}`);
+});
+
+// The model's workspace_bash tool stays on bash regardless of shellPath/
+// shellCommandPrefix (docs/pi-coupling.md's owned `!` block): only the
+// user-typed `!`/`!!` runner honours pi's shell settings.
+test("ops-worker's bash spawn is untouched by pi's shell settings", () => {
+  assert.match(readFileSync(join(dir, "ops-worker.mjs"), "utf8"), /spawn\("bash", \["-c", command\]/);
 });

@@ -90,7 +90,7 @@ const BUFFER_BYTES = DEFAULT_MAX_BYTES * 2;
 // shell. `now` likewise, for deterministic elapsed times. `idle` reports
 // whether the agent is idle (ExtensionContext.isIdle), which gates when Esc
 // may reach this runner instead of pi's own agent-abort.
-export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultFolds, working, now = Date.now, idle = () => true }) {
+export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultFolds, working, now = Date.now, idle = () => true, prefix = () => undefined }) {
   let controller = null;
   // Exposed for tests to await the in-flight command; submit() itself must
   // return synchronously so the composer knows at once whether to keep its text.
@@ -114,8 +114,12 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
       }
     };
     let result;
+    // pi's own bash tool composes the same way (core/tools/bash.js); the
+    // prefix runs but never appears in details.command or the drawn block.
+    const shellCommandPrefix = prefix();
+    const resolvedCommand = shellCommandPrefix ? `${shellCommandPrefix}\n${command}` : command;
     try {
-      result = await exec(command, cwd(), { onData, signal, env: env() });
+      result = await exec(resolvedCommand, cwd(), { onData, signal, env: env() });
     } catch (error) {
       if (!signal.aborted) {
         notify(`Shell command failed: ${error instanceof Error ? error.message : String(error)}`, "error");
@@ -182,10 +186,10 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
 // invalidates the extension ctx on /new and /resume without re-running the
 // extension factory, so `context` is a getter for the current session's
 // ExtensionContext rather than a captured one.
-export function installShell(pi, context, { folds = defaultFolds, working, exec, env } = {}) {
+export function installShell(pi, context, { folds = defaultFolds, working, exec, env, prefix } = {}) {
   pi.registerMessageRenderer("workflow-shell", (message, options, theme) => shellComponent(message.details, options, theme));
   pi.registerEntryRenderer("workflow-shell", (entry, options, theme) => shellComponent(entry.data, options, theme));
-  const runner = createShellRunner({ pi, folds, working, exec, env, cwd: () => context().cwd, notify: (...args) => context().ui.notify(...args), idle: () => context().isIdle() });
+  const runner = createShellRunner({ pi, folds, working, exec, env, prefix, cwd: () => context().cwd, notify: (...args) => context().ui.notify(...args), idle: () => context().isIdle() });
   // A session tear-down otherwise leaves a spawned command running with
   // nothing left to record its result; the footer already listens to the
   // same event to stand its own row down.
