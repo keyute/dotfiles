@@ -222,6 +222,19 @@ export function piArgs({ model, effort, sessionId }) {
   ];
 }
 
+// JSON mode exits 0 even on model/auth errors (print-mode.js only sets a
+// non-zero exit code in text mode), so the exit code alone cannot signal
+// failure; only a "stop" reason is a complete answer — "length" (output
+// token limit) and "toolUse" (pi died mid-loop) leave truncated or interim
+// text, and no assistant message at all leaves undefined
+export function assertCompleted(parsed, code, stderr) {
+  if (parsed.stopReason !== "stop") {
+    throw new Error(
+      `pi ${parsed.stopReason ?? "produced no response"} (exit ${code}): ${parsed.errorMessage ?? ""}\n\n${stderr.slice(-2000)}`,
+    );
+  }
+}
+
 // positionals are never used: the prompt always goes on stdin, so
 // caller-supplied text (e.g. an "@"-leading brief) can never be parsed as a
 // file argument or a flag
@@ -254,15 +267,7 @@ async function runPi(promptText, { cwd, sessionId }, signal) {
   }).finally(() => signal?.removeEventListener("abort", onAbort));
   if (signal?.aborted) throw new Error("cancelled; pi process terminated");
   const parsed = parseEvents(stdout);
-  // JSON mode exits 0 even on model/auth errors (print-mode.js only sets a
-  // non-zero exit code in text mode), so the exit code alone cannot signal
-  // failure here
-  if (parsed.stopReason === "error" || parsed.stopReason === "aborted") {
-    throw new Error(`pi ${parsed.stopReason}: ${parsed.errorMessage ?? ""}\n\n${stderr.slice(-2000)}`);
-  }
-  if (code !== 0 && !parsed.text.trim()) {
-    throw new Error(`pi exited ${code}: ${stderr.slice(-2000)}`);
-  }
+  assertCompleted(parsed, code, stderr);
   if (parsed.threadId !== undefined && parsed.threadId !== sessionId) {
     throw new Error(`pi session id mismatch: expected ${sessionId}, got ${parsed.threadId}`);
   }

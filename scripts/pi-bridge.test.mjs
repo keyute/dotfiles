@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  assertCompleted,
   assertNoPendingMigration,
   composeReviewPrompt,
   diffCommands,
@@ -60,6 +61,14 @@ test("parseEvents surfaces stopReason and errorMessage on failure", () => {
   const result = parseEvents(lines);
   assert.equal(result.stopReason, "error");
   assert.equal(result.errorMessage, "boom");
+});
+
+test("assertCompleted accepts only a stop reason of stop", () => {
+  const stopped = { text: "done", stopReason: "stop" };
+  assert.doesNotThrow(() => assertCompleted(stopped, 1, ""));
+  const truncated = { text: "partial", stopReason: "length" };
+  assert.throws(() => assertCompleted(truncated, 0, ""), /pi length/);
+  assert.throws(() => assertCompleted({ text: "" }, 0, "boom"), /produced no response/);
 });
 
 test("thinkingLevel validates against pi's thinking levels", () => {
