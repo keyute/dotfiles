@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
 import { addFold, answerLines, appendVisible, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, hideStreamingReasoning, installFolding, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, toolRenderers } from "./rows.mjs";
+import { createShellRunner } from "./shell.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -342,13 +343,14 @@ test("extension input does not seal a live group", () => {
   assert.ok(foldGroup(folds, "r1"));
 });
 
-test("user shell commands close successful calls before and after them", () => {
+test("shell commands close successful calls before and after them", () => {
   const folds = createFolds();
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
   for (const id of ["r1", "r2"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
   for (const id of ["r1", "r2"]) handlers.tool_execution_end({ toolCallId: id, result: { details: {} } });
-  handlers.user_bash({ command: "pwd" });
+  const runner = createShellRunner({ pi: { sendMessage() {}, appendEntry() {} }, cwd: () => ".", notify() {}, exec: async () => ({ exitCode: 0 }), env: () => ({}), folds, working() {} });
+  runner.submit("!pwd");
   for (const id of ["r3", "r4"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
   for (const id of ["r3", "r4"]) handlers.tool_execution_end({ toolCallId: id, result: { details: {} } });
   closeFolds(folds);

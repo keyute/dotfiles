@@ -72,7 +72,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-22:* subagent management calls (steer, status, interrupt, stop) joined the group (`steered 1 agent`,
      `checked on 2 agents`), reversing their boundary-row exemption; `bg_wait` and `workspace_task` stay visible, each a
      blocking wait whose own sentence is the information. *Why:* a steer between two reads split the group for a row that says nothing its completion line does not.
-   - *2026-09-22, images and shell:* `terminal.showImages: false` suppresses native inline previews, not model image input; image results obey the same folding rules as text results. A user shell command closes the preceding group because Pi draws its native block outside normal message events.
+   - *2026-09-22, images and shell:* `terminal.showImages: false` suppresses native inline previews, not model image input; image results obey the same folding rules as text results. A user shell command closes the preceding group at submission, as typed input does, and its output shows under its block — the one output that does, because the user asked for it (rule 5; 2026-09-23, superseding the boundary pi's native block drew outside message events).
 3. **One place per fact.** Elapsed time rides the working spinner while the
    turn runs (`⠋ Interpolating… 1m 12s`) and the `π` turn line once it ends;
    the status line carries model · context · usage windows · branch, and the
@@ -135,7 +135,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      an addable slash-ended path comes first, children below, preserving relative, `~/…` and absolute spelling.
      Empty input starts at siblings; policy exclusions still apply. Tab accepting unchanged text closes the menu;
      accepting a different directory opens its level. *Why:* automatic descent selected the wrong directory; literal paths also remove the climbing heuristic.
-   - *2026-09-22, shell mode:* a leading `!`/`!!` moves into a red (`error`) `!` prompt, with command text in `userMessageText` and the whole composer in subtle `toolErrorBg`. Backspace at command start exits the mode; native submission and `!!` context exclusion stay intact. *Why:* the owner wants the mode in the prompt, not an extra character in the command; normal text keeps the tinted surface readable. The native shell-output block remains upstream-owned pending a renderer hook.
+   - *2026-09-22, shell mode:* a leading `!`/`!!` moves into a red (`error`) `!` prompt, with command text in `userMessageText` and the whole composer in subtle `toolErrorBg`. Backspace at command start exits the mode; `!!` keeps its context exclusion. *Why:* the owner wants the mode in the prompt, not an extra character in the command; normal text keeps the tinted surface readable.
+   - *2026-09-23, shell block:* the sent `!` command is the shell-mode composer carried into the transcript — the same red `!`, `userMessageText` and `toolErrorBg` block — and the extension draws it, taking the submit before pi's `!` branch (every pi path builds its native block, and pi's `input` event fires after that branch). The output sits under the block two in: the last 20 lines with `… N more lines`, all under ctrl+o, then `exit N` or `cancelled`, then `output truncated`; while it runs the working row says `Running <cmd>… 3s` and nothing streams. `!!` looks the same and stays out of context. *Why:* rule 5's standard is the user box; the output shows because the user typed `!` to see it, and rule 2 keeps the run quiet.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then `↓ N
    more`; Down from the prompt's last line enters the rows, the highlighted row
@@ -171,14 +172,17 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      dot column, so the handle lines up with the `•` rows it owns.
    - *2026-09-18:* a group is one block: one blank line above, none inside; a
      row that draws nothing takes no line (`docs/pi-coupling.md`).
-9. **Background = user messages, composer and a dialog's active tab.** The user
-   box and composer share rule 5's shade; a dialog's active tab is the explicit
+9. **Background = user messages, composer, the sent `!` command and a dialog's active tab.** The user
+   box, composer and shell block share rule 5's shade; a dialog's active tab is the explicit
    2026-09-21 exception (rule 11). No tool card (every plugin takes the row renderer)
    or activity summary has a background. pi's rare compaction and
    branch notices are pi's. *Why (2026-09-08):* `bg_wait`'s green card was a
    third background and read as a different program; the composer's shade came
    back the same afternoon because the owner wants the place they type to look
    like what they typed.
+   - *2026-09-23:* the reading the shade encodes: a shaded block is what the user typed, unshaded text at
+     column 0 is what the assistant said, and two in is what a machine produced on the user's behalf
+     (`↳` lines, a `!` command's output). *Why:* the shell block was the one typed thing that did not look typed.
 10. **A pinned plugin earns a tool row, not a panel.** `web_search`
     (pi-web-search) uses `• Searched "query"`, joining rule 2's group on success;
     alone it has the answer's first line below. The `π` voice records workspace changes

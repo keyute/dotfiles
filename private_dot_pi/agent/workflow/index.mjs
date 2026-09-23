@@ -14,6 +14,7 @@ import { allowedChildAgents, checkChildLaunch, narrowSubagentSchema } from "./ch
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
+import { installShell } from "./shell.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
@@ -177,10 +178,36 @@ const padRow = (text, width) => truncateToWidth(text, width, "", true);
 export class CaretEditor extends sdk.CustomEditor {
   // The editor factory is handed an EditorTheme (borders and autocomplete only),
   // so the palette for the shade and the caret arrives separately.
-  constructor(tui, theme, keybindings, { fleet, palette } = {}) {
+  constructor(tui, theme, keybindings, { fleet, palette, shell } = {}) {
     super(tui, theme, keybindings, { paddingX: PROMPT_PADDING, embedWorkingStatus: false });
     this.fleet = fleet;
     this.palette = palette;
+    this.shell = shell;
+    // pi-tui's Editor declares `onSubmit` as a bare class field, which
+    // installs an own data property on this instance during super() and
+    // would shadow the accessor pair below forever; dropping it here lets
+    // property access reach the prototype's getter/setter instead.
+    delete this.onSubmit;
+  }
+  // pi assigns its own submit callback onto this editor once, right after
+  // construction (`newEditor.onSubmit = this.defaultEditor.onSubmit`); the
+  // setter only ever stores it. The getter is read fresh on every submit
+  // (Editor.submitValue does `this.onSubmit(result)`), so a configured shell
+  // gets first refusal: unhandled input (not `!…`, or `!` alone) forwards to
+  // pi's own callback unchanged.
+  set onSubmit(fn) {
+    this.hostSubmit = fn;
+  }
+  get onSubmit() {
+    if (!this.shell) return this.hostSubmit;
+    return text => {
+      const result = this.shell.submit(text);
+      if (result === false) { this.hostSubmit?.(text); return; }
+      // submitValue() already cleared the editor before calling onSubmit; a
+      // busy runner restores the text instead of losing it.
+      if (result === "busy") this.setText(text);
+      else this.addToHistory(text);
+    };
   }
   // The palette is pi's live theme (a theme switch invalidates this editor
   // rather than rebuilding it), so the sequence is read per render, never cached.
@@ -234,6 +261,14 @@ export class CaretEditor extends sdk.CustomEditor {
       const before = JSON.stringify([this.getCursor(), this.getLines()]);
       super.handleInput(data);
       if (JSON.stringify([this.getCursor(), this.getLines()]) === before) fleet.handleKey("enter");
+      return;
+    }
+    // pi's own Esc (app.interrupt) aborts a streaming agent first, as its own
+    // onEscape does; only once the agent is idle does a live `!` take this
+    // key instead. Ctrl+C also carries `tui.select.cancel` and must keep pi's
+    // meaning, so this checks the plain Escape binding, not that one.
+    if (this.keybindings.matches(data, "app.interrupt") && !this.isShowingAutocomplete() && !fleet?.focused() && this.shell?.abortable()) {
+      this.shell.abort();
       return;
     }
     // Native history uses logical column zero; shell mode starts after its
@@ -462,13 +497,6 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       // The adapter's broker handles resolved MCP operations, not proxy arguments.
     } catch (error) { return { block: true, reason: error.message }; }
   });
-  // A `!` command is the user's own: host shell and environment, no sandbox or
-  // review (Claude Code's `!`), minus the broker credentials.
-  const localShell = sdk.createLocalBashOperations();
-  pi.on("user_bash", () => ({ operations: {
-    exec: (command, cwd, options) => localShell.exec(command, cwd, { ...options, env: hostEnvironment() }),
-  } }));
-
   pi.events.on("pi-mcp-adapter:tool-approval-request", request => {
     request.claim(async () => {
       if (!ready) return "deny";
@@ -554,13 +582,15 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (isRoot && ctx.hasUI) {
       if (!surfaces) {
         installFolding(pi, ctx);
-        surfaces = { footer: installFooter(pi, ctx, { fleet, tasks }) };
+        const footer = installFooter(pi, ctx, { fleet, tasks });
+        const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations().exec, env: hostEnvironment });
+        surfaces = { footer, shell };
       }
       // pi resets every extension surface when a session is invalidated
       // (/new, /resume), so these are applied on each session start.
       installHeader(ctx);
       surfaces.footer.attach(ctx);
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme }));
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell }));
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
     refreshActiveTools();

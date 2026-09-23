@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { Dialog } from "./dialog.mjs";
 import { formatTokens, modelLabel } from "./fleet.mjs";
-import { PROMPT, formatDuration, oneLine, shade } from "./rows.mjs";
-import { EARLIER_NOTE, createReplay, pad, renderRows, replayEvents, trimRows } from "./replay.mjs";
+import { PROMPT, formatDuration, oneLine, pad, shade } from "./rows.mjs";
+import { EARLIER_NOTE, createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 // The fleet's Enter peek (docs/pi-design.md rule 6, 2026-09-22): a rule-11
 // dialog over a background child's own events.jsonl, replayed live through

@@ -117,8 +117,29 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   Native tool images render outside the self-shell row; managed
   `terminal.showImages: false` removes their preview components without changing
   result content. A real-component test gates folding without stray previews or
-  gaps. User-shell boundaries use the documented `user_bash` event because
-  `recordBashResult` does not emit a normal `message_end` (2026-09-22).
+  gaps (2026-09-22).
+- The owned `!` block: `CaretEditor` wraps the `onSubmit` callback pi assigns to
+  a custom editor (`newEditor.onSubmit = this.defaultEditor.onSubmit`; Alt+Enter
+  calls the same) and parses `!`/`!!` as pi's own `!` branch does, so
+  `handleBashCommand` and its `BashExecutionComponent` never run — no pi path
+  draws anything else, and the `input` event fires only after that branch. The
+  command runs through the documented `createLocalBashOperations` with the host
+  environment, is recorded as a `workflow-shell` custom message (`!`, its context
+  text spelled like `bashExecutionToText`) or custom entry (`!!`), and Esc is
+  caught in `handleInput`, since pi's `onEscape` aborts only its own bash. Rests
+  on pi-tui's `Editor` declaring `onSubmit` as a bare class field (the
+  caret deletes that own property after `super()` so its accessor is reached),
+  calling `this.onSubmit(text)` after clearing its state, and declaring
+  `addToHistory`, on the `!` branch living only in the submit handler, on
+  `sendCustomMessage` deferring a `triggerTurn: false` message while the agent
+  streams, and on those four message literals; each literal is pinned in
+  `stability.test.mjs` (the pins check text, not order). Not carried:
+  `bash_execution_update`, the full-output file on truncation (the block and the
+  context text say "truncated"), pi's pending-area display while the agent
+  streams (the record lands at end of turn, as pi's own does), and pi's
+  `shellPath`/`shellCommandPrefix` settings, which no extension API exposes —
+  this repo's settings template sets neither; carry them if it ever does. Retire when pi
+  exposes a renderer for its shell block or a documented submit hook (2026-09-23).
 - Unified activity groups: tools and successful completions share one timeline.
   An entry renderer gets no invalidate handle, so a completion-led group reads
   the timeline at paint time and repaints through the footer's `tui.requestRender()`;

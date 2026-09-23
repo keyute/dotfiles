@@ -30,10 +30,10 @@ function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
   const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui };
   const fleet = { attach() {}, render: () => [], activeCount: () => active };
   const tasks = { live: () => live };
-  installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, readLimits: async () => null });
+  const footer = installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, readLimits: async () => null });
   process.env.PATH = path;
   const fire = (name, event = {}) => handlers[name]?.(event, { cwd: "." });
-  return { fire, entries, messages, fleet, tasks, widget, visible, done: () => fire("session_shutdown") };
+  return { fire, entries, messages, fleet, tasks, widget, visible, working: footer.working, done: () => fire("session_shutdown") };
 }
 
 test("rate limits key only on stable window fields", () => {
@@ -342,6 +342,54 @@ test("the working row stands down while pi compacts, and comes back with the tur
   // The turn is over; a late compaction has nothing to come back to.
   h.fire("session_compact");
   assert.deepEqual(h.widget.row.render(40), []);
+  h.done();
+});
+
+test("a running shell command outranks the turn label and clears back to it", async () => {
+  const h = harness();
+  const working = h.working;
+  h.fire("agent_start");
+  await sleep(15);
+  working({ command: "npm test", startedAt: Date.now() });
+  assert.match(h.messages.at(-1), /^Running npm test… \d+s$/);
+  working(null);
+  assert.match(h.messages.at(-1), /^Iterating…/, "cleared back to the turn label while the clock still runs");
+  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+  h.fire("agent_settled");
+});
+
+test("a shell command outside any turn ticks and clears the spinner on its own", async () => {
+  const h = harness();
+  h.working({ command: "sleep 5", startedAt: Date.now() });
+  assert.match(h.messages.at(-1), /^Running sleep 5… \d+s$/);
+  const ticks = h.messages.length;
+  await sleep(15);
+  assert.ok(h.messages.length > ticks, "its own tick keeps the elapsed time live with no turn running");
+  h.working(null);
+  assert.equal(h.messages.at(-1), "", "the spinner stands down with no turn to return to");
+});
+
+test("a shell command that outlives its turn keeps its row and tick after the turn closes", async () => {
+  const h = harness();
+  h.fire("agent_start");
+  h.working({ command: "npm test", startedAt: Date.now() });
+  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+  h.fire("agent_settled");
+  assert.match(h.messages.at(-1), /^Running npm test… \d+s$/, "the turn closing did not drop the still-running shell's row");
+  const ticks = h.messages.length;
+  await sleep(15);
+  assert.ok(h.messages.length > ticks, "its tick survived the turn closing");
+  h.done();
+});
+
+test("compaction hides a running shell command's row and restores it after, with no turn running", () => {
+  const h = harness();
+  h.working({ command: "npm test", startedAt: Date.now() });
+  assert.match(h.messages.at(-1), /^Running npm test…/);
+  h.fire("session_before_compact");
+  assert.equal(h.messages.at(-1), "", "pi's own compaction indicator is the only one, even with a shell running");
+  h.fire("session_compact");
+  assert.match(h.messages.at(-1), /^Running npm test… \d+s$/);
   h.done();
 });
 

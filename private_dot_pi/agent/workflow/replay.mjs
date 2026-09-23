@@ -1,6 +1,6 @@
-import { Markdown, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { PAD, PROMPT, bulletMarkdown, callTitle, glyph, pluginTitle, rowLines, shade, taskTitle } from "./rows.mjs";
+import { PAD, PROMPT, bulletMarkdown, callTitle, glyph, pad, pluginTitle, rowLines, shade, taskTitle } from "./rows.mjs";
 
 // The fleet peek replays a background child's own events.jsonl through this
 // extension's row grammar (docs/pi-design.md rule 6, 2026-09-22). Pure: no fs,
@@ -181,8 +181,6 @@ function toolRowLines(row, theme, expanded) {
   if (pending) return [titleLine];
   return [titleLine, ...rowLines(bodyName, result, { expanded, isError }, theme)];
 }
-
-export const pad = (text, width) => text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 
 function userRowLines(row, width, theme) {
   const wrapped = wrapTextWithAnsi(row.text, Math.max(1, width - 2));

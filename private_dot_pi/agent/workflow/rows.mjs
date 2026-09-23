@@ -1,4 +1,4 @@
-import { Container, Markdown, Text } from "@earendil-works/pi-tui";
+import { Container, Markdown, Text, visibleWidth } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
@@ -39,7 +39,7 @@ const NO_OUTPUT = "(no output)";
 const EXIT_STATUS = /^Command exited with code \d+$/;
 const ELIDED = /^… \d+ more lines$/;
 
-const firstLine = value => String(value ?? "").split("\n")[0];
+export const firstLine = value => String(value ?? "").split("\n")[0];
 const resultText = result => {
   const text = (result?.content ?? []).filter(c => c.type === "text").map(c => c.text ?? "").join("\n").trim();
   return text === NO_OUTPUT ? "" : text;
@@ -56,6 +56,12 @@ export function shade(theme, line, background = "userMessageBg", foreground) {
   const open = theme.bg(background, "").replace(/\x1b\[49m$/, "") + (foreground ? theme.fg(foreground, "").replace(/\x1b\[39m$/, "") : "");
   return theme.bg(background, line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
 }
+
+// Pads a rendered line to a fixed visible width; shared by the blocks that
+// shade whole rows without truncating them (the user-message replay, the `!`
+// row). The composer pads its own rows with `padRow` (index.mjs), which
+// truncates instead — the two are not the same function.
+export const pad = (text, width) => text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 
 export function shortTitle(text, width = TITLE_WIDTH) {
   const title = oneLine(text);
@@ -443,7 +449,6 @@ export function installFolding(pi, ctx, folds = defaultFolds) {
   // Streaming replies announce their text in updates; non-streaming ones only at the end.
   pi.on("message_update", event => { if (speaks(event)) closeFolds(folds); });
   pi.on("message_end", event => { if (speaks(event) || displays(event)) closeFolds(folds); });
-  pi.on("user_bash", () => closeFolds(folds));
 }
 
 // The group's first row draws the summary line whether the group is open or

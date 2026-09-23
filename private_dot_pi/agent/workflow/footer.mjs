@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { PAD, TURN_GLYPH, appendVisible, createTurnClock, defaultFolds, formatTurn, paintCounts, setRepaint } from "./rows.mjs";
+import { PAD, TURN_GLYPH, appendVisible, createTurnClock, defaultFolds, firstLine, formatDuration, formatTurn, paintCounts, setRepaint, shortTitle } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 
 // Usage comes from the ChatGPT backend's usage endpoint — an unversioned
@@ -144,7 +144,7 @@ const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
 export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000, readLimits = readRateLimits, folds = defaultFolds } = {}) {
-  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false, working: null, compacting: false };
+  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false, working: null, compacting: false, shell: null };
 
   const refreshUsage = async () => {
     if (Date.now() - state.usageAt < USAGE_MIN_INTERVAL_MS) return;
@@ -175,8 +175,15 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     clearInterval(state.tick);
     state.tick = null;
   };
+  // A running `!` command outranks the turn label (rule 3: one place per
+  // fact); its own tick keeps the elapsed time live even with no turn
+  // running. Compaction outranks both — pi draws its own indicator then, and
+  // rule 3 allows only one — regardless of which of the two this row would
+  // otherwise be showing.
   const showLabel = () => {
-    if (!clock.running() || state.compacting) state.working?.setMessage("");
+    if (state.compacting) state.working?.setMessage("");
+    else if (state.shell) state.working?.setMessage(`Running ${shortTitle(firstLine(state.shell.command))}… ${formatDuration(Date.now() - state.shell.startedAt)}`);
+    else if (!clock.running()) state.working?.setMessage("");
     else if (state.waiting) state.working?.snapshot(state.waiting);
     else state.working?.setMessage(label());
   };
@@ -190,12 +197,31 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     if (!state.waiting) state.working?.start();
     showLabel();
   };
+  // The truthy half of `working` below, and also what re-arms a `!` that
+  // outlives the turn or a compaction — both stop the row outright, and
+  // neither event carries a shell state of its own to hand back in.
+  const armShell = () => {
+    state.tick ??= setInterval(showLabel, tickMs);
+    state.working?.start();
+    showLabel();
+  };
+  const working = shell => {
+    state.shell = shell;
+    if (shell) armShell();
+    else if (!clock.running()) {
+      clearTick();
+      stopWorking();
+    } else {
+      showLabel();
+    }
+  };
   const close = options => {
     clearTick();
     state.waiting = false;
     stopWorking();
     const turn = clock.stop(Date.now(), options);
     if (turn) appendVisible(pi, "workflow-turn", turn);
+    if (state.shell) armShell();
   };
   pi.on("agent_start", () => {
     clock.start();
@@ -213,7 +239,8 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     if ((fleet?.activeCount?.() ?? 0) + (tasks?.live?.() ?? 0) > 0) {
       state.waiting = clock.settledLabel();
       clearTick();
-      showLabel();
+      if (state.shell) armShell();
+      else showLabel();
     } else close();
   });
   pi.on("input", event => { if (state.waiting && event.source !== "extension") close(); return { action: "continue" }; });
@@ -224,8 +251,8 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   // with the turn. Its auto-retry countdown has no documented event and keeps
   // its own indicator alongside this one — the recorded residual.
   pi.on("session_before_compact", () => { state.compacting = true; stopWorking(); });
-  pi.on("session_compact", () => startWorking());
-  pi.on("session_compact_failed", () => startWorking());
+  pi.on("session_compact", () => { startWorking(); if (state.shell) armShell(); });
+  pi.on("session_compact_failed", () => { startWorking(); if (state.shell) armShell(); });
   pi.on("session_shutdown", () => { clearTick(); stopWorking(); });
   pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
@@ -285,5 +312,5 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     });
   };
   attach(ctx);
-  return { attach };
+  return { attach, working };
 }

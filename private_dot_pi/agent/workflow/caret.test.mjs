@@ -66,6 +66,87 @@ test("leading ! is a shell composer mode without becoming command text", () => {
   assert.equal(caret.getText(), "!ls");
 });
 
+test("a configured shell intercepts ! input: submits, records history, clears the text, and never reaches native onSubmit", () => {
+  const submitted = [];
+  const shell = { submit: text => { submitted.push(text); return true; }, abortable: () => false, abort() {} };
+  const caret = editor({ shell });
+  const native = [];
+  caret.onSubmit = text => native.push(text);
+  caret.setText("!ls");
+  caret.handleInput("\r");
+  assert.deepEqual(submitted, ["!ls"]);
+  assert.deepEqual(native, []);
+  assert.equal(caret.getText(), "");
+  caret.handleInput("\x1b[A");
+  assert.equal(caret.getText(), "!ls", "addToHistory ran, so Up recalls the submitted command");
+});
+
+test("a runner that declines the input (plain text, or ! alone) still reaches native onSubmit", () => {
+  const shell = { submit: () => false, abortable: () => false, abort() {} };
+  const caret = editor({ shell });
+  const native = [];
+  caret.onSubmit = text => native.push(text);
+  caret.setText("hello");
+  caret.handleInput("\r");
+  assert.deepEqual(native, ["hello"]);
+});
+
+test("a busy runner keeps the composer text instead of clearing it", () => {
+  const shell = { submit: () => "busy", abortable: () => false, abort() {} };
+  const caret = editor({ shell });
+  caret.onSubmit = () => { throw new Error("must not reach native submit"); };
+  caret.setText("!ls");
+  caret.handleInput("\r");
+  assert.equal(caret.getText(), "!ls");
+});
+
+test("Esc with a running, abortable shell command aborts it instead of falling through", () => {
+  let aborted = false;
+  const shell = { submit: () => false, abortable: () => true, abort: () => { aborted = true; } };
+  const caret = editor({ shell });
+  let escaped = false;
+  caret.onEscape = () => { escaped = true; };
+  caret.handleInput("\x1b");
+  assert.ok(aborted);
+  assert.ok(!escaped, "native escape handling did not also run");
+});
+
+test("Esc with nothing abortable falls through to native handling", () => {
+  const shell = { submit: () => false, abortable: () => false, abort() { throw new Error("must not be called"); } };
+  const caret = editor({ shell });
+  let escaped = false;
+  caret.onEscape = () => { escaped = true; };
+  caret.handleInput("\x1b");
+  assert.ok(escaped);
+});
+
+test("Esc with autocomplete open falls through instead of aborting", () => {
+  const shell = { submit: () => false, abortable: () => true, abort() { throw new Error("must not be called"); } };
+  const caret = editor({ shell });
+  caret.isShowingAutocomplete = () => true;
+  // pi's own handling of Escape over an open menu cancels the menu, not
+  // onEscape; the only thing this checks is that the shell intercept yields.
+  assert.doesNotThrow(() => caret.handleInput("\x1b"));
+});
+
+test("Esc with the fleet focused falls through instead of aborting the shell", () => {
+  const fleet = { focused: () => true, handleKey: () => false };
+  const shell = { submit: () => false, abortable: () => true, abort() { throw new Error("must not be called"); } };
+  const caret = editor({ fleet, shell });
+  assert.doesNotThrow(() => caret.handleInput("\x1b"));
+});
+
+test("ctrl+c never aborts the shell, only plain Escape does", () => {
+  const shell = { submit: () => false, abortable: () => true, abort() { throw new Error("must not be called"); } };
+  // A real keybindings config carries ctrl+c on tui.select.cancel alongside
+  // pi's own Escape on app.interrupt; only the latter reaches this editor's
+  // abort check, so a fixture where they are distinct bytes has to prove it.
+  const ctrlC = "\x03";
+  const kb = { matches: (data, id) => (id === "tui.select.cancel" && data === ctrlC) };
+  const caret = new CaretEditor({ terminal: { rows: 24 }, requestRender: () => {} }, editorTheme, kb, { palette, shell });
+  assert.doesNotThrow(() => caret.handleInput(ctrlC));
+});
+
 test("shell mode leaves native submission, history text, and backspace semantics intact", () => {
   const caret = editor();
   const changes = [];
