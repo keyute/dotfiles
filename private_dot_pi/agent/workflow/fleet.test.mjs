@@ -75,15 +75,56 @@ test("navigation is an editor-owned mode: enter on a stuck cursor, move, open, l
   assert.equal(state.focused, false);
 });
 
-test("same-agent siblings pair with their runs by rank; other agents and far runs never match", () => {
+test("completed same-role siblings never shift active rows, even when rows and runs reorder", () => {
   const state = createFleetState();
-  const entries = [{ agent: "b", startedAt: 5000 }, { agent: "b", startedAt: 5100 }, { agent: "c", startedAt: 5200 }, { agent: "d" }];
-  setEntries(state, { entries, totalActive: 4 }, { runs: [
-    { id: "run-b-old", label: "b", startedAt: 900_000 }, { id: "run-b2", label: "b", startedAt: 5100 }, { id: "run-b", label: "b", startedAt: 5000 }, { id: "run-c", label: "c", startedAt: 5050 },
+  const b = { key: "fleet-2", agent: "worker", startedAt: 2000 };
+  const c = { key: "fleet-3", agent: "worker", startedAt: 3000 };
+  const runs = [
+    { id: "A", label: "worker", startedAt: 1000, state: "complete" },
+    { id: "B", label: "worker", startedAt: 2000, state: "running" },
+    { id: "C", label: "worker", startedAt: 3000, state: "running" },
+  ];
+  setEntries(state, { entries: [b, c] }, { runs });
+  assert.deepEqual([runIdFor(state, b), runIdFor(state, c)], ["B", "C"]);
+  setEntries(state, { entries: [c, b] }, { runs: [...runs].reverse() });
+  assert.deepEqual([runIdFor(state, c), runIdFor(state, b)], ["C", "B"]);
+  setEntries(state, { entries: [b, c] }, { runs: [runs[0], runs[2], { id: "replacement", label: "worker", startedAt: 2000, state: "running" }] });
+  assert.deepEqual([runIdFor(state, b), runIdFor(state, c)], [null, "C"], "an established key cannot rebind even to an exact replacement");
+  setEntries(state, { entries: [b, c] }, { runs: [runs[0], runs[1], runs[2]] });
+  assert.equal(runIdFor(state, b), "B");
+});
+
+test("only unique exact active step or root matches are controllable", () => {
+  const state = createFleetState();
+  const step = { key: "fleet-step", agent: "worker", startedAt: 2200 };
+  const fallback = { key: "fleet-fallback", agent: "queued", startedAt: 4100 };
+  setEntries(state, { entries: [step, fallback] }, { runs: [
+    { id: "step-run", label: "worker", startedAt: 2000, state: "running", children: [{ kind: "step", label: "worker", startedAt: 2200, state: "running" }] },
+    { id: "root-run", label: "queued", startedAt: 4100, state: "queued" },
   ] });
-  assert.deepEqual(entries.map(entry => runIdFor(state, entry)), ["run-b", "run-b2", "run-c", null]);
-  setEntries(state, { entries, totalActive: 4 }, { runs: [{ id: "run-b", label: "b", startedAt: 5000 }] });
-  assert.deepEqual(entries.slice(0, 2).map(entry => runIdFor(state, entry)), ["run-b", null]);
+  assert.deepEqual([runIdFor(state, step), runIdFor(state, fallback)], ["step-run", "root-run"]);
+  setEntries(state, { entries: [{ key: "new", agent: "worker", startedAt: 2200 }] }, { runs: [
+    { id: "one", label: "worker", startedAt: 2000, state: "running", children: [{ kind: "step", label: "worker", startedAt: 2200, state: "running" }] },
+    { id: "two", label: "worker", startedAt: 2100, state: "running", children: [{ kind: "step", label: "worker", startedAt: 2200, state: "queued" }] },
+  ] });
+  assert.equal(runIdFor(state, state.entries[0]), null);
+  setEntries(state, { entries: [{ key: "new", agent: "worker", startedAt: 2200 }, { key: "other", agent: "worker", startedAt: 2200 }] }, { runs: [
+    { id: "one", label: "worker", startedAt: 2000, state: "running", children: [{ kind: "step", label: "worker", startedAt: 2200, state: "running" }] },
+  ] });
+  assert.deepEqual(state.entries.map(entry => runIdFor(state, entry)), [null, null]);
+  setEntries(state, { entries: [{ agent: "worker", startedAt: 2000 }] }, { runs: [
+    { id: "omitted-step-time", label: "worker", startedAt: 2000, state: "running", children: [{ kind: "step", label: "worker", state: "running" }] },
+  ] });
+  assert.equal(runIdFor(state, state.entries[0]), "omitted-step-time");
+  assert.equal(state.bindings.size, 0, "unkeyed synthetic rows have no retained identity");
+  setEntries(state, { entries: [{ agent: "worker", startedAt: 2000 }] }, { runs: [
+    { id: "inactive-step", label: "worker", startedAt: 2000, state: "running", children: [{ kind: "step", label: "worker", startedAt: 2000, state: "complete" }] },
+  ] });
+  assert.equal(runIdFor(state, state.entries[0]), null, "a root with step nodes cannot fall back to its own label/time");
+  setEntries(state, { entries: [{ agent: "worker", startedAt: 2000 }] }, { runs: [
+    { id: "multi-run", label: "worker, reviewer", startedAt: 2000, state: "running", children: [{ kind: "step", label: "worker", startedAt: 2000, state: "running" }] },
+  ] });
+  assert.equal(runIdFor(state, state.entries[0]), null, "a step cannot authorize control of a multi-agent parent");
 });
 
 function fakeBus() {
@@ -227,6 +268,37 @@ test("completed event-owned runs stay tracked until their process exits", async 
   assert.equal(fleet.activeCount(), 0);
 });
 
+test("peek opens the intended active sibling after a completed sibling drops", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const opened = [];
+  const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {} } };
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek: async (_ctx, options) => { opened.push(options); } });
+  for (const [id, time] of [["A", 1000], ["B", 2000], ["C", 3000]]) {
+    hooks.tool_execution_start({ toolName: "subagent", toolCallId: id, args: { agent: "worker", task: id } });
+    hooks.tool_execution_end({ toolName: "subagent", toolCallId: id, result: { details: { runId: id, asyncDir: `/tmp/${id}` } } });
+    bus.runs.push({ id, kind: "subagent", label: "worker", state: "running", startedAt: time });
+    bus.entries.push({ key: `fleet-${id}`, agent: "worker", startedAt: time });
+  }
+  await sleep(20);
+  bus.runs[0].state = "complete";
+  bus.entries.shift();
+  await sleep(20);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["B", "/tmp/B"]]);
+  bus.entries = [{ key: "fleet-new", agent: "worker", startedAt: 2000 }];
+  bus.runs.push({ id: "D", label: "worker", state: "running", startedAt: 2000 });
+  await sleep(20);
+  fleet.handleKey("confirm");
+  await sleep(10);
+  assert.equal(opened.length, 1, "an ambiguous row cannot open a controllable peek");
+  assert.ok(!bus.requests.some(method => method === "steer" || method === "stop"));
+  hooks.session_shutdown();
+});
+
 test("rows poll while children run, name the task from the launch, peek each sibling, and stop on shutdown", async () => {
   const bus = fakeBus();
   const events = {};
@@ -256,7 +328,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   events.tool_execution_start({ toolName: "workspace_bash", toolCallId: "c2", args: { command: "ls" } });
   events.tool_execution_end({ toolName: "workspace_bash", toolCallId: "c2", result: {} });
   bus.entries = [{ agent: "a", goal: "one", tokens: { total: 2000 }, model: "openai-codex/m:high", effort: "high", startedAt: 1000 }, { agent: "b", tokens: { total: 0 }, startedAt: 5000 }];
-  bus.runs = [{ id: "run-a-old", label: "a", startedAt: 900_000 }, { id: "run-a", label: "a", startedAt: 1200 }, { id: "run-b", label: "b", startedAt: 5000 }];
+  bus.runs = [{ id: "run-a-old", label: "a", startedAt: 900_000, state: "complete" }, { id: "run-a", label: "a", startedAt: 1000, state: "running" }, { id: "run-b", label: "b", startedAt: 5000, state: "running" }];
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { mode: "async", runId: "run-b" } } });
   await sleep(20);
   assert.deepEqual(fleet.render(60, theme), ["  ○ a › one · 2k tokens · m high", "  ○ b › Review the diff for correctness"]);
@@ -310,8 +382,8 @@ test("rows poll while children run, name the task from the launch, peek each sib
 
   // Same-agent siblings: focus already sits on the first row, so Down alone
   // reaches the second run.
-  bus.entries = [{ agent: "b", tokens: { total: 0 }, startedAt: 5000 }, { agent: "b", tokens: { total: 0 }, startedAt: 5100 }];
-  bus.runs = [{ id: "run-b", label: "b", startedAt: 5000 }, { id: "run-b2", label: "b", startedAt: 5100 }];
+  bus.entries = [{ key: "k-b1", agent: "b", tokens: { total: 0 }, startedAt: 5000 }, { key: "k-b2", agent: "b", tokens: { total: 0 }, startedAt: 5100 }];
+  bus.runs = [{ id: "run-b", label: "b", startedAt: 5000, state: "running" }, { id: "run-b2", label: "b", startedAt: 5100, state: "running" }];
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
   fleet.handleKey("down");

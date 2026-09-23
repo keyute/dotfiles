@@ -38,7 +38,7 @@ export function buildRow({ agent, goal, tokens, model, effort }) {
 }
 
 export function createFleetState() {
-  return { entries: [], totalActive: 0, runs: [], launches: new Map(), focused: false, cursor: 0 };
+  return { entries: [], totalActive: 0, runs: [], bindings: new Map(), launches: new Map(), focused: false, cursor: 0 };
 }
 
 const ACTIVE_RUN_STATES = new Set(["queued", "running"]);
@@ -46,6 +46,8 @@ const ACTIVE_RUN_STATES = new Set(["queued", "running"]);
 export function setEntries(state, fleet, snapshot) {
   state.entries = fleet?.entries ?? [];
   state.runs = snapshot?.runs ?? [];
+  const keys = new Set(state.entries.map(entry => entry.key).filter(key => key != null));
+  for (const key of state.bindings.keys()) if (!keys.has(key)) state.bindings.delete(key);
   state.totalActive = Math.max(fleet?.totalActive ?? 0, state.entries.length);
   state.cursor = Math.min(state.cursor, Math.max(0, state.entries.length - 1));
   if (!state.entries.length) state.focused = false;
@@ -73,18 +75,27 @@ export function navigate(state, action, open) {
   return action === "cancel";
 }
 
-// Fleet keys are opaque by contract; the async snapshot's run ids are not.
-// A row maps to its run by agent label and start time (the row carries the
-// child's, the run its job's — the same launch, milliseconds apart). Same-agent
-// siblings launched in one turn are paired by rank: pi-subagents orders entries
-// by (startedAt, async id) and the runs sort the same way here.
+// Fleet keys are opaque display identities, not run ids. A successful match
+// stays bound until its row disappears; a missing bound run cannot become a
+// different sibling while its key remains visible.
 export function runIdFor(state, entry) {
+  if (entry?.key != null && state.bindings.has(entry.key)) {
+    const id = state.bindings.get(entry.key);
+    return state.runs.some(run => run.id === id && ACTIVE_RUN_STATES.has(run.state)) ? id : null;
+  }
   if (typeof entry?.startedAt !== "number") return null;
-  const near = item => typeof item.startedAt === "number" && Math.abs(item.startedAt - entry.startedAt) <= 30_000;
-  const candidates = state.runs.filter(run => run.label === entry.agent && near(run))
-    .sort((a, b) => a.startedAt - b.startedAt || String(a.id).localeCompare(String(b.id)));
-  const siblings = state.entries.filter(other => other.agent === entry.agent && near(other));
-  return candidates[siblings.indexOf(entry)]?.id ?? null;
+  if (state.entries.filter(other => other.agent === entry.agent && other.startedAt === entry.startedAt).length !== 1) return null;
+  const matches = state.runs.filter(run => {
+    if (!run.id || run.label !== entry.agent || !ACTIVE_RUN_STATES.has(run.state)) return false;
+    const steps = run.children?.filter(child => child.kind === "step") ?? [];
+    if (steps.length) return steps.some(step => ACTIVE_RUN_STATES.has(step.state)
+      && step.label === entry.agent && (step.startedAt ?? run.startedAt) === entry.startedAt);
+    return run.label === entry.agent && run.startedAt === entry.startedAt;
+  });
+  if (matches.length !== 1) return null;
+  const id = matches[0].id;
+  if (entry.key != null) state.bindings.set(entry.key, id);
+  return id;
 }
 
 // pi-subagents 0.70.1 never fills the DTO's `goal`; the task comes from the
@@ -206,6 +217,7 @@ export function installFleet(pi, ctx, {
     state.peek?.abort();
     state.peek = undefined;
     show(null);
+    state.bindings.clear();
   });
   if (ctx) wake();
 
@@ -347,7 +359,7 @@ export function installFleet(pi, ctx, {
   return {
     wake,
     stopAll: () => stopping ??= stopAll().finally(() => { stopping = undefined; }),
-    attachContext: current => { state.peek?.abort(); state.peek = undefined; state.ctx = current; state.stopped = false; wake(); },
+    attachContext: current => { state.peek?.abort(); state.peek = undefined; state.bindings.clear(); state.ctx = current; state.stopped = false; wake(); },
     handleKey,
     // Runs restored with the session never emit async-started; the poll's
     // count covers them (it lags a completion by one poll, so the event set

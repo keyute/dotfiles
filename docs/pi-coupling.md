@@ -135,10 +135,17 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   group's later members; pi inserts a completion above a streaming reply while
   the timeline is event-ordered, so two completions with a text chunk between
   them sit adjacent but ungrouped, as before this change (2026-09-18).
-- Heuristic: fleet rows pair with async runs by agent label, a 30 s start
-  window and sibling rank (`fleet.mjs` `runIdFor`); the DTO's keys are opaque
-  and its `goal` is never filled in 0.70.1. `fleet.test.mjs` pins it; the
-  upstream fix is a `goal`-populating DTO. Completion lines take each result's
+- Heuristic (2026-09-23): fleet rows match active top-level named-agent runs
+  by unique exact agent/start time: active immediate step labels and timestamps take precedence,
+  falling back to the parent's timestamp when the step omits it; a root without
+  step nodes uses its own label/time (`fleet.mjs` `runIdFor`). Ambiguous or
+  missing matches have no control ID. The DTO's generated keys are opaque:
+  successful matches stay bound per visible key, never rebind to a sibling when
+  the run leaves the snapshot, and are pruned with the row or on session change;
+  synthetic unkeyed rows are not retained. The DTO's `goal` is never filled in
+  0.70.1. `fleet.test.mjs` gates matching and `stability.test.mjs` pins the
+  projection and DTO sources; retire this heuristic when upstream supplies the
+  run ID in the fleet DTO. Completion lines take each result's
   resolved `status` from the `subagent:async-complete` payload (the result
   file spread plus `runId`), falling back to `state`, `success` and `agent`,
   the duration from the same file's `durationMs` (launch to end), and the task
