@@ -9,11 +9,24 @@ import {
   composeReviewPrompt,
   diffCommands,
   parseEvents,
+  piArgs,
   thinkingLevel,
   validateBase,
   validateThreadId,
 } from "./pi-bridge.mjs";
 import { decide } from "./pi-bridge-guard.mjs";
+
+test("piArgs pins the read-only, prompt-free, worker-tier envelope", () => {
+  const args = piArgs({ model: "gpt-test", effort: "high", sessionId: "sid-1" });
+  const after = (flag) => args[args.indexOf(flag) + 1];
+  assert.equal(after("--tools"), "read,grep,find,ls");
+  assert.ok(args.includes("--no-approve"));
+  assert.ok(args.includes("--no-extensions"));
+  assert.match(after("-e"), /pi-bridge-guard\.mjs$/);
+  assert.equal(after("--model"), "gpt-test");
+  assert.equal(after("--thinking"), "high");
+  assert.equal(after("--session-id"), "sid-1");
+});
 
 test("parseEvents picks text from the last assistant message_end", () => {
   const lines = [

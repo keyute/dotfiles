@@ -22,7 +22,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { chmod, mkdir, readdir, readFile } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,14 +127,11 @@ function checkCwd(cwd) {
   if (!st.isDirectory()) throw new Error(`cwd is not a directory: ${cwd}`);
 }
 
-let sessionDirReady;
-function ensureSessionDir() {
+async function ensureSessionDir() {
   // chmod after mkdir: recursive mkdir leaves a pre-existing directory's mode
   // alone, and chmod fails loudly if the directory is not ours
-  sessionDirReady ??= mkdir(SESSION_DIR, { recursive: true, mode: 0o700 }).then(() =>
-    chmod(SESSION_DIR, 0o700),
-  );
-  return sessionDirReady;
+  await mkdir(SESSION_DIR, { recursive: true, mode: 0o700 });
+  await chmod(SESSION_DIR, 0o700);
 }
 
 // pi 0.87 renames <cwd>/.pi/commands to .pi/prompts at startup (migrations.js),
@@ -156,30 +153,23 @@ async function assertRepoRoot(cwd) {
 }
 
 // pi resolves --session-id against the session dir filtered by the session
-// header's cwd (SessionManager.findById): a threadId from a different cwd, or
-// a garbage value, would silently create a second, empty session instead of
-// erroring, and the caller would get a contextless answer presented as a
-// continuation. Checking the file and its header cwd ourselves turns both
-// into a clear error. pi records process.cwd(), which is the physical path.
+// header's cwd: a threadId from a different cwd, or a garbage value, would
+// silently create a second, empty session instead of erroring, and the caller
+// would get a contextless answer presented as a continuation. Running the
+// same lookup first turns both into a clear error. Imported lazily: the
+// module costs ~240 ms, paid on the first reply rather than at server start.
 async function checkSession(threadId, cwd) {
-  const files = await readdir(SESSION_DIR).catch(() => []);
-  const file = files.find((f) => f.endsWith(`_${threadId}.jsonl`));
-  if (!file) throw new Error(`unknown threadId: ${threadId}`);
-  const header = (await readFile(resolve(SESSION_DIR, file), "utf8")).split("\n", 1)[0];
-  let sessionCwd;
-  try {
-    sessionCwd = JSON.parse(header).cwd;
-  } catch {
-    throw new Error(`unreadable session header for threadId: ${threadId}`);
-  }
-  if (sessionCwd !== cwd && sessionCwd !== realpathSync(cwd)) {
-    throw new Error(`threadId ${threadId} belongs to ${sessionCwd}, not ${cwd}`);
+  const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+  if (SessionManager.findById(cwd, threadId, SESSION_DIR) === undefined) {
+    throw new Error(`unknown threadId for ${cwd}: ${threadId}`);
   }
 }
 
 function gitOutput(args, cwd) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
@@ -217,20 +207,11 @@ async function gatherDiff(base, cwd) {
   return sections.join("\n\n");
 }
 
-// positionals are never used: the prompt always goes on stdin, so
-// caller-supplied text (e.g. an "@"-leading brief) can never be parsed as a
-// file argument or a flag
-async function runPi(promptText, { cwd, sessionId }, signal) {
-  checkCwd(cwd);
-  await assertRepoRoot(cwd);
-  assertNoPendingMigration(cwd);
-  if (signal?.aborted) throw new Error("cancelled before launch");
-  await ensureSessionDir();
-  if (signal?.aborted) throw new Error("cancelled before launch");
-  const args = [
+export function piArgs({ model, effort, sessionId }) {
+  return [
     "--mode", "json",
     "--provider", "openai-codex",
-    "--model", pinnedModel,
+    "--model", model,
     "--thinking", effort,
     "--tools", "read,grep,find,ls",
     "--no-extensions", "-e", GUARD_PATH,
@@ -242,7 +223,22 @@ async function runPi(promptText, { cwd, sessionId }, signal) {
     "--session-dir", SESSION_DIR,
     "--session-id", sessionId,
   ];
+}
+
+// positionals are never used: the prompt always goes on stdin, so
+// caller-supplied text (e.g. an "@"-leading brief) can never be parsed as a
+// file argument or a flag
+async function runPi(promptText, { cwd, sessionId }, signal) {
+  checkCwd(cwd);
+  await assertRepoRoot(cwd);
+  assertNoPendingMigration(cwd);
+  if (signal?.aborted) throw new Error("cancelled before launch");
+  await ensureSessionDir();
+  if (signal?.aborted) throw new Error("cancelled before launch");
+  const args = piArgs({ model: pinnedModel, effort, sessionId });
   const child = spawn(PI_BIN, args, { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
   const onAbort = () => child.kill("SIGTERM");
   signal?.addEventListener("abort", onAbort, { once: true });
   let stdout = "";
