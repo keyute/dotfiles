@@ -16,8 +16,9 @@ behavior seems changed, verify with that agent and update this file.
   source model pin. Driver effort stays the default.
 - Pins use explicit model IDs, never bare aliases: aliases re-resolve across CLI releases.
 - Top worker tier is Opus 5.5 (2026-09-23): its API default effort is `medium`
-  (Opus 5 was `high`), so every roster entry sets `effort` explicitly and an
-  unpinned child inherits the harness default. Fable stays the driver; the
+  (Opus 5 was `high`). Every roster entry sets `effort` explicitly; a child
+  whose definition omits it inherits the session's effort, not the model's
+  API default (sub-agents doc, 2026-09-23). Fable stays the driver; the
   Opus 5.5-as-driver question is an open paired-replay trigger in the audit
   log, not a settled comparison.
 - Specialist tiers are pinned in `.chezmoidata/agents.yaml` and do not follow

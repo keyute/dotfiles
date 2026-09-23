@@ -10,7 +10,7 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   package, pinned exactly); the Brew entry was dropped because it cannot
   declare a version and pi breaks extension APIs across 0.x releases.
   Upgrade as one unit: bump the pin, `npm ci`, `npm run test:pi`, apply.
-- OpenAI subscription OAuth only: Luna small, Terra mid, Sol top worker, Astra
+- OpenAI subscription OAuth only: Luna small, Sol mid and top worker, Astra
   the frontier driver and default (decision 2026-09-15; `children.mjs` rejects
   a child on it). The pinned Pi SDK (see `package.json`) lists Astra; if a
   future pin drops it, report unavailable — do not invent an alias.
