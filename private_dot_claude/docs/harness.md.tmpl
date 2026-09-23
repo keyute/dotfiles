@@ -46,14 +46,13 @@ behavior seems changed, verify with that agent and update this file.
 - Subagents draw the same Max pools. Delegation is for bounded ownership and
   context quality, not assumed quota savings; neither the savings nor a single
   primary cost lever is verified.
-- Codex pin caveat: openai/codex#32587 (open 2026-09-15) reports spawned
-  children inheriting parent model/effort; verify via `/status` after updates.
-- `codex-review` / `codex-advisor` are read-only Codex consultations for
-  high-risk diffs or stuck calls; decision ownership stays in Claude. The
-  bridge is configured for `{{ .subagent_tiers.codex.top }}` (`--model`,
-  anchored in agents.yaml), but configured routing is not verified service.
-- The codex-review trigger is risk-or-breadth, never blanket (decision
-  2026-09-03); the audit log tracks findings the session actually fixed.
+- `cross-model-review` / `cross-model-advice` are read-only GPT consultations
+  for high-risk diffs or stuck calls; decision ownership stays in Claude. The
+  bridge pins `{{ .subagent_tiers.pi.top }}` (`--model`, anchored in
+  agents.yaml); configured routing is not verified service.
+- The review trigger is risk-or-breadth, never blanket (decision 2026-09-03);
+  the 2026-09-22 transcript sweep counted 20 reviews with ~30 fixed findings,
+  so the trigger stands (audit log).
 
 ## Local-only surface (decision 2026-09-21)
 
@@ -70,41 +69,32 @@ behavior seems changed, verify with that agent and update this file.
   `/code-review ultra` and `claude --cloud` have no disable knob; both are
   user-invoked only.
 
-## Codex transport: owned MCP bridge (decision 2026-09-05)
+## Cross-model bridge on pi (decision 2026-09-23)
 
-- `codex mcp-server` was deprecated in codex-cli 0.149.1, so the `codex` MCP
-  entry spawns `scripts/codex-bridge.mjs` from the chezmoi source repo,
-  wrapping the stable `codex exec` / `codex exec review` CLI. Tools: `review`,
-  `advise`, `reply`; invocation fixed to read-only sandbox, never approvals,
-  high reasoning, top worker tier — callers pick scope only. `review` states
-  the scope inside the prompt when custom instructions are given: the CLI
-  rejects a PROMPT combined with `--base`/`--uncommitted`.
+- The `pi` MCP entry spawns `scripts/pi-bridge.mjs` from the chezmoi source
+  repo, which runs the repo-local pi in `--mode json` print mode. Tools:
+  `review`, `advise`, `reply`; invocation fixed to the read-only tool
+  allowlist (`read,grep,find,ls`), no extensions except the bridge's own path
+  guard, high reasoning, top worker tier — callers pick scope only. `review`
+  embeds a bridge-computed git diff because the child cannot run git.
 - MCP transport kept deliberately: the bridge is harness-spawned outside the
-  Bash sandbox (the `~/.codex` deny stays intact) and its rendered allow rule
-  (`mcp__codex`) makes the tools prompt-free in plan mode (verified
-  2026-09-05). Plan mode blocks MCP tools unless allow-listed (`readOnlyHint`
-  ignored; upstream #12368 closed "not planned") and Bash has no plan-mode
-  exemption, which rules out every Bash-based transport.
-
-## Codex plugin: not installed (decision 2026-09-05)
-
-- OpenAI's official plugin (`openai/codex-plugin-cc`, dissected at v1.0.6)
-  stays uninstalled: it spawns the experimental `codex app-server` through
-  sandboxed Bash — blocked by the `~/.codex` deny, never prompt-free in plan
-  mode, on a protocol documented as changeable without notice. Reconsider only
-  if `codex exec` itself breaks AND the sandbox/plan-mode constraints change.
-
-## pi trial vs codex (decision 2026-09-05)
-
-- pi (`earendil-works/pi`, adopted at v0.85.0) runs interactive GPT sessions
-  alongside codex until one wins the trial; ChatGPT-subscription OAuth in
-  third-party OSS harnesses is OpenAI-sanctioned (last verified 2026-09-05)
-  and draws the same plan quota as codex.
+  Bash sandbox (the `~/.pi` deny stays intact) and its rendered allow rule
+  (`mcp__pi`) makes the tools prompt-free in plan mode (verified 2026-09-05
+  on the Codex-era bridge; re-verify after apply). Plan mode blocks MCP tools
+  unless allow-listed (`readOnlyHint` ignored; upstream #12368 closed "not
+  planned") and Bash has no plan-mode exemption.
+- Read isolation is the guard extension, not a sandbox: pi's built-in tools
+  run in-process, so `scripts/pi-bridge-guard.mjs` rewrites each tool path to
+  the vetted canonical path inside `cwd` (which must be a git worktree root)
+  and blocks `.env*`. Reversal trigger for the bridge: pi's print mode, tool
+  allowlist or `tool_call` blocking regresses, or OpenAI withdraws
+  ChatGPT-subscription OAuth from third-party harnesses (sanctioned as of
+  2026-09-05) — then fall back to a Codex CLI backend, as before 2026-09-23.
+- Codex CLI retired 2026-09-23: pi won the interactive trial (paired replay,
+  audit log 2026-09-20) and the review-backend role followed, so no Codex
+  harness, plugin or install remains. `~/.codex` left on disk is outside the
+  generated sandbox deny list once its harness entry is gone — delete it.
 - pi ships no permission system: the managed workflow extension leases a
   per-tool srt (`@anthropic-ai/sandbox-runtime`) worker for every
   `workspace_*` call with a profile rendered from agents.yaml, and its plan
   mode gives read-only planning (verified 2026-09-09).
-- Trial decision trigger: revisit at the next `agent-instructions-audit`, or
-  sooner once one harness clearly owns all interactive GPT sessions — then
-  demote or drop the loser (codex keeps the review-backend role). Not
-  decidable as of 2026-09-15 (status history in the audit log).

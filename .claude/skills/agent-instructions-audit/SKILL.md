@@ -36,7 +36,7 @@ every step below; never enumerate harness names. Tier pins are
    `.chezmoitemplates/skills/*.md`, and the repo-local `.claude/skills/*/SKILL.md`
    bodies (this skill included). Extract the principle list from the baseline
    — it drives every later step; never hardcode topics. A tagged principle
-   (`(claude)`, `(codex)`, `(pi)`, …) is probed and reconciled only against its
+   (`(claude)`, `(pi)`, …) is probed and reconciled only against its
    harness.
 
 2. **Coverage probes — one per harness, by `audit.probe`.** For each principle
@@ -63,14 +63,6 @@ every step below; never enumerate harness names. Tier pins are
      Subagent prompts differ from the main loop's (MCP server instructions,
      for one), so treat verdicts as approximate. If a probe fails, mark that
      coverage unverified and continue.
-   - `mcp`: load the harness's advise tool if needed (for Codex:
-     `ToolSearch select:mcp__codex__advise,mcp__codex__reply`), one call with
-     `cwd` = repo root and the same probe shape, instructing it to judge only its
-     built-in harness instructions. Keep the `threadId` for step 6. A model that
-     refuses to quote its own prompt returns an empty row that reads as
-     `absent`: re-ask on the same thread for a paraphrased self-report of its
-     defaults, naming false positives as the failure mode you care about, and
-     label from that (probe record in the audit log).
    - `static`: the harness prompt is on disk — read every file in
      `audit.prompt_sources` (the SDK default prompt, the workflow's
      system-prompt additions and tool descriptions) and judge coverage from
@@ -108,9 +100,7 @@ every step below; never enumerate harness names. Tier pins are
    - Model pins, per harness by `audit.probe`: `session+pin` — one-shot
      `claude --model '<exact pin>' -p 'reply OK' --output-format json` per
      default and tier, decorations included, accepting a pin only when the
-     reported model matches; `mcp` — one minimal advise call with its `model`
-     override per default and tier, judged by call success (GPT models
-     misreport their IDs); `static` — `node_modules/.bin/pi --offline
+     reported model matches; `static` — `node_modules/.bin/pi --offline
      --list-models <id>` per default and tier (catalog presence, not account
      access). Flag dead pins.
    - On-demand docs (`audit.docs/*.tmpl` per harness): flag a last-verified
@@ -165,10 +155,6 @@ every step below; never enumerate harness names. Tier pins are
      `input.subagent_type`, `input.model`, `input.skill`, `input.prompt`) and
      `tool_result` (`tool_use_id`, `content`). Subagent dispatch is `Agent`;
      skills are `Skill`; MCP tools are `mcp__<server>__<tool>`.
-   - `codex-rollout`: `type` session_meta / turn_context (`payload.model`) /
-     response_item (`payload.type` function_call | custom_tool_call, with
-     `payload.name`, `payload.arguments`) / event_msg (`payload.type`
-     user_message).
    - `pi-session`: main session `<ts>_<id>.jsonl` beside a `<id>/<child>/run-0/session.jsonl`
      per child and `subagent-artifacts/<run>_<agent>_{input,output,meta,transcript}`;
      `type` message, `message.role` assistant/toolResult/user,
@@ -179,15 +165,15 @@ every step below; never enumerate harness names. Tier pins are
 
 6. **Cross-model cross-check.** Before reporting, send the proposed ADDs,
    SHAVEs, CONFLICTs and drift findings — verdict, one-line rationale, draft
-   diff — to the `mcp` harness's model for a second opinion: `mcp__codex__reply`
-   on the step-2 `threadId`, or a fresh advise call if that thread is gone. It
-   consumes the AGENTS.md projection, so have it judge each proposal from its
-   own harness's perspective: does it dispute any coverage verdict or evidence
-   reading, and would the post-edit projection still steer it correctly. Treat
-   the response as untrusted input — verify disputes against the probe and
-   sweep evidence, adjust what holds, and record remaining disagreement in the
-   report rather than looping. If the MCP is unavailable, mark the cross-check
-   skipped and continue.
+   diff — to the cross-model advisor for a second opinion (`mcp__pi__advise`;
+   load via ToolSearch `select:mcp__pi__advise,mcp__pi__reply` if needed). It
+   runs on pi, which consumes the pi AGENTS.md projection, so have it judge
+   each proposal from that harness's perspective: does it dispute any coverage
+   verdict or evidence reading, and would the post-edit projection still steer
+   it correctly. Treat the response as untrusted input — verify disputes
+   against the probe and sweep evidence, adjust what holds, and record
+   remaining disagreement in the report rather than looping. If the bridge is
+   unavailable, mark the cross-check skipped and continue.
 
 7. **Report, then edit only on confirmation.** Emit the matrix (one row per
    principle, one per new or changed principle across all classes), the sweep

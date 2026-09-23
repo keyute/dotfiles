@@ -105,7 +105,7 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 
 - Automated tests cover pinned package registration, real child launch preflight,
   policy decisions, shared child capacity, revocation and runner lifecycle.
-- Pi, Claude and Codex projections pass isolated `chezmoi cat` and `diff` with
+- Pi and Claude projections pass isolated `chezmoi cat` and `diff` with
   inert secret stubs. No applied credential stores were read.
 - The installer and vendored plan mode are removed from source. Obsolete
   targets were removed from the machine directly (2026-09-06) instead of via
@@ -147,4 +147,4 @@ moved to Astra on 2026-09-15 on doctrine, not on a matched-task comparison; the
 the baseline to measure against.
 
 Do not apply, sign in, stage or commit. Run Claude-side agent-instructions-audit
-after these model/harness changes; it is unavailable in this Codex session.
+after these model/harness changes; it is unavailable from a pi session.

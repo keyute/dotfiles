@@ -9,6 +9,45 @@ carries the numbers and open triggers behind those annotations (rule in
 baseline no longer serves a future sweep is deleted, not archived — git
 history keeps it.
 
+## 2026-09-23
+
+### (claude) Cross-model consultation yield; Codex harness retired
+
+Transcript count over the Claude store (2026-09-17 to 09-22, 358 session
+files, user-run extraction because the auto-mode classifier denies the driver
+an unsandboxed store read): `mcp__codex__review` 20 calls in 17 sessions
+plus 17 `reply` rounds; `mcp__codex__advise` 15 calls in 9 sessions.
+Dispositions were read from each session's own later verdict text, not from
+the bridge output (the tool_result holds only the "moved to background"
+notice; the response arrives as a task notification).
+
+- Review: ~30 findings verified real and fixed across 15 sessions; 2
+  sessions returned no findings; 1 session rejected its only finding;
+  re-review rounds added 5 more real findings. Catches no other pass made:
+  the pi-ai WebSocket continuation key (2026-09-18), an employee-login
+  enable on a non-active create (2026-09-18), the CNPG primary update method
+  and the Mimir ruler self-series (2026-09-22). Breadth-triggered bodies (pi
+  TUI, dashboard work) were among the highest-yield sessions.
+- Advise: every read was used; adopted catches include the `multi_agent_v2`
+  config form, pi's `!` sandbox scope and a bundled `design-sync` skill; the
+  rest confirmed the plan or sharpened its strongest counter-argument.
+
+Supersedes the 2026-09-12 "1 review / 0 survived" count and its ten-survivor
+trigger, which could never fire on a low-yield mechanism (survivors, not
+reviews, were the denominator). Decision: the trigger stays risk-or-breadth.
+Method for the next re-count: per `mcp__pi__review` tool_use, collect the
+session's later assistant sentences naming the reviewer and tally
+real/fixed vs rejected; ten reviews is the denominator.
+
+Codex retired the same day: pi won the paired replay (2026-09-20) and the
+review-backend role moved to `scripts/pi-bridge.mjs` (harness.md). Read
+isolation now rests on the bridge's `tool_call` path guard rather than
+Codex's sandbox profile. Closes "(pi trial) Status", "(codex) Pins held
+under delegation" and "(codex) Subagent-section expiry" (harness gone).
+**Open**: after apply, verify one `review`, one `reply` and the guard's
+block of `~/.pi/agent/auth.json`; re-verify plan-mode prompt-free use of
+`mcp__pi__*`; first re-count of survived findings at the next audit.
+
 ## 2026-09-21
 
 ### Context floor and tier routing — three-harness transcript count
@@ -765,33 +804,6 @@ whether Max metering discounts cache reads — and so whether session length or
 output volume is the primary cost lever — check `/usage` next time a limit
 binds.
 
-### (claude) Codex-review survived findings
-
-The bridge returns prose, not a JSON verdict, so labelled findings measure
-nothing; the yield measure is findings the session actually fixed. Count
-stands at 1 review / 0 survived (2026-09-09 ship-check: an
-`active_long_running` mislabel the upstream source disproved). **Open**:
-accumulate survived findings across reviews; decide the trigger's fate once
-there are ten, against the ~2-in-10 test (roughly 2 of 10 findings surviving
-justifies keeping the trigger).
-
-### (codex) Pins held under delegation
-
-14-day rollout sweep: 511 `spawn_agent` per ~10.5k `exec` (4.4% delegation),
-children genuinely on Terra/Luna — 571 cheap-tier turn-contexts against 511
-spawns, the excess consistent with multi-turn children. Baseline for the
-openai/codex#32587 pin-inheritance watch (still open upstream, last activity
-2026-07-12). Credit scaling is roughly linear with concurrent children at
-equal model/effort (OpenAI engineer, openai/codex#13179).
-
-### (codex) Subagent-section expiry
-
-Expiry fired 2026-09-08, still open. The 2026-09-09 Claude-side audit
-confirmed it cannot close it: the permission gate denied `~/.codex/sessions`
-on two attempts, so the store stays unreadable from that side. **Open**:
-re-verify pin behaviour from the next Codex session, and again after each
-Codex CLI update.
-
 ### (pi) delegation_wait
 
 Carried baseline (2026-09-09, 18 sessions / 137 launches): after its first
@@ -807,11 +819,3 @@ Resolved 2026-09-18 on a narrower measure: root reads of a child's own files
 while that child ran (~35 over ~260 runs), not the own-calls-after-launch
 figure above, which was never re-measured and is not comparable. The suffix
 relocation is not needed; the polling baseline above stays for comparison.
-
-### (pi trial) Status
-
-Not decidable through 2026-09-12: the Claude store sweep covered only a
-2-day window, the Codex (14-day) and pi (~1-week) sweeps measured delegation
-shape rather than trial adoption, and pi usage is still mostly pi
-self-development, not an adoption signal. **Open**: revisit at the next
-audit, or sooner once one harness clearly owns all interactive GPT sessions.

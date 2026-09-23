@@ -58,6 +58,5 @@ packages = [
 
 [npm]
 packages = [
-	"@openai/codex",
 	"npm-check-updates",
 ]

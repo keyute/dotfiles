@@ -2,8 +2,8 @@
 
 ## Repo conventions
 
-Chezmoi source repo: `private_dot_claude/` → `~/.claude`, `private_dot_codex/`
-→ `~/.codex`, `dot_agents/` → `~/.agents`; shared templates in
+Chezmoi source repo: `private_dot_claude/` → `~/.claude`, `private_dot_pi/`
+→ `~/.pi`, `dot_agents/` → `~/.agents`; shared templates in
 `.chezmoitemplates/`, data in `.chezmoidata/`. `docs/`, `README.md`, and this
 file are chezmoi-ignored (repo-local only).
 
@@ -59,7 +59,7 @@ erodes compliance across the whole set, not just the new rule's.*
    harness's own system prompt, or enforced policy.
 3. **Durable intent**: it encodes what I want, not a workaround for a
    current model or harness quirk. Quirk workarounds go to the on-demand
-   docs (`~/.claude/docs`, `~/.codex/docs`), where they expire cheaply.
+   docs (`~/.claude/docs`, `~/.pi/agent/docs`), where they expire cheaply.
 4. **Not mechanically checkable**: anything a sandbox rule, hook, or linter
    can enforce goes there instead — prose fails silently, enforcement
    fails loudly.
@@ -75,7 +75,7 @@ erodes compliance across the whole set, not just the new rule's.*
   what varies as a parameter, as `reviewer-common.md` does with
   `instructions_file`.
 - Harness-specific *intent* → `docs/agents-baseline.md`, tagged `(claude)` /
-  `(codex)`; its projection prose stays in the consumer template so the audit
+  `(pi)`; its projection prose stays in the consumer template so the audit
   adjudicates it like any principle. A tag encodes intent intrinsic to that
   harness, never the harness where a failure was observed — such a failure
   still gets the full coverage matrix and projects wherever coverage is not
@@ -120,7 +120,7 @@ erodes compliance across the whole set, not just the new rule's.*
 - Before a novel rule enters the baseline, and whenever a why here or in
   the baseline feels stale, run the `doctrine-refresh` skill — it re-checks
   every empirical claim in both against current practitioner consensus.
-- Both maintenance skills are Claude-side; from a Codex session, flag the
+- Both maintenance skills are Claude-side; from a pi session, flag the
   need for a run instead of attempting one.
 - Agent memory holds only what this repo cannot record — session-side
   gotchas; a method belongs in the skill and a measurement in the dated

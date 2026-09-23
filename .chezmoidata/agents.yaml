@@ -39,7 +39,7 @@ agents:
     # these duplicated system packages on two platforms for session-only gain —
     # the same call pi made 2026-09-06. Revisit only on measured pain; project
     # toolchains via Bash already surface diagnostics. claude-security dropped
-    # the same day (unwanted); native security-review and codex-review remain.
+    # the same day (unwanted); native security-review and cross-model-review remain.
     plugins:
       "frontend-design@claude-plugins-official": true
     marketplaces: {}
@@ -60,39 +60,6 @@ agents:
       - "RemoteTrigger"
       - "PushNotification"
       - "Agent(isolation:remote)"
-  codex:
-    home: "~/.codex"
-    audit:
-      instructions: private_dot_codex/AGENTS.md.tmpl
-      docs: private_dot_codex/docs
-      sessions: { path: "~/.codex/sessions/*/*/*/rollout-*.jsonl", shape: codex-rollout }
-      probe: mcp
-    native_coverage: []
-    defaults:
-      # frontier driver (decision 2026-09-15); `review_model` and `[agents]
-      # default_subagent_model` render from subagent_tiers.codex.top so /review
-      # and unpinned children run the top worker tier. Defaults, not guarantees:
-      # the harness prompt prefers the inherited parent model unless AGENTS.md
-      # asks otherwise (it does) and openai/codex#32587 can void pins — verify.
-      model: gpt-6-astra
-      model_reasoning_effort: &codex_reasoning_effort high
-      plan_mode_reasoning_effort: high
-    sensitive_subpaths:
-      - "auth.json"
-      - "config.toml"
-      - "history.jsonl"
-      - "sessions"
-      - "log"
-    extras:
-      allowed_domains:
-        - "openai.com"
-        - "*.openai.com"
-        - "chatgpt.com"
-        - "*.chatgpt.com"
-    skills:
-      # off so browser driving stays on one path, the playwright MCP server
-      # (see agent_mcp_servers.playwright)
-      "browser:control-in-app-browser": false
   # Pi runs natively so OpenAI subscription authentication remains host-owned.
   # A managed per-tool policy extension constrains model-invoked work; Pi's
   # authentication and session state remain unmanaged.
@@ -113,7 +80,6 @@ agents:
     # model; set only where the harness prompt does not already teach it
     # (Claude's does). pi runs it on the host outside the sandbox, output
     # captured, no TTY.
-    # Codex: unset until its prefix's context behaviour is documented.
     user_shell_prefix: "!"
     # pi-web-search: OpenAI's server-side web_search tool through the same
     # Codex Responses endpoint and token as model calls; search_model keeps it
@@ -124,12 +90,12 @@ agents:
     defaults:
       provider: openai-codex
       model: gpt-6-astra
-      reasoning_effort: high
+      reasoning_effort: &pi_reasoning_effort high
       plan_reasoning_effort: high
       # Approval classifier in Anthropic's two-stage shape: the filter answers
       # every reviewed action; anything but allow is re-judged on the same
       # prompt. Both stages run one model so the judge's prompt is a cache hit
-      # (Claude Code and Codex gate on one model too); `none` because 5.6 has
+      # (Claude Code gates on one model too); `none` because 5.6 has
       # no `minimal` (pi-ai sends `low` for it). Terra over Luna: injection evals.
       classifier_filter:
         model: gpt-5.6-terra
@@ -154,13 +120,13 @@ agents:
         - "pi.dev"
 # shared subagent definitions rendered for every harness; bodies live in
 # .chezmoitemplates/subagents/<name>.md, tier resolves via subagent_tiers.
-# `tools` binds only the Claude render — subagent-codex.toml emits no tool
-# list, just a read-only permission flag from `readonly`
+# `tools` binds the Claude render directly and the pi render via translation
+# (pi-roles maps each Claude tool name to its native tool).
 subagents:
-  # Explore (Claude) / explorer (Codex) override each harness's built-in role
+  # Explore (Claude) / explorer (pi) override each harness's built-in role
   # so managed routine exploration stays on the configured small tier.
   # explore-deep handles broad/cross-subsystem sweeps. Names differ because
-  # the built-ins do: Claude's is `Explore`, Codex's is `explorer`.
+  # the built-ins do: Claude's is `Explore`, pi's is `explorer`.
   Explore: &explore
     tier: small
     reasoning_effort: low
@@ -264,8 +230,8 @@ subagents:
     readonly: false
     tools: "Read, Grep, Glob, Bash, Edit, Write"
     description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. Works out the how within its scope; makes no design, API, or cross-scope decisions and stops to report when one surfaces. NOT for exploratory work or an unsettled design; never commits."
-  # pi only (no per-harness file renders elsewhere): Claude Code and Codex
-  # ship an equivalent built-in. Mirrors Claude's general-purpose agent — every
+  # pi only (no per-harness file renders elsewhere): Claude Code ships an
+  # equivalent built-in. Mirrors Claude's general-purpose agent — every
   # tool and the only role that may launch children; the specialists stay leaf
   # roles. Top, not inherit: the parent is the frontier tier and no child runs
   # it (Claude config supplies the same fallback via CLAUDE_CODE_SUBAGENT_MODEL).
@@ -287,13 +253,12 @@ subagent_tiers:
     top: claude-opus-5
     # Keep in lockstep with agents.claude.defaults.model.
     frontier: claude-fable-5-1
-  codex: &openai_subagent_tiers
+  pi:
     small: gpt-5.6-luna
     mid: gpt-5.6-terra
-    # anchored: the Claude->Codex review/advice bridge pins this tier
+    # anchored: the Claude->pi review/advice bridge pins this tier
     top: &openai_top gpt-5.6-sol
     frontier: gpt-6-astra
-  pi: *openai_subagent_tiers
 agent_sandbox:
   filesystem:
     paths:
@@ -358,22 +323,21 @@ agent_sandbox:
       - context7.com
       - "*.context7.com"
 agent_mcp_servers:
-  # Explicit shared trust: Claude emits an allow rule and Codex emits
-  # default_tools_approval_mode = "approve"; omission keeps normal review.
+  # Explicit shared trust: Claude emits an allow rule and pi's workflow/policy.mjs
+  # reads auto_approve_tools off this config to allow a read-only call outright;
+  # omission keeps normal review.
 
-  # scoped to claude: codex must not be handed itself as an MCP server; skipped
-  # on machines without the codex binary. The bridge wraps the stable
-  # `codex exec` CLI because `codex mcp-server` is deprecated (v0.149.1);
-  # MCP transport keeps what a Bash call can't — harness-spawned outside the
-  # sandbox (~/.codex deny intact) and prompt-free in plan mode (harness.md).
-  codex:
-    script: codex-bridge.mjs
-    # Anchored to defaults.model_reasoning_effort and subagent_tiers.codex.top:
-    # review and advice are worker roles, so the bridge runs the top worker tier
-    # while interactive Codex drives on the frontier (rationale: harness.md).
-    args: ["--reasoning-effort", *codex_reasoning_effort, "--model", *openai_top]
+  # scoped to claude: pi must not be handed itself as an MCP server. The
+  # bridge runs the repo-local pi in print mode; MCP transport keeps what a
+  # Bash call can't — harness-spawned outside the sandbox (~/.pi deny
+  # intact) and prompt-free in plan mode (harness.md).
+  pi:
+    script: pi-bridge.mjs
+    # Anchored to agents.pi.defaults.reasoning_effort and subagent_tiers.pi.top:
+    # review and advice are worker roles, so the bridge runs the top worker
+    # tier while interactive pi drives on the frontier (rationale: harness.md).
+    args: ["--reasoning-effort", *pi_reasoning_effort, "--model", *openai_top]
     auto_approve_tools: true
-    requires: codex
     harnesses:
       - claude
   context7:

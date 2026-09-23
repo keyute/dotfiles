@@ -113,13 +113,13 @@ test("harness-doc accepts a dated, bounded doc and flags each way it decays", ()
   assert.deepEqual(checks({ "private_dot_claude/docs/harness.md.tmpl": fresh }), []);
 
   const stale = `## Models (last verified ${daysAgo(120)})\n\n- Pinned.\n`;
-  assert.deepEqual(checks({ "private_dot_codex/docs/harness.md.tmpl": stale }), ["harness-doc"]);
+  assert.deepEqual(checks({ "private_dot_pi/agent/docs/harness.md.tmpl": stale }), ["harness-doc"]);
 
   const undated = "## Models\n\n- Pinned.\n";
-  assert.deepEqual(checks({ "private_dot_codex/docs/harness.md.tmpl": undated }), ["harness-doc"]);
+  assert.deepEqual(checks({ "private_dot_pi/agent/docs/harness.md.tmpl": undated }), ["harness-doc"]);
 
   const fatBullet = `## Models (decision ${daysAgo(3)})\n\n- Pinned.\n${"  continuation\n".repeat(8)}`;
-  assert.deepEqual(checks({ "private_dot_codex/docs/harness.md.tmpl": fatBullet }), ["harness-doc"]);
+  assert.deepEqual(checks({ "private_dot_pi/agent/docs/harness.md.tmpl": fatBullet }), ["harness-doc"]);
 
   const fired = `## Models (decision ${daysAgo(3)})\n\n- Pinned; expiry fired 2026-09-08.\n`;
   assert.deepEqual(checks({ "private_dot_pi/agent/docs/harness.md.tmpl": fired }), ["harness-doc"]);

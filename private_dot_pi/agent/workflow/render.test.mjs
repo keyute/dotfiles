@@ -49,7 +49,7 @@ const fixture = (t) => {
   return { run, target };
 };
 
-test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
+test("renders Pi and Claude projections with isolated state", (t) => {
   const { run, target } = fixture(t);
   const workflow = JSON.parse(run("cat", target(".pi/agent/workflow.json")));
   const piSettings = JSON.parse(run("cat", target(".pi/agent/settings.json")));
@@ -118,21 +118,22 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   const rows = run("cat", target(".pi/agent/workflow/rows.mjs"));
   const claudeInstructions = run("cat", target(".claude/CLAUDE.md"));
   const claudeHarness = run("cat", target(".claude/docs/harness.md"));
-  const codexInstructions = run("cat", target(".codex/AGENTS.md"));
   assert.match(piInstructions, /Working agreements/);
   assert.match(claudeInstructions, /Working agreements/);
-  assert.match(codexInstructions, /Working agreements/);
+  assert.match(claudeInstructions, /cross-model-review/);
   assert.match(questionnaire, /registerQuestionnaire/);
   assert.match(rows, /export/);
   assert.match(claudeHarness, /claude-fable-5-1/);
 
   const claudeSettings = JSON.parse(run("cat", target(".claude/settings.json")));
-  const codexConfig = run("cat", target(".codex/config.toml"));
   assert.equal(claudeSettings.model, "claude-fable-5-1[1m]");
   assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, "claude-opus-5");
   assert.match(JSON.stringify(claudeSettings), /context7/);
   assert.match(JSON.stringify(claudeSettings), /filesystem/);
   assert.doesNotMatch(JSON.stringify(claudeSettings), /serena/i);
+  // the cross-model bridge stays prompt-free in plan mode only via this rule
+  assert.equal(claudeSettings.permissions.allow.includes("mcp__pi"), true);
+  assert.doesNotMatch(JSON.stringify(claudeSettings), /codex/);
   const denyFrontierChild = run("cat", target(".claude/hooks/deny-frontier-child.mjs"));
   assert.match(denyFrontierChild, /const PIN = "claude-fable-5-1"/);
   const hookPath = target(".claude/hooks/deny-frontier-child.mjs");
@@ -149,16 +150,12 @@ test("renders Pi, Codex, and Claude projections with isolated state", (t) => {
   const allowed = invokeHook("claude-opus-5");
   assert.equal(allowed.status, 0, allowed.stderr);
   assert.equal(allowed.stdout, "");
-  assert.match(codexConfig, /gpt-5\.6-sol/);
-  assert.match(codexConfig, /context7/);
-  assert.match(codexConfig, /filesystem/);
-  assert.doesNotMatch(codexConfig, /serena/i);
 
-  const frontier = run("execute-template", "{{ .subagent_tiers.codex.frontier }}");
+  const frontier = run("execute-template", "{{ .subagent_tiers.pi.frontier }}");
   assert.equal(frontier, "gpt-6-astra");
   assert.match(run("cat", target(".pi/agent/docs/harness.md")), /Astra/);
   assert.match(run("cat", target(".pi/agent/docs/sandbox.md")), /SRT profile/);
-  assert.match(run("cat", target(".codex/docs/harness.md")), /Astra/);
+  assert.match(run("cat", target(".claude/skills/cross-model-review/SKILL.md")), /mcp__pi__review/);
   assert.match(run("cat", target(".pi/agent/extensions/workflow.ts")), /\/\.pi\/agent\/workflow\/index\.mjs/);
   assert.match(run("cat", target(".pi/agent/node_modules")), /\/node_modules\s*$/);
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/private_dot_pi")), false);
@@ -192,9 +189,7 @@ test("diff renders each affected harness target against an isolated destination"
     ".claude/hooks/deny-frontier-child.mjs",
     ".claude/CLAUDE.md",
     ".claude/docs/harness.md",
-    ".codex/config.toml",
-    ".codex/AGENTS.md",
-    ".codex/docs/harness.md",
+    ".claude/skills/cross-model-review/SKILL.md",
   ]) {
     run("diff", target(relative), ["--pager", ""]);
   }

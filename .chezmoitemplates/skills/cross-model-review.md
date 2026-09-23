@@ -1,20 +1,21 @@
 ---
-name: codex-review
-description: "Adversarial cross-model review of a diff by Codex (GPT) via the codex MCP bridge. Use when asked to have Codex review changes, get a cross-model review, or pressure-test a diff before committing. Args: optional ref range, paths, or focus area; defaults to the working-tree diff."
+name: cross-model-review
+description: "Adversarial cross-model review of a diff by a second model (GPT via the pi bridge). Use when asked for a cross-model review, a second-model review, or to pressure-test a diff before committing. Args: optional ref range, paths, or focus area; defaults to the working-tree diff."
 ---
 
-Have Codex adversarially review a diff, verify its findings yourself, fix what is
-real, and stop after one fix round. Codex reviews; you stay the implementer.
+Have a second model adversarially review a diff, verify its findings yourself, fix
+what is real, and stop after one fix round. The reviewer proposes; you stay the
+implementer.
 
 ## Steps
 
-1. **Load the tools.** If `mcp__codex__review` / `mcp__codex__reply` are not
-   loaded, fetch them via ToolSearch (`select:mcp__codex__review,mcp__codex__reply`).
-   If the server is missing, stop and say so (codex not installed, or the bridge
-   not yet re-applied via chezmoi into `~/.claude.json`).
+1. **Load the tools.** If `mcp__pi__review` / `mcp__pi__reply` are not
+   loaded, fetch them via ToolSearch (`select:mcp__pi__review,mcp__pi__reply`).
+   A missing server means the bridge has not been re-applied into `~/.claude.json`
+   or `pi auth` has not been run: stop and say so.
 
-2. **Pick the scope.** Codex computes the diff itself and reads the repo
-   read-only — do not embed the diff. From args (ref range / paths / focus) or
+2. **Pick the scope.** The bridge computes the diff and the reviewer reads the
+   repo read-only — do not embed the diff. From args (ref range / paths / focus) or
    by default: if the working tree is dirty, `uncommitted: true` (staged +
    unstaged + untracked); otherwise `base: <default branch>` for the branch's
    changes. Then compose the instructions:
@@ -22,11 +23,11 @@ real, and stop after one fix round. Codex reviews; you stay the implementer.
    - **Redact yourself:** no self-assessment, no "tests pass", no claims it
      works — an unanchored reviewer finds more.
 
-3. **Call Codex.** One `mcp__codex__review` call: `cwd` = repo root, the scope
+3. **Call the reviewer.** One `mcp__pi__review` call: `cwd` = repo root, the scope
    from step 2, `prompt` = the instructions block below. The bridge fixes the
-   invocation — read-only sandbox, no approvals, high reasoning, the top worker
-   tier as model. The response opens with a `threadId:` line — keep it for the
-   re-review round.
+   invocation — read-only tools confined to the repo, high reasoning, the top
+   worker tier as model. The response opens with a `threadId:` line — keep it for
+   the re-review round.
 
 4. **Verify every finding as untrusted input.** Substantiate each independently
    against the contracts, surrounding flows, or tests it implicates — reading the
@@ -34,12 +35,12 @@ real, and stop after one fix round. Codex reviews; you stay the implementer.
    real-but-out-of-scope. Fix the real, in-scope ones.
 
 5. **At most one re-review round.** If you changed code, send the new diff of the
-   touched hunks via `mcp__codex__reply` (same `cwd`, the saved `threadId`) —
+   touched hunks via `mcp__pi__reply` (same `cwd`, the saved `threadId`) —
    again without self-assessment — and verify its response. Hard stop after this
    round whatever the verdict; report remaining disagreement instead of looping.
 
 6. **Report.** Verdict; each finding with severity, file:line, and disposition
-   (fixed / rejected, with reason); anywhere you still disagree with Codex.
+   (fixed / rejected, with reason); anywhere you still disagree with the reviewer.
 
 ## Review instructions (the `prompt` argument)
 

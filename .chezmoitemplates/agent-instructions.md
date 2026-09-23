@@ -1,7 +1,7 @@
 {{- /* agent-instructions: portable, harness-agnostic instruction preamble.
        Keep this file free of harness/product-specific pointers — those belong in
        the consumer template (e.g. CLAUDE.md.tmpl). It renders for any agent or
-       harness (Claude Code, Codex, ...), and every subagent loads it too, so the
+       harness (Claude Code, pi, ...), and every subagent loads it too, so the
        driver-only rules sit under one explicit "session driver" bullet.
        input: dict "self" <agent name> "root" <template data> */ -}}
 {{- $self := .self -}}

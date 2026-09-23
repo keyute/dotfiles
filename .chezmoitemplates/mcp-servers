@@ -1,7 +1,7 @@
 {{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries for one
        harness. Skips entries scoped to other harnesses (`harnesses` list) and
        entries whose `requires` binary is absent from PATH.
-       input:  dict "root" (the root template data) "harness" ("claude"|"codex")
+       input:  dict "root" (the root template data) "harness" ("claude"|"pi")
                ["policyOnly" true]
        output: JSON {name: {connection: {...}, policy: {...}}}
                  connection: {type: "http", url} | {type: "stdio", command, args, env}

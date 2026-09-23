@@ -35,9 +35,8 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
 - Worker tiers: {{ $sep := "" }}{{ range $tier, $model := .subagent_tiers.pi }}{{ $sep }}{{ $tier }} `{{ $model }}`{{ $sep = ", " }}{{ end }}.
 - The default is the frontier tier as the driver (shared `frontier_driver` rule in
   AGENTS.md, decision 2026-09-15). No child runs it: `workflow/children.mjs`
-  rejects a launch naming or inheriting the frontier model and fails loudly, so
-  codex's child-pin caveat (openai/codex#32587) does not apply; `general-purpose`,
-  the only nesting role, is pinned to `top`.
+  rejects a launch naming or inheriting the frontier model and fails loudly;
+  `general-purpose`, the only nesting role, is pinned to `top`.
 - The pinned Pi SDK includes Astra in the OpenAI subscription catalog; if a
   future pin drops it, selection must report unavailable, not fabricate an alias
   or fall back to API billing.
@@ -63,9 +62,9 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   Children run in the background, up to twenty sharing the root policy (Claude
   Code's default); batch independent launches that each repay their handoff.
 - Children start fresh; `context: "fork"` branches this session's transcript into
-  the child, as Codex's forked children do, for a second pass over material
-  already read. They have no channel back: the pi-subagents intercom bridge is
-  off in `extensions/subagent/config.json` (decision 2026-09-10).
+  the child for a second pass over material already read. They have no channel
+  back: the pi-subagents intercom bridge is off in
+  `extensions/subagent/config.json` (decision 2026-09-10).
 - Schema and description expose managed keys/APIs only; executor and enforcement stay unchanged.
   Scripts/chains are refused. Status (fleet or transcript), stop, interrupt and non-recovering steer
   are enabled; project role overrides, revival and mutating management are not. Roots receive native
@@ -116,5 +115,5 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
 - No LSP here: diagnostics come from project toolchains via `workspace_bash`
   (`tsc --noEmit`, `go vet`, pyright, linters); rationale in the
   Decisions block of `docs/pi-implementation.md`.
-- Claude/Codex proprietary plugins, cloud services and exact UI interactions are
-  not supplied by these packages; keep the other harnesses for those.
+- Claude's proprietary plugins, cloud services and exact UI interactions are
+  not supplied by these packages; keep the other harness for those.

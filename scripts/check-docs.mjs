@@ -34,18 +34,15 @@ const AUDIT_LOG = "docs/agents-audit-log.md";
 const AGENTS_YAML = ".chezmoidata/agents.yaml";
 const HARNESS_DOCS = [
   "private_dot_claude/docs/harness.md.tmpl",
-  "private_dot_codex/docs/harness.md.tmpl",
   "private_dot_pi/agent/docs/harness.md.tmpl",
 ];
 const PROJECTIONS = [
   "private_dot_claude/CLAUDE.md.tmpl",
-  "private_dot_codex/AGENTS.md.tmpl",
   "private_dot_pi/agent/AGENTS.md.tmpl",
 ];
 const DUPLICATE_GLOBS = [
   "docs/*.md",
   "private_dot_claude/docs/*.md.tmpl",
-  "private_dot_codex/docs/*.md.tmpl",
   "private_dot_pi/agent/docs/*.md.tmpl",
   ".chezmoitemplates/**/*.md",
   "AGENTS.md",

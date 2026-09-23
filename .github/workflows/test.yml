@@ -122,8 +122,6 @@ jobs:
           home="$RUNNER_TEMP/home"
           jq empty "$home/.claude/settings.json"
           jq empty "$home/.claude.json"
-          python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' \
-            "$home/.codex/config.toml"
           # Rendered configs point MCP/statusline commands into the source
           # dir's node_modules/.bin; a missing binary renders fine but breaks
           # silently at runtime, so assert existence here.

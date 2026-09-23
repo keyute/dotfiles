@@ -33,7 +33,7 @@ against the source repository and update this file.
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
 - Shell commands run inside the SRT profile without review, as sandboxed
-  commands do in Claude Code and Codex; the profile is the boundary. Only
+  commands do in Claude Code; the profile is the boundary. Only
   remote-mutating verbs the profile cannot judge — `git push`, `gh` other than
   view/list/status/search/diff/checks, `gh api` with a method or field,
   `npm publish`, `docker push`, `curl`/`wget` with data, json or upload flags,

@@ -43,17 +43,17 @@ list.
    the principle — flag it as an intent decision for me, with the
    evidence; the baseline changes only when my intent does.
 
-4. **Codex second opinion.** The doctrine steers Codex as much as Claude,
+4. **Cross-model second opinion.** The doctrine steers pi as much as Claude,
    and a same-model reviewer shares the classifier's blind spots. Load the
-   codex MCP if needed (ToolSearch
-   `select:mcp__codex__advise,mcp__codex__reply`); one `mcp__codex__advise`
+   bridge if needed (ToolSearch
+   `select:mcp__pi__advise,mcp__pi__reply`); one `mcp__pi__advise`
    call — `cwd` = repo root, `brief` carrying the claim list, each
    classification with its evidence summary, and the draft rewordings (the
-   bridge fixes read-only sandbox, approvals, and high reasoning effort).
+   bridge fixes read-only repo access and high reasoning effort).
    Ask it to dispute any classification or wording that misreads how
    models actually follow instructions. Verify disputes against the
    gathered evidence, adjust what holds, and report remaining
-   disagreement instead of looping. If the codex MCP is unavailable, mark
+   disagreement instead of looping. If the bridge is unavailable, mark
    the second opinion skipped and continue.
 
 5. **Report, then edit only on confirmation.** Emit the classification and

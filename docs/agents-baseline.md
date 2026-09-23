@@ -2,12 +2,12 @@
 
 Canonical record of what I want from coding agents. Most principles are
 harness-agnostic and render through `.chezmoitemplates/agent-instructions.md`;
-the exceptions are marked. A `(claude)` / `(codex)` / `(pi)` tag means a principle
+the exceptions are marked. A `(claude)` / `(pi)` tag means a principle
 is intrinsic to that harness and projects only to it, via its consumer template
-(`CLAUDE.md.tmpl` / `AGENTS.md.tmpl` / pi's `AGENTS.md.tmpl`); a `*(conditional)*` marker means it
+(`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl`); a `*(conditional)*` marker means it
 projects wherever its stated condition holds (e.g. `state_persistence`, where a
 harness lacks reliable auto-compaction). The live files (`~/.claude/CLAUDE.md`,
-`~/.codex/AGENTS.md`) are lean projections: a principle is projected only while
+`~/.pi/agent/AGENTS.md`) are lean projections: a principle is projected only while
 the harness's own system prompt does not already cover it, and returns to the
 projection if that coverage disappears. This file carries no projection state —
 nothing here says what is currently projected or covered. Run the
@@ -211,24 +211,21 @@ Same one-imperative-line-plus-why shape as the agnostic principles.
 - **Cross-model review** *(claude)*: when a body of work is ready to hand back
   and it touches a high-stakes surface (auth or security boundaries, data loss
   or migration, concurrency, an external contract) or spans roughly five or
-  more files, run the `codex-review` skill once per body of work — unprompted,
-  even across sessions, and alongside the `self_review` pass, never instead
-  of it. Codex proposes; you stay the implementer: substantiate each finding
-  independently, fix only what survives, say which you dropped and why. *Why:
-  yield tracks risk and breadth, not change count — a size-only trigger fired
-  far more often for a falling hit rate while every surviving catch was
-  high-stakes; a reviewer that rewrites the program degrades stronger work and
-  a false finding can still anchor the implementer, so findings stay
-  hypotheses; the Codex pass displaced the subagent pass until "in addition
-  to"; and the trigger must sit in the always-loaded line, since the skill body
-  loads only after the model has decided to fire (audit log 2026-09-15).*
+  more files, run the `cross-model-review` skill once per body of work —
+  unprompted, even across sessions, and alongside the `self_review` pass,
+  never instead of it. The cross-model reviewer proposes; you stay the
+  implementer: substantiate each finding independently, fix only what
+  survives, say which you dropped and why. *Why: yield tracks risk and
+  breadth, not change count — a size-only trigger fired far more often for a
+  falling hit rate while every surviving catch was high-stakes; a reviewer
+  that rewrites the program degrades stronger work and a false finding can
+  still anchor the implementer, so findings stay hypotheses; the cross-model
+  pass displaced the subagent pass until "in addition to"; and the trigger
+  must sit in the always-loaded line, since the skill body loads only after
+  the model has decided to fire (audit log 2026-09-23).*
 - **Cross-model advice** *(claude)*: before committing to an architecture or
   approach decision that is expensive to reverse, or when a bug resists a
-  second diagnosis, get a decorrelated read via `codex-advisor` — unprompted,
-  and before presenting a plan for approval, not after. *Why: reversal cost is
-  highest before implementation, and a cross-model reviewer cannot discard
-  working code when none exists yet.*
-- **Profile boundary** *(codex)*: the named permission profile also blocks the
-  sensitive paths for sandboxed tools; treat that as a hard boundary even if the
-  session's permission mode changes. *Why: a mode change must not reopen an
-  irreversible exposure — extends `credential_hygiene`.*
+  second diagnosis, get a decorrelated read via `cross-model-advice` —
+  unprompted, and before presenting a plan for approval, not after. *Why:
+  reversal cost is highest before implementation, and a cross-model reviewer
+  cannot discard working code when none exists yet.*
