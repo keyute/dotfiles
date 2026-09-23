@@ -66,8 +66,10 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(workflow.agents.explorer.tools.includes("subagent"), false);
   // The frontier driver never hands its own tier to a child: the nesting
   // catch-all and the reviewer are both pinned to the top worker tier.
-  assert.deepEqual([workflow.agents["general-purpose"].model, workflow.agents["general-purpose"].nests], ["openai-codex/gpt-5.6-sol", true]);
-  assert.deepEqual([workflow.agents["spec-reviewer"].model, workflow.agents["spec-reviewer"].readonly], ["openai-codex/gpt-5.6-sol", true]);
+  const top = `openai-codex/${workflow.models.tiers.top}`;
+  assert.notEqual(workflow.models.tiers.top, workflow.models.tiers.frontier);
+  assert.deepEqual([workflow.agents["general-purpose"].model, workflow.agents["general-purpose"].nests], [top, true]);
+  assert.deepEqual([workflow.agents["spec-reviewer"].model, workflow.agents["spec-reviewer"].readonly], [top, true]);
   assert.ok(["workspace_write", "mcp", "subagent", "bg_wait"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
   for (const role of Object.values(workflow.agents)) assert.equal(role.tools.includes("bg_wait"), role.nests);
   assert.equal(workflow.mcp.context7.policy.direct_tools, true);
@@ -93,7 +95,8 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.match(run("cat", target(".pi/agent/agents/general-purpose.md")), /^allowNestedSubagents: true$/m);
   assert.match(run("cat", target(".pi/agent/agents/explorer.md")), /^allowNestedSubagents: false$/m);
   assert.equal(piSettings.defaultProvider, "openai-codex");
-  assert.equal(piSettings.enabledModels.length, 4);
+  // one entry per distinct tier model: mid and top may share a pin
+  assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
   assert.equal(piSettings.theme, "catppuccin-latte/catppuccin-mocha");
   assert.equal(piSettings.quietStartup, true);
   assert.equal(piSettings.hideThinkingBlock, false);
@@ -127,7 +130,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
 
   const claudeSettings = JSON.parse(run("cat", target(".claude/settings.json")));
   assert.equal(claudeSettings.model, "claude-fable-5-1[1m]");
-  assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, "claude-opus-5");
+  assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, "claude-opus-5-5");
   assert.match(JSON.stringify(claudeSettings), /context7/);
   assert.match(JSON.stringify(claudeSettings), /filesystem/);
   assert.doesNotMatch(JSON.stringify(claudeSettings), /serena/i);

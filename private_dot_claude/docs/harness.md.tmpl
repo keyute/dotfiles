@@ -6,14 +6,20 @@ answerable live via the claude-code-guide agent; measurements, research and
 audit baselines live in the chezmoi repo's `docs/agents-audit-log.md`. If
 behavior seems changed, verify with that agent and update this file.
 
-## Models (last verified 2026-09-15)
+## Models (last verified 2026-09-23)
 
 - Global model is pinned in settings (`model` key) from the chezmoi repo as
   `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
   session. The default is the frontier driver; `[1m]` selects its 1M context.
-  The installed CLI is latest 2.1.272, which can serve Fable 5.1; changing
-  channel does not update the source model pin. Driver effort stays the default.
+  The installed CLI is latest 2.1.280, which serves Fable 5.1 and Opus 5.5
+  (Opus 5.5 needs 2.1.280 or later); changing channel does not update the
+  source model pin. Driver effort stays the default.
 - Pins use explicit model IDs, never bare aliases: aliases re-resolve across CLI releases.
+- Top worker tier is Opus 5.5 (2026-09-23): its API default effort is `medium`
+  (Opus 5 was `high`), so every roster entry sets `effort` explicitly and an
+  unpinned child inherits the harness default. Fable stays the driver; the
+  Opus 5.5-as-driver question is an open paired-replay trigger in the audit
+  log, not a settled comparison.
 - Specialist tiers are pinned in `.chezmoidata/agents.yaml` and do not follow
   `/model`. `CLAUDE_CODE_SUBAGENT_MODEL` is configured as the fallback for
   unpinned children at the top worker tier (`{{ .subagent_tiers.claude.top }}`),
@@ -41,7 +47,8 @@ behavior seems changed, verify with that agent and update this file.
   long-lived subagent retains context (Fable 5 guide).
 - Max has a rolling 5-hour window and shared weekly pool; Fable can consume up
   to 50% of weekly usage and uses limits faster than other models, but exact
-  model and cache-read weighting is unpublished. Raw transcript token counts
+  model and cache-read weighting is unpublished, and nothing published names
+  Opus 5.5's weighting (2026-09-23). Raw transcript token counts
   are not Max quota costs; reconcile the next binding limit against `/usage`.
 - Subagents draw the same Max pools. Delegation is for bounded ownership and
   context quality, not assumed quota savings; neither the savings nor a single

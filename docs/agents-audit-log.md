@@ -11,6 +11,65 @@ history keeps it.
 
 ## 2026-09-23
 
+### New-model placement — Opus 5.5, GPT-6 Sol and Luna (all released 2026-09-22)
+
+Roster decision, no audit run: the audit itself runs in a fresh session
+against these pins. Evidence is same-day Artificial Analysis (measured, one
+index version, `max` effort) plus vendor pages; the placement rests on
+capability × cost × tokens to completion, not on token price alone.
+
+| model | AA index | output tokens on index | $/task | $/MTok in/out |
+|---|---|---|---|---|
+| claude-opus-5-5 | 58 (high 54, medium 51) | 260M, ~119k/task | $8.7k index run | 4 / 20, cache-read 0.20 |
+| claude-fable-5-1 | 53 | ~78k/task | — | 10 / 50, cache-read 0.25 |
+| claude-opus-5 | — | ~73k/task | — | 5 / 25 |
+| gpt-6-astra | 53 | — | — | 10 / 50 |
+| gpt-6-sol | 48 | 77M | 1.06 | 2 / 10 |
+| gpt-5.6-sol | 47 | 90M | 1.99 | 4 / 20 |
+| gpt-5.6-terra | 42 | 120M | 1.40 | 2 / 12 |
+| gpt-6-luna | 37 | 150M | 0.07 | 0.10 / 0.50 |
+| gpt-5.6-luna | 37 | 150M | 0.18 | 0.20 / 1.20 |
+
+Vendor: Anthropic's launch page puts Opus 5.5 at 66.4 on Terminal-Bench 4.0
+against Opus 5 52.3 and Fable 5.1 55.8 and says it finishes the same task in
+fewer tokens than Opus 5 — at its effort pairing; AA's max-vs-max count says
+the opposite. Opus 5.5: API default effort `medium`, thinking cannot be
+disabled, forced `tool_choice` 400s, Claude Code ≥ 2.1.280 (installed).
+OpenAI: GPT-6 Sol/Luna accept `reasoning_effort: none`, API price is
+permanent at half the 5.6 promo, the subscription credit card carries no
+GPT-6 Sol/Luna row (read 2026-09-23), and the GPT-6 prompting guide is one
+family page labelled "observed on Astra". Sol/Luna injection figures live in
+a system-card appendix added 2026-09-22 that no fetch returned; the 5.6
+figures stand (search/function-call defence Terra 0.946, Sol 0.910, Luna
+0.897). Pi SDK 0.87.1 (2026-09-22) is the first catalog with the GPT-6 tiers
+and Opus 5.5; pinned from 0.87.0 in the same change.
+
+- Claude top → `claude-opus-5-5`; frontier stays Fable 5.1. Opus 5.5 at max
+  outscores Fable 5.1 at max on the same day at 0.4x the price, but uses ~1.5x
+  the tokens per task, and the frontier/top split carries the frontier_driver
+  rule and the deny-frontier-child hook. **Open**: paired replay (2026-09-20
+  protocol, 3 cases) Fable 5.1 vs Opus 5.5 as driver; swap if Opus 5.5 holds
+  gate-green and pairwise at lower cost per completed task.
+- pi small → `gpt-6-luna`, mid and top → `gpt-6-sol`. Sol 6 dominates Terra
+  5.6 on every axis, so mid == top; reverse mid when a GPT-6 Terra ships or
+  the credit card prices Sol 6 above Terra's 50/5/300. Classifier stays Terra
+  5.6 (criterion: injection resistance). **Open**: read the appendix; move both
+  classifier stages to Sol 6 if its search/function-call figure ≥ 0.946.
+- Prompting-guide deltas, gated before the next audit: Opus 5.5's unattended-
+  run clause and progress-update reminder map to `initiative` and the harness
+  prompt; its multi-agent elapsed-time budget has no observed failure (doc
+  note at most); GPT-6's ask-vs-assume, under-delegation and over-testing
+  notes map to `initiative`, the delegation rule and scope of extras. No
+  candidate clears gate 1 today.
+- **Open**: the subscription credit card gains GPT-6 Sol/Luna rows — replace
+  the inferred credits in the rate-card template with the listed ones.
+- **Open** for the fresh-session audit: probe the Opus 5.5 child class (the
+  Agent tool's `model` enum carries aliases only — verify the served ID
+  from the child's self-report or run the pin one-shot); live pin checks for
+  all eight pins after `chezmoi apply`; verify the 0.87.1 SDK's static
+  prompt sources before the pi probe; first `mcp__pi__*` sweep once the
+  bridge is applied.
+
 ### (claude) Cross-model consultation yield; Codex harness retired
 
 Transcript count over the Claude store (2026-09-17 to 09-22, 358 session

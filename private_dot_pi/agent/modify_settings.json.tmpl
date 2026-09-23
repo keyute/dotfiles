@@ -7,7 +7,7 @@
       "defaultProvider" $pi.defaults.provider
       "defaultModel" $pi.defaults.model
       "defaultThinkingLevel" $pi.defaults.reasoning_effort
-      "enabledModels" ($enabledModels | sortAlpha)
+      "enabledModels" ($enabledModels | uniq | sortAlpha)
       "fullscreenExitOutput" "resume-hint"
       "quietStartup" true
       "hideThinkingBlock" false

@@ -25,6 +25,11 @@ function isExported(distDir, entryFile, name, seen = new Set()) {
   return false;
 }
 
+// Since pi-coding-agent 0.87.1 the event and API reference left docs/extensions.md
+// ("use the exported event declarations for the complete ... contract"); the
+// shipped extension declarations are the documented surface for both.
+const extensionDeclarations = () => readFileSync(join(nodeModules, "@earendil-works", "pi-coding-agent", "dist", "core", "extensions", "types.d.ts"), "utf8");
+
 for (const file of sourceFiles) {
   const text = readFileSync(join(dir, file), "utf8");
 
@@ -72,9 +77,8 @@ for (const file of sourceFiles) {
 
   for (const match of text.matchAll(/\bpi\.on\(\s*["']([^"']+)["']/g)) {
     const name = match[1];
-    test(`${file}: pi.on("${name}") is documented in pi-coding-agent/docs/extensions.md`, () => {
-      const docs = readFileSync(join(nodeModules, "@earendil-works", "pi-coding-agent", "docs", "extensions.md"), "utf8");
-      assert.match(docs, new RegExp(`(\`${name}\`|"${name}"|^#+.*\\b${name}\\b)`, "m"), `pi.on("${name}") in ${file} is not documented in extensions.md`);
+    test(`${file}: pi.on("${name}") is a declared extension event`, () => {
+      assert.match(extensionDeclarations(), new RegExp(`on\\(event: "${name}"`), `pi.on("${name}") in ${file} has no on() overload in the exported extension declarations`);
     });
   }
 
@@ -98,9 +102,8 @@ if (existsSync(indexPath)) {
   if (foldingMatch) {
     for (const match of foldingMatch[1].matchAll(/\bpi\.on\(\s*["']([^"']+)["']/g)) {
       const name = match[1];
-      test(`installFolding: pi.on("${name}") is documented in pi-coding-agent/docs/extensions.md`, () => {
-        const docs = readFileSync(join(nodeModules, "@earendil-works", "pi-coding-agent", "docs", "extensions.md"), "utf8");
-        assert.match(docs, new RegExp(`(\`${name}\`|"${name}"|^#+.*\\b${name}\\b)`, "m"), `pi.on("${name}") in installFolding is not documented in extensions.md`);
+      test(`installFolding: pi.on("${name}") is a declared extension event`, () => {
+        assert.match(extensionDeclarations(), new RegExp(`on\\(event: "${name}"`), `pi.on("${name}") in installFolding has no on() overload in the exported extension declarations`);
       });
     }
   }
@@ -176,12 +179,12 @@ for (const [claim, file, patterns] of pins) {
   });
 }
 
-// API calls that are not events: each must stay documented.
-const documentedApis = ["pi.sendMessage(", "ctx.ui.select(", "getArgumentCompletions", "ctx.ui.addAutocompleteProvider(", "pi.appendEntry(", "pi.registerEntryRenderer(", "pi.registerMessageRenderer(", "ctx.ui.setWidget(", "setWorkingVisible", "placement"];
-for (const api of documentedApis) {
-  test(`${api} is documented in pi-coding-agent/docs/extensions.md`, () => {
-    const docs = readFileSync(join(nodeModules, "@earendil-works", "pi-coding-agent", "docs", "extensions.md"), "utf8");
-    assert.ok(docs.includes(api), `${api} is not documented`);
+// API calls that are not events: each must stay a declared member of the
+// exported extension declarations (method, generic method, or property).
+const declaredApis = ["sendMessage", "select", "getArgumentCompletions", "addAutocompleteProvider", "appendEntry", "registerEntryRenderer", "registerMessageRenderer", "setWidget", "setWorkingVisible", "placement"];
+for (const api of declaredApis) {
+  test(`${api} is a declared extension API`, () => {
+    assert.match(extensionDeclarations(), new RegExp(`\\b${api}\\b\\s*[<(?:]`), `${api} is not declared`);
   });
 }
 

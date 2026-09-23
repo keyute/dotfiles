@@ -20,7 +20,7 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   root shutdown hook precedes the plugin's RPC disposal, including headless
   sessions. A capped history alone is not failure; remaining unaccounted active
   work is. `fleet.test.mjs` and `integration.test.mjs` cover this ordering and
-  evidence; `stability.test.mjs` checks import/event documentation (2026-09-16).
+  evidence; `stability.test.mjs` checks imports and, since 0.87.1 moved the event and API reference out of `docs/extensions.md`, the `on()` overloads and API members in the shipped extension declarations (2026-09-23).
 - Plugin rows: pi-subagents, pi-mcp-adapter and web-search receive a Proxy of
   the extension API whose `registerTool` swaps `renderShell`/`renderCall`/
   `renderResult` and, for `subagent` only, narrows its schema from managed

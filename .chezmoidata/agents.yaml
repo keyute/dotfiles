@@ -100,6 +100,8 @@ agents:
       classifier_filter:
         model: gpt-5.6-terra
         reasoning_effort: none
+      # Terra 5.6 stays after GPT-6 (2026-09-23): chosen on injection resistance;
+      # move both stages to gpt-6-sol once Sol 6's card figure matches Terra's.
       classifier_judge:
         model: gpt-5.6-terra
         reasoning_effort: medium
@@ -250,14 +252,27 @@ subagent_tiers:
   claude:
     small: claude-haiku-4-5
     mid: claude-sonnet-5
-    top: claude-opus-5
-    # Keep in lockstep with agents.claude.defaults.model.
+    # Opus 5.5 (2026-09-23): the Opus-line successor, ahead of Opus 5 on every
+    # measured board at 0.8x the token price, though more verbose at max effort.
+    # Revert to claude-opus-5 if the next sweep puts worker gate-green or
+    # spec-reviewer catches below the 2026-09-15 baselines in the audit log.
+    top: claude-opus-5-5
+    # Keep in lockstep with agents.claude.defaults.model. Fable stays the
+    # driver (2026-09-23) although same-day Artificial Analysis scores Opus 5.5
+    # above it at 0.4x the price: Fable finishes tasks in ~2/3 the tokens and
+    # the frontier/top split is load-bearing. Swap only if the paired-replay
+    # trigger in the audit log fires.
     frontier: claude-fable-5-1
   pi:
-    small: gpt-5.6-luna
-    mid: gpt-5.6-terra
+    # GPT-6 tiers (2026-09-23): Luna 6 matches Luna 5.6 at 0.4x cost per task;
+    # Sol 6 beats Sol 5.6 and Terra 5.6 in fewer tokens at Terra's input price,
+    # so mid and top coincide until a model lands between them (keys stay
+    # distinct: roles bind to tier + effort). Split mid again when a GPT-6 Terra
+    # ships or the subscription rate card prices Sol 6 above Terra's row.
+    small: gpt-6-luna
+    mid: gpt-6-sol
     # anchored: the Claude->pi review/advice bridge pins this tier
-    top: &openai_top gpt-5.6-sol
+    top: &openai_top gpt-6-sol
     frontier: gpt-6-astra
 agent_sandbox:
   filesystem:
