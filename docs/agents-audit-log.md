@@ -11,6 +11,122 @@ history keeps it.
 
 ## 2026-09-23
 
+### Fresh-session audit — Opus 5.5 / GPT-6 roster, vendor-guide check
+
+Skill steps 1–4 and 6; step 5 pending the user-run store pipelines (below).
+Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
+(thread `ce600ac8`), run prompt-free from plan mode.
+
+- Probes. Served IDs: driver one-shot `claude-fable-5-1`; children by
+  self-report `claude-opus-5-5[1m]`, `claude-sonnet-5`,
+  `claude-haiku-4-5-20251001`; one-shots of all four Claude pins answered.
+  pi pins `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-terra` present in
+  the SDK's `openai-codex.json` catalog — `pi --offline --list-models` printed
+  nothing from the sandbox (availability filter on the denied auth store);
+  the skill now greps the catalog. pi static prompt (0.87.1 `system-prompt.js`
+  carries only "Be concise" / "Show file paths"; the managed workflow adds
+  the plan-mode research clause and edit-tool guidelines; the subagent tool
+  description carries contract fields, "do not poll or wait just for a wake"
+  and "models are pinned; pass model only to escalate"): every principle
+  absent or partial, none contradicted. Probe noise: Haiku quoted the
+  projection's long_running_work line as harness evidence (read as partial);
+  Sonnet called commit_etiquette "contradicted" on "When the user asks you to
+  create a new git commit…" — a condition, not an opposition.
+- Matrix (F/O/S/H/pi = Fable 5.1, Opus 5.5, Sonnet 5, Haiku 4.5, pi static;
+  c/p/a): context_hygiene c/c/c/a/a; delegation_contract p/p/p/p/p;
+  delegation_economics p/p/p/a/a; frontier_driver a/a/a/a/p; delegation_wait
+  c/c/p/c/p; docs_mcp c/a/a/a/a; playwright, web_search a everywhere;
+  user_run_commands c/a/a/a/a; simplicity a/p/a/a/a; style_matching,
+  comment_discipline, test_discipline, test_integrity, review_focus,
+  self_review a everywhere; targeted_edits p/p/c/p/p; scope_extras p/p/a/a/a;
+  faithful_reporting c/p/p/p/a; initiative c/p/a/p/p(plan mode only);
+  partial_delivery c/p/a/a/a; call_batching c/c/c/c/a; long_running_work
+  c/p/c/p/a; convention_recording p/a/a/a/a; credential_hygiene c/p/p/p/a;
+  commit_etiquette c/p/c/c/a; cross_model_* a on Claude. Verdict: no ADD, no
+  new SHAVE, no CONFLICT, no HARNESS-CONFLICT; `native_coverage` unchanged.
+  call_batching shave confirmed on all four Claude classes (Haiku re-probe);
+  initiative and docs_mcp shaves stand on the 2026-09-15 rationale.
+- Vendor guides (fetched live). Anthropic: Fable 5.1's fix texts for
+  initiative, call_batching, partial_delivery and scope_extras are carried
+  verbatim by the Claude Code prompt or the projection; its whole-file
+  rewrite regression keeps targeted_edits projected. Opus 5.5: text-only end
+  of turn on long unattended tasks (watch item for top-tier children); "at
+  its default `medium` effort the model matched or beat Claude Opus 5 at
+  `high`… in fewer steps and with fewer tokens" — `spec-reviewer` and
+  `general-purpose` run it at `high`; **Open**: drop to `medium` if the
+  sweep's spec-reviewer catch and zero-finding counts hold at the 2026-09-12
+  baseline (1 high + 3 medium of 13; 4–5 zero-finding). Sonnet 5 (every mid
+  reviewer): conservative review wording cuts recall; `reviewer-common.md`
+  reports all severities, `diff-reviewer.md` says "skip the marginal" — watch
+  item. Haiku 4.5 has no model page. OpenAI: one GPT-6 family page, observed
+  on Astra; Sol and Luna have no guidance of their own. Its initiative and
+  under-delegation notes underwrite lines already projected on pi. Over-
+  testing ("broader tests than the task requires") is vendor-documented and
+  the 2026-09-20 replay saw 2.8–3.5× test lines on both GPT arms with the
+  scope_extras line projected; the cross-check disputed a reword — the replay
+  measured lines added, not repeated testing after green. **Open**: if the
+  next same-prompt replay again shows GPT arms above 2× the shipped test
+  lines with the line projected, adopt the vendor's "do not write tests for
+  reversible, low-impact changes that mirror the implementation" phrasing in
+  baseline and projection. Astra's "make the priority of user instructions
+  and skills explicit" has no pause-and-block failure on record. GPT-5.6's
+  "favor leaner prompts" (vendor-internal 10–15% eval gain, 41–66% fewer
+  tokens) and its warning that repeated approval wording causes approval
+  requests support the density doctrine and the initiative decision.
+- Bodies and docs. No contradictions, native duplicates or stale mechanics;
+  the approval gates in `ship-check`, `align-sibling` and both repo-local
+  skills are deliberate. The two cross-model skill bodies carried Claude
+  nouns in the shared templates directory with one Claude consumer each —
+  inlined into `private_dot_claude/skills/*/SKILL.md`, shared copies removed,
+  renders byte-identical. Rate card: learn.chatgpt.com lists GPT-6 Sol
+  50/5/250 and Luna 2.5/0.25/12.5, equal to the inferred rows — template
+  updated, revisit clause dropped. `~/.codex` is still on disk (harness doc:
+  delete it). Docs lint green before and after.
+- Cross-check (pi advisor): agreed on the verdict and every edit; disputed
+  the scope_extras evidence reading (accepted, recorded as the open trigger
+  above); asked that the catalog grep never be read as a served pin.
+- Sweep, Claude store (user-run `jq` pipeline, tool_use metadata only; the
+  store held 2026-09-17..23, 7 days not 30): 68 root sessions, 43 editing
+  (≥3 Edit/Write). Fresh-eyes pass: spec-reviewer in 22/43 editing sessions
+  (32 dispatches); codex-review in 16/43 (21 `mcp__codex__review`, 18
+  `reply`, 15 `advise`); both in 14; no review of any kind in 14/43 (33%,
+  against 41% on 2026-09-09 and 1/13 on 2026-09-12) — the cross-model pass
+  no longer displaces the subagent pass. `mcp__pi__*`: 2 calls (this audit's
+  `advise` + `reply`, both used). Implementer: 43 dispatches in 18 editing
+  sessions; Edit+Write root 464 vs child 573 (Sep 17–21 was 231/280; Sep 15
+  86/61). Overrides per subagent_type: general-purpose 6/6 (3 are this
+  audit's probes), built-in Plan 5/6 (`opus`), every roster specialist 0 —
+  no roster friction. Children's `message.model`: Sonnet 5 6,337 rows, Haiku
+  1,561, Opus 5 1,322 (the pre-2026-09-23 top pin; one child on 09-23 still
+  ran Opus 5, 48 calls, from a session that predates the apply — the applied
+  agent files and `CLAUDE_CODE_SUBAGENT_MODEL` both read `claude-opus-5-5`);
+  Fable 18 rows in one subagent transcript on 09-22 (18 Bash calls), with no
+  root `Agent` call carrying a model override that day and no skill running
+  in a fork — unattributed. First-turn context (first assistant usage
+  record per file, input + cache write + cache read): root median 37.3k
+  (n=68, 22.2k–50.0k); split at the 2026-09-21 local-only settings apply,
+  37.6k before (n=49) vs 34.5k after (n=19, min 31.8k) — about 3k saved, the
+  hidden bundled skills and denied tools; children 16.2k (n=302). Not
+  measured here: zero-finding share and catches (content).
+- Sweep, pi store (same method; 2026-09-16..22, includes the 6 replay
+  sessions): 56 root sessions, 17 editing; spec-reviewer in 16/17,
+  implementer in 14/17, no review of any kind in 1/17. 328 launches in 52
+  sessions (explore-deep 93, implementer 56, spec-reviewer 39, researcher
+  31, ts-reviewer 27, dep-researcher 29, explorer 19, diff-reviewer 19,
+  general-purpose 9); root `status`+`list` 114, 0.35 per launch (0.5 on
+  2026-09-12). Edit+Write root 188 vs child 445. Overrides: 2 dep-researcher
+  → `gpt-5.6-terra` (small → mid escalation, pre-GPT-6), nothing else.
+  Nested: 5 child launches against 154 child `status`/`list` calls and 0
+  `bg_wait` — the nesting child polls; the data predates the 2026-09-22
+  `bg_wait` grant to nesting roles. Plan mode: `ask_user_question` in 29/56
+  sessions (51 calls), `submit_plan` 66. **Open**: nested-child polling
+  after the `bg_wait` grant (baseline 154 polls / 5 launches); map that Fable child to its parent (slice the path to
+  `<session>/subagents/<file>` next time) and name the spawn path the
+  deny-frontier hook cannot see; Opus 5.5 children's `message.model` after
+  the apply;
+  spec-reviewer catches and zero-finding share at Opus 5.5 vs the 1 high + 3
+  medium of 13 baseline; Opus 5.5 text-only stops in top-tier children.
+
 ### New-model placement — Opus 5.5, GPT-6 Sol and Luna (all released 2026-09-22)
 
 Roster decision, no audit run: the audit itself runs in a fresh session
@@ -61,14 +177,9 @@ and Opus 5.5; pinned from 0.87.0 in the same change.
   note at most); GPT-6's ask-vs-assume, under-delegation and over-testing
   notes map to `initiative`, the delegation rule and scope of extras. No
   candidate clears gate 1 today.
-- **Open**: the subscription credit card gains GPT-6 Sol/Luna rows — replace
-  the inferred credits in the rate-card template with the listed ones.
-- **Open** for the fresh-session audit: probe the Opus 5.5 child class (the
-  Agent tool's `model` enum carries aliases only — verify the served ID
-  from the child's self-report or run the pin one-shot); live pin checks for
-  all eight pins after `chezmoi apply`; verify the 0.87.1 SDK's static
-  prompt sources before the pi probe; first `mcp__pi__*` sweep once the
-  bridge is applied.
+- Opus 5.5 child class, all eight pins, the 0.87.1 prompt sources and the
+  rate-card rows were verified by the fresh-session audit (entry above).
+  **Open**: first `mcp__pi__*` sweep once the bridge is applied.
 
 ### (claude) Cross-model consultation yield; Codex harness retired
 
@@ -103,9 +214,10 @@ review-backend role moved to `scripts/pi-bridge.mjs` (harness.md). Read
 isolation now rests on the bridge's `tool_call` path guard rather than
 Codex's sandbox profile. Closes "(pi trial) Status", "(codex) Pins held
 under delegation" and "(codex) Subagent-section expiry" (harness gone).
-**Open**: after apply, verify one `review`, one `reply` and the guard's
-block of `~/.pi/agent/auth.json`; re-verify plan-mode prompt-free use of
-`mcp__pi__*`; first re-count of survived findings at the next audit.
+`advise` and `reply` ran prompt-free from plan mode on 2026-09-23 (audit
+entry above). **Open**: after apply, verify one `review` and the guard's
+block of `~/.pi/agent/auth.json`; first re-count of survived findings at
+the next audit.
 
 ## 2026-09-21
 
@@ -135,8 +247,8 @@ input + cache write + cache read; pi: same three; Codex: `last_token_usage`).
   Effort-per-role research (one published config: same-tier implementer medium
   / reviewer high; no source measures effort against review yield) changed
   nothing in the roster.
-- **Open**: re-count Claude root first-turn context after the local-only
-  settings apply (baseline 37.6k); decide `run` / `claude-api` visibility then.
+- Re-counted 2026-09-23: root 34.5k after the apply (entry above).
+  **Open**: decide `run` / `claude-api` visibility.
 
 ### Implementer roster — no top-tier implementer; mid remit widened
 
@@ -249,13 +361,10 @@ classes skipped — every scoped rule is driver-only. n=6, one run per arm.
 - Counts carried forward: codex-review 2 reviews / 0 survived (2026-09-12
   trigger); one more zero-finding spec-reviewer run, 11 min on Opus, on a
   test-gated non-high-stakes 10-file body (skip-clause re-measure).
-- **Open**: (a) next Codex sweep — root `wait_agent` and `send_message` per
-  run under the floor, and classify `send_message` from a live Codex session;
-  (b) spawn-together gets an ADD only if a sweep shows independent,
-  exclusive-scope strands run serially; (c) Codex questions per plan-mode
-  session after the un-shave — re-shave if unchanged; (d) alias a Codex
-  `worker` role to the implementer preset only on recurring
-  implementer-shaped misrouting.
+- **Open**: spawn-together gets an ADD only if a sweep shows independent,
+  exclusive-scope strands run serially. The Codex-only items (its wait and
+  message sweep, plan-mode question count, `worker` alias) closed with the
+  harness on 2026-09-23.
 
 ## 2026-09-20
 
@@ -713,10 +822,9 @@ Measurements below were moved from the baseline whys into this audit record:
   dispatches after 2.1.272 and the new trigger (handoff timing, successful gates,
   repairs, elapsed time, and driver/worker usage); spec-reviewer high/medium
   catches at Opus vs the 1 high + 3 medium of 13 baseline; Fable share via `/usage`;
-  cache-read weighting in Max metering; Haiku call_batching re-probe; Codex
-  child model via `/status` after each CLI update; Codex subagent facts
-  unverified since 2026-07-31 (harness doc); survived codex-review findings;
-  driver effort as a lever (API pricing claim, unmeasured on Max).
+  cache-read weighting in Max metering; driver effort as a lever (API
+  pricing claim, unmeasured on Max). Haiku call_batching re-probed covered
+  2026-09-23; the Codex items closed with the harness the same day.
 
 ### (pi) Relocated from the pruned build log
 

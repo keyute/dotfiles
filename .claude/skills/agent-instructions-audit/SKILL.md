@@ -100,9 +100,12 @@ every step below; never enumerate harness names. Tier pins are
    - Model pins, per harness by `audit.probe`: `session+pin` — one-shot
      `claude --model '<exact pin>' -p 'reply OK' --output-format json` per
      default and tier, decorations included, accepting a pin only when the
-     reported model matches; `static` — `node_modules/.bin/pi --offline
-     --list-models <id>` per default and tier (catalog presence, not account
-     access). Flag dead pins.
+     reported model matches; `static` — grep each default and tier ID, quoted,
+     in the pinned SDK's provider catalog
+     (`node_modules/@earendil-works/pi-ai/dist/providers/data/<provider>.json`):
+     catalog presence only, never account availability or a served pin —
+     `pi --list-models` filters by the sandbox-denied auth store and prints
+     nothing from a session. Flag dead pins.
    - On-demand docs (`audit.docs/*.tmpl` per harness): flag a last-verified
      date older than the current model/harness generation, a recorded revisit
      trigger that has fired (a linked issue closed — check with `gh`; "next
