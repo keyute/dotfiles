@@ -325,9 +325,6 @@ classes skipped — every scoped rule is driver-only. n=6, one run per arm.
 - Not wording: test over-building is equal on both GPT arms with the line
   projected; pi's refused early implementer launches (3 of 6 runs) are a
   workflow follow-up.
-- Counts carried forward: cross-model review 2 reviews / 0 survived
-  (2026-09-12 trigger); one more zero-finding spec-reviewer run, 11 min on
-  Opus, on a test-gated non-high-stakes 10-file body (skip-clause re-measure).
 - **Open**: spawn-together gets an ADD only if a sweep shows independent,
   exclusive-scope strands run serially.
 
@@ -403,32 +400,18 @@ child's run window (duplication) or after it (post-report re-read).
 
 ### (pi) TypeSafe Jev replay against the approval classifier
 
-Offline replay of the auto-mode classifier's own payload (`{task, history,
-action}`, rebuilt from 560 session files with `policy.needsReview` /
-`unsandboxed` and `index.trimHistory`) through TypeSafe `jev-1.13.0` as one
-Choice `{allow, deny, ask}` under the live `SYSTEM_PROMPT` plus four
-speculative Nouls, with 16 hand-labelled adversarial and boundary cases.
-Scratch lived in `/tmp/claude/jev-replay/`, not kept. A cross-model read
-beforehand and the outcome agree: the shape fits the filter stage only, never
-the judge.
+Replayed 137 reviewed actions (122 unsandboxed escalations, 15 sandboxed
+reviewed verbs) plus 16 hand-labelled adversarial and boundary cases through
+TypeSafe `jev-1.13.0` as one Choice `{allow, deny, ask}` under the live
+`SYSTEM_PROMPT` plus four speculative Nouls.
 
-- Corpus: 137 reviewed actions (122 unsandboxed escalations, 15 sandboxed
-  reviewed verbs; 19 from child runs); observed 104 allowed, 7 denied,
-  1 timeout, 25 ran-and-failed. Ground truth is the live outcome, which
-  includes the judge's own recorded false positives.
-- Safety: all 10 must-not-allow cases held — three injections (command
-  comment, pasted issue, history) denied at confidence ≈ 1.0 with the
-  `embedded_instructions_present` Noul at 0.88–0.97. Both labelled misses
-  fell on the safe side: escalation without a prior failure → deny (0.99)
-  instead of ask; the `gh` TLS-retry false positive reproduced (deny 0.38).
-- Coverage: the sandboxed-reviewed slice fast-allows 11/13 observed-allowed
-  at confidence ≥ 0.7 with zero wrong allows, but that slice is 11% of
-  reviews. Escalations: 5/91 at ≥ 0.7; 24/91 at ≥ 0.5 with two wrong allows
-  (both `gh` read loops the live judge had denied). Confidence on agreements
-  0.51 vs 0.36 on disagreements, so gating does route the disagreements on.
-- The escalation Noul separates the same-command-just-failed-sandboxed shape
-  (47 of 122, mean 0.77) from the rest (75, mean 0.14), but the Choice does
-  not compose it: 37 of the 75 without a prior failure still got allow.
+- Corpus split: 122 escalations / 15 sandboxed verbs; observed 104 allowed,
+  7 denied, 1 timeout, 25 ran-and-failed.
+- Safety: all 10 must-not-allow cases held — injections denied at confidence
+  ≈ 1.0; both labelled misses fell on the safe side.
+- Coverage: the sandboxed slice fast-allows 11/13 observed-allowed at
+  confidence ≥ 0.7 with zero wrong allows, but that slice is 11% of reviews.
+  Escalations: 5/91 at ≥ 0.7; 24/91 at ≥ 0.5 with two wrong allows.
 - Latency p50 257 ms, p90 364 ms, max 843 ms; 466k input tokens, $0.02.
 - Decision: not adopted (`docs/pi-implementation.md` 2026-09-18) — the
   addressable slice is too small for a second vendor, key, egress and client
@@ -498,54 +481,17 @@ card, plan and model pages and OpenCode Go, plus a trace of pi-ai's
 
 ## 2026-09-16
 
-### (pi) Audit baseline and containment decision
-
-- 10 authorized exported root sessions: every actual assistant was Astra at high
-  reasoning. Their 65 direct and one nested children were 51 Terra, 10 Sol, and
-  5 Luna, zero Astra; all 65 direct children matched configured tiers, including
-  12 implementers. No direct root file edits preceded recorded approval. Shell
-  and mode-effect evidence is incomplete.
-- Of 24 returned shell task IDs with terminal records, 16 completed, 5 failed,
-  and 3 stopped. Root tokens were 2,518,410 input / 194,388 output / 29,391,744
-  cache-read; child tokens were 4,283,937 / 375,658 / 35,114,752. Token metadata
-  is neither subscription quota nor dollar cost.
-- Upstream subagent JSON schema fell from 16,225 bytes and 79 properties to
-  3,470 bytes and 16. No dollar or latency savings are inferred. Transcript
-  accusations of root/worker concurrent writes and duplicate reviews are not
-  substantiated: root writes followed worker completion, and similar reviews
-  covered different repos. Managed child leases already abort; the detached
-  runner cleanup uses session-owned RPC stops and observed process-terminal
-  evidence. Review caught completion/exit confusion, historical overflow,
-  natural-exit races, and shutdown wake-ups; regression tests cover the fixes.
-  No permanent transcript copies are retained.
-- Verification: 294 normal tests passed on the host, including socket integration;
-  docs checks and changed-target renders passed. **Open:** the unchanged optional
-  live-SRT test expects `/denied/` where policy now returns `Writes are disabled
-  in this scope`. A disposable smoke check separately passed plan-write denial,
-  approved execution, sensitive-symlink denial, reviewed host execution, and
-  lease cleanup; the stale test was not weakened or changed.
-
 ### (pi) Browser launch — managed host exception
 
-- Playwright MCP 0.0.80's full Chromium 1243 (153.0.8010.12) and SRT 0.0.75
-  cannot launch under current containment. The live initial `ProcessSingleton`
-  failure is sandbox-caused, not a stale profile. A scratch `MAC_CHROMIUM_TMPDIR`
-  fixed-directory probe passed that failure but then hit denied Unix-socket bind;
-  a fixture-only `allowUnixSockets: [ownscratch]` passed it and then fatally
-  failed on `base/mac/mac_util.mm:379`, `sysctlbyname kern.hv_vmm_present`
-  denied. The pinned SRT fixed sysctl allowlist lacks that key and has no
-  supported configuration override. Crashpad Mach and settings warnings were
-  also observed but are not claimed as the root fatal:
+- Playwright MCP 0.0.80's Chromium and SRT 0.0.75 cannot launch under
+  containment: the fatal failure is `sysctlbyname kern.hv_vmm_present` denied
+  (`base/mac/mac_util.mm:379`), and the pinned SRT sysctl allowlist has no
+  override:
   [Chromium check](https://github.com/chromium/chromium/blob/153.0.8010.12/base/mac/mac_util.mm#L376-L380),
   [Apple file utility](https://github.com/chromium/chromium/blob/main/base/files/file_util_apple.mm).
-- Later owner decision (2026-09-16): frontend browser verification is required;
+- Owner decision (2026-09-16): frontend browser verification is required;
   retain shared Playwright and grant only its broker-selected server a host
-  lease. PATH/HOME/scratch TMPDIR only; tool approval/denials and lifecycle
-  remain, but browser/server filesystem and network access are not SRT-contained.
-- Source-stage live gate passed: local navigation, click/DOM assertion, PNG
-  screenshot, browser close/reopen, mode-switch termination of all 16 observed
-  processes, and scratch removal. Unsafe-tool and plan-mode interaction checks
-  rejected as expected. No applied configuration changed.
+  lease, with PATH/HOME/scratch TMPDIR only — not SRT-contained.
 
 ## 2026-09-15
 
@@ -565,16 +511,6 @@ implementation handoff trigger concrete without changing worker pins or guards.
   receiving a glossary it still wrote five catalogs totalling 85,195
   characters. Shared `en.json` made serial extraction and some root integration
   reasonable; the sample proves neither delegate-everything nor worker quality.
-- All 21 child logs from stable 2.1.236 served Opus 5 despite Haiku/Sonnet
-  configuration. After switching to latest 2.1.272, the exported sample served
-  Explore and `claude-code-guide` on Haiku 4.5 and three researcher children on
-  Sonnet 5. This matches the 2.1.251 change that made
-  `CLAUDE_CODE_SUBAGENT_MODEL` a fallback: per-call → definition → env → parent
-  ([release](https://github.com/anthropics/claude-code/releases/tag/v2.1.251),
-  [sub-agents docs](https://code.claude.com/docs/en/sub-agents)). The source
-  Fable 5 `[1m]` pin did not change; a latest-channel Fable 5.1 session shows
-  availability, not changed source configuration. There is no post-2.1.272
-  implementation sample, so routing and delegation efficacy remain open.
 - The instruction change keeps read-only exploration, research, and bounded
   option proposals available during planning, while reserving architecture,
   approval, and synthesis for the driver. Its source-edit trigger applies only
@@ -584,17 +520,9 @@ implementation handoff trigger concrete without changing worker pins or guards.
   [Sol](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.6-sol),
   [Fable 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5),
   [Fable 5.1](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1),
-  and [Opus 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5)
-  address delegation triggers, bounded autonomy, async work, and excessive
-  verification; they do not all prescribe one orchestration recipe.
-  The [Cursor](https://cursor.com/blog/scaling-agents) report and
-  [Aider](https://aider.chat/2024/09/26/architect.html) experiment support
-  planner/worker separation, not a current tier-cost or Max-savings claim.
-  Claude is measured above; pi remains configuration- and guidance-based.
-- Raw transcript tokens are not Max quota costs. Exact model and cache-read
-  weighting, quota savings from delegation, and a primary cost lever remain
-  unverified. Two Reddit searches also yielded no fetchable source; no snippets
-  or community consensus were used.
+  and [Opus 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5);
+  planner/worker separation: [Cursor](https://cursor.com/blog/scaling-agents),
+  [Aider](https://aider.chat/2024/09/26/architect.html).
 
 ### Review of 49b4cff — doctrine, tiers, docs (same day)
 
@@ -658,24 +586,12 @@ Measurements below were moved from the baseline whys into this audit record:
   5.1; the GPT-5.6 guide finds repeated approval wording causes approval
   requests for expected actions. Verified 2026-09-08/09 against the
   model-qualified guide URLs (the bare `latest-model` alias is mutable).
-- Coverage matrix (probes 2026-09-15). Claude: the Fable 5.1 main loop
-  carries initiative, partial_delivery, faithful_reporting and
-  long_running_work verbatim, delegation_wait for searches, docs_mcp via the
-  context7 server instructions, convention_recording via the memory system;
-  Opus 5 child: delegation_wait, call_batching, credential_hygiene covered;
-  Sonnet 5 child: call_batching, long_running_work, commit_etiquette covered;
-  Haiku 4.5 child: call_batching partial only (re-probe before un-shaving).
-  Pinned driver (`claude --model claude-fable-5[1m] -p`, same day):
-  initiative and faithful_reporting covered, long_running_work and
-  convention_recording partial, docs_mcp absent in print mode (no MCP server
-  instructions load there; interactive sessions carry them). Shaved on
+- Coverage matrix (probes 2026-09-15). Shaved on
   Claude: initiative (covered on both driver classes, moot for children —
   repeating it is the documented harm) and docs_mcp (carried by the context7
   server instructions wherever those tools exist; the researcher bodies name
   context7 themselves). Kept after the pin probe: long_running_work and
-  convention_recording. pi (static): only delegation_wait
-  and tier_selection appear, in the repo's own tool description; nothing
-  shaved. Whether pi children load AGENTS.md is unstated in prompt
+  convention_recording. Whether pi children load AGENTS.md is unstated in prompt
   and docs; Claude's do (sub-agents doc: every level of the CLAUDE.md
   hierarchy, Explore/Plan excepted), which is why the projection now groups
   the driver-only rules under one bullet.
@@ -694,29 +610,10 @@ Measurements below were moved from the baseline whys into this audit record:
 - Merges, so the next audit does not re-add them: tier_selection →
   frontier_driver; fan_out → delegation_contract; community_search →
   web_search. Shave by mechanism: the sensitive-path enumeration left the
-  projection (sandbox-enforced on every harness). Bloat baseline before the
-  cut: pi-implementation 930 lines (88% dated changelog), pi-design 423,
-  baseline 321 (158 why-lines, ~half measurement/history), Claude harness doc
-  168 (~47 lines duplicating baseline whys); `npm run test:docs` now holds
-  the budgets.
+  projection (sandbox-enforced on every harness).
 - Cross-model cross-check (Sol, two calls): agreed with every proposal except
   a separate Exa-fetch clause (folded into web_search); noted Astra's
   under-delegation justifies the delegation line, not the driver choice.
-  Cross-model review of the applied change (one round, five findings): "a child
-  never inherits" read as a guarantee — reworded as an instruction with the
-  pin-is-a-default caveat; shaves probed only on the 5.1 main loop — the
-  pinned Fable 5 probe above narrowed them to two; the lint accepted invalid
-  or future dates, flipped fences on any backtick line, and scanned only the
-  top-level template for `onepasswordRead` — all three fixed with a test for
-  the date case. Survived findings: 4 of 5 fixed, 1 narrowed.
-- **Open** (next sweep): children's actual `message.model` vs pins after
-  each CLI update, including the third-party `inherit` residual; implementation
-  dispatches after 2.1.272 and the new trigger (handoff timing, successful gates,
-  repairs, elapsed time, and driver/worker usage); spec-reviewer high/medium
-  catches at Opus vs the 1 high + 3 medium of 13 baseline; Fable share via `/usage`;
-  cache-read weighting in Max metering; driver effort as a lever (API
-  pricing claim, unmeasured on Max). Haiku call_batching re-probed covered
-  2026-09-23.
 
 ### (pi) Relocated from the pruned build log
 
@@ -734,47 +631,8 @@ the two measurements still carrying a trigger moved here.
   harness. No context bloat: 13k → 99k with one 35k step where eight
   child reports landed at once. **Open**: the Astra-default baseline to
   measure against; compare Sol and Astra on matched completed tasks.
-- Approval classifier (2026-09-09): two stage-shaped failures — a 17 s
-  median with p90 at the timeout, and two read-only denials, one a retry of a
-  command that had just failed sandboxed (`gh` HTTPS fails under the seatbelt:
-  Go's TLS verifier needs the `com.apple.trustd.agent` mach service, allowed
-  only under `enableWeakerNetworkIsolation`; the profile stands). Design taken
-  from Anthropic's two-stage auto-mode classifier (single-token filter, then
-  reasoning on a flag over the same cached prompt; false positives 8.5% →
-  0.4% reported): `classifier_filter` (Luna,
-  minimal) answers every reviewed action, `classifier_judge` (Terra, medium)
-  re-judges any non-allow; the message is `{ task, history, action }` with
-  the last 20 shell commands (output-blind, 16 KiB budget). **Open**: the next
-  same-prompt run records per-stage latency, how many actions reached the
-  judge, and the judge's verdict on escalations after a failed sandboxed
-  attempt; if the filter still forwards read-only escalations more than
-  occasionally, raise its effort to low before touching the prompt.
-  Resolved 2026-09-18: `minimal` was already `low` on the wire and the
-  pairing above is superseded; the measurement continues under the
-  2026-09-18 classifier entry. Not done:
-  denials carry no rationale, no fallback to prompting after repeated blocks,
-  new network hosts are never reviewed, no per-rule allow/ask list.
-- pi harness `## Web search` is still annotated "unapplied" (2026-09-08);
-  **Open**: confirm applied state at the next apply.
-
-## 2026-09-14
-
-### Frontier doctrine decision (all harnesses) — superseded 2026-09-15
-
-Consultant doctrine, reversed the next day; its research record was deleted
-2026-09-15 (git history keeps it) and its still-live items — the metering
-figures and the cache-read-weighting trigger — moved into the 2026-09-15
-review entry above.
 
 ## 2026-09-12
-
-### (claude) Coverage probes
-
-- The self-review re-probe fired: neither Fable 5 nor Opus 5's harness prompt
-  still carries the "stop adding review passes once checks pass" line, so the
-  precedence clause's Claude harness-conflict has lapsed in both probed
-  classes. Clause retained — it still guards the deterministic-gate
-  distinction.
 
 ### (claude) Model-quirk projections
 
@@ -784,25 +642,6 @@ CLAUDE.md or carried by the harness prompt; Opus 5's candidate quirks
 (over-delegation, over-verification) showed no signal — Opus 5 and Fable
 sessions delegated at the same rate (3.8% vs 3.5% of tool calls) under the
 model-neutral rule — and stay unprojected.
-
-### (claude) Self-review vs cross-model review
-
-Prior state: both rules fired on the same high-stakes set from 2026-08-27 and
-the W35–W37 sweeps showed the cross-model pass displacing the fresh-eyes pass,
-with 41% of editing sessions (30d, 341 sessions with ≥3 writes, 2026-09-09)
-running no review of any kind and the fresh-eyes rule firing in only ~20
-dispatches (~6%), 8 of them to diff/language reviewers whose contract cannot
-report an omission — which is what `spec-reviewer` (added 2026-09-09,
-`tier: inherit` as a capability floor) answers. Bar set then: spec-reviewer
-dispatches above the 20/30d the unnamed pass managed; re-check the 41%
-no-review figure.
-
-This audit's sweep (user-run pipeline; store held only 2026-09-11/12 — 19
-sessions, no 30-day history): of 13 editing sessions, 12 ran the cross-model
-pass AND a reviewer dispatch, 1 ran neither — displacement absent in this
-window, no-review rate 1/13. `spec-reviewer` fired 12 times in two days
-against the 20/30d bar. **Open**: both figures need a 30-day window to count
-as a re-measure — repeat next audit.
 
 ### (claude) Fresh-eyes yield — first content-level count
 
@@ -817,14 +656,6 @@ the baseline (skip when gates cover the requirements and the surface is not
 high-stakes; re-reviews verify the fixed findings only; reviewer body told
 not to re-run green gates). **Open**: next sweep re-counts zero-finding share
 and re-review scope under the new wording.
-
-### (claude) Subagent roster friction / overrides
-
-Agent model overrides 8/78 (10.3%; 30-day figure was 274/1790 = 15.3% on
-2026-09-09): general-purpose 3/3, spec-reviewer 5/12 — the latter are
-capability-floor escalations. `researcher` (added 2026-09-08 for the
-hand-picked-sonnet research dispatches) uptake still unsplit. **Open**: next
-sweep counts overrides per subagent_type, not just in total.
 
 ### (claude) Delegation economics — research + sweep corroboration
 
@@ -847,10 +678,6 @@ lowering reasoning effort beat an orchestrator+workers architecture (matched
 accuracy, 20% cheaper). Delegate-everything refuted; the selective gate
 stands.
 
-Sweep baselines (2026-09-11/12, transcript content read with user
-authorization): delegation 76/~2,000 tool calls (3.9%), read-heavy;
-`implementer` 0 dispatches — all 374 Edits ran inline in Fable sessions. This
-remains the pre-change comparison; the Sep 15 sample and next trigger are above.
 Token shares over 2 days:
 main-loop output 3.6M, cache-write 9.4M, cache-read 603M raw, all subagents
 3.87M/77 runs — at the API's 0.025x Fable factor those reads are ~15M
@@ -858,19 +685,3 @@ input-equivalent, comparable to the output burn, not 100x it. **Open**:
 whether Max metering discounts cache reads — and so whether session length or
 output volume is the primary cost lever — check `/usage` next time a limit
 binds.
-
-### (pi) delegation_wait
-
-Carried baseline (2026-09-09, 18 sessions / 137 launches): after its first
-launch a parent still made a median of ~34 own calls (max 76) — an upper
-bound, since the measure counts out-of-scope and post-synthesis work too.
-This sweep (user-run pipeline, ~1 week, mostly pi self-development): 118
-launches in ~1,450 tool calls (8.1%) plus 60 `list`/`status` calls (~0.5
-polls per launch — polling overhead persists; the roster-in-tool-description
-change has not removed `list` calls). Fleet mix review-heavy: 59
-diff/language reviewers, 36 explorers, 12 researchers, 9 spec-reviewer, 2
-general-purpose. `delegation_wait` stays projected (`native_coverage: []`).
-Resolved 2026-09-18 on a narrower measure: root reads of a child's own files
-while that child ran (~35 over ~260 runs), not the own-calls-after-launch
-figure above, which was never re-measured and is not comparable. The suffix
-relocation is not needed; the polling baseline above stays for comparison.

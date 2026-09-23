@@ -53,8 +53,6 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
     // Holds the tool call open for up to graceMs: a task that ends inside it is
     // answered inline (status, exit code or error, output) and never notifies, so a two-second check backgrounded
     // by habit does not cost the model a full-context wake-up turn later.
-    // Measured 2026-09-10: 21 of 34 background tasks in one session ended
-    // within 10 s, each ending in a steer message the idle parent woke for.
     // An aborted turn (Esc) ends the wait, not the task, as for any other call.
     settle(id, graceMs, signal) {
       const task = find(id);

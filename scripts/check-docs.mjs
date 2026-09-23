@@ -27,6 +27,8 @@ const LINE_BUDGETS = {
   // 130 since 2026-09-18: the plugin-vs-owned convention took the last slack
   "AGENTS.md": 130,
   "docs/agents-baseline.md": 250,
+  // 700 since 2026-09-23: 688 after the first prune; the audit skill now deletes resolved entries as it records.
+  "docs/agents-audit-log.md": 700,
 };
 
 const BASELINE = "docs/agents-baseline.md";

@@ -69,14 +69,13 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization; the proxy stays live and the initial sync may still notify. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
 - 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The two-hour runtime backstop with a five-minute checkpoint/stop steer replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts (runtime semantics in the harness reference).
 - 2026-09-22: no installed-package patches. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. Revisit when the hook ships; the native block remains unchanged until then.
-- 2026-09-18: TypeSafe Jev is not adopted for the approval classifier. An
-  offline replay of 137 reviewed actions plus 16 labelled cases held every
-  must-not-allow case at p90 364 ms, but the only slice it fast-allows safely
-  (sandboxed reviewed verbs, 11/13 at confidence ≥ 0.7) is 11% of reviews;
-  escalations, 89% of them, clear ≥ 0.7 for 5 of 91. Reversal trigger: the
-  single-model classifier's per-stage measurement misses its latency target,
-  escalations stop dominating, and a fresh replay clears the escalation slice
-  with zero wrong allows (audit log 2026-09-18).
+- 2026-09-18: TypeSafe Jev is not adopted for the approval classifier: the
+  only slice an offline replay fast-allows safely is the sandboxed reviewed
+  verbs, 11% of reviews, and escalations rarely clear the confidence bar.
+  Reversal trigger: the single-model classifier's per-stage measurement
+  misses its latency target, escalations stop dominating, and a fresh replay
+  clears the escalation slice with zero wrong allows (numbers in the audit
+  log, 2026-09-18).
 - 2026-09-18: the approval classifier runs both stages on Terra, the filter
   at `none` and the judge at `medium`. One model for the whole gate, as Claude
   Code's auto mode runs, keeps model, text and cache
@@ -105,11 +104,6 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 
 - Automated tests cover pinned package registration, real child launch preflight,
   policy decisions, shared child capacity, revocation and runner lifecycle.
-- Pi and Claude projections pass isolated `chezmoi cat` and `diff` with
-  inert secret stubs. No applied credential stores were read.
-- The installer and vendored plan mode are removed from source. Obsolete
-  targets were removed from the machine directly (2026-09-06) instead of via
-  `.chezmoiremove`, which is gone.
 - Actual Unix sockets/SRT cannot run in this session (socket binding returns
   EPERM). Socket fixtures skip explicitly; lifecycle-only tests stub the broker. The opt-in live test is
   not evidence of a successful sandbox run until executed on the user's host.
@@ -130,21 +124,15 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   breaks; `forkContext` stays at the full copy because the pruned mode fails
   the launch on any summary error; the fleet rows live in the footer because
   pi's dock order in `chat-viewport.js` is fixed with the footer last.
-
-## Acceptance checks (last verified 2026-09-06; moved here from the runtime harness doc 2026-09-12)
-
-From the source repository, run `npm run test:pi`. It covers policy, classifier
-fallback, terminal proof, child preflight and secret-stubbed chezmoi projections.
-`PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` additionally exercises actual Unix
-sockets and SRT against disposable fixtures; it needs an unrestricted local host.
-
-Before relying on the setup, separately verify subscription login, parent and
-foreground/background child model pins, auto approvals, cancellation, the fleet widget,
-MCP queries, diagnostics and approved edits in a disposable project. Fixture
-tests do not establish account access or live terminal behavior. The default
-moved to Astra on 2026-09-15 on doctrine, not on a matched-task comparison; the
-2026-09-09 cost read (same trajectory 2.5x Sol; `docs/agents-audit-log.md`) is
-the baseline to measure against.
-
-Do not apply, sign in, stage or commit. Run Claude-side agent-instructions-audit
-after these model/harness changes; it is unavailable from a pi session.
+- From the source repository, run `npm run test:pi`. It covers policy,
+  classifier fallback, terminal proof, child preflight and secret-stubbed
+  chezmoi projections. `PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` additionally
+  exercises actual Unix sockets and SRT against disposable fixtures; it needs
+  an unrestricted local host.
+- Before relying on the setup, separately verify subscription login, parent
+  and foreground/background child model pins, auto approvals, cancellation,
+  the fleet widget, MCP queries, diagnostics and approved edits in a
+  disposable project.
+- The default moved to Astra on 2026-09-15 on doctrine, not on a matched-task
+  comparison; the 2026-09-09 cost read (same trajectory 2.5x Sol;
+  `docs/agents-audit-log.md`) is the baseline to measure against.

@@ -104,12 +104,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-08, evening:* background shell tasks joined children as running
      work (`• Started cmd in background`, `↳ task t1 · running`), and the
      in-progress bullet stays static.
-   - *2026-09-09:* pi-subagents' control notice takes the same line
-     (`• researcher needs attention · …`), composed over the plugin's renderer
-     so an unrecognised payload is its box again; content is untouched.
-   - *2026-09-09, later:* goal-mission notices go back to the plugin's box
-     whole, since the row's `<agent> <state>` strip assumes one producer's
-     wording.
+   - *2026-09-09:* pi-subagents' control notice takes the same line (`• researcher needs attention · …`), composed over the plugin's renderer; goal-mission notices stay in the plugin's box whole, since the row's `<agent> <state>` strip assumes one producer's wording.
    - *2026-09-12:* the completion notice does not draw: the plugin wrapper sends
      it with `display` off, pi-subagents' quiet-background-success path; content
      is untouched.
@@ -140,8 +135,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      an addable slash-ended path comes first, children below, preserving relative, `~/…` and absolute spelling.
      Empty input starts at siblings; policy exclusions still apply. Tab accepting unchanged text closes the menu;
      accepting a different directory opens its level. *Why:* automatic descent selected the wrong directory; literal paths also remove the climbing heuristic.
-   - *2026-09-21:* while the input starts with `!` the `❯` takes the theme's `bashMode` colour; glyph and shade stay. *Why:* pi signals user-shell mode on the border this composer does not draw.
-   - *2026-09-22, shell mode:* superseding the previous `bashMode` colour decision, a leading `!`/`!!` moves into a red (`error`) `!` prompt, with command text in `userMessageText` and the whole composer in subtle `toolErrorBg`. Backspace at command start exits the mode; native submission and `!!` context exclusion stay intact. *Why:* the owner wants the mode in the prompt, not an extra character in the command; normal text keeps the tinted surface readable. The native shell-output block remains upstream-owned pending a renderer hook.
+   - *2026-09-22, shell mode:* a leading `!`/`!!` moves into a red (`error`) `!` prompt, with command text in `userMessageText` and the whole composer in subtle `toolErrorBg`. Backspace at command start exits the mode; native submission and `!!` context exclusion stay intact. *Why:* the owner wants the mode in the prompt, not an extra character in the command; normal text keeps the tinted surface readable. The native shell-output block remains upstream-owned pending a renderer hook.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then `↓ N
    more`; Down from the prompt's last line enters the rows, the highlighted row
@@ -189,12 +183,9 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
     (pi-web-search) uses `• Searched "query"`, joining rule 2's group on success;
     alone it has the answer's first line below. The `π` voice records workspace changes
     (`π Added … to the workspace`). The one panel above the composer is the
-    working row (rule 3). *Why (2026-09-08, evening):* `@juicesharp/rpiv-todo`
-    drew Claude Code's task list there and restyling its panel would have meant
-    a fork, so a second `○` meaning was judged the cheaper cost.
-    - *2026-09-08, night:* the todo plugin was removed — both reference CLIs
-      dropped the surface the panel existed to mirror — and `○` means one thing
-      again.
+    working row (rule 3). *Why (2026-09-08):* the todo plugin's panel above the
+    composer was a second `○` meaning and was removed the same night, when
+    both reference CLIs dropped the surface it mirrored.
 11. **A dialog is one frame, one cursor, one accent.** Every surface we draw that takes the keyboard follows this: plan approval and the questionnaire through
     `dialog.mjs`, the fleet peek on the same grid; pi's native `confirm`/`select` stay pi's (rule 7) until owned. *Why (2026-09-21):* each dialog had collected exceptions under rules 2, 9 and 10 and drifted
     from rules 1 and 8; the accent discipline the owner liked in RPIV's questionnaire — one accent that always means "here" — needs none of its glyphs or boxes.

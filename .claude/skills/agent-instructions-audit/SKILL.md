@@ -149,7 +149,10 @@ every step below; never enumerate harness names. Tier pins are
    - same-prompt runs across harnesses when the user has made them.
    Record results as a dated entry in the repo's `docs/agents-audit-log.md`
    and update each affected harness-doc fact's one-line annotation, never in
-   a projection and never only in memory.
+   a projection and never only in memory. In the same edit, delete every
+   earlier entry whose trigger this run resolved and whose baseline the new
+   entry restates — the log's header rule, and the only thing that keeps it
+   under its line budget.
 
    Store shapes, keyed by `audit.sessions.shape`:
    - `claude-projects`: one JSONL per session, subagent transcripts in

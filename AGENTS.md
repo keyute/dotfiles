@@ -26,6 +26,8 @@ file are chezmoi-ignored (repo-local only).
   owned code costs only what it does — the questionnaire came in-house once
   its seams outgrew the plugin, the todo panel left when the surface it
   mirrored vanished.*
+- Keep vendor-templated files (oh-my-tmux, ghostty, gh, 1Password) verbatim
+  except for the customised lines. *Why: they stay diffable against upstream.*
 
 - Edit source state only; verify renders with `chezmoi diff` plus
   `chezmoi cat <target>` for every harness the file renders to — `chezmoi cat`

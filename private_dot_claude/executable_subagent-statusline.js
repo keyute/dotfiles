@@ -16,7 +16,7 @@
 // alone (never the literal string "undefined").
 
 const FAMILIES = ["opus", "sonnet", "haiku", "fable", "instant"];
-const SEP = " · "; // segment separator
+const SEP = " · ";
 const NAME_SEP = " › "; // name↔description divider, matching the workflow row
 
 // Humanize a token count the way Claude Code does (its Na()): compact notation,
