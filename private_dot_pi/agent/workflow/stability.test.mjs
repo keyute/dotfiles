@@ -126,7 +126,7 @@ const pins = [
   ["pi-subagents registers bg_wait and the supervisor channel without renderers of their own", "pi-subagents/src/runs/background/wait-tool.js", [/name: "bg_wait"/]],
   ["pi-web-search registers web_search and a Gemini-only url_context with its own renderers", "pi-web-search/src/index.ts", [/const WEB_SEARCH_TOOL = "web_search"/, /const URL_CONTEXT_TOOL = "url_context"/, /name: WEB_SEARCH_TOOL/, /renderCall\(args, theme\)/]],
   ["pi-web-search takes the model's credentials from pi", "pi-web-search/src/providers/auth.ts", [/ctx\.modelRegistry\.getApiKeyAndHeaders\(model\)/]],
-  ["pi-web-search posts to the Codex responses endpoint", "pi-web-search/src/providers/openai.ts", [/model\.api === "openai-codex-responses"/, /`\$\{base\}\/codex\/responses`/]],
+  ["pi-web-search posts to the openai-codex responses endpoint", "pi-web-search/src/providers/openai.ts", [/model\.api === "openai-codex-responses"/, /`\$\{base\}\/codex\/responses`/]],
   ["pi-web-search reports failures in details.error", "pi-web-search/src/utils.ts", [/details: \{ error: true \}/]],
   ["the SDK bash schema is a plain object with a properties map", "@earendil-works/pi-coding-agent/dist/core/tools/bash.js", [/parameters: bashSchema/]],
   ["an async launch answers with asyncId", "pi-subagents/src/runs/background/async-execution.js", [/asyncId: id/]],

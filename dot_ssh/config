@@ -1,12 +1,6 @@
-{{- if eq .chezmoi.os "darwin" -}}
 Include ~/.orbstack/ssh/config
 Host *
   IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
-{{- else -}}
-Host *
-  IdentityAgent "~/.1password/agent.sock"
-{{- end }}
-Host *
   StrictHostKeyChecking accept-new
   SendEnv LC_THEME_MODE
 Host git.edstem.org github.sydney.edu.au

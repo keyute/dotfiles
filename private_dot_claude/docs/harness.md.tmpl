@@ -86,9 +86,8 @@ behavior seems changed, verify with that agent and update this file.
   embeds a bridge-computed git diff because the child cannot run git.
 - MCP transport kept deliberately: the bridge is harness-spawned outside the
   Bash sandbox (the `~/.pi` deny stays intact) and its rendered allow rule
-  (`mcp__pi`) makes the tools prompt-free in plan mode (verified 2026-09-05
-  on the Codex-era bridge; re-verify after apply). Plan mode blocks MCP tools
-  unless allow-listed (`readOnlyHint` ignored; upstream #12368 closed "not
+  (`mcp__pi`) makes the tools prompt-free in plan mode (verified 2026-09-23).
+  Plan mode blocks MCP tools unless allow-listed (`readOnlyHint` ignored; upstream #12368 closed "not
   planned") and Bash has no plan-mode exemption.
 - Read isolation is the guard extension, not a sandbox: pi's built-in tools
   run in-process, so `scripts/pi-bridge-guard.mjs` rewrites each tool path to
@@ -96,11 +95,7 @@ behavior seems changed, verify with that agent and update this file.
   and blocks `.env*`. Reversal trigger for the bridge: pi's print mode, tool
   allowlist or `tool_call` blocking regresses, or OpenAI withdraws
   ChatGPT-subscription OAuth from third-party harnesses (sanctioned as of
-  2026-09-05) — then fall back to a Codex CLI backend, as before 2026-09-23.
-- Codex CLI retired 2026-09-23: pi won the interactive trial (paired replay,
-  audit log 2026-09-20) and the review-backend role followed, so no Codex
-  harness, plugin or install remains. `~/.codex` left on disk is outside the
-  generated sandbox deny list once its harness entry is gone — delete it.
+  2026-09-05) — then the review backend needs a new transport.
 - pi ships no permission system: the managed workflow extension leases a
   per-tool srt (`@anthropic-ai/sandbox-runtime`) worker for every
   `workspace_*` call with a profile rendered from agents.yaml, and its plan

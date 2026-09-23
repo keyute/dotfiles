@@ -1,15 +1,6 @@
 name: Set up verify environment
 description: Install chezmoi and a stubbed 1Password CLI onto PATH.
 
-inputs:
-  bin_dir:
-    description: >-
-      Directory to install the chezmoi binary into. Defaults to
-      $HOME/.local/bin, which cannot be expressed here because inputs are not
-      shell-expanded.
-    required: false
-    default: ""
-
 runs:
   using: composite
   steps:
@@ -17,8 +8,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        bin="${{ inputs.bin_dir }}"
-        [ -n "$bin" ] || bin="$HOME/.local/bin"
+        bin="$HOME/.local/bin"
         sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$bin"
         echo "$bin" >> "$GITHUB_PATH"
 

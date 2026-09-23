@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 // MCP bridge exposing narrow pi-hosted GPT consultation tools over the
-// repo-local pi CLI's headless JSON mode. Replaces the retired Codex CLI
-// transport (2026-09-23) while keeping its two load-bearing properties:
-// harness-spawned outside the Bash sandbox (so the ~/.pi read-deny stays
-// intact) and MCP tools that permission allow rules make prompt-free in plan
-// mode — a Bash-based transport gets neither.
+// repo-local pi CLI's headless JSON mode. Two load-bearing properties of the
+// MCP transport (2026-09-23): harness-spawned outside the Bash sandbox (so the
+// ~/.pi read-deny stays intact) and MCP tools that permission allow rules make
+// prompt-free in plan mode — a Bash-based transport gets neither.
 //
 // Invocation is fixed by design: a read-only tool allowlist (read, grep,
-// find, ls) plus the guard extension stand in for the sandbox Codex gave us
-// for free; project-local `.pi/` files are ignored (--no-approve) and
+// find, ls) plus the guard extension stand in for a harness sandbox;
+// project-local `.pi/` files are ignored (--no-approve) and
 // extension discovery is off, so a reviewed repo cannot load code into the
 // reviewer; the worker-tier model and reasoning effort arrive via
 // --model/--reasoning-effort from the rendered MCP config, not interactive pi
@@ -17,8 +16,7 @@
 //
 // Reversal trigger: pi's print mode (`--mode json`), its tool allowlist, or
 // `tool_call` blocking regresses, or OpenAI withdraws subscription OAuth from
-// third-party harnesses — any of those and this bridge needs to go back to
-// shelling out to a vendor CLI directly.
+// third-party harnesses — any of those and this bridge needs a new transport.
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
@@ -182,9 +180,8 @@ function gitOutput(args, cwd) {
   });
 }
 
-// three-dot diff = changes since the merge base, the same scope `codex exec
-// review --base` gave; untracked files are listed, not embedded, since the
-// model can open them with read
+// three-dot diff = changes since the merge base; untracked files are listed,
+// not embedded, since the model can open them with read
 export function diffCommands(base) {
   return base
     ? [

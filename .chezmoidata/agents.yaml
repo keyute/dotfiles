@@ -82,7 +82,7 @@ agents:
     # captured, no TTY.
     user_shell_prefix: "!"
     # pi-web-search: OpenAI's server-side web_search tool through the same
-    # Codex Responses endpoint and token as model calls; search_model keeps it
+    # Responses endpoint and token as model calls; search_model keeps it
     # off the default model's quota (the plugin's ~/.pi/agent/web-search.json).
     native_web_search: true
     search_tier: small
@@ -303,13 +303,8 @@ agent_sandbox:
       "~/.go/pkg/mod": write
       "~/.npm/_cacache": write
       "~/.npm/_logs": write
-      "~/.cache/uv": write
-    # per-OS paths merged on the matching .chezmoi.os (override base modes); others skipped
-    os_paths:
-      darwin:
-        "/opt/homebrew": read
-        # uv's cache lives under Library/Caches on macOS, not ~/.cache/uv
-        "~/Library/Caches/uv": write
+      "~/Library/Caches/uv": write
+      "/opt/homebrew": read
     resolved_paths:
       # path resolved at chezmoi render time; skipped if `requires` binary absent
       - mode: write

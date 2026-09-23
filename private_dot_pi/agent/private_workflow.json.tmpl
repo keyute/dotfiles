@@ -17,8 +17,7 @@
        read-only role (or plan mode) lost every heredoc until /var/tmp was
        writable. Claude Code gets by on the working directory; pi's read-only
        roles have none. Verified 2026-09-11 under the SRT profile. */ -}}
-{{- $allowWrite := $sandbox.allowWrite -}}
-{{- if eq .chezmoi.os "darwin" -}}{{- $allowWrite = append $allowWrite "/var/tmp" -}}{{- end -}}
+{{- $allowWrite := append $sandbox.allowWrite "/var/tmp" -}}
 {{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
 {{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 {{- dict

@@ -4,9 +4,8 @@ import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-
 import { PAD, TURN_GLYPH, appendVisible, createTurnClock, defaultFolds, formatTurn, paintCounts, setRepaint } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 
-// Usage comes from the ChatGPT backend's usage endpoint, the read behind
-// codex's own `/status` — an unversioned surface, but its window fields have
-// only ever grown additively. The bearer token is pi's stored openai-codex
+// Usage comes from the ChatGPT backend's usage endpoint — an unversioned
+// surface, but its window fields have only ever grown additively. The bearer token is pi's stored openai-codex
 // credential via the exported one-off `readStoredCredential`; it is never
 // refreshed here — a rotating refresh raced against pi's own would invalidate
 // the login, so an expired credential skips the read and pi's next model call
@@ -27,7 +26,7 @@ export async function readRateLimits({ timeoutMs = 10_000, credential = readStor
 // additive churn (credits, spend controls, upsells) and ignored on purpose.
 // Which windows exist varies by plan (observed: prolite reports the weekly
 // window as `primary` and no 5h window), so windows are labeled by duration,
-// as codex's own TUI does — never by primary/secondary position.
+// never by primary/secondary position.
 export function parseRateLimits(result) {
   const windows = [result?.rate_limit?.primary_window, result?.rate_limit?.secondary_window]
     .filter(w => w && typeof w.used_percent === "number")

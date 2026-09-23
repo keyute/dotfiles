@@ -7,8 +7,8 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 ## Decisions
 
 - The root npm manifest/lockfile is the only Pi install (CLI and SDK are one
-  package, pinned exactly); Brew and metapac entries were dropped because they
-  cannot declare versions and pi breaks extension APIs across 0.x releases.
+  package, pinned exactly); the Brew entry was dropped because it cannot
+  declare a version and pi breaks extension APIs across 0.x releases.
   Upgrade as one unit: bump the pin, `npm ci`, `npm run test:pi`, apply.
 - OpenAI subscription OAuth only: Luna small, Terra mid, Sol top worker, Astra
   the frontier driver and default (decision 2026-09-15; `children.mjs` rejects
@@ -61,11 +61,11 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   `acceptanceRole: read-only` or `acceptance: {"level":"none",…}` with
   `mutationTools` (reasons in `docs/pi-coupling.md`).
 - 2026-09-22: keep structured `workflow`/`contextFiles` prompt options, not a
-  forced `systemPrompt`. Offline pinned Codex request fixtures preserve initial
+  forced `systemPrompt`. Offline pinned request fixtures preserve initial
   instructions/input for section patches and plan → execute tool additions;
   execute → plan retracts earlier tool declarations, changing the prefix.
   These are request-shape guarantees, not live subscription cache/billing proof.
-  No cache plugin or long-TTL override: this Codex builder does not request one.
+  No cache plugin or long-TTL override: this request builder does not request one.
 - 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization; the proxy stays live and the initial sync may still notify. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
 - 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The two-hour runtime backstop with a five-minute checkpoint/stop steer replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts (runtime semantics in the harness reference).
 - 2026-09-22: no installed-package patches. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. Revisit when the hook ships; the native block remains unchanged until then.
@@ -79,7 +79,7 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   with zero wrong allows (audit log 2026-09-18).
 - 2026-09-18: the approval classifier runs both stages on Terra, the filter
   at `none` and the judge at `medium`. One model for the whole gate, as Claude
-  Code's auto mode and Codex's auto-review both run, keeps model, text and cache
+  Code's auto mode runs, keeps model, text and cache
   key aligned, not a guaranteed hit: reasoning changes (clarified 2026-09-22).
   `none` replaces `minimal`, which the 5.6 family lacks and pi-ai
   silently sent as `low`. Terra rather than Luna because the judge's verdict

@@ -62,11 +62,7 @@ jobs:
   render:
     needs: changes
     if: needs.changes.outputs.chezmoi != 'false'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     permissions:
       contents: read
     timeout-minutes: 15
@@ -94,17 +90,14 @@ jobs:
           chezmoi -S "$GITHUB_WORKSPACE" -D "$RUNNER_TEMP/home" apply \
             --exclude scripts,externals --no-tty
 
-      # shellcheck ships on the Ubuntu runner image but not the macOS one, and
-      # the macOS-only branches (brew, omlx) are the largest scripts here.
+      # shellcheck is not on the macOS runner image.
       - name: Install shellcheck
-        if: runner.os == 'macOS'
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install shellcheck
 
-      # execute-template renders for the host OS, so each matrix leg checks its
-      # own branch of the templates. fresh.yml actually runs these, but only
-      # weekly and only down the paths they happen to take.
+      # fresh.yml actually runs these, but only weekly and only down the paths
+      # they happen to take.
       - name: Render and check run scripts
         run: |
           set -euo pipefail
@@ -114,7 +107,8 @@ jobs:
             chezmoi -S "$GITHUB_WORKSPACE" execute-template < "$f" > "$out/${f%.tmpl}"
             echo "render ok: $f"
           done
-          shellcheck --shell=bash --format=gcc "$out"/run_*.sh
+          # Plain run_*.sh scripts (no template directives) are checked in place.
+          shellcheck --shell=bash --format=gcc "$out"/run_*.sh run_*.sh
 
       - name: Assert rendered targets
         run: |
@@ -169,7 +163,7 @@ jobs:
         run: npm run test:docs
 
   # One stable check name for branch protection, so the required-checks list
-  # does not have to track matrix legs.
+  # does not have to track individual jobs.
   ci:
     if: always()
     needs: [changes, render, docs]

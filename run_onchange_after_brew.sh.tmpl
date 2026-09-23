@@ -1,7 +1,5 @@
 #!/bin/bash
-{{ if eq .chezmoi.os "darwin" -}}
 # Brewfile Hash: {{ include "dot_Brewfile" | sha256sum }}
 brew bundle install --no-upgrade --global
 brew bundle cleanup --force --global
 brew cleanup --prune=all
-{{ end -}}

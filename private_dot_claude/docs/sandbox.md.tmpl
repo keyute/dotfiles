@@ -27,12 +27,7 @@ Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file
 |------|------|
 {{ range $path, $mode := .agent_sandbox.filesystem.paths -}}
 | `{{ $path }}` | {{ $mode }} |
-{{ end -}}
-{{- with index .agent_sandbox.filesystem.os_paths .chezmoi.os -}}
-{{ range $path, $mode := . -}}
-| `{{ $path }}` ({{ $.chezmoi.os }} only) | {{ $mode }} |
-{{ end -}}
-{{- end }}
+{{ end }}
 Resolved at render time (skipped when the binary is absent):
 {{ range .agent_sandbox.filesystem.resolved_paths -}}
 - `{{ .command }}` → {{ .mode }} (requires `{{ .requires }}`)

@@ -3,9 +3,8 @@
 Last verified 2026-09-22 (pi 0.87.0, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval}.mjs`;
 change a rule only with a dated decision here, never by re-wording.
 
-The intent, set on 2026-09-07 from a side-by-side of pi, Codex and Claude
-Code: Claude Code's presentation of the work in progress, Codex's composer,
-pi's own glyphs. Each rule carries the why that earned it. How each rule was
+The intent, set on 2026-09-07 from a side-by-side of pi and Claude Code:
+Claude Code's presentation of the work in progress, pi's own glyphs. Each rule carries the why that earned it. How each rule was
 arrived at is in git history (`git log -p docs/pi-design.md`).
 
 1. **Transcript = Claude Code's shape, pi's glyphs.** `•` rows coloured by
@@ -14,7 +13,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    `π` for anything the harness says in its own voice (turn line), `❭` for the
    selection cursor (fleet, dialogs), `✔` for a chosen answer (rule 11), `❯` for the prompt and for the message it sent (rule 5),
    `▸`/`▾` for a fold handle's state (rule 2). No `⏺`/`✻`/`◯` (Claude's
-   signatures), no Codex `Called`/`Explored` headers. *Why:* a borrowed
+   signatures), no `Called`/`Explored` headers. *Why:* a borrowed
    signature reads as a clone; a glyph set that is ours reads as pi.
    - *2026-09-21:* `❭` became the one selection cursor and `✔` joined, replacing the dialogs' unlisted `→` and `●`/`○` (rule 11).
 2. **Quiet while working.** Reasoning renders as nothing and takes no space:
@@ -39,8 +38,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    and joins it when it succeeds. Whatever stays visible closes the group:
    assistant text, a `workspace_task` or other plugin row, a failed row (never
    a member), an unsuccessful completion, the turn line, the next run. One row is not a
-   group. *Why:* Codex's per-step reasoning summaries and head/tail previews
-   were the "too verbose" the owner named; what was done stays a keystroke away.
+   group. *Why:* per-step reasoning summaries and head/tail previews were
+   the "too verbose" the owner named; what was done stays a keystroke away.
    - *2026-09-08, night:* a shell row that ran outside the sandbox (Claude
      Code's `dangerouslyDisableSandbox`) carries `· unsandboxed` on its title,
      background launch row included — the classifier may allow the escalation

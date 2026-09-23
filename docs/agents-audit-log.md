@@ -62,9 +62,9 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   on Astra; Sol and Luna have no guidance of their own. Its initiative and
   under-delegation notes underwrite lines already projected on pi. Over-
   testing ("broader tests than the task requires") is vendor-documented and
-  the 2026-09-20 replay saw 2.8–3.5× test lines on both GPT arms with the
-  scope_extras line projected; the cross-check disputed a reword — the replay
-  measured lines added, not repeated testing after green. **Open**: if the
+  a same-prompt replay (2026-09-20, entry pruned) saw 2.8–3.5× test lines on
+  GPT with the scope_extras line projected; the cross-check disputed a reword
+  — the replay measured lines added, not repeated testing after green. **Open**: if the
   next same-prompt replay again shows GPT arms above 2× the shipped test
   lines with the line projected, adopt the vendor's "do not write tests for
   reversible, low-impact changes that mirror the implementation" phrasing in
@@ -80,16 +80,15 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   inlined into `private_dot_claude/skills/*/SKILL.md`, shared copies removed,
   renders byte-identical. Rate card: learn.chatgpt.com lists GPT-6 Sol
   50/5/250 and Luna 2.5/0.25/12.5, equal to the inferred rows — template
-  updated, revisit clause dropped. `~/.codex` is still on disk (harness doc:
-  delete it). Docs lint green before and after.
+  updated, revisit clause dropped. Docs lint green before and after.
 - Cross-check (pi advisor): agreed on the verdict and every edit; disputed
   the scope_extras evidence reading (accepted, recorded as the open trigger
   above); asked that the catalog grep never be read as a served pin.
 - Sweep, Claude store (user-run `jq` pipeline, tool_use metadata only; the
   store held 2026-09-17..23, 7 days not 30): 68 root sessions, 43 editing
   (≥3 Edit/Write). Fresh-eyes pass: spec-reviewer in 22/43 editing sessions
-  (32 dispatches); codex-review in 16/43 (21 `mcp__codex__review`, 18
-  `reply`, 15 `advise`); both in 14; no review of any kind in 14/43 (33%,
+  (32 dispatches); cross-model review in 16/43 (21 `review`, 18 `reply`,
+  15 `advise` on the previous bridge); both in 14; no review of any kind in 14/43 (33%,
   against 41% on 2026-09-09 and 1/13 on 2026-09-12) — the cross-model pass
   no longer displaces the subagent pass. `mcp__pi__*`: 2 calls (this audit's
   `advise` + `reply`, both used). Implementer: 43 dispatches in 18 editing
@@ -163,9 +162,10 @@ and Opus 5.5; pinned from 0.87.0 in the same change.
 - Claude top → `claude-opus-5-5`; frontier stays Fable 5.1. Opus 5.5 at max
   outscores Fable 5.1 at max on the same day at 0.4x the price, but uses ~1.5x
   the tokens per task, and the frontier/top split carries the frontier_driver
-  rule and the deny-frontier-child hook. **Open**: paired replay (2026-09-20
-  protocol, 3 cases) Fable 5.1 vs Opus 5.5 as driver; swap if Opus 5.5 holds
-  gate-green and pairwise at lower cost per completed task.
+  rule and the deny-frontier-child hook. **Open**: paired replay (3 cases,
+  same-prompt clones at the parent SHA, gate-green then blinded pairwise)
+  Fable 5.1 vs Opus 5.5 as driver; swap if Opus 5.5 holds gate-green and
+  pairwise at lower cost per completed task.
 - pi small → `gpt-6-luna`, mid and top → `gpt-6-sol`. Sol 6 dominates Terra
   5.6 on every axis, so mid == top; reverse mid when a GPT-6 Terra ships or
   the credit card prices Sol 6 above Terra's 50/5/300. Classifier stays Terra
@@ -181,12 +181,13 @@ and Opus 5.5; pinned from 0.87.0 in the same change.
   rate-card rows were verified by the fresh-session audit (entry above).
   **Open**: first `mcp__pi__*` sweep once the bridge is applied.
 
-### (claude) Cross-model consultation yield; Codex harness retired
+### (claude) Cross-model consultation yield
 
 Transcript count over the Claude store (2026-09-17 to 09-22, 358 session
 files, user-run extraction because the auto-mode classifier denies the driver
-an unsandboxed store read): `mcp__codex__review` 20 calls in 17 sessions
-plus 17 `reply` rounds; `mcp__codex__advise` 15 calls in 9 sessions.
+an unsandboxed store read, on the previous cross-model bridge): `review`
+20 calls in 17 sessions plus 17 `reply` rounds; `advise` 15 calls in 9
+sessions.
 Dispositions were read from each session's own later verdict text, not from
 the bridge output (the tool_result holds only the "moved to background"
 notice; the response arrives as a task notification).
@@ -198,8 +199,8 @@ notice; the response arrives as a task notification).
   enable on a non-active create (2026-09-18), the CNPG primary update method
   and the Mimir ruler self-series (2026-09-22). Breadth-triggered bodies (pi
   TUI, dashboard work) were among the highest-yield sessions.
-- Advise: every read was used; adopted catches include the `multi_agent_v2`
-  config form, pi's `!` sandbox scope and a bundled `design-sync` skill; the
+- Advise: every read was used; adopted catches include a harness config
+  form, pi's `!` sandbox scope and a bundled `design-sync` skill; the
   rest confirmed the plan or sharpened its strongest counter-argument.
 
 Supersedes the 2026-09-12 "1 review / 0 survived" count and its ten-survivor
@@ -209,11 +210,8 @@ Method for the next re-count: per `mcp__pi__review` tool_use, collect the
 session's later assistant sentences naming the reviewer and tally
 real/fixed vs rejected; ten reviews is the denominator.
 
-Codex retired the same day: pi won the paired replay (2026-09-20) and the
-review-backend role moved to `scripts/pi-bridge.mjs` (harness.md). Read
-isolation now rests on the bridge's `tool_call` path guard rather than
-Codex's sandbox profile. Closes "(pi trial) Status", "(codex) Pins held
-under delegation" and "(codex) Subagent-section expiry" (harness gone).
+The review backend is `scripts/pi-bridge.mjs` (harness.md) since
+2026-09-23; read isolation rests on the bridge's `tool_call` path guard.
 `advise` and `reply` ran prompt-free from plan mode on 2026-09-23 (audit
 entry above). **Open**: after apply, verify one `review` and the guard's
 block of `~/.pi/agent/auth.json`; first re-count of survived findings at
@@ -221,29 +219,27 @@ the next audit.
 
 ## 2026-09-21
 
-### Context floor and tier routing — three-harness transcript count
+### Context floor and tier routing — transcript count
 
-Counts only, session files modified in the prior 11 days (Claude 211, pi 675,
-Codex 75). First-turn context = first assistant usage record per file (Claude:
-input + cache write + cache read; pi: same three; Codex: `last_token_usage`).
+Counts only, session files modified in the prior 11 days (Claude 211, pi 675).
+First-turn context = first assistant usage record per file (input + cache
+write + cache read).
 
 - First-turn median tokens. Claude root 37.6k (22k–48k, n=43), children 12.0k
   small / 16.3k mid / 14.2k top. pi root 11.4k (min 8.6k, n=51), children
-  4.4k–4.8k (n=312). Codex root 13.7k–21.0k, children ≈22.6k.
+  4.4k–4.8k (n=312).
 - pi verdict: no further meaningful saving. MCP is lazy (one `mcp` proxy;
   `addedToolNames` fired in 17 sessions for context7, 3 for Exa); the two
   remaining always-loaded items — the ≈1k-token roster in the `subagent` tool
   description and the ≈1.5k-token baseline children inherit — are deliberate.
-- Pins. Claude child messages: mid 2136, small 637, top 505, frontier 0. Codex
-  children all ran their preset model and effort (17 sampled first turns) — no
-  #32587 inheritance; 2 built-in `worker` spawns on top/low, feeding open (d)
-  of the delegation audit below.
+- Pins. Claude child messages: mid 2136, small 637, top 505, frontier 0.
 - Implementer open (c), measured before this day's description change applies:
-  dispatches Claude 20, pi 52, Codex 7; Claude writes Sep 17–21 root 231 /
+  dispatches Claude 20, pi 52; Claude writes Sep 17–21 root 231 /
   child 280 (Sep 20 alone: 112 / 64).
 - Claude local-only decision (harness.md): 0 invocations of any account-synced,
   Chrome, scheduling or dataviz skill in the window; skills used were
-  codex-review 10, codex-advisor 5, claude-api 1, agent-instructions-audit 1.
+  cross-model review 10, cross-model advice 5, claude-api 1,
+  agent-instructions-audit 1.
   Effort-per-role research (one published config: same-tier implementer medium
   / reviewer high; no source measures effort against review yield) changed
   nothing in the roster.
@@ -294,7 +290,7 @@ re-fetched by the driver, the rest as reported.
   larger on the weaker tier.
 - Unmeasured anywhere found: orchestrators over-selecting the most expensive
   worker tier; brief detail required per worker tier.
-- OpenAI tier positioning (Codex subagents doc): Sol "for ambiguous,
+- OpenAI tier positioning (vendor subagents doc): Sol "for ambiguous,
   multi-step work", Terra for "exploration, read-heavy scans", Luna for
   "clear, repeatable, or high-volume work" — the OpenAI-side implementer sits
   below that positioning, against 36 pi implementer runs on Terra with no
@@ -302,8 +298,8 @@ re-fetched by the driver, the rest as reported.
   nothing and was rejected).
 - **Open**: (a) add a top-tier implementer only if a sweep shows recurring
   model overrides or failed round-trips on `implementer` dispatches for
-  settled-design slices; (b) count Terra implementer failures on codex/pi
-  separately — a per-harness tier, not a new role, is the first lever there;
+  settled-design slices; (b) count Terra implementer failures on pi — a
+  per-harness tier, not a new role, is the first lever there;
   (c) re-measure `implementer` dispatches and root inline edits after the
   description change (baselines: 0 dispatches / 374 inline edits Sep 11–12; 4
   dispatches, 86 root / 61 child writes Sep 15; 20 dispatches, 231 root / 280
@@ -313,140 +309,51 @@ re-fetched by the driver, the rest as reported.
 
 Scope: delegation contract, delegation wait, review stacking, initiative,
 roster. Evidence: the 2026-09-20 replay's `rows.json` plus tool-call metadata
-from its transcripts (Codex message bodies are encrypted). Probes: Claude
-self-probe (Fable 5.1), Codex via MCP (thread `01a0c12d`), pi static; worker
+from its transcripts. Probes: Claude self-probe (Fable 5.1), pi static; worker
 classes skipped — every scoped rule is driver-only. n=6, one run per arm.
 
-- Corrections to the 2026-09-20 reading. Codex root `wait_agent` 53: 31 at
-  10 000 ms (the harness floor — a 1 280 ms request came back "clamped to the
-  minimum of 10000ms", so sub-floor requests are raised, not rejected), 19 at
-  60 000, 2 at 50 000, 1 at 20 000; 39 of
-  57 waits across all rollouts timed out. Every completed wait returned early
-  (a 3 600 000 ms wait in 7 s; 60 s waits in 0–41 s). The 37 root
-  `send_message` bodies are unreadable, so "status messages" is unproven. pi
-  had one multi-implementer run, not three: in runs 2, 4 and 6 the second
+- pi had one multi-implementer run, not three: in runs 2, 4 and 6 the second
   `implementer` launch replaced one plan mode had refused; pagination's second
   slice consumed the first. pi has no concurrency guard (limits 20, launches
-  forced async) and made 0 `bg_wait` calls. Codex's 4 questions were all
-  `request_user_input` in plan mode, each with its own recommended option.
-- Codex wait facts (openai/codex main and the 0.154.0 binary): min 10 s,
-  default 30 s, max 1 h under `features.multi_agent_v2.*_wait_timeout_ms`,
-  validated min ≤ default ≤ max; the schema already says "prefer longer waits
-  (minutes)"; an idle parent is not woken (openai/codex#46120, open).
-  `multi_agent_v2` defaults off in 0.154.0 and a table without `enabled`
-  leaves it off.
-- Matrix. Wait-once: Claude covered, pi covered (tool description), Codex
-  partial and failing → no ADD; enforced in Codex config (gate 4), whole key
-  owned with `enabled`, floor and default 300 000 ms. Spawn-together: Claude
-  and pi covered, Codex partial → ADD-candidate by rule, not added — no
-  failure where coverage is partial (Codex ran three implementers in one
-  worktree for the largest diff), `call_batching` overlaps, and the clause
-  left the projection in 7de30aa with no reason recorded, so re-adding it six
-  days later is oscillation. Initiative: Codex probe partial (covered on
-  2026-09-15) → un-shaved for Codex on the probe verdict; the replay's 4
-  questions without the line vs 1 with it is same-model but cross-harness, so
-  it corroborates rather than decides. Self-review and cross-model review: both fired as
-  written, each line already reworded twice → KEEP. Roster: `worker` with Sol
-  named explicitly in 1 of 6 Codex runs → KEEP.
-- Codex cross-check agreed on all but the config form: a table replacing a
-  boolean `multi_agent_v2` would disable it. Adopted — a timeouts-only table
-  left the feature off under a scratch `CODEX_HOME`, so the managed table
-  carries `enabled`. The rendered merge script then ran against boolean, table
-  and absent inputs: all end enabled with the floor; other leaves of that
-  table are dropped, as whole-key ownership implies.
+  forced async) and made 0 `bg_wait` calls.
+- Matrix. Wait-once: Claude covered, pi covered (tool description) → no ADD.
+  Spawn-together: Claude and pi covered → not added — `call_batching`
+  overlaps, and the clause left the projection in 7de30aa with no reason
+  recorded, so re-adding it six days later is oscillation. Self-review and
+  cross-model review: both fired as written, each line already reworded twice
+  → KEEP.
 - Not wording: test over-building is equal on both GPT arms with the line
-  projected; the false "TypeScript checks passed" is a yielded-command quirk,
-  now a dated note in Codex's harness doc; pi's refused early implementer
-  launches (3 of 6 runs) are a workflow follow-up.
-- Counts carried forward: codex-review 2 reviews / 0 survived (2026-09-12
-  trigger); one more zero-finding spec-reviewer run, 11 min on Opus, on a
-  test-gated non-high-stakes 10-file body (skip-clause re-measure).
+  projected; pi's refused early implementer launches (3 of 6 runs) are a
+  workflow follow-up.
+- Counts carried forward: cross-model review 2 reviews / 0 survived
+  (2026-09-12 trigger); one more zero-finding spec-reviewer run, 11 min on
+  Opus, on a test-gated non-high-stakes 10-file body (skip-clause re-measure).
 - **Open**: spawn-together gets an ADD only if a sweep shows independent,
-  exclusive-scope strands run serially. The Codex-only items (its wait and
-  message sweep, plan-mode question count, `worker` alias) closed with the
-  harness on 2026-09-23.
+  exclusive-scope strands run serially.
 
 ## 2026-09-20
 
-### (pi trial) Paired replay — protocol declared before any run
+### (pi trial) Paired replay — decision record
 
-Decision: no standing benchmark. The passive sweep cannot decide the trial
-(2026-09-12 status: pi usage is mostly self-development), so the keep/drop
-call gets a one-off same-prompt replay, run by hand; working files stay under
-`$TMPDIR`, only this entry is kept. Codex advisor read concurred (thread
-`01a0bdd7`): per-principle scoring of the baseline at affordable n is noise.
+Same-prompt replay of six shipped commits (2 bugfixes with a test gate, 2
+small features, 1 refactor, 1 config/infra), each arm in a standalone clone
+at the parent SHA with the shipped commit pruned; graded gate-green first,
+then blinded pairwise "which would I merge" by spec-reviewer. pi against the
+previous review-backend harness on the same model and effort; Claude on three
+as a ceiling reference only. Working files stayed under `$TMPDIR`.
 
-- Cases: six shipped commits from repos in daily use — 2 bugfixes with a test
-  gate, 2 small features, 1 refactor, 1 config/infra. Each is parent SHA +
-  a prompt written from the commit message + gate command + the shipped diff
-  as reference. No transcript reads, no synthetic tasks.
-- Arms: pi and Codex on all six (both `gpt-6-astra`, same effort — a harness
-  comparison); Claude on three as a ceiling reference only, since that arm
-  confounds the model. Fresh worktree at the parent SHA, fresh interactive
-  session, pi/Codex order interleaved in one window; record model, effort,
-  harness version. Answer only when asked; log each intervention.
-- Grading, in order: (1) deterministic — gate green, files outside the
-  reference diff's scope, diff size vs reference, tests edited or skipped,
-  commit attempted, unrequested files/helpers/flags; (2) trace —
-  interventions, wall-clock, credits, summary claims vs commands actually run,
-  narration comments; (3) one blinded pairwise "which would I merge" per task
-  (labels stripped, order randomised): win / tie / loss. Read per behaviour
-  family, never as a composite score; results are a package comparison, not an
-  instruction-quality claim.
-- Decision rule: pi is daily-driver-worthy if gate-green ≥ Codex's, pairwise
-  wins+ties ≥ 4/6, and interventions and cost not materially worse. A
-  discordant task gets one rerun on both arms; a flip counts as a tie. Short
-  of that: "no detectable difference", decided on ergonomics and cost.
-- Kill: fewer than six cases with an objective gate, or a rubric that cannot
-  be written before seeing outputs → run nothing.
-- Cases picked (all production work repos; pi's own source excluded as
-  self-development): korvix/dashboard `f9b1e33` (bugfix), echelon
-  backend `91aa624` (bugfix), echelon dashboard `4eaf918` and `4b4d908`
-  (features), echelon backend `82e1b16` (refactor), kubecity/infrastructure
-  `7dfdad5` (infra; render-only gate). Claude arm on the first, third and
-  last. Each arm runs in a standalone clone cut at the parent with the shipped
-  commit pruned — a worktree would leak the fix through `git log --all`.
-  Baseline gates green at every parent; the shipped test hunk is a hidden gate
-  for four cases (fails at parent, passes with the shipped diff; passes at
-  both for the refactor), while `4b4d908`'s test is coupled to the shipped
-  symbol names and is not used. Prompts are reconstructed from the commits:
-  the session-store read for the original wording was classifier-denied.
-- Results (15 sessions, run concurrently, one run per arm; metrics from the
-  session stores, credits from the 2026-09-15 rate card, guardian priced as
-  Terra). Gates: pi 6/6 green, Codex 5/6 — Codex's nationality tests carry two
-  TS2769 errors that fail `npm run build`, and its summary claimed TypeScript
-  passed after reading the empty output of a `tsc` call that had yielded at
-  1 s. Hidden tests pass for every arm once grader artifacts are removed
-  (relocated Go tests redeclared by the shipped file; Claude's pagination
-  measures width where the shipped test mocks `getComputedStyle`). Production
-  fixes were byte-identical or near-identical between pi and Codex in five of
-  six cases, down to new file names — same model, same ideas; differences sit
-  in tests and orchestration. Blinded pairwise (spec-reviewer, labels
-  stripped; the pairwise was delegated rather than owner-judged): pi 2 wins, 2
-  ties, 2 slight losses — one tie adjudicated from a slight loss because the
-  reviewer penalised pi for a test move the repo's own instructions require.
-- Cost and time, pi vs Codex over the six cases: credits 347 vs 598 (−42%);
-  root model calls 151 vs 252; root peak context 24–67k vs 42–92k; questions
-  to the user 1 vs 4; active turn time 73.7 vs 57.4 min (+28%). Codex's extra
-  cost is root polling at Astra rates (53 `wait_agent`, 37 `send_message`
-  calls) plus a guardian session; pi's extra time is child wait (42.6 vs 20.3
-  min) — pi ran implementers strictly in sequence where Codex fanned out two
-  or three, while pi's root spent less model time (23.6 vs 32.9 min).
-- Projection read: commits 0/15; no frontier child in any arm; spec-reviewer
-  fired on the larger bodies and was skipped on small test-gated ones in all
-  three; Claude ran codex-review on its 10-file body. Both GPT arms over-build
-  tests alike (added lines 2.8× and 3.5× the shipped diff; Claude 1.2× on its
-  three), so that is the model, not a projection gap. Codex spawned an
-  unnamed `worker` role twice and followed the repo's test-placement rule in
-  one of two cases (pi two of two).
-- Decision rule met for pi on every clause except time. **Open**: my
-  keep/drop call; if pi stays, the sequential-child wait is the thing to fix
-  or accept. n=6 with one run per arm — a canary, not a measurement.
-  Codify the protocol into the audit skill only after it has run twice
-  unchanged for a second decision, and script a runner only after that. A
-  why-ablation (one why, one harness, ~10 paired transfer cases including
-  over-application negatives, blinded) waits for a specific why to be up for
-  deletion — at that n it detects only a large effect.
+- pi: gates 6/6 green; pairwise 2 wins, 2 ties, 2 slight losses (one tie
+  adjudicated from a slight loss because the reviewer penalised a test move
+  the repo's own instructions require). Credits −42%, root model calls 151 vs
+  252, questions to the user 1 vs 4, active turn time +28% — the extra time
+  is child wait (42.6 vs 20.3 min): pi ran implementers strictly in sequence.
+  Both GPT arms over-build tests alike (added lines 2.8× and 3.5× the shipped
+  diff; Claude 1.2×), so that is the model, not a projection gap.
+- Decision: pi adopted as daily driver (harness change 2026-09-23). n=6 with
+  one run per arm — a canary, not a measurement. **Open**: the
+  sequential-child wait is the thing to fix or accept. Codify the protocol
+  into the audit skill only after it has run twice unchanged for a second
+  decision, and script a runner only after that.
 
 ## 2026-09-18
 
@@ -490,8 +397,8 @@ child's run window (duplication) or after it (post-report re-read).
 - **Open**: after the guard fix, re-measure post-report re-reads of explorer
   paths and general-purpose used for implementation-shaped work; both are
   named by existing rules (delegation economics, frontier driver) and get a
-  baseline change only if they persist — which needs the claude and codex
-  sweeps the audit skill owns, not this pi-only sample. Nested-child polling
+  baseline change only if they persist — which needs the claude sweep the
+  audit skill owns, not this pi-only sample. Nested-child polling
   stays a one-off watch item.
 
 ### (pi) TypeSafe Jev replay against the approval classifier
@@ -501,8 +408,9 @@ action}`, rebuilt from 560 session files with `policy.needsReview` /
 `unsandboxed` and `index.trimHistory`) through TypeSafe `jev-1.13.0` as one
 Choice `{allow, deny, ask}` under the live `SYSTEM_PROMPT` plus four
 speculative Nouls, with 16 hand-labelled adversarial and boundary cases.
-Scratch lived in `/tmp/claude/jev-replay/`, not kept. Codex's read beforehand
-and the outcome agree: the shape fits the filter stage only, never the judge.
+Scratch lived in `/tmp/claude/jev-replay/`, not kept. A cross-model read
+beforehand and the outcome agree: the shape fits the filter stage only, never
+the judge.
 
 - Corpus: 137 reviewed actions (122 unsandboxed escalations, 15 sandboxed
   reviewed verbs; 19 from child runs); observed 104 allowed, 7 denied,
@@ -535,16 +443,12 @@ and the outcome agree: the shape fits the filter stage only, never the judge.
 ### (pi) Classifier pairing and second-vendor evaluation
 
 Research pass over both vendors' approval gates, OpenAI's GPT-5.6 system
-card, plan and model pages and OpenCode Go, plus a trace of pi-ai's Codex
-driver; decisions in `docs/pi-implementation.md` 2026-09-18.
+card, plan and model pages and OpenCode Go, plus a trace of pi-ai's
+`openai-codex` driver; decisions in `docs/pi-implementation.md` 2026-09-18.
 
 - Vendor gates: Claude Code auto mode runs both stages on Sonnet 4.6, stage
   two reusing stage one's prompt as a cache hit with only the final
-  instruction changed (Anthropic engineering post, 2026-03-25). Codex
-  auto-review is one call on the `codex-auto-review` slug, `gpt-5.6-luna`
-  on the API-key path (`codex-rs/model-provider/src/provider.rs`, read
-  2026-09-18); no accuracy figures are published and its issue record is
-  plumbing (#44808 byte limit), not misjudgement.
+  instruction changed (Anthropic engineering post, 2026-03-25).
 - Wire check: the 5.6 model pages list `none, low, medium, high, xhigh,
   max`; pi-ai's `providers/data/openai-codex.json` maps `minimal` to `low`
   and `model-runtime.js` passes effort through unclamped, so the configured
@@ -557,7 +461,7 @@ driver; decisions in `docs/pi-implementation.md` 2026-09-18.
   driver's WebSocket continuation cache (`acquireWebSocket`,
   `buildCachedWebSocketRequestBody`), where a request with a different body
   clears the root's `previous_response_id` delta, so the classifier is
-  pinned to SSE (Codex review, 2026-09-18).
+  pinned to SSE (cross-model review, 2026-09-18).
 - System card (deploymentsafety.openai.com/gpt-5-6, 2026-07-09; GPT-Red
   section 2026-08-03): search/function-call injection defence Terra 0.946,
   Luna 0.897, Sol 0.910; direct instruction-hierarchy attack success Terra
@@ -580,15 +484,15 @@ driver; decisions in `docs/pi-implementation.md` 2026-09-18.
   Flash). GLM and Qwen coding plans plausible but secondary-sourced; Copilot
   and Gemini ruled out on third-party-client terms. Open coders score 78–81%
   SWE-bench Verified on a secondary board, with no Terra comparison. Claude
-  Code takes no non-Anthropic child without a gateway; Codex's
-  `model_provider` is machine-local with OAuth/API-key coexistence
-  undocumented; Anthropic bans subscription OAuth in third-party clients
+  Code takes no non-Anthropic child without a gateway; Anthropic bans
+  subscription OAuth in third-party clients
   (The Register, 2026-02-20). Only pi could host a second vendor, via
   pi-subagents' per-agent `provider/model` behind `children.mjs`'s guard.
 - **Open**: after apply, per-stage latency of the Terra pairing with the
   filter's `stopReason`, filter forward rate, judge verdicts on escalations
   after a failed sandboxed attempt, cached-input tokens on the judge call,
-  and whether the Codex route accepts `none` (the model page says yes).
+  and whether the `openai-codex` route accepts `none` (the model page says
+  yes).
   The fallback trigger and the second-vendor trigger are recorded in
   `docs/pi-implementation.md`.
 
@@ -686,7 +590,7 @@ implementation handoff trigger concrete without changing worker pins or guards.
   The [Cursor](https://cursor.com/blog/scaling-agents) report and
   [Aider](https://aider.chat/2024/09/26/architect.html) experiment support
   planner/worker separation, not a current tier-cost or Max-savings claim.
-  Claude is measured above; Codex/pi remain configuration- and guidance-based.
+  Claude is measured above; pi remains configuration- and guidance-based.
 - Raw transcript tokens are not Max quota costs. Exact model and cache-read
   weighting, quota savings from delegation, and a primary cost lever remain
   unverified. Two Reddit searches also yielded no fetchable source; no snippets
@@ -708,12 +612,12 @@ Measurements below were moved from the baseline whys into this audit record:
   small-task delegation. The prior Claude probe reported a "don't call the
   Agent tool unless asked" line under an Opus 5 driver. OpenAI's GPT-6 Astra guide: "may delegate less often than desired
   for your workflow. Specify when and how much it should use subagents" — the
-  vendor-documented failure that keeps the rule projected on Codex/pi.
+  vendor-documented failure that keeps the rule projected on pi.
   Dropped as unsourced: "an Astra rebase at 6h+ vs Sol's 1h"; dropped as
   irrelevant: "OpenAI gates its coordination mode to the top tier" (ultra
   runs on Sol, the top worker tier). Field reports: lilting.ch 2026-09-07 —
   Astra as orchestrator "promoted every task to itself" despite AGENTS.md and
-  burned a weekly quota in half a day (the Codex-side risk baseline; no
+  burned a weekly quota in half a day (the GPT-side risk baseline; no
   blocking lever exists); eigenwise.io 2026-09-07 — Astra orchestrator,
   GPT-5.6 executors, Opus reviewer at ~1:5 requests; Ronacher 2026-09-07 —
   subagents underperform outside investigation; martinfowler.com
@@ -726,7 +630,7 @@ Measurements below were moved from the baseline whys into this audit record:
   tokens), #75054 (pins lost on background resume), #85592 (env var overrode
   per-call requests at 2.1.223), #82252 (override served by another model),
   #91160 (env var as hard override at 2.1.236, the documented pre-2.1.251
-  behavior); codex#32587 remains open.
+  behavior).
 - Self-review evidence: models fix an identical bug when told it is someone
   else's but not their own (64.5% blind spot, arXiv 2507.02778); self-review
   endorses ~32% of its own behaviour-changing output (2605.21537); a
@@ -744,11 +648,10 @@ Measurements below were moved from the baseline whys into this audit record:
   later; suites re-run green; 1 high + 3 medium catches, all on high-stakes
   surfaces (the Opus-tier baseline to beat). Precedence clause: the Claude
   harness passage discouraging extra review passes was present 2026-09-09,
-  absent from the Fable 5.1 main loop on 2026-09-15 (lapsed 2026-09-12);
-  Codex Sol and Astra carry none.
+  absent from the Fable 5.1 main loop on 2026-09-15 (lapsed 2026-09-12).
 - Cross-model review evidence: a size-only trigger fired ~20x more often
-  while its hit rate fell from ~4% to under 1%; Codex review displaced the
-  subagent pass in 68% of sessions that fired it (101 of 149, 2026-09-09,
+  while its hit rate fell from ~4% to under 1%; cross-model review displaced
+  the subagent pass in 68% of sessions that fired it (101 of 149, 2026-09-09,
   pre-`spec-reviewer` baseline). Survived-findings count still unmeasured.
 - Initiative evidence: OpenAI's GPT-6 Astra guide documents stopping to ask
   where the user expects persistence; Anthropic documents the same for Fable
@@ -770,20 +673,9 @@ Measurements below were moved from the baseline whys into this audit record:
   repeating it is the documented harm) and docs_mcp (carried by the context7
   server instructions wherever those tools exist; the researcher bodies name
   context7 themselves). Kept after the pin probe: long_running_work and
-  convention_recording. Codex (Sol
-  default, Astra override): initiative covered on both; call_batching Astra
-  covered, Sol partial; HARNESS-CONFLICT on both classes, verbatim — "Do not
-  spawn sub-agents unless the user or applicable AGENTS.md/skill instructions
-  explicitly ask for sub-agents, delegation, or parallel agent work." and
-  "Only set `model` or `reasoning_effort` when explicitly requested by the
-  user, applicable `AGENTS.md` instructions, or skill instructions" /
-  "inherited parent model is preferred" — resolved by making the projected
-  delegation and child-model lines explicit instructions, the "applicable
-  AGENTS.md instruction" the prompt defers to (vendor: "explicit spawn values
-  override `agents.default_subagent_model`"). Sol misreports itself as
-  "GPT-5"; Terra and Luna pins answered. pi (static): only delegation_wait
+  convention_recording. pi (static): only delegation_wait
   and tier_selection appear, in the repo's own tool description; nothing
-  shaved. Whether Codex or pi children load AGENTS.md is unstated in prompt
+  shaved. Whether pi children load AGENTS.md is unstated in prompt
   and docs; Claude's do (sub-agents doc: every level of the CLAUDE.md
   hierarchy, Explore/Plan excepted), which is why the projection now groups
   the driver-only rules under one bullet.
@@ -807,10 +699,10 @@ Measurements below were moved from the baseline whys into this audit record:
   baseline 321 (158 why-lines, ~half measurement/history), Claude harness doc
   168 (~47 lines duplicating baseline whys); `npm run test:docs` now holds
   the budgets.
-- Codex cross-check (Sol, two calls): agreed with every proposal except a
-  separate Exa-fetch clause (folded into web_search); noted Astra's
+- Cross-model cross-check (Sol, two calls): agreed with every proposal except
+  a separate Exa-fetch clause (folded into web_search); noted Astra's
   under-delegation justifies the delegation line, not the driver choice.
-  Codex review of the applied change (one round, five findings): "a child
+  Cross-model review of the applied change (one round, five findings): "a child
   never inherits" read as a guarantee — reworded as an instruction with the
   pin-is-a-default caveat; shaves probed only on the 5.1 main loop — the
   pinned Fable 5 probe above narrowed them to two; the lint accepted invalid
@@ -824,7 +716,7 @@ Measurements below were moved from the baseline whys into this audit record:
   catches at Opus vs the 1 high + 3 medium of 13 baseline; Fable share via `/usage`;
   cache-read weighting in Max metering; driver effort as a lever (API
   pricing claim, unmeasured on Max). Haiku call_batching re-probed covered
-  2026-09-23; the Codex items closed with the harness the same day.
+  2026-09-23.
 
 ### (pi) Relocated from the pruned build log
 
@@ -836,11 +728,10 @@ the two measurements still carrying a trigger moved here.
   output, $4.71 (≈118 credits) over 23 minutes, 40 assistant turns, 10
   children, peak root context 99.9k. Every turn ran `gpt-6-astra`; the same
   trajectory on `gpt-5.6-sol` is ~$1.88, so the tier choice moves cost 2.5×
-  before any harness difference does. Pi and Codex share the provider and
-  endpoint, so a harness differs only in tokens per finished task: controlled
-  run 4 was 0.87× Codex at time parity, run 5 3.9× at more than twice the
-  wall clock, on identical source — the variable is child count (3 vs 8), not
-  the harness. No context bloat: 13k → 99k with one 35k step where eight
+  before any harness difference does. Harnesses on the same provider differ
+  only in tokens per finished task: two controlled runs on identical source
+  differed 4.5× in tokens — the variable is child count (3 vs 8), not the
+  harness. No context bloat: 13k → 99k with one 35k step where eight
   child reports landed at once. **Open**: the Astra-default baseline to
   measure against; compare Sol and Astra on matched completed tasks.
 - Approval classifier (2026-09-09): two stage-shaped failures — a 17 s
@@ -850,7 +741,7 @@ the two measurements still carrying a trigger moved here.
   only under `enableWeakerNetworkIsolation`; the profile stands). Design taken
   from Anthropic's two-stage auto-mode classifier (single-token filter, then
   reasoning on a flag over the same cached prompt; false positives 8.5% →
-  0.4% reported) and Codex's deterministic gates: `classifier_filter` (Luna,
+  0.4% reported): `classifier_filter` (Luna,
   minimal) answers every reviewed action, `classifier_judge` (Terra, medium)
   re-judges any non-allow; the message is `{ task, history, action }` with
   the last 20 shell commands (output-blind, 16 KiB budget). **Open**: the next
@@ -884,10 +775,6 @@ review entry above.
   precedence clause's Claude harness-conflict has lapsed in both probed
   classes. Clause retained — it still guards the deterministic-gate
   distinction.
-- Codex Sol's prompt now reads "Do not spawn sub-agents unless the user or
-  applicable AGENTS.md/skill instructions explicitly ask"; the projected
-  delegation and self-review lines satisfy its carve-out. Recorded as a
-  resolved harness-conflict, no wording change; Codex concurred.
 
 ### (claude) Model-quirk projections
 
@@ -898,23 +785,24 @@ CLAUDE.md or carried by the harness prompt; Opus 5's candidate quirks
 sessions delegated at the same rate (3.8% vs 3.5% of tool calls) under the
 model-neutral rule — and stay unprojected.
 
-### (claude) Self-review vs codex-review
+### (claude) Self-review vs cross-model review
 
 Prior state: both rules fired on the same high-stakes set from 2026-08-27 and
-the W35–W37 sweeps showed codex-review displacing the fresh-eyes pass, with
-41% of editing sessions (30d, 341 sessions with ≥3 writes, 2026-09-09) running
-no review of any kind and the fresh-eyes rule firing in only ~20 dispatches
-(~6%), 8 of them to diff/language reviewers whose contract cannot report an
-omission — which is what `spec-reviewer` (added 2026-09-09, `tier: inherit`
-as a capability floor) answers. Bar set then: spec-reviewer dispatches above
-the 20/30d the unnamed pass managed; re-check the 41% no-review figure.
+the W35–W37 sweeps showed the cross-model pass displacing the fresh-eyes pass,
+with 41% of editing sessions (30d, 341 sessions with ≥3 writes, 2026-09-09)
+running no review of any kind and the fresh-eyes rule firing in only ~20
+dispatches (~6%), 8 of them to diff/language reviewers whose contract cannot
+report an omission — which is what `spec-reviewer` (added 2026-09-09,
+`tier: inherit` as a capability floor) answers. Bar set then: spec-reviewer
+dispatches above the 20/30d the unnamed pass managed; re-check the 41%
+no-review figure.
 
 This audit's sweep (user-run pipeline; store held only 2026-09-11/12 — 19
-sessions, no 30-day history): of 13 editing sessions, 12 ran codex-review AND
-a reviewer dispatch, 1 ran neither — displacement absent in this window,
-no-review rate 1/13. `spec-reviewer` fired 12 times in two days against the
-20/30d bar. **Open**: both figures need a 30-day window to count as a
-re-measure — repeat next audit.
+sessions, no 30-day history): of 13 editing sessions, 12 ran the cross-model
+pass AND a reviewer dispatch, 1 ran neither — displacement absent in this
+window, no-review rate 1/13. `spec-reviewer` fired 12 times in two days
+against the 20/30d bar. **Open**: both figures need a 30-day window to count
+as a re-measure — repeat next audit.
 
 ### (claude) Fresh-eyes yield — first content-level count
 

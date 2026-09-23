@@ -686,7 +686,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   // Provider-native web search (OpenAI's server-side web_search tool on the
-  // same Codex endpoint and token as model calls). Its Gemini-only url_context
+  // same Responses endpoint and token as model calls). Its Gemini-only url_context
   // registers too and stays outside every role's tool list.
   if (permittedTools.includes("web_search")) {
     const webSearch = await jiti.import("pi-web-search", { default: true });

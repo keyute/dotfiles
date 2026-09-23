@@ -8,9 +8,9 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
 ## Launch and ownership (last verified 2026-09-07)
 
 - Launch through the managed `pi` zsh function: it runs the repository's
-  lockfile-pinned CLI (`node_modules/.bin/pi`) on every platform — no Brew or
-  metapac install — disables native tools and ambient extensions, then loads the
-  managed workflow and Herdr when present. A binary run outside it bypasses that.
+  lockfile-pinned CLI (`node_modules/.bin/pi`) — no Brew install — disables
+  native tools and ambient extensions, then loads the managed workflow and
+  Herdr when present. A binary run outside it bypasses that.
 - Pi loads the applied copy under `~/.pi/agent/workflow`, not the repository
   source; `~/.pi/agent/node_modules` symlinks to the repository's pinned
   `node_modules`, which pi's documented "node_modules in a parent directory"
@@ -85,7 +85,7 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
 ## Web search (last verified 2026-09-08, evening; unapplied)
 
 - `web_search` is the pinned `pi-web-search` plugin: OpenAI's server-side
-  `web_search` tool, on the same Codex Responses endpoint and subscription token
+  `web_search` tool, on the same ChatGPT-subscription Responses endpoint
   as model calls, so it adds no endpoint, credential or network path beyond the
   provider's own — and sits in the same terms grey zone as the provider itself.
 - Each search is one extra model request on the account's usage windows;

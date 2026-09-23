@@ -8,11 +8,7 @@
 {{- $allowRead := list -}}
 {{- $allowWrite := list -}}
 {{- $fs := $root.agent_sandbox.filesystem -}}
-{{- $fsPaths := $fs.paths -}}
-{{- with index $fs.os_paths $root.chezmoi.os -}}
-  {{- $fsPaths = mergeOverwrite (deepCopy $fsPaths) . -}}
-{{- end -}}
-{{- range $path, $mode := $fsPaths -}}
+{{- range $path, $mode := $fs.paths -}}
   {{- if eq $mode "none" -}}
     {{- $denyRead = append $denyRead $path -}}
     {{- $sandboxDenyRead = append $sandboxDenyRead $path -}}

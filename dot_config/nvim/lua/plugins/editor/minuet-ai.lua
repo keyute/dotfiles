@@ -1,38 +1,30 @@
-local is_macos = vim.uv.os_uname().sysname == "Darwin"
-
--- macOS runs oMLX (MLX) serving JetBrains Mellum2 (12B MoE, 2.5B active); Linux
--- runs Ollama serving Qwen. Both listen on 11434, so only the model (and macOS's
--- FIM template) differ.
+-- oMLX (MLX) serves JetBrains Mellum2 (12B MoE, 2.5B active) on localhost:11434.
 local fim = {
 	api_key = "TERM",
 	name = "Ollama",
 	end_point = "http://localhost:11434/v1/completions",
-	model = is_macos and "Mellum2-12B-A2.5B-Base-4bit" or "qwen2.5-coder:1.5b-base-q4_0",
+	model = "Mellum2-12B-A2.5B-Base-4bit",
 	optional = {
-		-- Linux (Arc iGPU, ~28 tok/s) must fit generation inside minuet/blink's 3s
-		-- budget; macOS (M4 Max) affords longer completions.
-		max_tokens = is_macos and 128 or 48,
+		max_tokens = 128,
 		top_p = 0.9,
 	},
 }
 
-if is_macos then
-	-- oMLX passes the prompt through as-is (no server-side suffix handling), and
-	-- Mellum2 expects a <filename> tag followed by SPM-order FIM tokens (no pipes),
-	-- so embed them here and disable suffix.
-	fim.template = {
-		prompt = function(context_before_cursor, context_after_cursor, _)
-			return "<filename>"
-				.. vim.fn.expand("%:.")
-				.. "\n<fim_suffix>"
-				.. context_after_cursor
-				.. "<fim_prefix>"
-				.. context_before_cursor
-				.. "<fim_middle>"
-		end,
-		suffix = false,
-	}
-end
+-- oMLX passes the prompt through as-is (no server-side suffix handling), and
+-- Mellum2 expects a <filename> tag followed by SPM-order FIM tokens (no pipes),
+-- so embed them here and disable suffix.
+fim.template = {
+	prompt = function(context_before_cursor, context_after_cursor, _)
+		return "<filename>"
+			.. vim.fn.expand("%:.")
+			.. "\n<fim_suffix>"
+			.. context_after_cursor
+			.. "<fim_prefix>"
+			.. context_before_cursor
+			.. "<fim_middle>"
+	end,
+	suffix = false,
+}
 
 return {
 	"milanglacier/minuet-ai.nvim",
@@ -41,9 +33,7 @@ return {
 	opts = {
 		provider = "openai_fim_compatible",
 		n_completions = 1,
-		-- Linux prefill (~900-1000 tok/s on the Arc iGPU) must fit the 3s budget
-		-- alongside generation; measured: 3000 chars → cold ~1.5s, warm ~1.5s.
-		context_window = is_macos and 8000 or 3000,
+		context_window = 8000,
 		request_timeout = 3,
 		provider_options = {
 			openai_fim_compatible = fim,

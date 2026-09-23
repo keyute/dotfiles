@@ -62,7 +62,7 @@ test("active tool exposure follows root mode and UI without changing child autho
   assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name.startsWith("workspace_"), isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read", "workspace_write", "workspace_edit"]);
 });
 
-test("Codex Responses payloads retain distinct workflow and project-context patches with mode tools", async () => {
+test("Subscription Responses payloads retain distinct workflow and project-context patches with mode tools", async () => {
   const model = { ...openaiCodexProvider().getModels().find(model => model.id === "gpt-6-astra"), baseUrl: "https://example.test" };
   assert.equal(model.id, "gpt-6-astra");
   const token = `x.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture" } })).toString("base64url")}.x`;

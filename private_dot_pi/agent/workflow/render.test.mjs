@@ -56,7 +56,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
 
   assert.equal(workflow.version, 1);
   // bash 3.2 here-documents on macOS; see private_workflow.json.tmpl
-  assert.equal(workflow.filesystem.allowWrite.includes("/var/tmp"), process.platform === "darwin");
+  assert.ok(workflow.filesystem.allowWrite.includes("/var/tmp"));
   assert.equal(workflow.models.default, "gpt-6-astra");
   assert.equal(workflow.models.tiers.frontier, "gpt-6-astra");
   assert.equal(Object.keys(workflow.agents).length, 14);

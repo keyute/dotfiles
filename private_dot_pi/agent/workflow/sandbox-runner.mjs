@@ -15,8 +15,8 @@ const PRE_SANDBOX_HOOK = /^(BASH_ENV|ENV|SHELLOPTS|PS4)$|^(LD|DYLD)_/;
 
 export const quoteArg = (value) => `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 
-// Sandboxed commands inherit the host environment minus secret-named exports,
-// as Codex's default env policy does: the SRT profile's filesystem denies and
+// Sandboxed commands inherit the host environment minus secret-named exports:
+// the SRT profile's filesystem denies and
 // network allowlist are the boundary, and a key allowlist broke HOME-adjacent
 // toolchains (Go resolved GOPATH to ~/go without the shell's exported
 // override). A name pattern is not a complete secret boundary (a

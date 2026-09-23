@@ -1,5 +1,4 @@
 #!/bin/bash
-{{ if eq .chezmoi.os "darwin" -}}
 set -euo pipefail
 
 hf="/opt/homebrew/opt/omlx/libexec/bin/hf"
@@ -190,4 +189,3 @@ trap 'brew services start omlx' EXIT # a merge failure must not leave autocomple
 # hand the restarting server an empty settings file.
 merge_pins >"$settings.new"
 mv "$settings.new" "$settings"
-{{ end -}}

@@ -199,8 +199,7 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   per-event shallow-copied message. All pinned in `stability.test.mjs`
   (2026-09-18).
 - Outside the npm pin: the status line's usage segments come from
-  `GET chatgpt.com/backend-api/wham/usage` — the read behind codex's own
-  usage display, but called directly so pi needs no codex binary — with pi's
+  `GET chatgpt.com/backend-api/wham/usage`, called directly with pi's
   stored `openai-codex` credential (the exported `readStoredCredential`; its
   field shape is pinned in `stability.test.mjs`). The token is never refreshed
   there: refresh tokens rotate, so a footer refresh racing pi's own would
@@ -208,8 +207,7 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   model call restores it. The endpoint is an unversioned ChatGPT backend
   surface; its window fields (`rate_limit.primary_window/secondary_window`:
   `used_percent`, `limit_window_seconds`, `reset_at`) had only grown
-  additively over their observable history (verified against
-  openai/codex `c210f4c`, 2026-09-11). Re-verify trigger: segments missing on
+  additively over their observable history (verified 2026-09-11). Re-verify trigger: segments missing on
   a live turn with a fresh login — check the response shape, not the parser.
   A failed read only drops the segments.
 - Outside the npm pin: herdr's bundled pi extension (integration v9, herdr

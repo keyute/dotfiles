@@ -9,7 +9,7 @@ export const publicToolName = name => workerTools.includes(name) ? `workspace_${
 export const rootTools = [...workerTools.map(publicToolName), "workspace_task", "mcp", "subagent", "bg_wait", "ask_user_question", "submit_plan", "web_search"];
 
 // Sandboxed shell runs without review, as Claude Code (autoAllowBashIfSandboxed)
-// and Codex do: the SRT profile is the boundary. The one effect the profile
+// does: the SRT profile is the boundary. The one effect the profile
 // cannot judge is a remote mutation through an allowed domain with ambient
 // credentials (~/.config/gh and keychain git auth are reachable inside it), so
 // those verbs still go to review. Matching is per shell segment and errs
@@ -17,7 +17,7 @@ export const rootTools = [...workerTools.map(publicToolName), "workspace_task", 
 // `bash -c "git push"` and `xargs git push` all match), the ssh family in any
 // command position, and `gh` unless the segment is one of its read shapes.
 // A false positive (`rg ssh …`) costs one classifier call; obfuscation is an
-// accepted residual, as with Codex's check.
+// accepted residual.
 const REVIEWED = [
   /\bgit\b.*\bpush\b/,
   /\bdocker\b.*\bpush\b/,
