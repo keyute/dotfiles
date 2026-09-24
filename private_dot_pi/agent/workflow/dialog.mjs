@@ -1,5 +1,6 @@
 import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { CURSOR } from "./fleet.mjs";
+import { frameRule } from "./rows.mjs";
 
 const editorTheme = theme => ({
   borderColor: text => theme.fg("borderMuted", text),
@@ -55,7 +56,7 @@ export class Dialog {
     };
   }
   frame(lines, width) {
-    const rule = this.theme.fg("borderAccent", "─".repeat(Math.max(0, width)));
+    const rule = frameRule(this.theme, width);
     return [rule, ...lines.map(line => truncateToWidth(line, width, "")), rule];
   }
   gutter(focused = false) { return focused ? `${this.theme.fg("accent", CURSOR)} ` : "  "; }

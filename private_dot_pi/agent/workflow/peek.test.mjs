@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PeekDialog, openPeek } from "./peek.mjs";
+import { PROMPT } from "./rows.mjs";
 
 const theme = { fg: (c, t) => `<${c}>${t}`, bg: (c, t) => `[${c}]${t}`, bold: t => t };
 const KEYS = {
@@ -356,7 +357,7 @@ test("a dispose landing while a tick's read is in flight does not start the spin
   assert.equal(leaked, null);
 });
 
-test("openPeek opens an overlay through ctx.ui.custom with the factory's tui/theme/keybindings", async () => {
+test("openPeek opens in the slot through ctx.ui.custom with the factory's tui/theme/keybindings", async () => {
   const dir = makeDir();
   fs.writeFileSync(path.join(dir, "events.jsonl"), "");
   let seenOpts;
@@ -372,9 +373,43 @@ test("openPeek opens an overlay through ctx.ui.custom with the factory's tui/the
     },
   };
   await openPeek(ctx, { id: "run1", asyncDir: dir, describe: () => ({ agent: "reviewer", terminal: true }), events: {}, rpcCall: async () => null });
-  assert.equal(seenOpts.overlay, true);
-  assert.equal(typeof seenOpts.overlayOptions, "function");
-  assert.deepEqual(seenOpts.overlayOptions(), { anchor: "center", width: "90%", maxHeight: "80%", margin: 1 });
+  assert.equal(seenOpts, undefined);
   assert.ok(built instanceof PeekDialog);
   built.dispose();
+});
+
+test("render is a fixed height, half the terminal's rows, that holds still as the journal grows", async () => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const { dialog } = makeDialog({ dir, tui: { requestRender: () => {}, terminal: { rows: 40 } } });
+  await dialog.ready;
+  const before = dialog.render(80);
+  assert.equal(before.length, 20);
+  const promptIndex = before.findIndex(l => l.includes(PROMPT));
+  assert.ok(promptIndex > 0);
+  const nonBlankBefore = before.slice(2, promptIndex).filter(l => l.trim() !== "").length;
+
+  fs.appendFileSync(path.join(dir, "events.jsonl"),
+    line({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "First note" }] } }) +
+    line({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Second note" }] } }) +
+    line({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Third note" }] } }));
+  await dialog.readChunk();
+  const after = dialog.render(80);
+  assert.equal(after.length, 20);
+  assert.equal(after.findIndex(l => l.includes(PROMPT)), promptIndex);
+  const nonBlankAfter = after.slice(2, promptIndex).filter(l => l.trim() !== "").length;
+  assert.ok(nonBlankAfter > nonBlankBefore);
+});
+
+test("a steer draft that wraps past the window keeps the frame at its fixed height", async () => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const { dialog } = makeDialog({ dir, tui: { requestRender: () => {}, terminal: { rows: 40 } } });
+  await dialog.ready;
+  dialog.editor.setText(Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n"));
+  const lines = dialog.render(80);
+  assert.equal(lines.length, 20);
+  assert.equal(lines.at(-2), `  ${theme.fg("dim", "enter steer · /stop · ctrl+o output · esc back")}`);
+  assert.ok(lines.some(l => l.includes("line 29")));
+  dialog.dispose();
 });

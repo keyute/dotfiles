@@ -68,3 +68,10 @@ test("a filter allow ends the review, and a judge that cannot answer asks the UI
   assert.equal(await reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }), false);
   assert.deepEqual(asked, ["Approve this action once?"]);
 });
+
+test("the confirm's slot is cleared first: beforeConfirm runs before ctx.ui.confirm", async () => {
+  const seen = [];
+  const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => {}, confirm: async () => { seen.push("confirm"); return true; } } };
+  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } }, () => seen.push("close"));
+  assert.deepEqual(seen, ["close", "confirm"]);
+});

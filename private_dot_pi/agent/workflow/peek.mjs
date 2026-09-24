@@ -4,16 +4,17 @@ import { StringDecoder } from "node:string_decoder";
 import { Dialog } from "./dialog.mjs";
 import { formatTokens, modelLabel } from "./fleet.mjs";
 import { WorkingRow } from "./footer.mjs";
-import { PROMPT, oneLine, pad, shade } from "./rows.mjs";
+import { PROMPT, oneLine, pad, shade, slotHeight } from "./rows.mjs";
 import { createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 // The fleet's Enter peek (docs/pi-design.md rule 6, 2026-09-22): a rule-11
-// dialog over a background child's own events.jsonl, replayed live through
-// replay.mjs's row grammar, with a rule-5 composer that steers the child.
+// dialog in the composer's slot over a background child's own events.jsonl,
+// replayed live through replay.mjs's row grammar, with a rule-5 composer that
+// steers the child.
 
 const CHUNK = 1024 * 1024;
 const MAX_ROWS = 1000;
-const HINT = "enter steer · /stop · ctrl+o output · esc close";
+const HINT = "enter steer · /stop · ctrl+o output · esc back";
 
 export class PeekDialog extends Dialog {
   constructor(tui, theme, keybindings, done, { id, asyncDir, describe, events, rpcCall, timeoutMs = 2_000, steerTimeoutMs = 5_000, tickMs = 1_000, signal }) {
@@ -271,8 +272,19 @@ export class PeekDialog extends Dialog {
 
   render(width) {
     const usable = Math.max(1, width);
-    const rows = this.tui.terminal?.rows ?? 24;
-    const windowHeight = Math.max(3, Math.floor(rows * 0.8) - 7);
+    const working = this.working.render(usable);
+    const workingLines = working.length ? working : [""];
+    // Fixed height (docs/pi-design.md rule 6, 2026-09-23, slot): half the
+    // terminal's rows for the whole dialog, chrome (both rules, header, blank,
+    // hint) subtracted along with whatever the working row and composer take,
+    // so the frame and composer hold still as the journal grows. A draft that
+    // wraps past what is left keeps its last lines (the cursor's end) and the
+    // window its one row, since pi's dock clips an oversized slot from the
+    // bottom, hint and rule first.
+    const height = slotHeight(this.tui.terminal?.rows ?? 24);
+    const chrome = 5;
+    const composer = (this.mode === "confirm" ? [this.confirmLine()] : this.composerLines(usable)).slice(-(height - chrome - workingLines.length - 1));
+    const windowHeight = height - chrome - workingLines.length - composer.length;
     const bodyLines = !this.loaded
       ? [this.theme.fg("dim", "loading history…")]
       : this.replay.rows.length
@@ -284,18 +296,14 @@ export class PeekDialog extends Dialog {
     if (this.follow) this.scroll = maxScroll;
     this.scroll = Math.max(0, Math.min(this.scroll, maxScroll));
     const window = bodyLines.slice(this.scroll, this.scroll + windowHeight);
-    const working = this.working.render(usable);
-    const composer = this.mode === "confirm" ? [this.confirmLine()] : this.composerLines(usable);
+    while (window.length < windowHeight) window.push("");
     const hintText = this.flash || (this.mode === "confirm" ? "enter confirm · esc back" : HINT);
     const hint = `  ${this.theme.fg(this.flash ? this.flashTone : "dim", hintText)}`;
-    const content = [`  ${this.headerText()}`, "", ...window, ...(working.length ? working : [""]), ...composer, hint];
+    const content = [`  ${this.headerText()}`, "", ...window, ...workingLines, ...composer, hint];
     return this.frame(content, usable);
   }
 }
 
 export function openPeek(ctx, opts) {
-  return ctx.ui.custom((tui, theme, keybindings, done) => new PeekDialog(tui, theme, keybindings, done, opts), {
-    overlay: true,
-    overlayOptions: () => ({ anchor: "center", width: "90%", maxHeight: "80%", margin: 1 }),
-  });
+  return ctx.ui.custom((tui, theme, keybindings, done) => new PeekDialog(tui, theme, keybindings, done, opts));
 }

@@ -311,7 +311,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   let hold = null;
   const openPeek = async (_ctx, opts) => { opened.push(opts); await shift?.(); await hold; };
   const ctx = { hasUI: true, mode: "tui", ui: {
-    custom: async (make, options) => { assert.equal(options.overlay, true); const component = make({}, theme, {}, () => overlays.push("closed")); overlays.push(component.render(80).join("\n")); component.handleInput("\x1b"); },
+    custom: async (make, options) => { assert.equal(options, undefined); const component = make({}, theme, {}, () => overlays.push("closed")); overlays.push(component.render(80).join("\n")); component.handleInput("\x1b"); },
     notify: (message, level) => notices.push(`${level}: ${message}`),
   } };
   bus.entries = [{ agent: "restored", tokens: { total: 0 } }];
@@ -545,4 +545,133 @@ test("attachContext never overwrites a launch this process already recorded from
   fleet.handleKey("confirm");
   await sleep(10);
   assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["run-r", "/tmp/live/run-r"]]);
+});
+
+test("a slot dialog (ask_user_question) aborts a live peek, freeing the slot before the new dialog opens", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const opened = [];
+  const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {} } };
+  // Stands in for the real dialog's onAbort → finish() → done(): the peek's
+  // own promise settles once its signal fires, so the fleet's `finally` can
+  // clear state.peek.
+  const openPeek = async (_ctx, options) => { opened.push(options); await new Promise(resolve => options.signal.addEventListener("abort", resolve)); };
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek });
+  hooks.tool_execution_start({ toolName: "subagent", toolCallId: "c1", args: { agent: "worker", task: "t" } });
+  hooks.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { runId: "run1", asyncDir: "/tmp/run1" } } });
+  bus.runs.push({ id: "run1", label: "worker", state: "running", startedAt: 1000 });
+  bus.entries.push({ key: "fleet-1", agent: "worker", startedAt: 1000 });
+  await sleep(20);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  const signal = opened.at(-1).signal;
+  assert.equal(signal.aborted, false);
+  hooks.tool_execution_start({ toolName: "ask_user_question", toolCallId: "q1" });
+  assert.equal(signal.aborted, true);
+  await sleep(0);
+  // A second slot-taking tool_execution_start with nothing left to abort is harmless.
+  hooks.tool_execution_start({ toolName: "submit_plan", toolCallId: "p1" });
+});
+
+test("closePeek ends the text-tail fallback in the slot and leaves fleet focus alone", async () => {
+  const bus = fakeBus();
+  const pi = { events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} };
+  const rendered = [];
+  let settled = false;
+  const ctx = { hasUI: true, mode: "tui", ui: {
+    custom: (make, options) => new Promise(resolve => {
+      assert.equal(options, undefined);
+      const component = make({ terminal: { rows: 30 } }, theme, {}, () => { settled = true; resolve(); });
+      rendered.push(component.render(40));
+    }),
+    notify() {},
+  } };
+  bus.entries = [{ agent: "restored", tokens: { total: 0 }, startedAt: 1000 }];
+  bus.runs = [{ id: "run-r", label: "restored", startedAt: 1000, state: "running" }];
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 30, timeoutMs: 10 });
+  fleet.attach({ requestRender() {} });
+  await sleep(20);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  const lines = rendered[0];
+  assert.equal(lines[0], "─".repeat(40));
+  assert.equal(lines.at(-1), lines[0]);
+  assert.equal(lines[1], "  *restored*");
+  assert.equal(lines.at(-2), "  ~esc back~");
+  assert.equal(settled, false);
+  fleet.closePeek();
+  assert.equal(settled, true);
+  await sleep(0);
+  assert.equal(fleet.focused(), false);
+});
+
+test("a second Enter while a peek is still opening ends the first, so only one can mount", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const opened = [];
+  const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {} } };
+  const openPeek = async (_ctx, options) => { opened.push(options); await new Promise(resolve => options.signal.addEventListener("abort", resolve)); };
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek });
+  hooks.tool_execution_start({ toolName: "subagent", toolCallId: "c1", args: { agent: "worker", task: "t" } });
+  hooks.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { runId: "run1", asyncDir: "/tmp/run1" } } });
+  bus.runs.push({ id: "run1", label: "worker", state: "running", startedAt: 1000 });
+  bus.entries.push({ key: "fleet-1", agent: "worker", startedAt: 1000 });
+  await sleep(20);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  assert.equal(opened.length, 2);
+  assert.equal(opened[0].signal.aborted, true);
+  assert.equal(opened[1].signal.aborted, false);
+  fleet.closePeek();
+  assert.equal(opened[1].signal.aborted, true);
+});
+
+test("closePeek landing while the live peek's module is still importing mounts nothing", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  let mounted = 0;
+  const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {}, custom: async () => { mounted++; } } };
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10 });
+  hooks.tool_execution_start({ toolName: "subagent", toolCallId: "c1", args: { agent: "worker", task: "t" } });
+  hooks.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { runId: "run1", asyncDir: "/tmp/run1" } } });
+  bus.runs.push({ id: "run1", label: "worker", state: "running", startedAt: 1000 });
+  bus.entries.push({ key: "fleet-1", agent: "worker", startedAt: 1000 });
+  // Warm the module so the default openPeek's import settles in microtasks, not on the module loader's clock.
+  await import("./peek.mjs");
+  await sleep(20);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  fleet.closePeek();
+  await sleep(20);
+  assert.equal(mounted, 0);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(20);
+  assert.equal(mounted, 1, "the same path mounts when nothing aborts it");
+});
+
+test("closePeek before the text-tail's status reply mounts nothing and notifies nothing", async () => {
+  const bus = fakeBus();
+  const pi = { events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} };
+  const calls = [];
+  const ctx = { hasUI: true, mode: "tui", ui: { custom: async () => calls.push("custom"), notify: () => calls.push("notify") } };
+  bus.entries = [{ agent: "restored", tokens: { total: 0 }, startedAt: 1000 }];
+  bus.runs = [{ id: "run-r", label: "restored", startedAt: 1000, state: "running" }];
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 30, timeoutMs: 10 });
+  fleet.attach({ requestRender() {} });
+  await sleep(20);
+  bus.delayMs = 5;
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  fleet.closePeek();
+  await sleep(20);
+  assert.deepEqual(calls, []);
 });

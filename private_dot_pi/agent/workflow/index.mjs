@@ -398,7 +398,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // child arriving after a later epoch, so root must refresh this on every bump.
   const publishEpoch = () => { process.env.PI_WORKFLOW_EPOCH = String(broker.policy.epoch); };
   if (isRoot) {
-    broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request));
+    broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request, () => fleet?.closePeek()));
     env = broker.env;
     Object.assign(process.env, env);
     publishEpoch();

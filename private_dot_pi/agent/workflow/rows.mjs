@@ -63,6 +63,12 @@ export function shade(theme, line, background = "userMessageBg", foreground) {
 // truncates instead — the two are not the same function.
 export const pad = (text, width) => text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 
+// The one rule every slot dialog frames itself with (docs/pi-design.md rule
+// 11), and the peek's fixed height (rule 6, 2026-09-23, slot): half the
+// terminal's rows, whichever of the live dialog or the text-tail draws it.
+export const frameRule = (theme, width) => theme.fg("borderAccent", "─".repeat(Math.max(0, width)));
+export const slotHeight = rows => Math.max(12, Math.floor(rows / 2));
+
 export function shortTitle(text, width = TITLE_WIDTH) {
   const title = oneLine(text);
   if (title.length <= width) return title;

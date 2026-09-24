@@ -27,7 +27,7 @@ async function classify(ctx, config, stage, content) {
   } catch { return "ask"; }
 }
 
-export async function reviewAction(ctx, config, task, request) {
+export async function reviewAction(ctx, config, task, request, beforeConfirm) {
   let decision = "ask";
   if (request.approval === "auto") {
     const { history = [], ...action } = request;
@@ -46,5 +46,7 @@ export async function reviewAction(ctx, config, task, request) {
   if (escalated && action.length > 12_000) return false;
   // The dialog can sit behind an unattended terminal; make the pending state visible.
   ctx.ui.notify?.(`Awaiting approval${escalated ? " (unsandboxed)" : ""}: ${action.slice(0, 80)}`, "warning");
+  // pi's confirm takes the composer slot; whatever holds it (the fleet peek) must close first.
+  beforeConfirm?.();
   return ctx.ui.confirm(`Approve this ${escalated ? "unsandboxed " : ""}action once?`, action.slice(0, 12_000));
 }
