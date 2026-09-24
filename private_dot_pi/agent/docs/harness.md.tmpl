@@ -31,24 +31,21 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   requests) runs in two stages with no tools: `{{ .agents.pi.defaults.classifier_filter.model }}` at {{ .agents.pi.defaults.classifier_filter.reasoning_effort }} reasoning
   screens each reviewed action, and anything but allow goes to `{{ .agents.pi.defaults.classifier_judge.model }}` at
   {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt; its verdict is final. Model, text and cache key
-  align; a reasoning change may miss the cache. Terra 5.6 stays (2026-09-24):
-  its injection metric is retired and Sol 6 has none published.
+  align; reasoning changes may miss cache. Terra stays (2026-09-24): Sol 6
+  lacks a comparable injection metric.
 - Worker tiers: {{ $sep := "" }}{{ range $tier, $model := .subagent_tiers.pi }}{{ $sep }}{{ $tier }} `{{ $model }}`{{ $sep = ", " }}{{ end }}.
-  GPT-6 Sol serves both mid and top (2026-09-23): better than Terra 5.6 on score, tokens and cost per task; rationale and reversal in agents.yaml. Sol/Luna 6 accept `none` reasoning.
-- The default is the frontier tier as the driver (shared `frontier_driver` rule in
-  AGENTS.md, decision 2026-09-15). No child runs it: `workflow/children.mjs`
-  rejects a launch naming or inheriting the frontier model and fails loudly;
-  `general-purpose`, the only nesting role, is pinned to `top`.
-- The pinned Pi SDK includes Astra in the OpenAI subscription catalog; if a
-  future pin drops it, selection must report unavailable, not fabricate an alias
-  or fall back to API billing.
+  Role tier and reasoning live in `subagents.<role>.pi` in agents.yaml,
+  independently of Claude (2026-09-24). The complete matrix, evidence and
+  reversal gates are in the audit log; effort choices are not measured recall.
+- The frontier driver stays Astra (2026-09-15). `workflow/children.mjs`
+  rejects frontier children; only `general-purpose` nests, pinned to `top`.
+- SDK Astra pin is in the subscription catalog; if dropped, fail unavailable,
+  not an alias or API billing.
 {{ includeTemplate "openai-rate-card.md" . -}}
-- Pro allowance use depends on task, context, reasoning and caching, not a fixed message count; compare completed-task cost including retries and delegation.
 {{ includeTemplate "openai-context-window.md" . -}}
-- Pi has no `/status`: read the status line's context segment and `/session`.
-  Raising `contextWindow` via `modelOverrides` on `openai-codex` changes only what
-  pi believes, deferring compaction and occupancy warnings until the provider
-  rejects requests. (Revisit at the next SDK pin bump, or if it reports ≠ 272K.)
+- Pi has no `/status`: read status line context and `/session`. Raising
+  `contextWindow` via `modelOverrides` on `openai-codex` only defers compaction
+  until provider rejection. Revisit at next SDK bump or if it reports ≠ 272K.
 
 ## Specialists and skills (last verified 2026-09-22)
 

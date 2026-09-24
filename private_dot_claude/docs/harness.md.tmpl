@@ -13,22 +13,21 @@ behavior seems changed, verify with that agent and update this file.
   session. The default is the frontier driver; `[1m]` selects its 1M context.
   The installed CLI is latest 2.1.280, which serves Fable 5.1 and Opus 5.5
   (Opus 5.5 needs 2.1.280 or later); changing channel does not update the
-  source model pin. Driver effort stays the default.
+  source model pin. Driver `effortLevel` is explicitly
+  `{{ .agents.claude.defaults.reasoning_effort }}` (2026-09-24).
 - Pins use explicit model IDs, never bare aliases: aliases re-resolve across CLI releases.
-- Top and mid worker tiers are both Opus 5.5 (2026-09-24): Sonnet 5 lost mid
-  on day-after per-effort numbers, so a mid reviewer and spec-reviewer differ
-  only in role and `effort` until Sonnet 5.5 ships. Opus 5.5's API default
-  effort is `medium` (Opus 5 was `high`); every roster entry sets `effort`
-  explicitly, and a child whose definition omits it inherits the session's
-  effort, not the model's API default (sub-agents doc, 2026-09-23). Fable
-  stays the driver on the recorded decision; the Opus 5.5-as-driver paired
-  replay is the open trigger in the audit log, and the numbers say run it.
-- Specialist tiers are pinned in `.chezmoidata/agents.yaml` and do not follow
-  `/model`. `CLAUDE_CODE_SUBAGENT_MODEL` is configured as the fallback for
-  unpinned children at the top worker tier (`{{ .subagent_tiers.claude.top }}`),
-  but definitions and built-ins may pin themselves; `claude-code-guide` uses
-  Haiku. Forks (`subagent_type: fork`) run the parent model — a driver-context
-  continuation, not a worker.
+- Role tier and effort live in `subagents.<role>.claude` in agents.yaml,
+  independently of Pi (2026-09-24). Haiku 4.5 effort is unsupported and
+  omitted. The complete matrix, evidence and reversal gates are in the audit
+  log; medium reviewer effort is a trial, not proven catch parity. Fable
+  remains the driver pending paired replay. Opus 5.5's API default is
+  `medium`, but a child without explicit effort inherits session effort.
+- Specialist pins do not follow `/model`. `CLAUDE_CODE_SUBAGENT_MODEL` is
+  the fallback for unpinned children at top (`{{ .subagent_tiers.claude.top }}`).
+  Native general-purpose and Plan are not independently managed/pinned: the
+  former takes that model fallback and session effort. The guide uses Haiku;
+  the statusline helper is upstream Sonnet. Forks (`subagent_type: fork`)
+  continue the parent model, not a worker.
 - Since Claude Code 2.1.251, subagent resolution is per-invocation `model`, then
   definition frontmatter (`inherit` = main conversation), then
   `CLAUDE_CODE_SUBAGENT_MODEL`, then the main conversation (release note and
@@ -48,11 +47,12 @@ behavior seems changed, verify with that agent and update this file.
   do not), so shared driver-only rules are grouped under "session driver".
   Continue an existing agent for follow-ups rather than re-spawning it; a
   long-lived subagent retains context (Fable 5 guide).
-- Max has a rolling 5-hour window and shared weekly pool; Fable can consume up
-  to 50% of weekly usage and uses limits faster than other models, but exact
-  model and cache-read weighting is unpublished, and nothing published names
-  Opus 5.5's weighting (2026-09-23). Raw transcript token counts
-  are not Max quota costs; reconcile the next binding limit against `/usage`.
+- Max has a rolling 5-hour window and shared weekly pool; Fable's 50% weekly
+  cap is shared usage, not reserved capacity. Fable drains limits faster, with
+  no fixed published Fable/Opus multiplier (2026-09-24). Anthropic reports
+  Opus 5.5 limits go ~25% further than Opus 5; its extra API cache discount
+  does not transfer to subscriptions. Raw tokens/API costs are not Max
+  quota; reconcile actual allowance against `/usage`.
 - Subagents draw the same Max pools. Delegation is for bounded ownership and
   context quality, not assumed quota savings; neither the savings nor a single
   primary cost lever is verified.

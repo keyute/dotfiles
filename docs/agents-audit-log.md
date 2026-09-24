@@ -11,59 +11,72 @@ history keeps it.
 
 ## 2026-09-24
 
-### Day-after re-check — tiers and effort (Opus 5.5 / GPT-6)
+### Per-role effort decision — Opus 5.5 / GPT-6
 
-Roster decision, no audit run. Evidence: Artificial Analysis Intelligence
-Index v4.3.2 per-effort pages (fetched 2026-09-24; API $/task — Max and
-ChatGPT weighting stay unpublished, so output tokens per task is the
-subscription proxy), Anthropic's Opus 5.5 page, the GPT-6 Astra card's
-Sol/Luna appendix (added 2026-09-22), the HN launch thread, both changelogs.
-The rate-card table was not fetchable; the 2026-09-23 rows stand.
+Per-harness role decision, not a quota/quality trial; tier maps/policy hold:
 
-| model / effort | index | output tokens on index | $/task |
-|---|---|---|---|
-| claude-fable-5-1 (max) | 53 | 190M | 7.63 |
-| claude-opus-5-5 max / high / medium / low | 58 / 54 / 51 / 42 | 260M / 53M / 38M / 20M | 5.98 / 1.82 / 1.34 / 0.55 |
-| claude-sonnet-5 max / high / medium | 38 / 32 / 28 | 370M / 89M / 51M | 5.09 / 1.79 / 1.00 |
-| claude-haiku-4-5 (non-reasoning) | 15 | — | — |
-| gpt-6-astra max / default | 53 / 55 | ~27k per task / 49M | — / 2.57 |
-| gpt-6-sol max / xhigh / high / medium / low / none | 48 / 44 / 43 / 40 / 34 / 28 | high 25M, medium 16M | low ≈ 0.13 |
-| gpt-5.6-terra (max) | 42 | 120M | 1.40 |
-| gpt-6-luna max / high / medium / low / none | 37 / 32 / 29 / 21 / 18 | medium 28M | low ≈ 0.005 |
+| role | Claude tier / effort | pi tier / reasoning |
+|---|---|---|
+| driver | Fable 5.1 / high (explicit settings `effortLevel`) | Astra / high (unchanged) |
+| Explore / explorer | Haiku 4.5 / unsupported | Luna / low |
+| log-triager | Haiku 4.5 / unsupported | Luna / medium (was low; root-cause diagnosis) |
+| dep-researcher | Opus 5.5 / medium (was Haiku) | Luna / medium (unchanged) |
+| explore-deep, researcher, implementer | Opus 5.5 / medium (unchanged) | Sol / medium (unchanged) |
+| go-, python-, ts-, shell-, infra-, diff-reviewer | Opus 5.5 / medium (was high) | Sol / high (unchanged) |
+| spec-reviewer | Opus 5.5 / high | Sol / high |
+| general-purpose | Opus 5.5 / session effort (native unpinned env fallback) | Sol / high (managed) |
 
-- Claude mid → `claude-opus-5-5` (was Sonnet 5): at the reviewers' `high`
-  54 vs 32 at equal $/task and 53M vs 89M tokens; at `medium` 51 vs 28 at
-  +34% $/task in fewer tokens; Opus 5.5 `low` beats Sonnet 5 `high`. Mid ==
-  top, pi's Sol 6 shape. Revert when Sonnet 5.5 (announced 2026-09-22, press
-  only) undercuts Opus 5.5 at `high` within ~5 points, or `/usage` drains
-  faster after the apply. Haiku 4.5 keeps small until Haiku 5.5 ships.
-- Claude frontier: Fable 5.1 kept on the recorded decision; its "2/3 the
-  tokens" rationale held only max-vs-max and was rewritten. Opus 5.5 at
-  `medium` is 51 vs 53 at a fifth of the tokens and $/task; Max weights Fable
-  ~2x Opus with a 50% weekly cap. The paired replay is the top open trigger.
-- pi tiers hold: Sol 6 48 vs Sol 5.6 47 at half the price; no GPT-6 Terra
-  exists or is announced. Watch: HN day-one reports place Sol 6 under Sol
-  5.6 on OpenAI's own DeepSWE chart at every effort (anecdote). Classifier
-  stays Terra 5.6: "Connectors" and "Search and Function-Calling" are retired
-  as saturated, and the appendix's only Sol/Luna 6 row is instruction-
-  hierarchy defender success (Astra 99.99, Sol 99.97, Luna 99.97) — the
-  2026-09-23 "≥ 0.946" trigger is superseded by the one in agents.yaml.
-- Effort: dep-researcher low → medium (2 small→mid overrides in the
-  2026-09-23 pi sweep; Luna 21 → 29). Everything else unchanged: Explore and
-  log-triager at low (no observed failure), mid roles medium/high, top roles
-  high (the drop-to-medium trigger stands). Sol/Luna 6 accept `none`; Astra
-  does not.
-- Routing after the apply (2026-09-24, CLI 2.1.280, three probe children in
-  one session, `message.model` read from `<session>/subagents/*.jsonl`):
-  unpinned general-purpose → `claude-opus-5-5` (env fallback, 2 rows);
-  pinned Explore and claude-code-guide → `claude-haiku-4-5-20251001` (37
-  rows); no Fable row. Definition-pin and env-fallback paths both serve the
-  configured tier; the "mid children's `message.model`" item is closed — mid
-  and top pins are the same ID, and the pin path is the one Explore exercised.
-- **Open**: Fable vs Opus 5.5 driver paired replay (3 cases, 2026-09-20
-  protocol); re-tier small and mid when Haiku 5.5 / Sonnet 5.5 ship; Opus 5.5
-  text-only-stop watch now covers the implementer; Sol 6 DeepSWE regression —
-  fallback `gpt-5.6-sol` at 2x if implementer round-trips rise.
+Claude native Plan/general-purpose inherit effort; guide is Haiku, statusline
+helper Sonnet, forks parent. Claude mid/top share Opus; pi mid/top Sol.
+Two pi dep-researcher small→mid overrides (2026-09-23) motivated medium.
+Reviewer reduction is a trial, not a measured high-effort quality failure.
+
+[Artificial Analysis Claude comparison](https://artificialanalysis.ai/models/releases/comparisons/claude-opus-5-5-vs-claude-sonnet-5)
+(2026-09-24): Opus 5.5 medium index 51, 26k output/task, API $1.34/task;
+high 54, 36k, $1.82; Sonnet 5 high 32, 44k, $1.79. High→medium is ~26%
+less *API task cost* for Opus on that test, not a Max quota conversion or
+review-recall result. [CodeRabbit's review pipelines](https://www.coderabbit.ai/blog/opus-5-5-model-review)
+compare Standard / Max, **not API effort levels**: ordinary catches 51/80 vs
+50/80, precision 38.6% vs 35.7%; harder in-diff catches 8/13 vs 10/13,
+full-stream catches both 10/13 including outside-diff. This warrants a
+medium-default reviewer experiment, not parity or safety claims. Anthropic's
+[2026-09-22 task-cost guidance](https://claude.com/blog/what-a-task-costs-on-opus-5-5)
+recommends medium for scoped daily work, high when medium stalls, smaller
+models for lookups/logs, and Fable for hard unsupervised orchestration. It
+attributes ~25% more subscription capacity vs Opus 5 to lower Opus 5.5
+pricing including cached context; the extra *API* cache discount is not a
+subscription benefit. [Fable plan guidance](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan)
+says its 50% weekly cap is shared usage, not reserved/additional capacity;
+it drains faster with no published fixed multiplier. [Every's early-access
+report](https://every.to/vibe-check/vibe-check-opus-5-5-is-pulling-our-codex-converts-back-to-claude)
+reports positive daily coding but keeps Fable for hard cases and notes runaways,
+unfinished work and false greens; seven early-access and two public days are
+not consensus. No exact Sonnet/Opus 5.5 Max conversion is published.
+
+[Artificial Analysis Sol comparison](https://artificialanalysis.ai/models/comparisons/gpt-6-sol-high-vs-gpt-6-sol-medium):
+medium/high index 40/43, reasoning 2k/5k, API $0.25/$0.37 per task;
+Terminal-Bench 19%/26%, **not reviewer recall**.
+[Luna low/medium](https://artificialanalysis.ai/models/comparisons/gpt-6-luna-medium-vs-gpt-6-luna-low):
+index 21/29, reasoning 515/6k, API $0.0045/$0.02 per task. The live
+[credit card](https://learn.chatgpt.com/docs/pricing) lists Astra
+250/25/1250 and Terra 50/5/300 credits per 1M but omits GPT-6 Sol/Luna;
+repo Sol 50/5/250 and Luna 2.5/0.25/12.5 rows are historical, **not
+reverified** on 2026-09-24. API $ is not observed subscription drain.
+
+Reversal: compare same-snapshot actionable catches, critical misses,
+false-positive work and accepted output including retries, input/cache,
+reasoning/output, parent repairs and observed allowance. Restore Claude
+reviewers high if an important catch is lost; reassess tiers on new models
+or changed allowance/round-trips. No automatic paid trial or session read.
+Claude-side `agent-instructions-audit` required after model change; not run.
+
+Classifier stays Terra: retired injection metric; instruction-hierarchy
+results are not comparable. The agents.yaml trigger stands.
+
+Prior-apply probe (2026-09-24, CLI 2.1.280, three child `message.model`):
+general-purpose served Opus 5.5, Explore/guide Haiku 4.5; no Fable. Not
+verification of new effort. **Open**: Fable/Opus driver replay (three cases,
+2026-09-20 protocol); Opus text-only-stop; Sol DeepSWE if round-trips rise.
 
 ## 2026-09-23
 
@@ -108,13 +121,9 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   rewrite regression keeps targeted_edits projected. Opus 5.5: text-only end
   of turn on long unattended tasks (watch item for top-tier children); "at
   its default `medium` effort the model matched or beat Claude Opus 5 at
-  `high`… in fewer steps and with fewer tokens" — `spec-reviewer` and
-  `general-purpose` run it at `high`; **Open**: drop to `medium` if the
-  sweep's spec-reviewer catch and zero-finding counts hold at the 2026-09-12
-  baseline (1 high + 3 medium of 13; 4–5 zero-finding). Sonnet 5 (every mid
-  reviewer): conservative review wording cuts recall; `reviewer-common.md`
-  reports all severities, `diff-reviewer.md` says "skip the marginal" — watch
-  item. Haiku 4.5 has no model page. OpenAI: one GPT-6 family page, observed
+  `high`… in fewer steps and with fewer tokens". Former high-effort
+  reviewer trigger superseded by 2026-09-24. Haiku 4.5 has no model page.
+  OpenAI: one GPT-6 family page, observed
   on Astra; Sol and Luna have no guidance of their own. Its initiative and
   under-delegation notes underwrite lines already projected on pi. Over-
   testing ("broader tests than the task requires") is vendor-documented and
@@ -129,14 +138,14 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   "favor leaner prompts" (vendor-internal 10–15% eval gain, 41–66% fewer
   tokens) and its warning that repeated approval wording causes approval
   requests support the density doctrine and the initiative decision.
-- Bodies and docs. No contradictions, native duplicates or stale mechanics;
+- Bodies and docs (historical 2026-09-23 snapshot). No contradictions, native duplicates or stale mechanics;
   the approval gates in `ship-check`, `align-sibling` and both repo-local
   skills are deliberate. The two cross-model skill bodies carried Claude
   nouns in the shared templates directory with one Claude consumer each —
   inlined into `private_dot_claude/skills/*/SKILL.md`, shared copies removed,
-  renders byte-identical. Rate card: learn.chatgpt.com lists GPT-6 Sol
-  50/5/250 and Luna 2.5/0.25/12.5, equal to the inferred rows — template
-  updated, revisit clause dropped. Docs lint green before and after.
+  renders byte-identical. The Sol 50/5/250 and Luna 2.5/0.25/12.5 credit rows
+  recorded then were not reverified in the 2026-09-24 live card (above).
+  Docs lint was green before and after that earlier change.
 - Cross-check (pi advisor): agreed on the verdict and every edit; disputed
   the scope_extras evidence reading (accepted, recorded as the open trigger
   above); asked that the catalog grep never be read as a served pin.
@@ -200,7 +209,7 @@ catalog with the GPT-6 tiers and Opus 5.5; pinned from 0.87.0 in the same change
   pairwise at lower cost per completed task.
 - pi small → `gpt-6-luna`, mid and top → `gpt-6-sol`. Sol 6 dominates Terra
   5.6 on every axis, so mid == top; reverse mid when a GPT-6 Terra ships or
-  the credit card prices Sol 6 above Terra's 50/5/300. Classifier stays Terra
+  verified Sol subscription credits exceed Terra's 50/5/300. Classifier stays Terra
   5.6 (criterion: injection resistance); the appendix trigger is restated in
   the 2026-09-24 entry.
 - Prompting-guide deltas, gated before the next audit: Opus 5.5's unattended-
@@ -209,8 +218,8 @@ catalog with the GPT-6 tiers and Opus 5.5; pinned from 0.87.0 in the same change
   note at most); GPT-6's ask-vs-assume, under-delegation and over-testing
   notes map to `initiative`, the delegation rule and scope of extras. No
   candidate clears gate 1 today.
-- Opus 5.5 child class, all eight pins, the 0.87.1 prompt sources and the
-  rate-card rows were verified by the fresh-session audit (entry above).
+- Opus 5.5 child class, all eight pins and the 0.87.1 prompt sources were
+  probed by the fresh-session audit; Sol/Luna credit rows remain unverified.
   **Open**: first `mcp__pi__*` sweep once the bridge is applied.
 
 ### (claude) Cross-model consultation yield
@@ -486,11 +495,10 @@ card, plan and model pages and OpenCode Go, plus a trace of pi-ai's
   time-to-first-token published for neither.
 - Classifier cost bound: the TypeSafe corpus's 466k input tokens are ≈ 23
   credits on Terra and ≈ 2 on Luna per 560 sessions.
-- Spend by tier (the 2026-09-16/17 sweep above): root ≈ 75%; children Sol
-  ≈ $29, Terra ≈ $54 (≈ 16% of the total), Luna < $1. Derived: rate-card
-  credits equal API dollars at 4¢ (Astra 250 credits ↔ $10/MTok input), so
-  pi's `usage.cost` is credits × 0.04. No weekly Pro limit is on record as
-  having bound.
+- Spend by tier (2026-09-16/17): root ≈ 75%; children Sol ≈ $29,
+  Terra ≈ $54 (~16%), Luna < $1. Historical Astra estimate: 4¢/credit;
+  not a verified Sol/Luna or allowance conversion. No weekly Pro limit
+  is on record as having bound.
 - Second-vendor options: OpenCode Go $10/month, 34 open models including
   GPT-5.6 Luna, per-model monthly caps $15–60 with 5 h = 20% and week = 50%,
   pi a listed validated client (opencode.ai/docs/go, 2026-09-18); the Terra
@@ -686,10 +694,7 @@ lowering reasoning effort beat an orchestrator+workers architecture (matched
 accuracy, 20% cheaper). Delegate-everything refuted; the selective gate
 stands.
 
-Token shares over 2 days:
-main-loop output 3.6M, cache-write 9.4M, cache-read 603M raw, all subagents
-3.87M/77 runs — at the API's 0.025x Fable factor those reads are ~15M
-input-equivalent, comparable to the output burn, not 100x it. **Open**:
-whether Max metering discounts cache reads — and so whether session length or
-output volume is the primary cost lever — check `/usage` next time a limit
-binds.
+Token shares over 2 days: main-loop output 3.6M, cache-write 9.4M,
+cache-read 603M raw, all subagents 3.87M/77 runs. Raw aggregate tokens and
+API-equivalent conversions do not proxy Max quota. **Open**: whether Max
+metering discounts cache reads — reconcile `/usage` when a limit binds.

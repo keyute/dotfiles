@@ -16,6 +16,7 @@ agents:
     defaults:
       # Explicit ID: aliases float across releases; [1m] selects the context variant.
       model: claude-fable-5-1[1m]
+      reasoning_effort: high
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -124,7 +125,7 @@ agents:
         # version/update checks and install ping
         - "pi.dev"
 # shared subagent definitions rendered for every harness; bodies live in
-# .chezmoitemplates/subagents/<name>.md, tier resolves via subagent_tiers.
+# .chezmoitemplates/subagents/<name>.md; each harness resolves its own tier.
 # `tools` binds the Claude render directly and the pi render via translation
 # (pi-roles maps each Claude tool name to its native tool).
 subagents:
@@ -133,41 +134,41 @@ subagents:
   # explore-deep handles broad/cross-subsystem sweeps. Names differ because
   # the built-ins do: Claude's is `Explore`, pi's is `explorer`.
   Explore: &explore
-    tier: small
-    reasoning_effort: low
+    claude: { tier: small }
+    pi: { tier: small, reasoning_effort: low }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Returns distilled findings (paths, file:line), not raw file dumps. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those. Reads local code only — it has no web access, so upstream changelogs and release notes go to dep-researcher."
   explorer: *explore
   explore-deep:
-    tier: mid
-    reasoning_effort: medium
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: medium }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself. Returns distilled findings (paths, file:line), not raw file dumps. Prefer this over the single-symbol explorer whenever scope is broad or unknown."
   go-reviewer:
-    tier: mid
-    reasoning_effort: high
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: high }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review Go code diffs for correctness and idiomatic style before merging."
   python-reviewer:
-    tier: mid
-    reasoning_effort: high
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: high }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review Python diffs for correctness, type safety, and idiomatic style before merging."
   ts-reviewer:
-    tier: mid
-    reasoning_effort: high
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: high }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review TS/JS (TypeScript/Node.js) diffs for type safety, async correctness, and idiomatic patterns."
   shell-reviewer:
     # mid, not small: shell/template review is judgment work, where the small
     # tier's documented failure mode (flailing, fabrication) lives
-    tier: mid
-    reasoning_effort: high
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: high }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review shell/dotfile diffs — shell scripts, zsh configs, chezmoi templates — for correctness and safety."
@@ -175,14 +176,14 @@ subagents:
     # the third high-volume stack after go and ts, and the one diff-reviewer's
     # "no language preset" cannot cover: chart/CRD/GitOps hazards are not
     # inferable from surrounding manifests
-    tier: mid
-    reasoning_effort: high
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: high }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review Kubernetes/Helm/ArgoCD manifest diffs — chart values, CRDs, GitOps app definitions — for correctness and upgrade safety before merging."
   diff-reviewer:
-    tier: mid
-    reasoning_effort: high
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: high }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them — a conformance pass over requirements-plus-artifact goes to spec-reviewer."
@@ -196,14 +197,14 @@ subagents:
     # top, not inherit: the driver is the frontier tier and no child runs it.
     # The reviewer only proposes; evidence and the open catch-count trigger are
     # in the audit log (2026-09-15).
-    tier: top
-    reasoning_effort: high
+    claude: { tier: top, reasoning_effort: high }
+    pi: { tier: top, reasoning_effort: high }
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Judge one finished artifact against the requirements it was built from, in one pass — dispatched for the fresh-eyes self-review before work is called done, not for ordinary diff review. Reports requirements that went unimplemented as readily as defects in what was written; read-only. Reviewing the changed lines under one lens is diff-reviewer's job."
   log-triager:
-    tier: small
-    reasoning_effort: low
+    claude: { tier: small }
+    pi: { tier: small, reasoning_effort: medium }
     readonly: true
     tools: "Read, Grep, Bash"
     description: "Summarize large log files or stderr dumps into a short diagnosis instead of pasting them into the main context."
@@ -211,19 +212,16 @@ subagents:
     # no Bash: agent_sandbox.network allowlists 16 hosts, and upstream release
     # notes are not among them — WebFetch/WebSearch are harness tools and reach
     # them, a curl would fail confusingly.
-    tier: small
-    # medium, not low (2026-09-24): breaking-change assessment is judgment
-    # work — the 2026-09-23 pi sweep escalated this role small→mid twice, and
-    # the small tier scores 21 at low vs 29 at medium (AA) for negligible credits.
-    reasoning_effort: medium
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: small, reasoning_effort: medium }
     readonly: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
   researcher:
     # Dedicated web/docs research preset; no Bash for the same reason as
     # dep-researcher.
-    tier: mid
-    reasoning_effort: medium
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: medium }
     readonly: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
@@ -233,8 +231,8 @@ subagents:
     # and a failed attempt round-trips back through the expensive parent context.
     # One writer, not a second top-tier one (decision 2026-09-21): add that
     # only on the override/round-trip trigger in the audit log.
-    tier: mid
-    reasoning_effort: medium
+    claude: { tier: mid, reasoning_effort: medium }
+    pi: { tier: mid, reasoning_effort: medium }
     readonly: false
     tools: "Read, Grep, Glob, Bash, Edit, Write"
     description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. Works out the how within its scope; makes no design, API, or cross-scope decisions and stops to report when one surfaces. NOT for exploratory work or an unsettled design; never commits."
@@ -244,8 +242,7 @@ subagents:
   # roles. Top, not inherit: the parent is the frontier tier and no child runs
   # it (Claude config supplies the same fallback via CLAUDE_CODE_SUBAGENT_MODEL).
   general-purpose:
-    tier: top
-    reasoning_effort: high
+    pi: { tier: top, reasoning_effort: high }
     readonly: false
     nests: true
     tools: "Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
@@ -258,22 +255,19 @@ subagent_tiers:
   claude:
     # re-tier when Haiku 5.5 ships (announced 2026-09-22 for the coming weeks)
     small: claude-haiku-4-5
-    # Opus 5.5 serves mid and top (2026-09-24): at the reviewers' `high` it
-    # scores 54 vs Sonnet 5's 32 at the same $/task, at `medium` 51 vs 28 in
-    # fewer output tokens (AA v4.3.2); keys stay distinct, roles bind tier +
-    # effort. Split mid again when Sonnet 5.5 undercuts Opus 5.5 at `high`
-    # within ~5 index points, or if `/usage` drains the weekly pool faster.
+    # Opus 5.5 mid (2026-09-24): medium scores 51 at $1.34/task vs Sonnet 5
+    # high's 32 at $1.79/task (AA v4.3.2; not subscription quota). Split mid
+    # when Sonnet 5.5 undercuts Opus 5.5 within ~5 index points, or if
+    # `/usage` drains the weekly pool faster.
     mid: claude-opus-5-5
     # Opus 5.5 (2026-09-23): the Opus-line successor, ahead of Opus 5 on every
     # measured board at 0.8x the token price, though more verbose at max effort.
     # Revert to claude-opus-5 if the next sweep puts worker gate-green or
     # spec-reviewer catches below the 2026-09-15 baselines in the audit log.
     top: claude-opus-5-5
-    # Keep in lockstep with agents.claude.defaults.model. Fable stays the driver
-    # (2026-09-24) on the recorded decision, not the numbers: AA puts Opus 5.5
-    # at its default `medium` at 51 vs Fable's 53 in a fifth of the output
-    # tokens and $/task; Fable's ~2/3 token edge holds only max-vs-max. Swap
-    # only if the paired-replay trigger in the audit log fires.
+    # Keep in lockstep with agents.claude.defaults.model. Fable stays pending
+    # the paired-driver replay (2026-09-24); mixed hardest-task evidence and
+    # the swap gate live in the audit log.
     frontier: claude-fable-5-1
   pi:
     # GPT-6 tiers (2026-09-23): Luna 6 matches Luna 5.6 at 0.4x cost per task;

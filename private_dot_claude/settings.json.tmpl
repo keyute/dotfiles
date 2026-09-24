@@ -36,6 +36,7 @@
     "defaultMode": "plan"
   },
   "model": {{ .agents.claude.defaults.model | toJson }},
+  "effortLevel": {{ .agents.claude.defaults.reasoning_effort | toJson }},
   {{- /* The driver is the frontier tier; unpinned built-ins (general-purpose,
          Plan, claude) default to the top worker tier instead of inheriting it.
          A default, not a force: frontmatter and per-call overrides still win

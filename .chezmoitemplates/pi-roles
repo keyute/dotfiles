@@ -7,6 +7,12 @@
 {{- range $name, $meta := $root.subagents -}}
   {{- /* Explore and explorer are the same shared role; Pi has only explorer. */ -}}
   {{- if ne $name "Explore" -}}
+    {{- $routing := get $meta "pi" -}}
+    {{- if not $routing -}}{{- fail (printf "%s: missing Pi routing" $name) -}}{{- end -}}
+    {{- $tier := get $routing "tier" -}}
+    {{- if not $tier -}}{{- fail (printf "%s: missing Pi tier" $name) -}}{{- end -}}
+    {{- $effort := get $routing "reasoning_effort" -}}
+    {{- if not $effort -}}{{- fail (printf "%s: missing Pi effort" $name) -}}{{- end -}}
     {{- $tools := list -}}
     {{- $needsMcp := false -}}
     {{- range splitList "," $meta.tools -}}
@@ -29,8 +35,10 @@
     {{- if $nests -}}{{- $tools = concat $tools (list "subagent" "bg_wait") -}}{{- end -}}
     {{- /* `inherit` is pi-subagents' frontmatter value for the parent's model */ -}}
     {{- $model := "inherit" -}}
-    {{- if ne $meta.tier "inherit" -}}
-      {{- $model = printf "%s/%s" $root.agents.pi.defaults.provider (index $root.subagent_tiers.pi $meta.tier) -}}
+    {{- if ne $tier "inherit" -}}
+      {{- $pin := get $root.subagent_tiers.pi $tier -}}
+      {{- if not $pin -}}{{- fail (printf "%s: unknown Pi tier %s" $name $tier) -}}{{- end -}}
+      {{- $model = printf "%s/%s" $root.agents.pi.defaults.provider $pin -}}
     {{- end -}}
     {{- /* mutationTools: renamed tools are invisible to pi-subagents' long-running guard and mutation evidence, so mutation-capable roles declare them; the shell and (for nesting roles) subagent are listed too because only the literal `bash` name gets command inspection upstream, and an untracked file created by a shell command or a delegated child leaves no other evidence */ -}}
     {{- $mutationTools := list -}}
@@ -45,7 +53,7 @@
           "tools" ($tools | uniq)
           "mutationTools" ($mutationTools | uniq)
           "model" $model
-          "thinking" $meta.reasoning_effort
+          "thinking" $effort
           "extensionPath" (printf "%s/policy-roles/%s.ts" $agentDir $name)
           "agentPath" (printf "%s/agents/%s.md" $agentDir $name) -}}
     {{- $roles = set $roles $name $role -}}
