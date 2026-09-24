@@ -2,7 +2,7 @@ import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, visibleWidth, 
 import { CURSOR } from "./fleet.mjs";
 import { frameRule } from "./rows.mjs";
 
-const editorTheme = theme => ({
+export const editorTheme = theme => ({
   borderColor: text => theme.fg("borderMuted", text),
   selectList: {
     selectedPrefix: text => theme.fg("accent", text), selectedText: text => theme.fg("accent", text),

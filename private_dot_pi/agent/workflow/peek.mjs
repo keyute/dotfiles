@@ -2,10 +2,10 @@ import { open, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { Dialog } from "./dialog.mjs";
+import { Dialog, editorTheme } from "./dialog.mjs";
 import { formatTokens, modelLabel } from "./fleet.mjs";
 import { WorkingRow } from "./footer.mjs";
-import { PROMPT, oneLine, pad, shade, slotHeight } from "./rows.mjs";
+import { PROMPT, oneLine, pad, shade, shadedBlock, slotHeight } from "./rows.mjs";
 import { createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 // The fleet's Enter peek (docs/pi-design.md rule 6, 2026-09-22): a rule-11
@@ -30,13 +30,7 @@ const stopCompletion = {
 
 class PeekEditor extends Editor {
   constructor(tui, theme) {
-    super(tui, {
-      borderColor: text => theme.fg("borderMuted", text),
-      selectList: {
-        selectedPrefix: text => theme.fg("accent", text), selectedText: text => theme.fg("accent", text),
-        description: text => theme.fg("muted", text), scrollInfo: text => theme.fg("dim", text), noMatch: text => theme.fg("warning", text),
-      },
-    });
+    super(tui, editorTheme(theme));
     this.palette = theme;
     this.setAutocompleteProvider(stopCompletion);
   }
@@ -54,10 +48,7 @@ class PeekEditor extends Editor {
     // this pane. Clip its visible block around the cursor, never by colour.
     const cursor = content.findIndex(line => line.includes(CURSOR_MARKER) || line.includes("\x1b[7m"));
     const start = Math.max(0, Math.min(cursor, content.length - count));
-    const visible = content.slice(start, start + count).map((line, i) =>
-      shade(this.palette, pad(`${i === 0 ? this.palette.fg("accent", `${PROMPT} `) : "  "}${line}`, width)));
-    const blank = shade(this.palette, pad("", width));
-    return [blank, ...visible, blank, ...menu.map(line => `  ${line}`)];
+    return [...shadedBlock(this.palette, content.slice(start, start + count), width, { prompt: PROMPT }), ...menu.map(line => `  ${line}`)];
   }
 }
 
@@ -213,10 +204,6 @@ export class PeekDialog extends Dialog {
     return `${this.theme.fg("dim", "peek")}  ${this.theme.fg("accent", truncateToWidth(agent, nameWidth, "…"))}${task ? ` › ${task}` : ""}${parts.length ? this.theme.fg("muted", ` · ${parts.join(" · ")}`) : ""}${state ? this.theme.fg(tone, stateText) : ""}  ${this.theme.fg("dim", cue)}`;
   }
 
-  composerLines(width, height) {
-    return this.editor.render(width, height);
-  }
-
   confirmLine() {
     const agent = this.info?.agent ?? "";
     return `${this.gutter(true)}${this.theme.fg("warning", `Stop ${agent}?`)}`;
@@ -350,7 +337,7 @@ export class PeekDialog extends Dialog {
     const available = height - chrome - 1;
     const composer = this.mode === "confirm"
       ? [shade(this.theme, pad("", usable)), `${this.confirmLine()} ${this.theme.fg("dim", "enter confirm · esc back")}`, shade(this.theme, pad("", usable))]
-      : this.composerLines(usable, available);
+      : this.editor.render(usable, available);
     const windowHeight = height - chrome - composer.length;
     const bodyLines = !this.loaded
       ? [this.theme.fg("dim", "loading history…")]

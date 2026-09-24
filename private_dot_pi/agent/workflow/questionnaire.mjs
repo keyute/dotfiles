@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { CURSOR_MARKER, Markdown, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { Dialog } from "./dialog.mjs";
+import { pad } from "./rows.mjs";
 
 const CUSTOM_LABEL = "Type something.";
 const RESERVED_LABELS = new Set(["other", CUSTOM_LABEL.toLowerCase()]);
@@ -11,7 +12,6 @@ const markdownTheme = theme => ({
   listBullet: text => theme.fg("mdListBullet", text), bold: text => theme.bold(text), italic: text => theme.italic(text),
   strikethrough: text => theme.strikethrough(text), underline: text => theme.underline(text),
 });
-const pad = (text, width) => text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 
 export const questionnaireSchema = Type.Object({
   questions: Type.Array(Type.Object({

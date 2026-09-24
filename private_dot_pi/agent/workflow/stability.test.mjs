@@ -95,20 +95,6 @@ for (const file of sourceFiles) {
   }
 }
 
-const indexPath = join(dir, "index.mjs");
-if (existsSync(indexPath)) {
-  const indexText = readFileSync(indexPath, "utf8");
-  const foldingMatch = indexText.match(/function\s+installFolding\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
-  if (foldingMatch) {
-    for (const match of foldingMatch[1].matchAll(/\bpi\.on\(\s*["']([^"']+)["']/g)) {
-      const name = match[1];
-      test(`installFolding: pi.on("${name}") is a declared extension event`, () => {
-        assert.match(extensionDeclarations(), new RegExp(`on\\(event: "${name}"`), `pi.on("${name}") in installFolding has no on() overload in the exported extension declarations`);
-      });
-    }
-  }
-}
-
 // Source pins for the undocumented behaviour the transcript rows lean on
 // (docs/pi-design.md rule 7). Each names the text the code assumes; a pin bump
 // that rewrites it fails here before the row does on screen.

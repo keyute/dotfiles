@@ -10,7 +10,8 @@ test("live SRT rejects source writes and sensitive symlinks, then permits approv
   const root = mkdtempSync(join(tmpdir(), "pi-live-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const work = join(root, "workspace");
-  mkdirSync(work);
+  mkdirSync(join(work, "extensions", "subagent"), { recursive: true });
+  writeFileSync(join(work, "extensions", "subagent", "config.json"), readFileSync(new URL("../extensions/subagent/config.json", import.meta.url)));
   const secret = join(root, "fixture-secret");
   writeFileSync(secret, "fixture only");
   symlinkSync(secret, join(work, "link"));

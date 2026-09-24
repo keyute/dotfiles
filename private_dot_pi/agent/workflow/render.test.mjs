@@ -81,6 +81,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(workflow.mcp.context7.policy.direct_tools, true);
   assert.equal(workflow.mcp.exa.policy.direct_tools, false);
   assert.equal(workflow.mcp.playwright.policy.direct_tools, false);
+  assert.ok(Object.entries(workflow.mcp).every(([name, server]) => server.policy.unsandboxed === (name === "playwright")));
   assert.equal(Object.hasOwn(workflow.mcp, "serena"), false);
   const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
   assert.match(description, /^- diff-reviewer: Review a changed diff/m);

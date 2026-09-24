@@ -91,11 +91,11 @@ const parseInvocation = (argv) => {
   return { kind, name };
 };
 
-export const validateLease = (value, kind, name) => {
+export const validateLease = (value, kind) => {
   if (
     !isRecord(value) ||
     value.ok !== true ||
-    !(isRecord(value.profile) || ((kind === "tool" || (kind === "server" && name === "playwright")) && value.profile === null)) ||
+    !(isRecord(value.profile) || value.profile === null) ||
     !isAbsolute(value.cwd) ||
     !isRecord(value.env) ||
     !Object.values(value.env).every((envValue) => typeof envValue === "string")
@@ -160,7 +160,7 @@ const requestLease = (
       if (!receivedLease) {
         receivedLease = true;
         try {
-          resolveOnce(validateLease(message, kind, name));
+          resolveOnce(validateLease(message, kind));
         } catch {
           socket.destroy();
           rejectOnce();

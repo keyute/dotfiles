@@ -1,10 +1,10 @@
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import {
-  BULLET, PAD, TURN_VERBS,
+  PAD, TURN_VERBS,
   addFold, bulletMarkdown, callTitle, closeFolds, closeLive, createFolds, createTurnClock,
-  foldGroup, foldKey, formatTurn, glyph, handleLine, liveGroup, memberLine, pad, pluginTitle,
-  rowLines, settleFold, shade, summarise, taskTitle,
+  foldGroup, foldKey, formatTurn, glyph, groupLines, isMcp, liveGroup, pluginTitle,
+  rowLines, settleFold, shadedBlock, taskTitle,
 } from "./rows.mjs";
 
 // The fleet peek replays a background child's own events.jsonl through this
@@ -13,7 +13,6 @@ import {
 // journal-order row facts plus a renderer.
 
 const WORKSPACE_TOOLS = new Set(["read", "grep", "find", "ls", "bash", "edit", "write"]);
-const isMcp = name => name === "mcp" || name.startsWith("mcp__");
 
 // A large tool result would otherwise hold the whole run's output in memory
 // for the life of the peek; only the fields the renderers actually read
@@ -213,7 +212,10 @@ export function trimRows(state, max) {
   // harmless (`derive` only seals a run that has members).
   if (trimmedIds.size) {
     state.folds.timeline = state.folds.timeline.filter(fact => !(fact.kind === "activity" && trimmedIds.has(fact.id)));
-    for (const id of trimmedIds) state.folds.titles.delete(id);
+    for (const id of trimmedIds) {
+      state.folds.titles.delete(id);
+      state.folds.facts.delete(id);
+    }
     state.folds.revision += 1;
   }
   if (state.rows[0]?.text !== EARLIER_NOTE) state.rows.unshift({ kind: "note", text: EARLIER_NOTE });
@@ -262,7 +264,7 @@ function userRowLines(row, width, theme) {
   const markdown = new Markdown(bulletMarkdown(row.text, { messageType: "user" }), 0, 0, getMarkdownTheme(),
     { color: content => theme.fg("userMessageText", content) },
     { preserveOrderedListMarkers: true, preserveBackslashEscapes: true });
-  return ["", ...markdown.render(width), ""].map(line => shade(theme, pad(line, width)));
+  return shadedBlock(theme, markdown.render(width), width);
 }
 
 function renderRow(row, width, theme) {
@@ -283,29 +285,15 @@ function renderRow(row, width, theme) {
 }
 
 // A tool row's lines and the id of the group it belongs to, if any — rule 2's
-// three levels (docs/pi-design.md), read from `folds` the same way the main
-// chat's row renderers read it (rows.mjs's `rowRenderers.renderCall`). Only
-// group-dependent lines (the sentence, member lines) are recomputed every
+// three levels (docs/pi-design.md) through the main chat's own `groupLines`.
+// Only group-dependent lines (the sentence, member lines) are recomputed every
 // render; `toolRowLines` caches the row's own full rendering.
 function renderTool(row, folds, width, theme, expanded) {
-  const sealed = foldGroup(folds, row.id);
-  if (sealed) {
-    const first = sealed.entries[0].id === row.id;
-    if (expanded) {
-      const own = toolRowLines(row, theme, { width, expanded });
-      return { lines: first ? [handleLine(summarise(sealed.counts), { open: true }, theme), ...own] : own, groupId: sealed.boundaryId };
-    }
-    return { lines: first ? [handleLine(summarise(sealed.counts), { open: false }, theme)] : [], groupId: sealed.boundaryId };
-  }
-  const live = liveGroup(folds, row.id);
-  if (live) {
-    const first = live.entries[0].id === row.id;
-    if (expanded) return { lines: toolRowLines(row, theme, { width, expanded }), groupId: live.boundaryId };
-    if (!first) return { lines: [], groupId: live.boundaryId };
-    const lines = [`${theme.fg("success", BULLET)} ${theme.fg("toolTitle", summarise(live.counts))}`, ...live.entries.map(entry => memberLine(folds, entry, theme))];
-    return { lines, groupId: live.boundaryId };
-  }
-  return { lines: toolRowLines(row, theme, { width, expanded }), groupId: undefined };
+  const own = toolRowLines(row, theme, { width, expanded });
+  const group = foldGroup(folds, row.id) ?? liveGroup(folds, row.id);
+  if (!group) return { lines: own, groupId: undefined };
+  const lines = groupLines(folds, group, { first: group.entries[0].id === row.id, expanded, state: { open: expanded }, own }, theme);
+  return { lines, groupId: group.boundaryId };
 }
 
 // The blank-line rhythm (docs/pi-design.md rules 2 and 8 applied to the

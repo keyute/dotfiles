@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
-import { CHILD, TITLE_WIDTH, appendVisible, defaultFolds, doneEntryRenderer, frameRule, oneLine, shortTitle, slotHeight } from "./rows.mjs";
+import { CHILD, appendVisible, defaultFolds, doneEntryRenderer, frameRule, oneLine, shortTitle, slotHeight } from "./rows.mjs";
 
 // Rows hang under the status line as Claude Code's subagent statusline does
 // (docs/pi-design.md): `○ title · tokens · model` per child, the cursor row
 // marked `❭`. The title is cut at a word boundary.
-export { CHILD, TITLE_WIDTH, shortTitle };
 export const CURSOR = "❭";
 // Worst child status wins a multi-result completion (single runs carry one).
 const STATUS_ORDER = ["failed", "stopped", "paused", "partial", "detached", "completed"];

@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import { buildRow, createFleetState, formatTokens, installFleet, launchesFromBranch, modelLabel, navigate, renderFleet, runIdFor, setEntries, shortTitle } from "./fleet.mjs";
+import { buildRow, createFleetState, formatTokens, installFleet, launchesFromBranch, modelLabel, navigate, renderFleet, runIdFor, setEntries } from "./fleet.mjs";
+import { shortTitle } from "./rows.mjs";
 
 test("rows are the agent, a word-boundary title, compact tokens and the model; the agent alone when the title is missing", () => {
   const entry = { agent: "diff-reviewer", goal: "Review 2051082^..7ebb0ad\n for correctness", tokens: { input: 1, output: 2, total: 22079 }, model: "openai-codex/gpt-5.6-terra:high", effort: "high" };

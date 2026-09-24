@@ -398,6 +398,7 @@ agent_mcp_servers:
     # write through a purely lexical workspace check (no realpath), so a
     # workspace symlink reaches any user-writable path; upstream says to rely on
     # client-level permissions, and the server runs outside the bash sandbox.
+    unsandboxed: true
     denied_tools:
       # denied outright rather than left to the prompt: never legitimate here.
       # Executes arbitrary JS in the Playwright *server* process

@@ -65,14 +65,13 @@ test("safeEnvironment inherits the host minus secret-named and workflow values, 
   }
 });
 
-test("a null profile is valid only for reviewed tools or the managed Playwright server", () => {
+test("a null profile is a valid lease; the broker alone decides it", () => {
   const unsandboxedLease = { ok: true, profile: null, cwd: process.cwd(), env: {}, command: "managed-command", args: ["--managed"] };
-  assert.equal(validateLease(unsandboxedLease, "tool", "bash"), unsandboxedLease);
-  assert.equal(validateLease(unsandboxedLease, "server", "playwright"), unsandboxedLease);
-  assert.throws(() => validateLease(unsandboxedLease, "server"));
-  assert.throws(() => validateLease(unsandboxedLease, "server", "other"));
-  assert.throws(() => validateLease({ ...unsandboxedLease, command: "" }, "server", "playwright"));
-  assert.throws(() => validateLease({ ...unsandboxedLease, args: [42] }, "server", "playwright"));
+  assert.equal(validateLease(unsandboxedLease, "tool"), unsandboxedLease);
+  assert.equal(validateLease(unsandboxedLease, "server"), unsandboxedLease);
+  assert.throws(() => validateLease({ ...unsandboxedLease, profile: undefined }, "tool"));
+  assert.throws(() => validateLease({ ...unsandboxedLease, command: "" }, "server"));
+  assert.throws(() => validateLease({ ...unsandboxedLease, args: [42] }, "server"));
 });
 
 test("a null-profile tool retains its original host environment", async () => {

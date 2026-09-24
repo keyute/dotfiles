@@ -57,11 +57,17 @@ export function shade(theme, line, background = "userMessageBg", foreground) {
   return theme.bg(background, line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
 }
 
-// Pads a rendered line to a fixed visible width; shared by the blocks that
-// shade whole rows without truncating them (the user-message replay, the `!`
-// row). The composer pads its own rows with `padRow` (index.mjs), which
-// truncates instead — the two are not the same function.
+// Pads a rendered line to a fixed visible width without truncating it. The
+// composer pads its own rows with `padRow` (index.mjs), which truncates
+// instead — the two are not the same function.
 export const pad = (text, width) => text + " ".repeat(Math.max(0, width - visibleWidth(text)));
+
+// The user box's shaded block (docs/pi-design.md rule 5). `foreground` is the
+// colour `shade` re-opens after a reset; `fit` is pad or truncate per surface.
+export function shadedBlock(theme, lines, width, { prompt, promptColour = "accent", background = "userMessageBg", foreground, fit = pad } = {}) {
+  const content = prompt ? lines.map((line, i) => `${i === 0 ? theme.fg(promptColour, `${prompt} `) : PAD}${line}`) : lines;
+  return ["", ...content, ""].map(line => shade(theme, fit(line, width), background, foreground));
+}
 
 // The one rule every slot dialog frames itself with (docs/pi-design.md rule
 // 11), and the peek's fixed height (rule 6, 2026-09-23, slot): half the
@@ -195,10 +201,6 @@ export function rowLines(name, result, { expanded = false, isError = false } = {
   return lines.map(indent);
 }
 
-function renderBody(name, result, options, theme, context) {
-  return new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError }, theme).join("\n"), 0, 0);
-}
-
 // Grouping, as Claude Code does it: successful activity facts between two
 // things that stay visible form one chronological group, which collapses to a
 // count sentence ("Read 3 files, launched 2 agents"); clicking it restores the
@@ -232,7 +234,7 @@ const WORDS = {
   taskDone: ["finished", "background task"],
 };
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
-const isMcp = name => name === "mcp" || name.startsWith("mcp__");
+export const isMcp = name => name === "mcp" || name.startsWith("mcp__");
 // Subagent management calls are transcript housekeeping and group like any
 // other activity fact: launch, list discovery, steer, status check, stop and
 // interrupt. `workspace_task` and `bg_wait` stay out as visible boundary
@@ -262,11 +264,17 @@ const MIN_RUN = 2;
 // `quiet` skips the before/after diff a bulk replay has no components to
 // invalidate for (the fleet peek, see `refold`).
 export function createFolds(toolsExpanded = () => undefined, { quiet = false } = {}) {
-  return { timeline: [], invalidate: new Map(), titles: new Map(), views: new Map(), revision: 0, derived: null, boundaries: 0, toolsExpanded, repaint: () => {}, nonce: Math.random().toString(36).slice(2, 8), doneSeq: 0, quiet };
+  return { timeline: [], facts: new Map(), invalidate: new Map(), titles: new Map(), views: new Map(), revision: 0, derived: null, boundaries: 0, toolsExpanded, repaint: () => {}, nonce: Math.random().toString(36).slice(2, 8), doneSeq: 0, quiet };
 }
 export const defaultFolds = createFolds();
 export function setRepaint(folds, repaint) {
   folds.repaint = repaint;
+}
+// `facts` indexes the timeline's activity facts by id; the first fact under an
+// id keeps it, as a search of the timeline would find it.
+function addFact(folds, fact) {
+  folds.timeline.push(fact);
+  if (!folds.facts.has(fact.id)) folds.facts.set(fact.id, fact);
 }
 const nextSeq = folds => `${folds.nonce}-${++folds.doneSeq}`;
 
@@ -274,7 +282,7 @@ const nextSeq = folds => `${folds.nonce}-${++folds.doneSeq}`;
 // `list` — `settleFold` needs that name back to compute the fact's summary.
 export function addFold(folds, id, tool) {
   refold(folds, () => {
-    folds.timeline.push({ kind: "activity", source: "tool", id, key: countKey(tool), tool, outcome: "pending" });
+    addFact(folds, { kind: "activity", source: "tool", id, key: countKey(tool), tool, outcome: "pending" });
     folds.revision += 1;
   });
 }
@@ -286,8 +294,8 @@ export function addFold(folds, id, tool) {
 // pending fact already holds its whole run back (see `derive`). A success also
 // records its summary for the group's member line.
 export function settleFold(folds, id, failed, result) {
-  const fact = folds.timeline.find(entry => entry.kind === "activity" && entry.source === "tool" && entry.id === id);
-  if (!fact || fact.outcome !== "pending") return;
+  const fact = folds.facts.get(id);
+  if (fact?.source !== "tool" || fact.outcome !== "pending") return;
   refold(folds, () => {
     fact.outcome = failed ? "failed" : "success";
     if (fact.key === "bash" && result?.details?.taskId) fact.key = "task";
@@ -388,8 +396,7 @@ function refold(folds, mutate) {
   let repaint = false;
   for (const id of new Set([...beforeIds, ...afterIds])) {
     if (signature(before.get(id)) === signature(groupFor(derivedAfter, id))) continue;
-    const fact = folds.timeline.find(entry => entry.kind === "activity" && entry.id === id);
-    if (fact?.source === "completion") repaint = true;
+    if (folds.facts.get(id)?.source === "completion") repaint = true;
     else folds.invalidate.get(id)?.();
   }
   if (repaint) folds.repaint();
@@ -419,7 +426,7 @@ export function appendVisible(pi, type, data, folds = defaultFolds) {
     if (tailHasPending(folds)) closeFolds(folds);
     data.seq = nextSeq(folds);
     refold(folds, () => {
-      folds.timeline.push({ kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) });
+      addFact(folds, { kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) });
       folds.revision += 1;
     });
   } else closeFolds(folds);
@@ -558,6 +565,18 @@ function withFollowingCompletions(body, folds, id, theme) {
   return block;
 }
 
+// One group row's lines at the three levels (see `rowRenderers`), shared by
+// tool rows, completion entries and the peek replay; `own` is what the row
+// shows under ctrl+o.
+const liveLine = (group, theme) => `${theme.fg("success", BULLET)} ${theme.fg("toolTitle", summarise(group.counts))}`;
+export function groupLines(folds, group, { first, expanded, state, own }, theme) {
+  if (expanded) return group.sealed && first ? [handleLine(summarise(group.counts), state, theme), ...own] : own;
+  if (!first) return [];
+  const members = group.entries.map(entry => memberLine(folds, entry, theme));
+  if (!group.sealed) return [liveLine(group, theme), ...members];
+  return [handleLine(summarise(group.counts), state, theme), ...(state.open ? members : [])];
+}
+
 // Below output level a member's own result slot draws nothing: the group's
 // first row speaks for it from its call slot.
 const hidden = (folds, id) => !folds.toolsExpanded() && Boolean(foldGroup(folds, id) ?? liveGroup(folds, id));
@@ -580,39 +599,18 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
       const rowTitle = title(args);
       folds.titles.set(id, rowTitle);
       const line = `${glyph(theme, context)} ${theme.fg("toolTitle", rowTitle)}`;
-      const group = foldGroup(folds, id);
-      if (group) {
-        const state = view(folds, group);
-        const first = group.entries[0].id === id;
-        const toolsExpanded = folds.toolsExpanded();
-        if (toolsExpanded !== state.expandedAt) {
-          state.expandedAt = toolsExpanded;
-          if (state.open !== toolsExpanded) toggleFold(folds, group, id);
-        }
-        const toggle = () => { if (!folds.toolsExpanded()) toggleFold(folds, group); };
-        if (toolsExpanded) {
-          const lines = [];
-          if (first) lines.push(handleLine(summarise(group.counts), state, theme));
-          lines.push(line);
-          return first ? new FoldHandle(lines.join("\n"), toggle) : new Text(lines.join("\n"), 0, 0);
-        }
-        if (!first) return new Text("", 0, 0);
-        const lines = [handleLine(summarise(group.counts), state, theme)];
-        if (state.open) for (const entry of group.entries) lines.push(memberLine(folds, entry, theme));
-        return new FoldHandle(lines.join("\n"), toggle);
+      const group = foldGroup(folds, id) ?? liveGroup(folds, id);
+      if (!group) return new Text(line, 0, 0);
+      const first = group.entries[0].id === id;
+      const toolsExpanded = folds.toolsExpanded();
+      const state = group.sealed ? view(folds, group) : null;
+      if (state && toolsExpanded !== state.expandedAt) {
+        state.expandedAt = toolsExpanded;
+        if (state.open !== toolsExpanded) toggleFold(folds, group, id);
       }
-      const live = liveGroup(folds, id);
-      if (live) {
-        const first = live.entries[0].id === id;
-        if (folds.toolsExpanded()) {
-          if (!first) return new Text(line, 0, 0);
-          return new Text(line, 0, 0);
-        }
-        if (!first) return new Text("", 0, 0);
-        const lines = [`${theme.fg("success", BULLET)} ${theme.fg("toolTitle", summarise(live.counts))}`, ...live.entries.map(entry => memberLine(folds, entry, theme))];
-        return new Text(lines.join("\n"), 0, 0);
-      }
-      return new Text(line, 0, 0);
+      const text = groupLines(folds, group, { first, expanded: toolsExpanded, state, own: [line] }, theme).join("\n");
+      if (!state || !first) return new Text(text, 0, 0);
+      return new FoldHandle(text, () => { if (!folds.toolsExpanded()) toggleFold(folds, group); });
     },
     renderResult(result, options, theme, rawContext) {
       // The call slot only sees pi's isError; a failure known from the result
@@ -625,7 +623,7 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
       }
       const context = status(rawContext);
       if (hidden(folds, context.toolCallId)) return new Text("", 0, 0);
-      return withFollowingCompletions(renderBody(name, result, options, theme, context), folds, context.toolCallId, theme);
+      return withFollowingCompletions(new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError }, theme).join("\n"), 0, 0), folds, context.toolCallId, theme);
     },
   };
 }
@@ -809,21 +807,15 @@ class ActivityEntryComponent extends Text {
   lines() {
     const group = doneGroup(this.folds, this.seq);
     if (!group) return [completionLine(this.mapped, this.theme)];
-    const sentence = summarise(group.counts);
-    const members = () => group.entries.map(entry => memberLine(this.folds, entry, this.theme));
-    const completionMembers = () => completionMemberLines(group, this.theme);
-    if (!group.sealed) {
-      return [`${this.theme.fg("success", BULLET)} ${this.theme.fg("toolTitle", sentence)}`, ...(this.folds.toolsExpanded() ? completionMembers() : members())];
-    }
-    const state = view(this.folds, group);
     const toolsExpanded = this.folds.toolsExpanded();
-    if (toolsExpanded !== state.expandedAt) {
+    const state = group.sealed ? view(this.folds, group) : null;
+    if (state && toolsExpanded !== state.expandedAt) {
       state.expandedAt = toolsExpanded;
       state.open = toolsExpanded;
     }
-    if (toolsExpanded) return [handleLine(sentence, state, this.theme), ...completionMembers()];
-    if (state.open) return [handleLine(sentence, state, this.theme), ...members()];
-    return [handleLine(sentence, state, this.theme)];
+    // Unlike a tool row, a live completion-led group keeps its sentence under ctrl+o.
+    const own = completionMemberLines(group, this.theme);
+    return groupLines(this.folds, group, { first: true, expanded: toolsExpanded, state, own: state ? own : [liveLine(group, this.theme), ...own] }, this.theme);
   }
   render(width) {
     this.text = this.lines().join("\n");
@@ -848,8 +840,7 @@ export function doneEntryRenderer(type, folds = defaultFolds) {
   const map = DONE[type].line;
   return (entry, _options, theme) => {
     const seq = entry.data.seq;
-    const fact = seq == null ? null : folds.timeline.find(item => item.kind === "activity" && item.source === "completion" && item.id === seq);
-    if (!fact) return new Text(completionLine(map(entry.data), theme), 0, 0);
+    if (seq == null || folds.facts.get(seq)?.source !== "completion") return new Text(completionLine(map(entry.data), theme), 0, 0);
     const group = doneGroup(folds, seq);
     if (group && group.entries[0].id !== seq) return undefined;
     return new ActivityEntryComponent(folds, seq, map(entry.data), theme);
@@ -882,15 +873,13 @@ export function formatDuration(ms) {
   return `${seconds}s`;
 }
 
-const clockTime = at => new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
-
 // Anything the harness says in its own voice: the turn line, a workspace change.
 export function noteLine(text, theme) {
   return `${theme.fg("accent", TURN_GLYPH)} ${theme.fg("muted", text)}`;
 }
 
 export function formatTurn({ verb, ms, endedAt, aborted }, theme) {
-  return noteLine(aborted ? `Interrupted after ${formatDuration(ms)}` : `${verb} for ${formatDuration(ms)} · done ${clockTime(endedAt)}`, theme);
+  return noteLine(aborted ? `Interrupted after ${formatDuration(ms)}` : `${verb} for ${formatDuration(ms)} · done ${new Date(endedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase()}`, theme);
 }
 
 // One turn from agent_start until the footer decides it is over (see

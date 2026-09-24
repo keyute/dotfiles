@@ -483,11 +483,11 @@ test("tool leases require a single-use ticket bound to the current epoch", { ski
   assert.ok((await leaseTool({ name: "read", ticket: flaggedRead.ticket })).profile.filesystem);
 });
 
-test("only the configured Playwright server receives the managed null-profile lease", { skip }, async t => {
+test("only a server the config marks unsandboxed receives the managed null-profile lease", { skip }, async t => {
   const { root, config } = fixture(t);
   config.mcp = {
-    playwright: { connection: { type: "stdio", command: "managed-playwright", args: ["--stdio"], env: { SERVER_TOKEN: "configured" } }, policy: { denied_tools: [] } },
-    docs: { connection: { type: "stdio", command: "managed-docs", args: ["--stdio"], env: {} }, policy: { denied_tools: [] } },
+    playwright: { connection: { type: "stdio", command: "managed-playwright", args: ["--stdio"], env: { SERVER_TOKEN: "configured" } }, policy: { denied_tools: [], unsandboxed: true } },
+    docs: { connection: { type: "stdio", command: "managed-docs", args: ["--stdio"], env: {} }, policy: { denied_tools: [], unsandboxed: false } },
   };
   const broker = await startBroker(config, root, async () => true);
   t.after(() => broker.close());
@@ -518,6 +518,15 @@ test("only the configured Playwright server receives the managed null-profile le
   assert.deepEqual(docs.args, ["--stdio"]);
   assert.equal((await leaseServer("unconfigured")).ok, false);
   assert.equal((await leaseServer("playwright", "fixture-reader")).ok, false);
+});
+
+test("the broker refuses to start without a numeric child concurrency limit", async t => {
+  const { root, config } = fixture(t);
+  const limitPath = join(config.agentDir, "extensions", "subagent", "config.json");
+  writeFileSync(limitPath, "{}");
+  await assert.rejects(startBroker(config, root, async () => true), /numeric globalConcurrencyLimit/);
+  rmSync(limitPath);
+  await assert.rejects(startBroker(config, root, async () => true), /Cannot read the child concurrency limit/);
 });
 
 test("an inherit-model child resolves to the parent's model before the tier check", { skip }, async t => {

@@ -1,6 +1,6 @@
 import { stripTerminalSequences, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "@earendil-works/pi-coding-agent";
-import { PAD, appendVisible, closeFolds, defaultFolds, pad, shade } from "./rows.mjs";
+import { PAD, appendVisible, closeFolds, defaultFolds, shadedBlock } from "./rows.mjs";
 
 // The `!`/`!!` round trip pi's native BashExecutionComponent used to own
 // (docs/pi-design.md rule 5, 2026-09-24 shell-block note, and rule 9's
@@ -31,11 +31,8 @@ export function contextText(details) {
 const SHOWN_LINES = 4;
 
 function headerLines(details, theme, width) {
-  const wrapped = wrapTextWithAnsi(details.command, Math.max(1, width - 2));
-  const content = wrapped.map((line, i) => (i === 0
-    ? `${theme.fg("error", "! ")}${theme.fg("userMessageText", line)}`
-    : `${PAD}${theme.fg("userMessageText", line)}`));
-  return ["", ...content, ""].map(line => shade(theme, pad(line, width), "toolErrorBg", "userMessageText"));
+  const wrapped = wrapTextWithAnsi(details.command, Math.max(1, width - 2)).map(line => theme.fg("userMessageText", line));
+  return shadedBlock(theme, wrapped, width, { prompt: "!", promptColour: "error", background: "toolErrorBg", foreground: "userMessageText" });
 }
 
 // pi-tui's main-screen renderer throws if a rendered line's visible width

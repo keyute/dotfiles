@@ -69,6 +69,19 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization; the proxy stays live and the initial sync may still notify. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
 - 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The two-hour runtime backstop with a five-minute checkpoint/stop steer replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts (runtime semantics in the harness reference).
 - 2026-09-22: no installed-package patches. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. 2026-09-23: rather than wait, the extension owns the `!` round-trip through documented surfaces (composer submit, custom message/entry, its own renderer; `docs/pi-coupling.md`); when the hook ships, hand execution back to pi and keep only the renderer. 2026-09-23, later: the `!` command honours pi's `shellPath`/`shellCommandPrefix` (managed zsh sourcing `~/.zshrc`) through the SDK's `SettingsManager`, so the hand-back changes nothing the user sees.
+- 2026-09-24, maintainability survey: keep the owned UI and harness, adopt
+  nothing. pi 0.87.1 (latest) has no user-message, pending-input, bash-block or
+  prompt-prefix renderer hook (`user_bash` still draws pi's own block; the
+  editor-border spinner breaks rule 3; pi#8154 closed not-planned);
+  pi-mcp-adapter 2.37.0 has no log-level setting; pi-subagents 0.71.0 keeps
+  run ids out of the fleet DTO and appends guidance to custom descriptions.
+  Grouping packages patch pi's private components; dialog, compact-tool and
+  status-line packages bring their own grammar. Also rejected: chezmoi-native
+  settings merge (sprig `mergeOverwrite` skips `false`/`0`); `modelScope.strict`
+  for the tier check (loses refusal text and the frontier rule); dropping the
+  double checks on child launch and MCP policy (defence in depth); pooled SRT
+  workers, no broker or a one-stage classifier (each recreates leases or changes
+  decisions). Durable cut: upstream log level, DTO run id, description override.
 - 2026-09-18: TypeSafe Jev is not adopted for the approval classifier: the
   only slice an offline replay fast-allows safely is the sandboxed reviewed
   verbs, 11% of reviews, and escalations rarely clear the confidence bar.
@@ -113,13 +126,12 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   2026-09-15): a timed-out approval does not cancel its queued classifier
   review and a minted ticket is not bound to the reviewed arguments; a
   descendant that leaves the command's process group (`setsid`, double fork)
-  or that another user owns escapes the terminal-proof group kill; per-role
-  SRT worker pools are the recorded follow-up to per-invocation workers;
+  or that another user owns escapes the terminal-proof group kill;
   `handlePaste` cancels the completion menu and nothing re-opens it;
   `subagent {action:"list"}` still fires twice a session; `folds.*` grow for
-  the session's life and `derive` + `refold` are O(n²) in facts;
+  the session's life and `derive` rescans the timeline on every mutation;
   `sandbox-live.test.mjs` fails on a drifted `/denied/` expectation
-  (lines 27-28) against the broker's "Writes are disabled in this scope";
+  (lines 28-29) against the broker's "Writes are disabled in this scope";
   `@hk_net/pi-usage-bars` is the package to read if the `wham/usage` read
   breaks; `forkContext` stays at the full copy because the pruned mode fails
   the launch on any summary error; the fleet rows live in the footer because

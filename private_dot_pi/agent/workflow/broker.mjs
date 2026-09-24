@@ -9,18 +9,20 @@ import { endLine, readLines, sendLine } from "./lines.mjs";
 const equal = (a, b) => typeof a === "string" && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 function childConcurrencyLimit(agentDir) {
-  try {
-    const config = JSON.parse(readFileSync(join(agentDir, "extensions", "subagent", "config.json"), "utf8"));
-    return typeof config.globalConcurrencyLimit === "number" ? config.globalConcurrencyLimit : 20;
-  } catch { return 20; }
+  const path = join(agentDir, "extensions", "subagent", "config.json");
+  let limit;
+  try { limit = JSON.parse(readFileSync(path, "utf8")).globalConcurrencyLimit; }
+  catch (error) { throw new Error(`Cannot read the child concurrency limit from ${path}: ${error.message}`); }
+  if (typeof limit !== "number") throw new Error(`${path} must set a numeric globalConcurrencyLimit`);
+  return limit;
 }
 
 export async function startBroker(config, cwd, review) {
+  const childLimit = childConcurrencyLimit(config.agentDir);
   const control = mkdtempSync(join(tmpdir(), "pi-control-"));
   const scratch = mkdtempSync(join(tmpdir(), "pi-work-"));
   const socketPath = join(control, "policy.sock");
   const token = randomBytes(32).toString("hex");
-  const childLimit = childConcurrencyLimit(config.agentDir);
   let policy;
   try { policy = new Policy(config, cwd, scratch, control); }
   catch (error) {
@@ -118,11 +120,11 @@ export async function startBroker(config, cwd, review) {
           command = connection.command;
           args = connection.args;
           Object.assign(env, connection.env);
-          if (request.name === "playwright") sandbox = false;
+          sandbox = config.mcp[request.name].policy.unsandboxed !== true;
         } else throw new Error("Unknown process kind");
         leases.add(socket);
-        // A null profile is either an approved unsandboxed tool run or the
-        // managed Playwright server exception; clients never select it.
+        // A null profile is either an approved unsandboxed tool run or a server
+        // the managed config marks unsandboxed; clients never select it.
         sendLine(socket, { ok: true, profile: sandbox ? policy.profile(request.role) : null, cwd: policy.cwd, env, command, args });
       // The message is the model's only signal for why a call was refused
       // (plan mode vs. protected path vs. capacity); every thrown text here is

@@ -88,7 +88,7 @@ test("a row is a title at column 0 and one ↳ line at the text column; the hint
   assert.equal(failed.at(-1), "  <error>Command exited with code 1");
 });
 
-test("rowLines is the summary line plus body lines renderBody draws, both indented", () => {
+test("rowLines is the summary line plus the body lines, both indented", () => {
   assert.deepEqual(rowLines("bash", result("a\nb"), { expanded: false, isError: false }, theme), ["  <muted>↳ 2 lines"]);
   assert.deepEqual(rowLines("bash", result("a\nb"), { expanded: true, isError: false }, theme), ["  <muted>↳ 2 lines", "  <toolOutput>a", "  <toolOutput>b"]);
   const failed = result("l1\nl2\nl3\nl4\nl5\nl6\n\nCommand exited with code 1");
