@@ -100,8 +100,11 @@ agents:
       classifier_filter:
         model: gpt-5.6-terra
         reasoning_effort: none
-      # Terra 5.6 stays after GPT-6 (2026-09-23): chosen on injection resistance;
-      # move both stages to gpt-6-sol once Sol 6's card figure matches Terra's.
+      # Terra 5.6 stays after GPT-6 (2026-09-24): chosen on injection resistance;
+      # OpenAI has retired the search/function-call metric the tiers were compared
+      # on and the Sol/Luna 6 appendix carries no indirect-injection figure. Move
+      # both stages to gpt-6-sol once a published Sol 6 figure on a metric shared
+      # with Terra 5.6 is at least Terra's, or if Terra 5.6 leaves the catalog.
       classifier_judge:
         model: gpt-5.6-terra
         reasoning_effort: medium
@@ -209,7 +212,10 @@ subagents:
     # notes are not among them — WebFetch/WebSearch are harness tools and reach
     # them, a curl would fail confusingly.
     tier: small
-    reasoning_effort: low
+    # medium, not low (2026-09-24): breaking-change assessment is judgment
+    # work — the 2026-09-23 pi sweep escalated this role small→mid twice, and
+    # the small tier scores 21 at low vs 29 at medium (AA) for negligible credits.
+    reasoning_effort: medium
     readonly: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
@@ -250,18 +256,24 @@ subagents:
 # child's: every harness holds children at `top` or below and no entry uses `inherit`.
 subagent_tiers:
   claude:
+    # re-tier when Haiku 5.5 ships (announced 2026-09-22 for the coming weeks)
     small: claude-haiku-4-5
-    mid: claude-sonnet-5
+    # Opus 5.5 serves mid and top (2026-09-24): at the reviewers' `high` it
+    # scores 54 vs Sonnet 5's 32 at the same $/task, at `medium` 51 vs 28 in
+    # fewer output tokens (AA v4.3.2); keys stay distinct, roles bind tier +
+    # effort. Split mid again when Sonnet 5.5 undercuts Opus 5.5 at `high`
+    # within ~5 index points, or if `/usage` drains the weekly pool faster.
+    mid: claude-opus-5-5
     # Opus 5.5 (2026-09-23): the Opus-line successor, ahead of Opus 5 on every
     # measured board at 0.8x the token price, though more verbose at max effort.
     # Revert to claude-opus-5 if the next sweep puts worker gate-green or
     # spec-reviewer catches below the 2026-09-15 baselines in the audit log.
     top: claude-opus-5-5
-    # Keep in lockstep with agents.claude.defaults.model. Fable stays the
-    # driver (2026-09-23) although same-day Artificial Analysis scores Opus 5.5
-    # above it at 0.4x the price: Fable finishes tasks in ~2/3 the tokens and
-    # the frontier/top split is load-bearing. Swap only if the paired-replay
-    # trigger in the audit log fires.
+    # Keep in lockstep with agents.claude.defaults.model. Fable stays the driver
+    # (2026-09-24) on the recorded decision, not the numbers: AA puts Opus 5.5
+    # at its default `medium` at 51 vs Fable's 53 in a fifth of the output
+    # tokens and $/task; Fable's ~2/3 token edge holds only max-vs-max. Swap
+    # only if the paired-replay trigger in the audit log fires.
     frontier: claude-fable-5-1
   pi:
     # GPT-6 tiers (2026-09-23): Luna 6 matches Luna 5.6 at 0.4x cost per task;
@@ -271,6 +283,9 @@ subagent_tiers:
     # ships or the subscription rate card prices Sol 6 above Terra's row.
     small: gpt-6-luna
     mid: gpt-6-sol
+    # Watch (2026-09-24): HN day-one reports rank Sol 6 below Sol 5.6 on the
+    # vendor's DeepSWE chart at every effort; AA disagrees (48 vs 47). If a
+    # sweep shows implementer round-trips rising, fall back to gpt-5.6-sol at 2x.
     # anchored: the Claude->pi review/advice bridge pins this tier
     top: &openai_top gpt-6-sol
     frontier: gpt-6-astra

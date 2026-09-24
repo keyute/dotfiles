@@ -24,14 +24,15 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   Authentication and session files stay unmanaged — sign in through Pi's normal
   OpenAI subscription login, and do not import another harness's auth files.
 
-## Models (last verified 2026-09-23)
+## Models (last verified 2026-09-24)
 
 - Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`, {{ .agents.pi.defaults.reasoning_effort }} reasoning; planning uses {{ .agents.pi.defaults.plan_reasoning_effort }}.
 - The approval classifier (MCP calls, remote-mutating shell verbs and unsandboxed
   requests) runs in two stages with no tools: `{{ .agents.pi.defaults.classifier_filter.model }}` at {{ .agents.pi.defaults.classifier_filter.reasoning_effort }} reasoning
   screens each reviewed action, and anything but allow goes to `{{ .agents.pi.defaults.classifier_judge.model }}` at
   {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt; its verdict is final. Model, text and cache key
-  align, but changing reasoning means cache reuse is not guaranteed.
+  align; a reasoning change may miss the cache. Terra 5.6 stays (2026-09-24):
+  its injection metric is retired and Sol 6 has none published.
 - Worker tiers: {{ $sep := "" }}{{ range $tier, $model := .subagent_tiers.pi }}{{ $sep }}{{ $tier }} `{{ $model }}`{{ $sep = ", " }}{{ end }}.
   GPT-6 Sol serves both mid and top (2026-09-23): better than Terra 5.6 on score, tokens and cost per task; rationale and reversal in agents.yaml. Sol/Luna 6 accept `none` reasoning.
 - The default is the frontier tier as the driver (shared `frontier_driver` rule in
@@ -42,8 +43,7 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
   future pin drops it, selection must report unavailable, not fabricate an alias
   or fall back to API billing.
 {{ includeTemplate "openai-rate-card.md" . -}}
-- Pro allowance use depends on task/context/reasoning/caching, not a fixed
-  message count — compare completed-task cost including retries and delegation.
+- Pro allowance use depends on task, context, reasoning and caching, not a fixed message count; compare completed-task cost including retries and delegation.
 {{ includeTemplate "openai-context-window.md" . -}}
 - Pi has no `/status`: read the status line's context segment and `/session`.
   Raising `contextWindow` via `modelOverrides` on `openai-codex` changes only what

@@ -9,6 +9,56 @@ carries the numbers and open triggers behind those annotations (rule in
 baseline no longer serves a future sweep is deleted, not archived — git
 history keeps it.
 
+## 2026-09-24
+
+### Day-after re-check — tiers and effort (Opus 5.5 / GPT-6)
+
+Roster decision, no audit run. Evidence: Artificial Analysis Intelligence
+Index v4.3.2 per-effort pages (fetched 2026-09-24; API $/task — Max and
+ChatGPT weighting stay unpublished, so output tokens per task is the
+subscription proxy), Anthropic's Opus 5.5 page, the GPT-6 Astra card's
+Sol/Luna appendix (added 2026-09-22), the HN launch thread, both changelogs.
+The rate-card table was not fetchable; the 2026-09-23 rows stand.
+
+| model / effort | index | output tokens on index | $/task |
+|---|---|---|---|
+| claude-fable-5-1 (max) | 53 | 190M | 7.63 |
+| claude-opus-5-5 max / high / medium / low | 58 / 54 / 51 / 42 | 260M / 53M / 38M / 20M | 5.98 / 1.82 / 1.34 / 0.55 |
+| claude-sonnet-5 max / high / medium | 38 / 32 / 28 | 370M / 89M / 51M | 5.09 / 1.79 / 1.00 |
+| claude-haiku-4-5 (non-reasoning) | 15 | — | — |
+| gpt-6-astra max / default | 53 / 55 | ~27k per task / 49M | — / 2.57 |
+| gpt-6-sol max / xhigh / high / medium / low / none | 48 / 44 / 43 / 40 / 34 / 28 | high 25M, medium 16M | low ≈ 0.13 |
+| gpt-5.6-terra (max) | 42 | 120M | 1.40 |
+| gpt-6-luna max / high / medium / low / none | 37 / 32 / 29 / 21 / 18 | medium 28M | low ≈ 0.005 |
+
+- Claude mid → `claude-opus-5-5` (was Sonnet 5): at the reviewers' `high`
+  54 vs 32 at equal $/task and 53M vs 89M tokens; at `medium` 51 vs 28 at
+  +34% $/task in fewer tokens; Opus 5.5 `low` beats Sonnet 5 `high`. Mid ==
+  top, pi's Sol 6 shape. Revert when Sonnet 5.5 (announced 2026-09-22, press
+  only) undercuts Opus 5.5 at `high` within ~5 points, or `/usage` drains
+  faster after the apply. Haiku 4.5 keeps small until Haiku 5.5 ships.
+- Claude frontier: Fable 5.1 kept on the recorded decision; its "2/3 the
+  tokens" rationale held only max-vs-max and was rewritten. Opus 5.5 at
+  `medium` is 51 vs 53 at a fifth of the tokens and $/task; Max weights Fable
+  ~2x Opus with a 50% weekly cap. The paired replay is the top open trigger.
+- pi tiers hold: Sol 6 48 vs Sol 5.6 47 at half the price; no GPT-6 Terra
+  exists or is announced. Watch: HN day-one reports place Sol 6 under Sol
+  5.6 on OpenAI's own DeepSWE chart at every effort (anecdote). Classifier
+  stays Terra 5.6: "Connectors" and "Search and Function-Calling" are retired
+  as saturated, and the appendix's only Sol/Luna 6 row is instruction-
+  hierarchy defender success (Astra 99.99, Sol 99.97, Luna 99.97) — the
+  2026-09-23 "≥ 0.946" trigger is superseded by the one in agents.yaml.
+- Effort: dep-researcher low → medium (2 small→mid overrides in the
+  2026-09-23 pi sweep; Luna 21 → 29). Everything else unchanged: Explore and
+  log-triager at low (no observed failure), mid roles medium/high, top roles
+  high (the drop-to-medium trigger stands). Sol/Luna 6 accept `none`; Astra
+  does not.
+- **Open**: Fable vs Opus 5.5 driver paired replay (3 cases, 2026-09-20
+  protocol); re-tier small and mid when Haiku 5.5 / Sonnet 5.5 ship; mid
+  children's `message.model` after the apply; Opus 5.5 text-only-stop watch
+  now covers the implementer; Sol 6 DeepSWE regression — fallback
+  `gpt-5.6-sol` at 2x if implementer round-trips rise.
+
 ## 2026-09-23
 
 ### Fresh-session audit — Opus 5.5 / GPT-6 roster, vendor-guide check
@@ -129,35 +179,12 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
 ### New-model placement — Opus 5.5, GPT-6 Sol and Luna (all released 2026-09-22)
 
 Roster decision, no audit run: the audit itself runs in a fresh session
-against these pins. Evidence is same-day Artificial Analysis (measured, one
-index version, `max` effort) plus vendor pages; the placement rests on
-capability × cost × tokens to completion, not on token price alone.
-
-| model | AA index | output tokens on index | $/task | $/MTok in/out |
-|---|---|---|---|---|
-| claude-opus-5-5 | 58 (high 54, medium 51) | 260M, ~119k/task | $8.7k index run | 4 / 20, cache-read 0.20 |
-| claude-fable-5-1 | 53 | ~78k/task | — | 10 / 50, cache-read 0.25 |
-| claude-opus-5 | — | ~73k/task | — | 5 / 25 |
-| gpt-6-astra | 53 | — | — | 10 / 50 |
-| gpt-6-sol | 48 | 77M | 1.06 | 2 / 10 |
-| gpt-5.6-sol | 47 | 90M | 1.99 | 4 / 20 |
-| gpt-5.6-terra | 42 | 120M | 1.40 | 2 / 12 |
-| gpt-6-luna | 37 | 150M | 0.07 | 0.10 / 0.50 |
-| gpt-5.6-luna | 37 | 150M | 0.18 | 0.20 / 1.20 |
-
-Vendor: Anthropic's launch page puts Opus 5.5 at 66.4 on Terminal-Bench 4.0
-against Opus 5 52.3 and Fable 5.1 55.8 and says it finishes the same task in
-fewer tokens than Opus 5 — at its effort pairing; AA's max-vs-max count says
-the opposite. Opus 5.5: API default effort `medium`, thinking cannot be
-disabled, forced `tool_choice` 400s, Claude Code ≥ 2.1.280 (installed).
-OpenAI: GPT-6 Sol/Luna accept `reasoning_effort: none`, API price is
-permanent at half the 5.6 promo, the subscription credit card carries no
-GPT-6 Sol/Luna row (read 2026-09-23), and the GPT-6 prompting guide is one
-family page labelled "observed on Astra". Sol/Luna injection figures live in
-a system-card appendix added 2026-09-22 that no fetch returned; the 5.6
-figures stand (search/function-call defence Terra 0.946, Sol 0.910, Luna
-0.897). Pi SDK 0.87.1 (2026-09-22) is the first catalog with the GPT-6 tiers
-and Opus 5.5; pinned from 0.87.0 in the same change.
+against these pins. Evidence was same-day Artificial Analysis at `max`
+effort plus vendor pages; the table and per-effort figures now live in the
+2026-09-24 entry, which supersedes the max-only rows. Opus 5.5: API default
+effort `medium`, thinking cannot be disabled, forced `tool_choice` 400s,
+Claude Code ≥ 2.1.280 (installed). Pi SDK 0.87.1 (2026-09-22) is the first
+catalog with the GPT-6 tiers and Opus 5.5; pinned from 0.87.0 in the same change.
 
 - Claude top → `claude-opus-5-5`; frontier stays Fable 5.1. Opus 5.5 at max
   outscores Fable 5.1 at max on the same day at 0.4x the price, but uses ~1.5x
@@ -169,8 +196,8 @@ and Opus 5.5; pinned from 0.87.0 in the same change.
 - pi small → `gpt-6-luna`, mid and top → `gpt-6-sol`. Sol 6 dominates Terra
   5.6 on every axis, so mid == top; reverse mid when a GPT-6 Terra ships or
   the credit card prices Sol 6 above Terra's 50/5/300. Classifier stays Terra
-  5.6 (criterion: injection resistance). **Open**: read the appendix; move both
-  classifier stages to Sol 6 if its search/function-call figure ≥ 0.946.
+  5.6 (criterion: injection resistance); the appendix trigger is restated in
+  the 2026-09-24 entry.
 - Prompting-guide deltas, gated before the next audit: Opus 5.5's unattended-
   run clause and progress-update reminder map to `initiative` and the harness
   prompt; its multi-agent elapsed-time budget has no observed failure (doc
@@ -478,20 +505,6 @@ card, plan and model pages and OpenCode Go, plus a trace of pi-ai's
   yes).
   The fallback trigger and the second-vendor trigger are recorded in
   `docs/pi-implementation.md`.
-
-## 2026-09-16
-
-### (pi) Browser launch — managed host exception
-
-- Playwright MCP 0.0.80's Chromium and SRT 0.0.75 cannot launch under
-  containment: the fatal failure is `sysctlbyname kern.hv_vmm_present` denied
-  (`base/mac/mac_util.mm:379`), and the pinned SRT sysctl allowlist has no
-  override:
-  [Chromium check](https://github.com/chromium/chromium/blob/153.0.8010.12/base/mac/mac_util.mm#L376-L380),
-  [Apple file utility](https://github.com/chromium/chromium/blob/main/base/files/file_util_apple.mm).
-- Owner decision (2026-09-16): frontend browser verification is required;
-  retain shared Playwright and grant only its broker-selected server a host
-  lease, with PATH/HOME/scratch TMPDIR only — not SRT-contained.
 
 ## 2026-09-15
 
