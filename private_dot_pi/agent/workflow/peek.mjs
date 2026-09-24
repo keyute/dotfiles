@@ -1,6 +1,7 @@
 import { open, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Dialog } from "./dialog.mjs";
 import { formatTokens, modelLabel } from "./fleet.mjs";
 import { WorkingRow } from "./footer.mjs";
@@ -14,12 +15,61 @@ import { createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 const CHUNK = 1024 * 1024;
 const MAX_ROWS = 1000;
-const HINT = "enter steer · /stop · ctrl+o output · esc back";
+const stopCompletion = {
+  async getSuggestions(lines, line, col) {
+    const prefix = lines[0]?.slice(0, col) ?? "";
+    return line === 0 && /^\/[a-z]*$/.test(prefix) && "/stop".startsWith(prefix)
+      ? { items: [{ value: "/stop", label: "/stop", description: "Stop this agent after confirmation" }], prefix }
+      : null;
+  },
+  applyCompletion(lines, line, col) {
+    return { lines: [lines[0].replace(/^\S*/, "/stop"), ...lines.slice(1)], cursorLine: line, cursorCol: 5 };
+  },
+  shouldTriggerFileCompletion: () => false,
+};
+
+class PeekEditor extends Editor {
+  constructor(tui, theme) {
+    super(tui, {
+      borderColor: text => theme.fg("borderMuted", text),
+      selectList: {
+        selectedPrefix: text => theme.fg("accent", text), selectedText: text => theme.fg("accent", text),
+        description: text => theme.fg("muted", text), scrollInfo: text => theme.fg("dim", text), noMatch: text => theme.fg("warning", text),
+      },
+    });
+    this.palette = theme;
+    this.setAutocompleteProvider(stopCompletion);
+  }
+  renderBottomBorder(width, hidden) {
+    this.bottomRow = super.renderBottomBorder(width, hidden);
+    return this.bottomRow;
+  }
+  render(width, height) {
+    const lines = super.render(Math.max(1, width - 2));
+    const end = lines.lastIndexOf(this.bottomRow);
+    const menu = lines.slice(end + 1, end + 1 + Math.max(0, height - 3));
+    const content = lines.slice(1, end);
+    const count = Math.max(1, height - menu.length - 2);
+    // Native scrolling budgets 30% of the terminal, not the space left in
+    // this pane. Clip its visible block around the cursor, never by colour.
+    const cursor = content.findIndex(line => line.includes(CURSOR_MARKER) || line.includes("\x1b[7m"));
+    const start = Math.max(0, Math.min(cursor, content.length - count));
+    const visible = content.slice(start, start + count).map((line, i) =>
+      shade(this.palette, pad(`${i === 0 ? this.palette.fg("accent", `${PROMPT} `) : "  "}${line}`, width)));
+    const blank = shade(this.palette, pad("", width));
+    return [blank, ...visible, blank, ...menu.map(line => `  ${line}`)];
+  }
+}
 
 export class PeekDialog extends Dialog {
   constructor(tui, theme, keybindings, done, { id, asyncDir, describe, events, rpcCall, timeoutMs = 2_000, steerTimeoutMs = 5_000, tickMs = 1_000, signal }) {
     super(tui, theme, keybindings, done, signal, undefined);
     Object.assign(this, { id, describe, events, rpcCall, timeoutMs, steerTimeoutMs });
+    this.editor = new PeekEditor(tui, theme);
+    this.editor.focused = true;
+    // Native Enter accepts a slash item and submits in one action; restore
+    // the cleared draft so the ordinary confirmation path sees it.
+    this.editor.onSubmit = text => { this.editor.setText(text); this.submitDraft(); };
     this.filePath = join(asyncDir, "events.jsonl");
     this.offset = 0;
     this.replay = createReplay();
@@ -48,6 +98,14 @@ export class PeekDialog extends Dialog {
   }
 
   editingNow() { return this.mode !== "confirm"; }
+
+  invalidate() {
+    super.invalidate();
+    for (const row of this.replay.rows) {
+      delete row._linesKey;
+      delete row._lines;
+    }
+  }
 
   dispose() {
     clearInterval(this.timer);
@@ -133,29 +191,30 @@ export class PeekDialog extends Dialog {
     return `${this.replay.version}|${rows.length}|${pending}|${last?.kind}|${last?.text}|${this.headerText()}`;
   }
 
-  // Rule 3, one place per fact: the run's elapsed time rides the working
-  // spinner and the settled turn line, never here, so all this header carries
-  // is identity, cost, and — once the run is over — how it ended.
-  headerText() {
+  // Reserve the metadata and back cue before spending columns on the task.
+  headerText(width = 80) {
     const info = this.info ?? {};
-    const head = info.task ? `${info.agent ?? ""} › ${oneLine(info.task)}` : (info.agent ?? "");
-    const parts = [];
     const model = modelLabel(info.model, info.effort);
-    if (model) parts.push(model);
     const tokens = formatTokens(info.tokens?.total ?? info.tokens);
-    if (tokens) parts.push(`${tokens} tokens`);
-    if (info.terminal && info.state) parts.push(info.state);
-    const rest = parts.join(" · ");
-    return `${this.theme.fg("accent", head)}${rest ? this.theme.fg("muted", ` · ${rest}`) : ""}`;
+    const state = info.terminal && info.state ? info.state : "";
+    const tone = state === "completed" ? "success" : ["failed", "stopped"].includes(state) ? "error" : "warning";
+    const parts = [model, tokens && `${tokens} tokens`].filter(Boolean);
+    const cue = "esc back";
+    const agent = info.agent ?? "";
+    const stateText = state ? ` · ${state}` : "";
+    const suffix = () => `${parts.length ? ` · ${parts.join(" · ")}` : ""}${stateText}`;
+    const free = width - 2 - visibleWidth(`peek  ${agent}  ${cue}`);
+    // Once even identity plus metadata cannot fit, cost then model yield;
+    // terminal state and the way back remain visible.
+    while (parts.length && visibleWidth(suffix()) > free) parts.pop();
+    const budget = Math.max(0, free - visibleWidth(suffix()) - 3);
+    const task = budget > 0 ? truncateToWidth(oneLine(info.task), budget, "…") : "";
+    const nameWidth = Math.max(1, width - 2 - visibleWidth(`peek    ${cue}${suffix()}`));
+    return `${this.theme.fg("dim", "peek")}  ${this.theme.fg("accent", truncateToWidth(agent, nameWidth, "…"))}${task ? ` › ${task}` : ""}${parts.length ? this.theme.fg("muted", ` · ${parts.join(" · ")}`) : ""}${state ? this.theme.fg(tone, stateText) : ""}  ${this.theme.fg("dim", cue)}`;
   }
 
-  // The same shaded block userRowLines draws (replay.mjs): a blank shaded row
-  // above and below the content, ❯ on the first content line.
-  composerLines(width) {
-    const active = this.focused && this.editingNow();
-    const lines = this.field({ width: Math.max(1, width - 2), active, text: this.editor.getText() });
-    const content = lines.map((line, i) => (i === 0 ? `${PROMPT} ${line}` : `  ${line}`));
-    return ["", ...content, ""].map(line => shade(this.theme, pad(line, width)));
+  composerLines(width, height) {
+    return this.editor.render(width, height);
   }
 
   confirmLine() {
@@ -200,6 +259,11 @@ export class PeekDialog extends Dialog {
     if (this.finished) return;
     const keys = this.keys(data);
     const confirm = this.mode === "confirm";
+    if (!confirm && this.editor.isShowingAutocomplete() && (keys.up || keys.down || keys.cancel || keys.tab || keys.enter)) {
+      this.editor.handleInput(data);
+      this.refresh();
+      return;
+    }
     if (keys.up || keys.down) {
       const draftEmpty = !this.editor.getText().trim();
       const cursor = this.editor.getCursor();
@@ -232,11 +296,7 @@ export class PeekDialog extends Dialog {
     }
     if (keys.enter) {
       if (confirm) { this.pending = this.confirmStop(); return; }
-      if (this.busy) return;
-      const draft = this.editor.getText().trim();
-      if (!draft) { this.flash = "Type a message to steer"; this.refresh(); return; }
-      if (draft === "/stop") { this.mode = "confirm"; this.flash = ""; this.refresh(); return; }
-      this.pending = this.sendSteer(draft);
+      this.submitDraft();
       return;
     }
     if (keys.cancel) {
@@ -249,6 +309,14 @@ export class PeekDialog extends Dialog {
       this.flash = "";
       this.refresh();
     }
+  }
+
+  submitDraft() {
+    if (this.busy) return;
+    const draft = this.editor.getText().trim();
+    if (!draft) { this.flash = "Type a message to steer"; this.refresh(); return; }
+    if (draft === "/stop") { this.mode = "confirm"; this.flash = ""; this.refresh(); return; }
+    this.pending = this.sendSteer(draft);
   }
 
   // The working row (rule 3): the same row footer.mjs docks above pi's own
@@ -272,19 +340,18 @@ export class PeekDialog extends Dialog {
 
   render(width) {
     const usable = Math.max(1, width);
-    const working = this.working.render(usable);
-    const workingLines = working.length ? working : [""];
-    // Fixed height (docs/pi-design.md rule 6, 2026-09-23, slot): half the
-    // terminal's rows for the whole dialog, chrome (both rules, header, blank,
-    // hint) subtracted along with whatever the working row and composer take,
-    // so the frame and composer hold still as the journal grows. A draft that
-    // wraps past what is left keeps its last lines (the cursor's end) and the
-    // window its one row, since pi's dock clips an oversized slot from the
-    // bottom, hint and rule first.
+    const feedback = this.flash ? this.theme.fg(this.flashTone ?? "dim", this.flash) : "";
+    const working = this.working.render(Math.max(1, usable - (feedback ? visibleWidth(feedback) + 3 : 0)));
+    const workingLine = `${working[0] ?? ""}${feedback ? `${working.length ? " · " : "  "}${feedback}` : ""}`;
+    // Both gaps are explicit: one before the progress row, one before the
+    // shaded composer. Reserve one transcript line even with a long draft.
     const height = slotHeight(this.tui.terminal?.rows ?? 24);
-    const chrome = 5;
-    const composer = (this.mode === "confirm" ? [this.confirmLine()] : this.composerLines(usable)).slice(-(height - chrome - workingLines.length - 1));
-    const windowHeight = height - chrome - workingLines.length - composer.length;
+    const chrome = 7;
+    const available = height - chrome - 1;
+    const composer = this.mode === "confirm"
+      ? [shade(this.theme, pad("", usable)), `${this.confirmLine()} ${this.theme.fg("dim", "enter confirm · esc back")}`, shade(this.theme, pad("", usable))]
+      : this.composerLines(usable, available);
+    const windowHeight = height - chrome - composer.length;
     const bodyLines = !this.loaded
       ? [this.theme.fg("dim", "loading history…")]
       : this.replay.rows.length
@@ -297,9 +364,7 @@ export class PeekDialog extends Dialog {
     this.scroll = Math.max(0, Math.min(this.scroll, maxScroll));
     const window = bodyLines.slice(this.scroll, this.scroll + windowHeight);
     while (window.length < windowHeight) window.push("");
-    const hintText = this.flash || (this.mode === "confirm" ? "enter confirm · esc back" : HINT);
-    const hint = `  ${this.theme.fg(this.flash ? this.flashTone : "dim", hintText)}`;
-    const content = [`  ${this.headerText()}`, "", ...window, ...workingLines, ...composer, hint];
+    const content = [`  ${this.headerText(usable)}`, "", ...window, "", workingLine, "", ...composer];
     return this.frame(content, usable);
   }
 }

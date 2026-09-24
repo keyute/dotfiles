@@ -5,8 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { PeekDialog, openPeek } from "./peek.mjs";
 import { PROMPT } from "./rows.mjs";
+import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
+import { Theme } from "@earendil-works/pi-coding-agent";
 
-const theme = { fg: (c, t) => `<${c}>${t}`, bg: (c, t) => `[${c}]${t}`, bold: t => t };
+const theme = { fg: (c, t) => `\x1b[36m${t}\x1b[0m`, bg: (c, t) => `[${c}]${t}`, bold: t => t };
 const KEYS = {
   "tui.select.up": "\x1b[A",
   "tui.select.down": "\x1b[B",
@@ -25,13 +27,13 @@ function makeDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "peek-"));
 }
 
-function makeDialog({ dir, describeState, rpcCall, tui } = {}) {
+function makeDialog({ dir, describeState, rpcCall, tui, palette = theme } = {}) {
   let renders = 0;
   const doneCalls = [];
   const stubTui = tui ?? { requestRender: () => renders++, terminal: { rows: 40 } };
   const base = { agent: "reviewer", task: "Review the diff", model: "anthropic/claude:high", effort: "high", tokens: { total: 12400 }, startedAt: Date.now() - 134_000, state: "running", terminal: false };
   const info = describeState ?? base;
-  const dialog = new PeekDialog(stubTui, theme, keybindings, value => doneCalls.push(value), {
+  const dialog = new PeekDialog(stubTui, palette, keybindings, value => doneCalls.push(value), {
     id: "run1",
     asyncDir: dir,
     describe: () => (describeState ? { ...base, ...info } : info),
@@ -65,10 +67,46 @@ test("open shows the live header and replayed rows", async () => {
   // Rule 3: the current tool and the elapsed time are the pending row's and
   // the working row's, never the header's.
   assert.doesNotMatch(header, /bash/);
-  assert.doesNotMatch(header, /\d+[ms]\b/);
+  assert.doesNotMatch(header.replace(/\x1b\[[0-9;]*m/g, ""), /\d+[ms]\b/);
   const body = lines.join("\n");
   assert.match(body, /↳/);
   assert.match(body, /Done\./);
+});
+
+test("working progress has a blank separator above it and a trailing gap before the composer", async () => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"),
+    Array.from({ length: 30 }, (_, i) => line({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: `note ${i}` }] } })).join("") +
+    line({ type: "agent_start", observedAt: Date.now() }));
+  const { dialog } = makeDialog({ dir, tui: { requestRender: () => {}, terminal: { rows: 24 } } });
+  await dialog.ready;
+  const lines = dialog.render(80);
+  const progress = lines.findIndex(l => /… \d+[ms]/.test(l));
+  assert.ok(progress > 0);
+  assert.equal(lines[progress - 1].trim(), "");
+  assert.equal(lines[progress + 1].trim(), "");
+  dialog.dispose();
+});
+
+test("long task yields to model, tokens and terminal state in a narrow header", async () => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const { dialog } = makeDialog({ dir, describeState: { task: "A long and complicated task with many unnecessary words and details", state: "completed", terminal: true } });
+  await dialog.ready;
+  const header = dialog.render(74)[1];
+  assert.match(header, /peek/);
+  assert.match(header, /reviewer/);
+  assert.match(header, /…/);
+  assert.match(header, /claude high/);
+  assert.match(header, /12\.4k tokens/);
+  assert.match(header, /completed/);
+  assert.match(header, /esc back/);
+  assert.ok(visibleWidth(header) <= 74);
+  const compact = dialog.render(40)[1];
+  assert.match(compact, /completed/);
+  assert.match(compact, /esc back/);
+  assert.ok(visibleWidth(compact) <= 40);
+  dialog.dispose();
 });
 
 test("tick appends new lines and re-renders once; a no-op tick renders nothing", async () => {
@@ -192,6 +230,138 @@ test("Enter sends a steer, clears the draft, and shows the delivered note; a fai
   await failing.dialog.pending;
   assert.equal(failing.dialog.editor.getText(), "focus on tests");
   assert.ok(failing.dialog.render(160).some(l => l.includes("steer failed")));
+});
+
+test("native stop menu is first-line only, unshaded, and takes arrows and Esc before scrolling or closing", async () => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const { dialog, doneCalls } = makeDialog({ dir });
+  await dialog.ready;
+  type(dialog, "/st");
+  await dialog.editor.autocompleteRequestTask;
+  assert.equal(dialog.editor.isShowingAutocomplete(), true);
+  const lines = dialog.render(80);
+  const menu = lines.findIndex(l => l.includes("/stop") && !l.includes(PROMPT));
+  assert.ok(menu > 0);
+  assert.ok(!lines[menu].startsWith("[userMessageBg]"));
+  const before = dialog.scroll;
+  dialog.handleInput(KEYS["tui.select.down"]);
+  assert.equal(dialog.scroll, before);
+  dialog.handleInput(KEYS["tui.select.cancel"]);
+  assert.equal(dialog.editor.isShowingAutocomplete(), false);
+  assert.deepEqual(doneCalls, []);
+  dialog.handleInput(KEYS["tui.input.tab"]);
+  await dialog.editor.autocompleteRequestTask;
+  assert.equal(dialog.editor.isShowingAutocomplete(), true);
+  dialog.handleInput(KEYS["tui.input.tab"]);
+  assert.equal(dialog.editor.getText(), "/stop");
+  assert.deepEqual(doneCalls, []);
+  dialog.editor.setText("/st\n/sto");
+  dialog.handleInput(KEYS["tui.input.tab"]);
+  await dialog.editor.autocompleteRequestTask;
+  assert.equal(dialog.editor.isShowingAutocomplete(), false);
+  dialog.editor.setText("/st");
+  dialog.handleInput(KEYS["tui.input.tab"]);
+  await dialog.editor.autocompleteRequestTask;
+  dialog.handleInput(KEYS["tui.select.confirm"]);
+  assert.equal(dialog.mode, "confirm");
+  assert.equal(dialog.editor.getText(), "/stop");
+  assert.deepEqual(doneCalls, []);
+  dialog.dispose();
+});
+
+test("accepting stop with the cursor inside its token replaces the whole command before confirmation", async t => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const calls = [];
+  const { dialog } = makeDialog({ dir, rpcCall: async (...args) => { calls.push(args); return null; } });
+  t.after(() => dialog.dispose());
+  await dialog.ready;
+  dialog.editor.setText("/stp");
+  dialog.handleInput("\x1b[D");
+  assert.equal(dialog.editor.getCursor().col, 3);
+  dialog.handleInput(KEYS["tui.input.tab"]);
+  await dialog.editor.autocompleteRequestTask;
+  assert.equal(dialog.editor.isShowingAutocomplete(), true);
+  dialog.handleInput(KEYS["tui.select.confirm"]);
+  assert.equal(dialog.editor.getText(), "/stop");
+  assert.equal(dialog.editor.getCursor().col, 5);
+  assert.equal(dialog.mode, "confirm");
+  assert.equal(calls.length, 0);
+});
+
+test("stop completion retains text after the command and later lines", async t => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const { dialog } = makeDialog({ dir });
+  t.after(() => dialog.dispose());
+  await dialog.ready;
+  const result = dialog.editor.autocompleteProvider.applyCompletion(["/stp  follow-up", "other line"], 0, 3);
+  assert.deepEqual(result, { lines: ["/stop  follow-up", "other line"], cursorLine: 0, cursorCol: 5 });
+});
+
+test("slash discovery describes only the local stop command and cannot stop before confirmation", async t => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const calls = [];
+  const { dialog } = makeDialog({ dir, rpcCall: async (...args) => { calls.push(args); return null; } });
+  t.after(() => dialog.dispose());
+  await dialog.ready;
+  type(dialog, "/");
+  await dialog.editor.autocompleteRequestTask;
+  assert.equal(dialog.editor.isShowingAutocomplete(), true);
+  assert.match(dialog.render(100).join("\n"), /after confirmation/i);
+  dialog.handleInput(KEYS["tui.select.confirm"]);
+  assert.equal(dialog.mode, "confirm");
+  assert.equal(calls.length, 0);
+  dialog.handleInput(KEYS["tui.select.cancel"]);
+  for (const text of ["/model", "ordinary text", "@path", "/stop "]) {
+    dialog.editor.setText(text);
+    dialog.handleInput(KEYS["tui.input.tab"]);
+    await dialog.editor.autocompleteRequestTask;
+    assert.equal(dialog.editor.isShowingAutocomplete(), false, text);
+  }
+  dialog.dispose();
+});
+
+test("real ANSI themes retain the cursor and both shaded rows when a long draft is clipped", async t => {
+  const palette = new Theme(Object.fromEntries(["accent", "muted", "dim", "warning", "borderMuted", "borderAccent", "text", "thinkingXhigh"].map(key => [key, "#abcdef"])), { userMessageBg: "#123456", selectedBg: "#123456" }, "truecolor");
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const { dialog } = makeDialog({ dir, palette, tui: { requestRender() {}, terminal: { rows: 24 } } });
+  t.after(() => dialog.dispose());
+  await dialog.ready;
+  const draft = Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n");
+  dialog.editor.setText(draft);
+  for (const atStart of [false, true]) {
+    if (atStart) {
+      for (let i = 0; i < 35; i++) dialog.editor.handleInput(KEYS["tui.select.up"]);
+      assert.equal(dialog.editor.getCursor().line, 0);
+    }
+    const lines = dialog.render(40);
+    assert.equal(lines.length, 12);
+    assert.equal(lines.filter(line => line.includes(CURSOR_MARKER)).length, 1);
+    const shaded = lines.filter(line => line.includes("\x1b[48;2;18;52;86m"));
+    assert.ok(shaded.length >= 3);
+    const plain = text => text.replace(/\x1b\[[0-9;]*m/g, "").trim();
+    assert.equal(plain(shaded[0]), "");
+    assert.equal(plain(shaded.at(-1)), "");
+    assert.ok(shaded.some(line => line.includes(PROMPT)));
+  }
+  dialog.dispose();
+});
+
+test("steer feedback does not replace live progress", async t => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), line({ type: "agent_start", observedAt: Date.now() }));
+  const { dialog } = makeDialog({ dir });
+  t.after(() => dialog.dispose());
+  await dialog.ready;
+  dialog.say("steer delivered", "success");
+  const lines = dialog.render(100);
+  assert.match(lines.join("\n"), /… \d+[ms]/);
+  assert.match(lines.join("\n"), /steer delivered/);
+  dialog.dispose();
 });
 
 test("/stop then confirm stops the run; Esc backs out keeping the draft", async () => {
@@ -401,6 +571,41 @@ test("render is a fixed height, half the terminal's rows, that holds still as th
   assert.ok(nonBlankAfter > nonBlankBefore);
 });
 
+test("running and settled progress retain the composer row with a multiline draft and narrow width", async () => {
+  const dir = makeDir();
+  const file = path.join(dir, "events.jsonl");
+  fs.writeFileSync(file, line({ type: "agent_start", observedAt: Date.now() }));
+  const { dialog } = makeDialog({ dir, tui: { requestRender: () => {}, terminal: { rows: 40 } } });
+  await dialog.ready;
+  dialog.editor.setText("first line\nsecond line");
+  const runningViews = [32, 80].map(width => dialog.render(width));
+  fs.appendFileSync(file, line({ type: "agent_settled", observedAt: Date.now() }));
+  await dialog.tick();
+  for (const [index, width] of [32, 80].entries()) {
+    const running = runningViews[index];
+    const settled = dialog.render(width);
+    assert.equal(running.length, 20);
+    assert.equal(settled.length, 20);
+    assert.equal(running.findIndex(l => l.includes(PROMPT)), settled.findIndex(l => l.includes(PROMPT)));
+    assert.ok(settled.some(l => l.includes("second line")));
+  }
+  dialog.dispose();
+});
+
+test("theme invalidation drops local replay row render caches", async () => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), line({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hello" }] } }));
+  const { dialog } = makeDialog({ dir });
+  await dialog.ready;
+  dialog.render(80);
+  const row = dialog.replay.rows[0];
+  assert.ok(row._linesKey);
+  dialog.invalidate();
+  assert.equal(row._linesKey, undefined);
+  assert.equal(row._lines, undefined);
+  dialog.dispose();
+});
+
 test("a steer draft that wraps past the window keeps the frame at its fixed height", async () => {
   const dir = makeDir();
   fs.writeFileSync(path.join(dir, "events.jsonl"), "");
@@ -409,7 +614,8 @@ test("a steer draft that wraps past the window keeps the frame at its fixed heig
   dialog.editor.setText(Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n"));
   const lines = dialog.render(80);
   assert.equal(lines.length, 20);
-  assert.equal(lines.at(-2), `  ${theme.fg("dim", "enter steer · /stop · ctrl+o output · esc back")}`);
+  assert.ok(lines.at(-2).startsWith("[userMessageBg]"));
+  assert.doesNotMatch(lines.join("\n"), /enter steer · \/stop/);
   assert.ok(lines.some(l => l.includes("line 29")));
   dialog.dispose();
 });

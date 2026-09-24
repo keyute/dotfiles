@@ -1,7 +1,7 @@
-import { Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import {
-  BULLET, PAD, PROMPT, TURN_VERBS,
+  BULLET, PAD, TURN_VERBS,
   addFold, bulletMarkdown, callTitle, closeFolds, closeLive, createFolds, createTurnClock,
   foldGroup, foldKey, formatTurn, glyph, handleLine, liveGroup, memberLine, pad, pluginTitle,
   rowLines, settleFold, shade, summarise, taskTitle,
@@ -259,9 +259,10 @@ function toolRowLines(row, theme, { width, expanded } = {}) {
 }
 
 function userRowLines(row, width, theme) {
-  const wrapped = wrapTextWithAnsi(row.text, Math.max(1, width - 2));
-  const content = wrapped.map((line, i) => (i === 0 ? `${PROMPT} ${line}` : `  ${line}`));
-  return ["", ...content, ""].map(line => shade(theme, pad(line, width)));
+  const markdown = new Markdown(bulletMarkdown(row.text, { messageType: "user" }), 0, 0, getMarkdownTheme(),
+    { color: content => theme.fg("userMessageText", content) },
+    { preserveOrderedListMarkers: true, preserveBackslashEscapes: true });
+  return ["", ...markdown.render(width), ""].map(line => shade(theme, pad(line, width)));
 }
 
 function renderRow(row, width, theme) {

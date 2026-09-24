@@ -128,6 +128,45 @@ test("a plain user message is the task block", () => {
   assert.ok(lines.some(l => l.includes("Task: fix the bug")));
 });
 
+test("user Markdown retains inline formatting, ordered markers, and the theme's text colour", () => {
+  const state = feed({ type: "message_end", message: { role: "user", content: [{ type: "text", text: "Try **bold** and `code`\n\n3. third\n4. fourth" }] } });
+  const lines = render(state);
+  assert.ok(lines.length > 4);
+  assert.ok(lines.every(line => line.startsWith("[userMessageBg]")));
+  assert.ok(lines[1].includes("<userMessageText>❯ Try"));
+  assert.ok(lines.some(line => line.includes("bold") && !line.includes("**bold**")));
+  assert.ok(lines.some(line => line.includes("code") && !line.includes("`code`")));
+  const plain = lines.map(line => line.replace(/\x1b\[[\d;]*m|<userMessageText>/g, ""));
+  assert.ok(plain.some(line => line.includes("3. third")));
+  assert.ok(plain.some(line => line.includes("4. fourth")));
+});
+
+test("task, steer, and multiline blocks retain Markdown paragraphs and shaded blank rows", () => {
+  const task = "First paragraph\n\nSecond paragraph\nwith another line\n\n> quoted";
+  const steer = `Queued follow-up from the parent orchestrator:\n\n${task}\n\nIncorporate this guidance at the next safe point. Do not restart the task unless the guidance explicitly asks you to.`;
+  for (const text of [task, steer]) {
+    const state = feed({ type: "message_end", message: { role: "user", content: [{ type: "text", text }] } });
+    const lines = render(state);
+    assert.ok(lines.every(line => line.startsWith("[userMessageBg]")));
+    assert.equal(lines.filter(line => line.includes("❯")).length, 1);
+    assert.ok(lines[1].includes("❯ First paragraph"));
+    assert.ok(lines.some(line => line.includes("Second paragraph")));
+    assert.ok(lines.some(line => line.includes("with another line")));
+    assert.ok(lines.some(line => line.includes("quoted")));
+    assert.ok(lines.some(line => line === "[userMessageBg]" + " ".repeat(WIDTH)));
+    assert.ok(!lines.some(line => line.includes("Incorporate this guidance")));
+  }
+});
+
+test("clearing a replay row's line cache repaints it under a changed theme", () => {
+  const state = feed({ type: "message_end", message: { role: "user", content: [{ type: "text", text: "Hello" }] } });
+  render(state);
+  state.rows[0]._linesKey = undefined;
+  state.rows[0]._lines = undefined;
+  const changed = { ...theme, fg: (c, t) => `{${c}}${t}` };
+  assert.ok(renderRows(state, WIDTH, changed).some(line => line.includes("{userMessageText}❯ Hello")));
+});
+
 test("toolResult and turn_* events produce no rows", () => {
   const state = feed(
     { type: "message_end", message: { role: "toolResult", content: [{ type: "text", text: "x" }] } },

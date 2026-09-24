@@ -200,6 +200,12 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   drives a quiet fold instance (no components to invalidate) through
   `rows.mjs`'s own mutators; after a resume, `asyncDir` is read back from the
   session branch's `subagent` tool results (`getBranch`, documented) (2026-09-23).
+  Peek's native editor is shaped at its bottom-border callback: `render()` puts
+  content between the borders and completion rows after them; pane clipping
+  keeps the cursor-marked line, with the native inverse cursor as its unfocused
+  counterpart. Slash-menu Enter submits after accepting, Tab accepts only.
+  Pinned in `stability.test.mjs`; retire the render-shape seam when Editor offers
+  a borderless, height-bounded render API (2026-09-24).
 - srt's `CLAUDE_CODE_TMPDIR` environment variable, read when it wraps a
   command, names the `TMPDIR` it exports into that command; `sandbox-runner.mjs`
   sets it to the lease's scratch path. Documented only in srt's source comment

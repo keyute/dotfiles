@@ -1,6 +1,6 @@
 # Pi TUI design language
 
-Last verified 2026-09-22 (pi 0.87.0, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval}.mjs`;
+Last verified 2026-09-24 (pi 0.87.1, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval}.mjs`;
 change a rule only with a dated decision here, never by re-wording.
 
 The intent, set on 2026-09-07 from a side-by-side of pi and Claude Code:
@@ -153,6 +153,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-23:* the peek's transcript is rule 2's grammar in full (groups, handle, ctrl+o), rule 4's `π` turn line per settled run, and rule 3's working row above rule 5's composer with its two shaded rows; the header keeps identity (`agent › task · model · tokens`) and the terminal state word only. The whole journal is read at open, session-restored runs included. Not carried: a click on one sealed group (the dialog registers no click region); ctrl+o is the way. *Why:* a second grammar drifts from the main thread the owner wants the child to read as, and a tail-only read left a late peek without the history it was opened for.
    - *2026-09-23, slot:* the peek mounts as plan approval and the questionnaire do — in the composer's slot, not a floating overlay — at a fixed half of the terminal's rows, the window padded to what the chrome leaves, so frame and composer hold still while the main transcript above and the fleet below say where the user is; a second slot dialog (question, plan approval, action confirm) closes it first. *Why:* a content-sized centred overlay re-centred on every row and, with the main thread bleeding round two rules, read as no border;
      a true switch is out (pi has no layout swap, pi-subagents no attach), and the place the other dialogs take is the depth cue the owner asked for.
+   - *2026-09-24, peek polish:* keep the half-height frame; separate transcript and progress by a blank row and anchor the shaded composer across running/settled states. A compact `peek` header keeps agent/model/tokens/state visible by shortening the task first, with `esc back` beside it. Drop the permanent bottom shortcut strip; native, unshaded slash completion offers only peek commands (`/stop`, still confirmed), and action feedback appears only when needed. Match the main composer's accent prompt and sent-message Markdown/colours. *Why:* the owner wants the same conversation surface, distinguished by its frame and identity rather than extra instructions.
+   - *2026-09-24, nested peek:* defer descendant navigation until it can offer this same pane and transcript grammar; the plugin's raw transcript tail is not an acceptable nested-view UX. *Why:* a noisy second presentation defeats the split-window continuity the owner wants.
 7. **Stability over fidelity.** Build on a documented pi or plugin API. An
    undocumented export or heuristic is allowed only with an entry in the
    coupling inventory (`docs/pi-coupling.md`) and a test that fails on the pin
