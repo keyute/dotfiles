@@ -48,6 +48,13 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   name-keyed cache still races and hashes the wrapper rather than the resolved
   broker connection. Revisit when upstream supports connection-scoped or
   instance-scoped metadata storage (2026-09-22).
+- MCP logging (2026-09-24): the workflow loads the adapter's internal
+  `logger.ts` singleton through the adapter's own Jiti instance and sets its
+  level to `warn` before installation. Its default `info` console output drew
+  the frozen-tool startup diagnostic over the live composer; warnings/errors
+  remain enabled, and editor state is untouched. Lifecycle tests and source
+  pins gate the seam; retire it when the adapter exposes a public logging
+  setting or stops routine terminal output.
 - Acceptance and mutation names: pi-subagents 0.70.1 dropped its completion
   guard (the read-then-prose failure the roles were tuned for on 2026-09-18) for
   acceptance inference keyed on `acceptanceRole` alone — `writer` infers checked
@@ -75,15 +82,19 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
 - Skill display (2026-09-24): the workflow wraps `InteractiveMode`'s
   `getUserMessageText` once, converting only a native `parseSkillBlock` match
   back to `/skill:name` plus arguments before `addMessageToChat` chooses its
-  component. Both symbols are exported, but the method is undocumented. Live
+  component. The TypeScript extension entry passes the host `InteractiveMode`
+  from Pi's virtual modules into the native-imported workflow: the bundled CLI
+  and unbundled SDK otherwise export different classes. Both symbols are
+  exported, but the method is undocumented. Live
   messages and rebuilt chats share that display path; initial rendering also
   uses its return value for editor history. Stored messages and model context
   stay untouched. Installation precedes the initial transcript render, and the
-  existing user Markdown transformer highlights only the command. Real-render
-  regression tests and `stability.test.mjs` gate the seam; retire it when Pi
+  existing user Markdown transformer highlights only the command. Bundled-entry
+  and real-render regression tests plus `stability.test.mjs` gate the seam; retire it when Pi
   exposes a user/skill-message renderer (rule 5's single user box).
-- Pending input (2026-09-24): replace only `InteractiveMode.updatePendingMessagesDisplay`,
-  using its `pendingMessagesContainer`, `getAllQueuedMessages` and `getAppKeyDisplay`.
+- Pending input (2026-09-24): replace only `InteractiveMode.updatePendingMessagesDisplay`
+  on the same injected host class as skill display, using its
+  `pendingMessagesContainer`, `getAllQueuedMessages` and `getAppKeyDisplay`.
   Pi retains queue ownership, including compaction input, dequeue and abort;
   the adapter only draws shaded input blocks with the live extension theme.
   Installation is idempotent across reloads. Render/lifecycle tests and source

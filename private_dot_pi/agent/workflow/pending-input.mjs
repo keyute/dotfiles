@@ -8,8 +8,8 @@ const row = (line, width, theme) => shade(theme, truncateToWidth(line, width, ""
 
 // The host owns both queues, including messages waiting for compaction. Only
 // replace its pending-area presentation; every host update reads its queues anew.
-export function installPendingInput(theme) {
-  const prototype = sdk.InteractiveMode.prototype;
+export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode) {
+  const prototype = InteractiveMode.prototype;
   const installed = prototype.updatePendingMessagesDisplay[INSTALLED];
   if (installed) { installed.theme = theme; return; }
   const state = { theme };

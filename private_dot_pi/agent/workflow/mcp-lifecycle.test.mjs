@@ -5,10 +5,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
-import { mcpAdapterSettings } from "./index.mjs";
+import { mcpAdapterSettings, installMcpAdapter } from "./index.mjs";
 
 const jiti = createJiti(import.meta.url);
-const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
+const { logger } = await jiti.import(new URL("logger.ts", import.meta.resolve("pi-mcp-adapter")).pathname);
 const { computeServerHash } = await jiti.import(new URL("metadata-cache.ts", import.meta.resolve("pi-mcp-adapter")).pathname);
 
 for (const warm of [true, false]) test(`frozen MCP registration survives peer metadata and reconnects (${warm ? "warm" : "cold"} cache)`, async t => {
@@ -16,12 +16,21 @@ for (const warm of [true, false]) test(`frozen MCP registration survives peer me
   const agentDir = join(root, "agent");
   mkdirSync(agentDir);
   const previous = process.env.PI_CODING_AGENT_DIR;
+  const previousDirectTools = process.env.MCP_DIRECT_TOOLS;
   process.env.PI_CODING_AGENT_DIR = agentDir;
+  delete process.env.MCP_DIRECT_TOOLS;
   const instances = [];
+  logger.setLevel("info");
+  const output = t.mock.method(console, "log", () => {});
+  const warnings = t.mock.method(console, "warn", () => {});
+  const errors = t.mock.method(console, "error", () => {});
   t.after(async () => {
     for (const instance of instances) await instance.stop();
     if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previous;
+    if (previousDirectTools === undefined) delete process.env.MCP_DIRECT_TOOLS;
+    else process.env.MCP_DIRECT_TOOLS = previousDirectTools;
+    logger.setLevel("info");
     rmSync(root, { recursive: true, force: true });
   });
   const server = join(root, "server.mjs");
@@ -57,7 +66,7 @@ for await (const line of createInterface({ input: process.stdin })) {
       getActiveTools: () => [...tools.keys()], setActiveTools() {}, appendEntry() {}, sendMessage() {},
     };
     const ctx = { cwd: root, hasUI: true, sessionManager: { getSessionId: () => id, getEntries: () => [], getBranch: () => [] }, ui: { notify: (...args) => notifications.push(args), select: async () => "Allow once", setStatus() {}, theme: { fg: (_color, text) => text } } };
-    await createMcpAdapter({ config: { mcpServers: { fixture: { ...definition, ...(env ? { env } : {}) } }, settings: mcpAdapterSettings } })(pi);
+    await installMcpAdapter(pi, { mcpServers: { fixture: { ...definition, ...(env ? { env } : {}) } }, settings: mcpAdapterSettings }, jiti);
     const result = { tools, notifications, call: args => tools.get("mcp").execute(id, args, undefined, undefined, ctx), stop: () => handlers.get("session_shutdown")({}, ctx) };
     instances.push(result);
     await handlers.get("session_start")({}, ctx);
@@ -83,4 +92,9 @@ for await (const line of createInterface({ input: process.stdin })) {
   const called = await first.call({ tool: "new_tool", args: {} });
   assert.equal(called.details?.error, undefined);
   assert.match(JSON.stringify(called.content), /fixture result/, "stopping the peer leaves this session's connection usable");
+  assert.equal(output.mock.calls.some(call => call.arguments.join(" ").includes("direct tools frozen after initial sync")), false, "routine freeze notice stays off the console");
+  logger.warn("fixture warning");
+  logger.error("fixture error");
+  assert.match(warnings.mock.calls.at(-1).arguments[0], /fixture warning/);
+  assert.match(errors.mock.calls.at(-1).arguments[0], /fixture error/);
 });

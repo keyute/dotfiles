@@ -67,6 +67,14 @@ export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.
   directTools: entry.policy.direct_tools === true,
 }]));
 export const mcpAdapterSettings = { hostConfigDiscovery: "off", directTools: false, freezeDirectTools: true, toolPrefix: "mcp", namespaceProxyTools: false, scriptMode: false, jev: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false };
+export async function installMcpAdapter(pi, config, jiti) {
+  const { logger } = await jiti.import(new URL("logger.ts", import.meta.resolve("pi-mcp-adapter")).pathname);
+  // Routine info would draw over the live composer; an explicit MCP_UI_DEBUG request keeps its level.
+  if (!["1", "true"].includes(process.env.MCP_UI_DEBUG)) logger.setLevel("warn");
+  const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
+  await createMcpAdapter({ config })(pi);
+}
+
 // Direct MCP tools carry the adapter's mcp__<server> prefix; the proxy stays
 // for servers left behind it (playwright).
 const isDirectMcpTool = name => name.startsWith("mcp__");
@@ -133,8 +141,8 @@ export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages
 // Both live rendering and restored history read this undocumented method; return
 // a plain command before pi's skill-specific component sees the native block.
 const SKILL_DISPLAY = Symbol.for("pi-workflow:skill-display");
-export function installSkillDisplay() {
-  const prototype = sdk.InteractiveMode.prototype;
+export function installSkillDisplay(InteractiveMode = sdk.InteractiveMode) {
+  const prototype = InteractiveMode.prototype;
   if (prototype.getUserMessageText[SKILL_DISPLAY]) return;
   const original = prototype.getUserMessageText;
   const display = function (message) {
@@ -607,8 +615,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     }
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (isRoot && ctx.hasUI) {
-      installSkillDisplay();
-      installPendingInput(() => currentContext.ui.theme);
+      installSkillDisplay(runtime.InteractiveMode);
+      installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
       // pi's own settings, honoured the way its native `!` branch would
       // (docs/pi-coupling.md's owned `!` block); a session never installs
       // the shell without a UI, so SettingsManager is only built here. The
@@ -759,13 +767,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     webSearch(styled);
   }
   if (permittedTools.includes("mcp")) {
-    const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
-    await createMcpAdapter({ config: { mcpServers: mcpServerDefinitions(config, role), settings: mcpAdapterSettings } })(styled);
+    await installMcpAdapter(styled, { mcpServers: mcpServerDefinitions(config, role), settings: mcpAdapterSettings }, jiti);
   }
   // Plugin session hooks may refresh their own registrations, so ours runs
   // last and restores the managed exposure after every startup or resume.
   pi.on("session_start", refreshActiveTools);
   installed = true;
 }
-
-export default pi => installWorkflow(pi);
