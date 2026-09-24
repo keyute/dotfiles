@@ -1,0 +1,42 @@
+import * as sdk from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { shade } from "./rows.mjs";
+
+const INSTALLED = Symbol.for("pi-workflow:pending-input");
+
+const row = (line, width, theme) => shade(theme, truncateToWidth(line, width, "", true));
+
+// The host owns both queues, including messages waiting for compaction. Only
+// replace its pending-area presentation; every host update reads its queues anew.
+export function installPendingInput(theme) {
+  const prototype = sdk.InteractiveMode.prototype;
+  const installed = prototype.updatePendingMessagesDisplay[INSTALLED];
+  if (installed) { installed.theme = theme; return; }
+  const state = { theme };
+  const display = function () {
+    this.pendingMessagesContainer.clear();
+    const { steering, followUp } = this.getAllQueuedMessages();
+    if (!steering.length && !followUp.length) return;
+    const messages = [...steering.map(text => [text, "Steering · next response"]), ...followUp.map(text => [text, "Follow-up · after current task"])];
+    this.pendingMessagesContainer.addChild({ render(width) {
+      const theme = state.theme();
+      const lines = [];
+      for (const [text, label] of messages) {
+        lines.push(truncateToWidth(theme.fg("dim", `π ${label}`), width));
+        lines.push(row("", width, theme));
+        const wrapped = text.split("\n").flatMap(line => wrapTextWithAnsi(line, Math.max(1, width - 2)));
+        for (const [index, line] of wrapped.entries()) {
+          const content = `${index === 0 ? theme.fg("accent", "❯ ") : "  "}${theme.fg("userMessageText", line)}`;
+          lines.push(row(content, width, theme));
+        }
+        lines.push(row("", width, theme));
+      }
+      const hint = theme.fg("dim", `  ↳ ${this.keyHint} to edit all queued messages`);
+      lines.push(truncateToWidth(hint, width));
+      return lines;
+    }, keyHint: this.getAppKeyDisplay("app.message.dequeue"), invalidate() {} });
+    this.ui.requestRender();
+  };
+  display[INSTALLED] = state;
+  prototype.updatePendingMessagesDisplay = display;
+}

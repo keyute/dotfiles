@@ -14,7 +14,8 @@ import { allowedChildAgents, checkChildLaunch, narrowSubagentSchema } from "./ch
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
-import { installShell } from "./shell.mjs";
+import { installShell, parseShellInput } from "./shell.mjs";
+import { installPendingInput } from "./pending-input.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
@@ -269,6 +270,12 @@ export class CaretEditor extends sdk.CustomEditor {
   // enters it only when the editor itself had nothing left to do with the key,
   // so wrapped lines, line-end moves, history and autocomplete keep priority.
   handleInput(data) {
+    // Native Alt+Enter queues raw editor text as a follow-up. Shell input
+    // instead takes Enter's expanded-paste submit path before that action.
+    if (this.shell && !this.fleet?.focused() && this.keybindings.matches(data, "app.message.followUp") && parseShellInput(this.getExpandedText().trim())) {
+      this.submitValue();
+      return;
+    }
     const fleet = this.fleet;
     if (fleet?.focused()) {
       const action = ["down", "up", "confirm", "cancel"].find(name => this.keybindings.matches(data, `tui.select.${name}`)) ?? "other";
@@ -601,6 +608,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (isRoot && ctx.hasUI) {
       installSkillDisplay();
+      installPendingInput(() => currentContext.ui.theme);
       // pi's own settings, honoured the way its native `!` branch would
       // (docs/pi-coupling.md's owned `!` block); a session never installs
       // the shell without a UI, so SettingsManager is only built here. The

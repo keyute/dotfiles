@@ -3,12 +3,11 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "@earendil-wo
 import { PAD, appendVisible, closeFolds, defaultFolds, pad, shade } from "./rows.mjs";
 
 // The `!`/`!!` round trip pi's native BashExecutionComponent used to own
-// (docs/pi-design.md rule 5, 2026-09-23 shell-block note, and rule 9's
+// (docs/pi-design.md rule 5, 2026-09-24 shell-block note, and rule 9's
 // background exception): this extension intercepts the composer submit, runs
 // the command itself and draws it in the transcript's own shape. Mirrors pi's
 // own parsing (interactive-mode.js ~2588-2591) and its bashExecutionToText
-// (messages.js) so the recorded context text and the drawn row read the same
-// as pi's would.
+// (messages.js) for the hidden model-context message.
 
 export function parseShellInput(text) {
   if (!text.startsWith("!")) return null;
@@ -29,7 +28,7 @@ export function contextText(details) {
   return text;
 }
 
-const SHOWN_LINES = 20;
+const SHOWN_LINES = 4;
 
 function headerLines(details, theme, width) {
   const wrapped = wrapTextWithAnsi(details.command, Math.max(1, width - 2));
@@ -47,30 +46,56 @@ function wrapRow(text, width) {
 }
 
 function outputLines(details, expanded, theme, width) {
-  if (!details.output) return [];
+  if (!details.output) return wrapRow(theme.fg("muted", "no output"), width);
   const lines = details.output.split("\n");
-  const shown = expanded ? lines : lines.slice(-SHOWN_LINES);
-  const hidden = lines.length - shown.length;
-  const head = hidden > 0 ? wrapRow(theme.fg("muted", `… ${hidden} more lines`), width) : [];
-  return [...head, ...shown.flatMap(line => wrapRow(theme.fg("muted", line), width))];
-}
-
-function statusLines(details, theme, width) {
-  const lines = [];
-  if (details.cancelled) lines.push(theme.fg("warning", "cancelled"));
-  else if (typeof details.exitCode === "number" && details.exitCode !== 0) lines.push(theme.fg("error", `exit ${details.exitCode}`));
-  if (details.truncated) lines.push(theme.fg("warning", "output truncated"));
-  return lines.flatMap(text => wrapRow(text, width));
+  if (expanded || lines.length <= SHOWN_LINES) return lines.flatMap(line => wrapRow(theme.fg("muted", line), width));
+  const failed = details.cancelled || (typeof details.exitCode === "number" && details.exitCode !== 0);
+  const head = failed ? lines.slice(0, 2) : [];
+  const tail = lines.slice(failed ? -2 : -SHOWN_LINES);
+  const hidden = lines.length - head.length - tail.length;
+  return [
+    ...head.flatMap(line => wrapRow(theme.fg("muted", line), width)),
+    ...wrapRow(theme.fg("muted", `… ${hidden} more lines`), width),
+    ...tail.flatMap(line => wrapRow(theme.fg("muted", line), width)),
+  ];
 }
 
 export function shellLines(details, { expanded = false } = {}, theme, width) {
-  return [...headerLines(details, theme, width), ...outputLines(details, expanded, theme, width), ...statusLines(details, theme, width)];
+  const count = details.output ? details.output.split("\n").length : 0;
+  const expandable = count > SHOWN_LINES;
+  const outcome = details.cancelled ? "warning"
+    : typeof details.exitCode === "number" && details.exitCode !== 0 ? "error"
+      : details.exitCode === 0 ? "success" : "warning";
+  const status = details.cancelled ? "cancelled"
+    : typeof details.exitCode === "number" && details.exitCode !== 0 ? `exit ${details.exitCode}`
+      : details.exitCode === 0 ? "exit 0" : "exit unknown";
+  const summary = `${theme.fg(outcome, expandable ? expanded ? "▾" : "▸" : "•")} Output · ${count} ${count === 1 ? "line" : "lines"} · ${theme.fg(outcome, status)}${details.truncated ? ` · ${theme.fg("warning", "output truncated")}` : ""}`;
+  return [...headerLines(details, theme, width), ...wrapTextWithAnsi(summary, Math.max(1, width)), ...outputLines(details, expanded, theme, width)];
 }
 
-// pi-tui's Text is width-agnostic; this row's wrapping and padding depend on
-// the render width, so it stays its own tiny component.
-export function shellComponent(details, options, theme) {
-  return { render: width => shellLines(details, options, theme, width), invalidate() {} };
+// CustomEntryComponent rebuilds its child on theme changes and Ctrl+O; the
+// entry's state lives outside that disposable child.
+export function shellComponent(details, options, theme, state, repaint = () => {}) {
+  if (state) {
+    if (state.wasExpanded && !options.expanded) state.open = false;
+    state.wasExpanded = options.expanded;
+  }
+  const expanded = () => options.expanded || state?.open;
+  let headerHeight = 0;
+  return {
+    render(width) {
+      headerHeight = headerLines(details, theme, width).length;
+      return shellLines(details, { expanded: expanded() }, theme, width);
+    },
+    invalidate() {},
+    handleMouse(event) {
+      if (!state || options.expanded || !details.output || details.output.split("\n").length <= SHOWN_LINES) return undefined;
+      if (event.type !== "click" || event.button !== "left" || event.y !== headerHeight) return undefined;
+      state.open = !state.open;
+      repaint();
+      return { handled: true };
+    },
+  };
 }
 
 // Terminal control sequences a shell may emit (colour, cursor moves) have no
@@ -130,7 +155,7 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
     }
     chunks.push(decoder.decode());
     // A run that ends mid-line still counts its trailing newlines as content;
-    // stripped without this, 20 newline-terminated lines split into 21
+    // stripped without this, four newline-terminated lines split into five
     // elements and the last real line hides behind a false "… 1 more lines".
     const cleaned = stripped(chunks.join("")).replace(/\n+$/, "");
     const truncation = truncateTail(cleaned, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
@@ -141,8 +166,8 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
       cancelled: signal.aborted,
       truncated: truncation.truncated || dropped,
     };
-    if (excludeFromContext) appendVisible(pi, "workflow-shell", details, folds);
-    else pi.sendMessage({ customType: "workflow-shell", content: contextText(details), display: true, details }, { triggerTurn: false });
+    appendVisible(pi, "workflow-shell", details, folds);
+    if (!excludeFromContext) pi.sendMessage({ customType: "workflow-shell", content: contextText(details), display: false, details }, { triggerTurn: false });
   }
 
   function submit(text) {
@@ -182,13 +207,22 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
 }
 
 // Registered once at startup (index.mjs, next to installFolding/installFooter);
-// the renderers and the runner it returns are the whole `!` surface. pi
+// the entry renderer draws new runs; the message renderer retains historical messages. pi
 // invalidates the extension ctx on /new and /resume without re-running the
 // extension factory, so `context` is a getter for the current session's
 // ExtensionContext rather than a captured one.
 export function installShell(pi, context, { folds = defaultFolds, working, exec, env, prefix } = {}) {
-  pi.registerMessageRenderer("workflow-shell", (message, options, theme) => shellComponent(message.details, options, theme));
-  pi.registerEntryRenderer("workflow-shell", (entry, options, theme) => shellComponent(entry.data, options, theme));
+  const views = new WeakMap();
+  const view = (object, details, options, theme) => {
+    let state = views.get(object);
+    if (!state) {
+      state = { open: false, wasExpanded: false };
+      views.set(object, state);
+    }
+    return shellComponent(details, options, theme, state, folds.repaint);
+  };
+  pi.registerMessageRenderer("workflow-shell", (message, options, theme) => view(message, message.details, options, theme));
+  pi.registerEntryRenderer("workflow-shell", (entry, options, theme) => view(entry, entry.data, options, theme));
   const runner = createShellRunner({ pi, folds, working, exec, env, prefix, cwd: () => context().cwd, notify: (...args) => context().ui.notify(...args), idle: () => context().isIdle() });
   // A session tear-down otherwise leaves a spawned command running with
   // nothing left to record its result; the footer already listens to the

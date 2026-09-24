@@ -82,6 +82,12 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   existing user Markdown transformer highlights only the command. Real-render
   regression tests and `stability.test.mjs` gate the seam; retire it when Pi
   exposes a user/skill-message renderer (rule 5's single user box).
+- Pending input (2026-09-24): replace only `InteractiveMode.updatePendingMessagesDisplay`,
+  using its `pendingMessagesContainer`, `getAllQueuedMessages` and `getAppKeyDisplay`.
+  Pi retains queue ownership, including compaction input, dequeue and abort;
+  the adapter only draws shaded input blocks with the live extension theme.
+  Installation is idempotent across reloads. Render/lifecycle tests and source
+  pins gate these undocumented members; retire when Pi offers a pending-input renderer.
 - Tab completion: the documented `addAutocompleteProvider` wrapper
   (`index.mjs` `argumentCompletions`, re-added on every `session_start` and
   self-idempotent, since pi stacks providers and `/reload` re-emits
@@ -129,31 +135,36 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
   result content. A real-component test gates folding without stray previews or
   gaps (2026-09-22).
 - The owned `!` block: `CaretEditor` wraps the `onSubmit` callback pi assigns to
-  a custom editor (`newEditor.onSubmit = this.defaultEditor.onSubmit`; Alt+Enter
-  calls the same) and parses `!`/`!!` as pi's own `!` branch does, so
+  a custom editor (`newEditor.onSubmit = this.defaultEditor.onSubmit`) and routes
+  shell-mode follow-up keys through native submission before the copied app action;
+  streaming Alt+Enter otherwise queues literal text without shell parsing (2026-09-24).
+  It parses `!`/`!!` as pi's own `!` branch does, so
   `handleBashCommand` and its `BashExecutionComponent` never run — no pi path
   draws anything else, and the `input` event fires only after that branch. The
   command runs through the documented `createLocalBashOperations` with the host
-  environment, is recorded as a `workflow-shell` custom message (`!`, its context
-  text spelled like `bashExecutionToText`) or custom entry (`!!`), and Esc is
-  caught in `handleInput`, since pi's `onEscape` aborts only its own bash. Rests
+  environment. Both forms append one visible `workflow-shell` entry on completion;
+  `!` also sends a hidden custom message, its text spelled like `bashExecutionToText`,
+  so display is immediate without moving context across a tool-call/result boundary.
+  `!!` sends no context message; historical visible messages still render.
+  Esc is caught in `handleInput`, since pi's `onEscape` aborts only its own bash. Rests
   on pi-tui's `Editor` declaring `onSubmit` as a bare class field (the
   caret deletes that own property after `super()` so its accessor is reached),
   calling `this.onSubmit(text)` after clearing its state, and declaring
   `addToHistory`, on the `!` branch living only in the submit handler, on
   `sendCustomMessage` deferring a `triggerTurn: false` message while the agent
   streams, and on those four message literals; each literal is pinned in
-  `stability.test.mjs` (the pins check text, not order). Not carried:
-  `bash_execution_update`, the full-output file on truncation (the block and the
-  context text say "truncated"), pi's pending-area display while the agent
-  streams (the record lands at end of turn, as pi's own does). pi's
+  `stability.test.mjs` (the pins check text, not order). Shell result handles use
+  the custom-entry container's mouse dispatch and the existing TUI repaint callback;
+  native expansion rebuilds the renderer for Ctrl+O. Renderer state survives invalidation.
+  Not carried: `bash_execution_update`, the full-output file on truncation (the block
+  and context text say "truncated"), or pi's native pending shell component. pi's
   `shellPath`/`shellCommandPrefix` settings are carried through the SDK's exported
   `SettingsManager` (`create(cwd, agentDir, { projectTrusted })` with the session's
   `isProjectTrusted()`, so an untrusted checkout's project file cannot pick the shell;
   `getShellPath`, `getShellCommandPrefix`), read at each `session_start`, the prefix
   joined by pi's own newline; the ops worker's own
   `bash -c` keeps the model's tool on bash. Pinned in `stability.test.mjs`. Retire when pi
-  exposes a renderer for its shell block or a documented submit hook (2026-09-23).
+  exposes a renderer for its shell block or a documented submit hook (2026-09-24).
 - Unified activity groups: tools and successful completions share one timeline.
   An entry renderer gets no invalidate handle, so a completion-led group reads
   the timeline at paint time and repaints through the footer's `tui.requestRender()`;

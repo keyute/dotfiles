@@ -5,7 +5,7 @@ import { Theme } from "@earendil-works/pi-coding-agent";
 import { CombinedAutocompleteProvider, CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { CaretEditor, argumentCompletions } from "./index.mjs";
 
-const keybindings = { matches: (data, id) => ({ "app.interrupt": "\x1b", "tui.editor.cursorUp": "\x1b[A", "tui.editor.cursorDown": "\x1b[B", "tui.editor.cursorLineStart": "\x01", "tui.editor.deleteCharBackward": "\x7f", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b", "tui.input.submit": "\r", "tui.input.tab": "\t" })[id] === data };
+const keybindings = { matches: (data, id) => ({ "app.interrupt": "\x1b", "tui.editor.cursorUp": "\x1b[A", "tui.editor.cursorDown": "\x1b[B", "tui.editor.cursorLineStart": "\x01", "tui.editor.deleteCharBackward": "\x7f", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b", "tui.input.submit": "\r", "app.message.followUp": "\x1b\r", "tui.input.tab": "\t" })[id] === data };
 // The host hands the editor factory an EditorTheme; the full palette arrives
 // separately, so the mocks stay split or the test stops matching the runtime.
 const editorTheme = { borderColor: text => `<border>${text}`, selectList: { selectedText: text => text, unselectedText: text => text, description: text => text, noMatch: text => text, scrollInfo: text => text } };
@@ -89,6 +89,62 @@ test("a runner that declines the input (plain text, or ! alone) still reaches na
   caret.setText("hello");
   caret.handleInput("\r");
   assert.deepEqual(native, ["hello"]);
+});
+
+test("streaming Alt+Enter submits a shell command instead of queueing it as a native follow-up", () => {
+  const submitted = [];
+  const caret = editor({ shell: { submit: text => { submitted.push(text); return true; }, abortable: () => false } });
+  const followUps = [];
+  caret.actionHandlers.set("app.message.followUp", () => followUps.push(caret.getText()));
+  caret.onSubmit = () => { throw new Error("must not reach native submit"); };
+  caret.setText("!echo streaming");
+  caret.handleInput("\x1b\r");
+  assert.deepEqual(submitted, ["!echo streaming"]);
+  assert.deepEqual(followUps, []);
+  assert.equal(caret.getText(), "");
+  caret.handleInput("\x1b[A");
+  assert.equal(caret.getText(), "!echo streaming");
+});
+
+test("Alt+Enter submits expanded pasted shell text and cancels an open completion menu", async () => {
+  for (const prefix of ["!", "!!"]) {
+    const submitted = [];
+    const followUps = [];
+    const caret = editor({ shell: { submit: text => { submitted.push(text); return true; }, abortable: () => false } });
+    caret.actionHandlers.set("app.message.followUp", () => followUps.push(caret.getText()));
+    caret.setAutocompleteProvider({
+      getSuggestions: async () => ({ items: [{ value: "one", label: "one" }, { value: "two", label: "two" }], prefix: "" }),
+      applyCompletion() { throw new Error("completion must not be accepted"); },
+    });
+    caret.setText(prefix);
+    const command = "echo pasted\n".repeat(15);
+    caret.handleInput(`\x1b[200~${command}\x1b[201~`);
+    assert.equal(caret.getExpandedText(), prefix + command);
+    caret.handleInput("\t");
+    await settle();
+    assert.equal(caret.isShowingAutocomplete(), true);
+    caret.handleInput("\x1b\r");
+    assert.deepEqual(submitted, [(prefix + command).trim()]);
+    assert.deepEqual(followUps, []);
+    assert.equal(caret.getText(), "");
+    assert.equal(caret.isShowingAutocomplete(), false);
+  }
+});
+
+test("Alt+Enter preserves busy shell text and leaves non-shell follow-ups native", () => {
+  const submitted = [];
+  const followUps = [];
+  const caret = editor({ shell: { submit: text => { submitted.push(text); return "busy"; }, abortable: () => false } });
+  caret.actionHandlers.set("app.message.followUp", () => followUps.push(caret.getText()));
+  caret.setText("!!echo busy");
+  caret.handleInput("\x1b\r");
+  assert.deepEqual(submitted, ["!!echo busy"]);
+  assert.equal(caret.getText(), "!!echo busy");
+  for (const text of ["plain follow-up", "!"]) {
+    caret.setText(text);
+    caret.handleInput("\x1b\r");
+  }
+  assert.deepEqual(followUps, ["plain follow-up", "!"]);
 });
 
 test("a busy runner keeps the composer text instead of clearing it", () => {

@@ -1,6 +1,6 @@
 # Pi TUI design language
 
-Last verified 2026-09-24 (pi 0.87.1, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval}.mjs`;
+Last verified 2026-09-24 (pi 0.87.1, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval,pending-input,shell}.mjs`;
 change a rule only with a dated decision here, never by re-wording.
 
 The intent, set on 2026-09-07 from a side-by-side of pi and Claude Code:
@@ -136,7 +136,8 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      Empty input starts at siblings; policy exclusions still apply. Tab accepting unchanged text closes the menu;
      accepting a different directory opens its level. *Why:* automatic descent selected the wrong directory; literal paths also remove the climbing heuristic.
    - *2026-09-22, shell mode:* a leading `!`/`!!` moves into a red (`error`) `!` prompt, with command text in `userMessageText` and the whole composer in subtle `toolErrorBg`. Backspace at command start exits the mode; `!!` keeps its context exclusion. *Why:* the owner wants the mode in the prompt, not an extra character in the command; normal text keeps the tinted surface readable.
-   - *2026-09-23, shell block:* the sent `!` command is the shell-mode composer carried into the transcript — the same red `!`, `userMessageText` and `toolErrorBg` block — and the extension draws it, taking the submit before pi's `!` branch (every pi path builds its native block, and pi's `input` event fires after that branch). The output sits under the block two in: the last 20 lines with `… N more lines`, all under ctrl+o, then `exit N` or `cancelled`, then `output truncated`; while it runs the working row says `Running <cmd>… 3s` and nothing streams. `!!` looks the same and stays out of context. *Why:* rule 5's standard is the user box; the output shows because the user typed `!` to see it, and rule 2 keeps the run quiet.
+   - *2026-09-24, shell block:* carry the shell composer's red `!`, `userMessageText` and `toolErrorBg` into the transcript as soon as execution finishes, including mid-turn. Below it, an unshaded output summary carries line count and outcome; show the last four lines (first two and last two on failure/cancellation), two in, with `… N more lines`, `▸`/`▾` for longer output and ctrl+o for all retained output. State no output, cancellation and truncation explicitly. While running, retain `Running <cmd>… 3s` without streaming output. Enter and Alt+Enter both execute shell input; `!` context delivery still waits for Pi's safe boundary without starting a turn, and `!!` never enters context. *Why:* the owner wants a short readable result, not a dump or a completed command hidden behind the agent's turn.
+   - *2026-09-24, queued input:* steering and follow-up keep Pi's pending location and queue semantics but use rule 5's shaded `❯` input blocks, headed by quiet `π` labels distinguishing next-response steering from after-task follow-up, with one actual dequeue-key hint. No second queue or widget. *Why:* pending text is still the user's input; native dim labels made it look detached from the conversation.
    - *2026-09-23, shell:* the `!` command runs in the user's shell: pi's own `shellPath`/`shellCommandPrefix` settings (managed: zsh sourcing `~/.zshrc`), honoured by the extension as pi's native branch would. *Why:* `!` exists to run what the user would type at their prompt, and an interactive shell without a tty prints prompt and job-control noise, so the rc is sourced into a non-interactive zsh.
 6. **Fleet = Claude's subagent statusline shape, pi's glyphs.** `○ agent ›
    title · tokens · model` per child under the status line, five rows then `↓ N
@@ -178,8 +179,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      dot column, so the handle lines up with the `•` rows it owns.
    - *2026-09-18:* a group is one block: one blank line above, none inside; a
      row that draws nothing takes no line (`docs/pi-coupling.md`).
-9. **Background = user messages, composer, the sent `!` command and a dialog's active tab.** The user
-   box, composer and shell block share rule 5's shade; a dialog's active tab is the explicit
+9. **Background = user messages (queued or sent), composer, the sent `!` command and a dialog's active tab.** The user box, composer and shell block share rule 5's shade; a dialog's active tab is the explicit
    2026-09-21 exception (rule 11). No tool card (every plugin takes the row renderer)
    or activity summary has a background. pi's rare compaction and
    branch notices are pi's. *Why (2026-09-08):* `bg_wait`'s green card was a
