@@ -112,8 +112,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
      chronological ladder, superseding completion-only groups. Other statuses stay visible;
      resumed rows stay ungrouped. *Why:* separate completion milestones fragmented activity.
    - *2026-09-22, settled root:* with background work still live, the existing working row shows a frozen `π <verb> for <duration>` snapshot instead of a spinner. A child wake reuses that row; only the final settle appends a turn entry. *Why:* root inactivity must be visible without a fresh transcript milestone for every staggered completion.
-5. **Composer = the user box, and the user box = the composer.** A shaded block
-   in pi's `userMessageBg`: one blank shaded row above and below the content,
+5. **Composer = the user box, and the user box = the composer.** A shaded block in pi's `userMessageBg`: one blank shaded row above and below the content,
    `❯` at column 0 on the first content line, no rule lines, no placeholder;
    the status line follows the bottom row directly. *Why:* the standard is the
    user box, not either reference CLI — "if we are going to do the background
@@ -123,6 +122,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    - *2026-09-08, night:* a sent message carries the same `❯` in the same
      column, through the markdown transformer in the box's own colour; a
      message opening with a markdown block marker renders as a paragraph.
+   - *2026-09-24, skills:* a sent skill invocation is one ordinary user box containing `/skill:name` and its arguments, with only the command in `accent`. No separate skill card or instruction body, including under ctrl+o; the full instructions stay in model context and stored messages. No persistent composer label. *Why:* the owner wants the command they sent, not two transcript blocks for one input.
    - *2026-09-09:* Tab opens nothing on a line that does not start with `/`;
      the wrapper answers pi's `shouldTriggerFileCompletion` itself, and only
      the forced path consults it, so `@path` is untouched.

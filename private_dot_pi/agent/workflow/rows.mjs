@@ -704,14 +704,20 @@ export const planRenderers = {
 // no blank line is needed between them). Reasoning renders as nothing at all:
 // pi's own hidden-thinking label is wrapped in colour codes, so even an empty
 // label leaves an invisible, clickable line.
-export function bulletMarkdown(markdown, { messageType }) {
+export function bulletMarkdown(markdown, { messageType }, palette) {
   if (messageType === "assistant-thinking") return "";
   // A sent message opens with the composer's glyph at the same column: pi's
   // user box renders its content at outputPad, which is 0. The glyph takes the
   // box's own colour rather than the accent — the box colours its content
-  // through one function, and an inner colour's reset would end it for the rest
-  // of the line.
-  if (messageType === "user") return markdown.trim() ? `${PROMPT} ${markdown.trimStart()}` : markdown;
+  // through one function, so the skill command's inner colour must explicitly
+  // restore the user foreground for its arguments.
+  if (messageType === "user") {
+    if (!markdown.trim()) return markdown;
+    const body = markdown.trimStart();
+    const skill = palette && body.match(/^(\/skill:[^\s]+)(?=\s|$)/);
+    if (skill) return `${PROMPT} ${palette.fg("accent", skill[1])}${palette.fg("userMessageText", body.slice(skill[1].length))}`;
+    return `${PROMPT} ${body}`;
+  }
   if (messageType !== "assistant") return markdown;
   const body = markdown.trimStart();
   if (!body) return markdown;

@@ -72,6 +72,16 @@ pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
 - Session surfaces: pi's `resetExtensionUI` (on `/new`, `/resume`) clears the
   header, footer and custom editor, so `session_start` re-applies them every
   time; pinned in `stability.test.mjs`.
+- Skill display (2026-09-24): the workflow wraps `InteractiveMode`'s
+  `getUserMessageText` once, converting only a native `parseSkillBlock` match
+  back to `/skill:name` plus arguments before `addMessageToChat` chooses its
+  component. Both symbols are exported, but the method is undocumented. Live
+  messages and rebuilt chats share that display path; initial rendering also
+  uses its return value for editor history. Stored messages and model context
+  stay untouched. Installation precedes the initial transcript render, and the
+  existing user Markdown transformer highlights only the command. Real-render
+  regression tests and `stability.test.mjs` gate the seam; retire it when Pi
+  exposes a user/skill-message renderer (rule 5's single user box).
 - Tab completion: the documented `addAutocompleteProvider` wrapper
   (`index.mjs` `argumentCompletions`, re-added on every `session_start` and
   self-idempotent, since pi stacks providers and `/reload` re-emits

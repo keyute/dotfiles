@@ -129,6 +129,22 @@ export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages
   });
 }
 
+// Both live rendering and restored history read this undocumented method; return
+// a plain command before pi's skill-specific component sees the native block.
+const SKILL_DISPLAY = Symbol.for("pi-workflow:skill-display");
+export function installSkillDisplay() {
+  const prototype = sdk.InteractiveMode.prototype;
+  if (prototype.getUserMessageText[SKILL_DISPLAY]) return;
+  const original = prototype.getUserMessageText;
+  const display = function (message) {
+    const text = original.call(this, message);
+    const skill = sdk.parseSkillBlock(text);
+    return skill ? `/skill:${skill.name}${skill.userMessage ? ` ${skill.userMessage}` : ""}` : text;
+  };
+  display[SKILL_DISPLAY] = true;
+  prototype.getUserMessageText = display;
+}
+
 // pi routes Tab inside a command's arguments to forced file completion, and its
 // built-in provider guards the whole slash branch on `!options.force`, so the
 // command's own getArgumentCompletions never runs and Tab offers raw paths. The
@@ -584,6 +600,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     }
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (isRoot && ctx.hasUI) {
+      installSkillDisplay();
       // pi's own settings, honoured the way its native `!` branch would
       // (docs/pi-coupling.md's owned `!` block); a session never installs
       // the shell without a UI, so SettingsManager is only built here. The
@@ -695,7 +712,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       appendVisible(pi, "workflow-answers", { answers });
     });
     pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
-    pi.registerMarkdownTransformer(bulletMarkdown);
+    pi.registerMarkdownTransformer((markdown, context) => bulletMarkdown(markdown, context, currentContext?.ui.theme));
     // Reasoning leaves the settled message as well as the transcript; the
     // markdown transformer only reaches the render, and pi spaces the message
     // from its raw content (see blankReasoning). The same holds while the
