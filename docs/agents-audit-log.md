@@ -53,11 +53,17 @@ The rate-card table was not fetchable; the 2026-09-23 rows stand.
   log-triager at low (no observed failure), mid roles medium/high, top roles
   high (the drop-to-medium trigger stands). Sol/Luna 6 accept `none`; Astra
   does not.
+- Routing after the apply (2026-09-24, CLI 2.1.280, three probe children in
+  one session, `message.model` read from `<session>/subagents/*.jsonl`):
+  unpinned general-purpose → `claude-opus-5-5` (env fallback, 2 rows);
+  pinned Explore and claude-code-guide → `claude-haiku-4-5-20251001` (37
+  rows); no Fable row. Definition-pin and env-fallback paths both serve the
+  configured tier; the "mid children's `message.model`" item is closed — mid
+  and top pins are the same ID, and the pin path is the one Explore exercised.
 - **Open**: Fable vs Opus 5.5 driver paired replay (3 cases, 2026-09-20
-  protocol); re-tier small and mid when Haiku 5.5 / Sonnet 5.5 ship; mid
-  children's `message.model` after the apply; Opus 5.5 text-only-stop watch
-  now covers the implementer; Sol 6 DeepSWE regression — fallback
-  `gpt-5.6-sol` at 2x if implementer round-trips rise.
+  protocol); re-tier small and mid when Haiku 5.5 / Sonnet 5.5 ship; Opus 5.5
+  text-only-stop watch now covers the implementer; Sol 6 DeepSWE regression —
+  fallback `gpt-5.6-sol` at 2x if implementer round-trips rise.
 
 ## 2026-09-23
 
@@ -171,8 +177,7 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   sessions (51 calls), `submit_plan` 66. **Open**: nested-child polling
   after the `bg_wait` grant (baseline 154 polls / 5 launches); map that Fable child to its parent (slice the path to
   `<session>/subagents/<file>` next time) and name the spawn path the
-  deny-frontier hook cannot see; Opus 5.5 children's `message.model` after
-  the apply;
+  deny-frontier hook cannot see;
   spec-reviewer catches and zero-finding share at Opus 5.5 vs the 1 high + 3
   medium of 13 baseline; Opus 5.5 text-only stops in top-tier children.
 
@@ -647,16 +652,6 @@ the two measurements still carrying a trigger moved here.
 
 ## 2026-09-12
 
-### (claude) Model-quirk projections
-
-Still-governing rationale (2026-09-07 sweep): Fable's quirks (whole-file
-rewrites, fewer progress updates, under-batched tool calls) are projected in
-CLAUDE.md or carried by the harness prompt; Opus 5's candidate quirks
-(over-delegation, over-verification) showed no signal — Opus 5 and Fable
-sessions delegated at the same rate (3.8% vs 3.5% of tool calls) under the
-model-neutral rule — and stay unprojected.
-
-### (claude) Fresh-eyes yield — first content-level count
 
 13 spec-reviewer runs in 2 days, one per session; 669k subagent tokens
 (~51k avg) at Fable rates ≈17% of subagent spend. Yield: 1 high + 3 medium +

@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 // subagentStatusLine: rebuild the subagent panel row in Claude Code's own
-// workflow/agent-panel style and append the model as a suffix. Complements the
-// main ccstatusline status line (which only ever sees the parent session's
-// model). Contract (Claude Code >= 2.1.212): stdin is JSON { columns, tasks:
-// [{ id, name, description, tokenCount, model, ... }] }; stdout is one JSON line
-// per task, schema { id, content }, which REPLACES that task's row — there is no
-// append mode, so the row is composed here from its components:
-//   "name › description · <compact> tokens · model"
+// workflow/agent-panel style and append the model and effort as a suffix.
+// Complements the main ccstatusline status line (which only ever sees the parent
+// session's model). Contract (Claude Code >= 2.1.214): stdin is JSON { columns,
+// tasks: [{ id, name, type, description, tokenCount, model, effort, ... }] };
+// stdout is one JSON line per task, schema { id, content }, which REPLACES that
+// task's row — there is no append mode, so the row is composed here from its
+// components:
+//   "name › description · <compact> tokens · model effort"
 // mirroring the stock workflow row (name › description · <compact> tokens · N
-// tools) but with the model in place of the tool count, which the stock row
-// never surfaces. Tasks we omit keep their default rendering.
-// `name` is present for workflow tasks but absent for Agent-tool subagents (which
-// carry only a generic `type` of "local_agent" plus the description — Claude Code
-// exposes no agent-type field here), so with no name the head is the description
-// alone (never the literal string "undefined").
+// tools) but with model and effort in place of the tool count, which the stock
+// row never surfaces. Tasks we omit keep their default rendering.
+// `effort` is the child's reasoning effort ("low"…"max", or a numeric token
+// budget) and is absent when the child inherits the session's effort — then the
+// model stands alone, as in pi's fleet row (fleet.mjs modelLabel).
+// `name` is the registry name — a workflow task's or a typed agent name — and is
+// absent otherwise; `type` is the generic execution kind "local_agent" (Claude
+// Code exposes no agent-type field here), so with no name the head is the
+// description alone (never the literal string "undefined").
 
 const FAMILIES = ["opus", "sonnet", "haiku", "fable", "instant"];
 const SEP = " · ";
@@ -70,25 +74,22 @@ function main(raw) {
   for (const t of tasks) {
     const model = prettyModel(t && t.model);
     if (!model) continue; // no model (e.g. bash tasks): leave true stock row
-    // A workflow task carries a meaningful `name`; an Agent-tool subagent does
-    // not — its `name` is absent and its `type` is the generic execution kind
-    // "local_agent" (identical for every local subagent, not the agent's type),
-    // so `type` is deliberately not used as a label. Claude Code exposes no
-    // agent-type/persona field to this hook, so Agent-tool rows lead with the
-    // description. clean() rejects null/""/"undefined" so an absent field never
-    // leaks a literal into the row.
+    // clean() rejects null/""/"undefined" so an absent field never leaks a
+    // literal into the row.
     const clean = (v) =>
       v != null && String(v) !== "" && String(v) !== "undefined"
         ? String(v)
         : "";
+    const effort = clean(t.effort);
+    const tail = effort ? `${model} ${effort}` : model;
     const name = clean(t.name);
     const desc = t.description ? String(t.description) : "";
-    // Workflow row order (name › description · tokens) with model appended. The
-    // › divider only joins name↔description; with no name the head is just the
-    // description, with no description just the name.
+    // Workflow row order (name › description · tokens) with the model tail
+    // appended. The › divider only joins name↔description; with no name the head
+    // is just the description, with no description just the name.
     const build = (d) => {
       const head = name && d ? `${name}${NAME_SEP}${d}` : name || d || "";
-      return [head, formatTokens(t.tokenCount), model]
+      return [head, formatTokens(t.tokenCount), tail]
         .filter((p) => p != null && p !== "")
         .join(SEP);
     };
