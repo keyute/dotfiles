@@ -22,9 +22,7 @@
 
 ## Working agreements
 
-{{/* Fleet instructions require a configured model-tier mapping. The frontier
-     bullet renders only where the harness's default model is the frontier tier
-     (prefix match: the Claude pin carries a [1m] suffix). */ -}}
+{{/* Fleet instructions require a configured model-tier mapping. */ -}}
 {{ if hasKey $root.subagent_tiers $self -}}
 {{- $tiers := index $root.subagent_tiers $self -}}
 - When you are the session driver (the model this session started on, not a
@@ -35,9 +33,14 @@
     summary, never a raw dump. Verify delegated writes from the actual diff.
     Keep inline trivial tasks, tightly sequential steps, and changes whose
     details must stay in your context; never hand one worker the whole problem.
-{{- if and (hasKey $tiers "frontier") (hasPrefix $tiers.frontier $ag.defaults.model) (not (has "frontier_driver" $native)) }}
-  - The driver runs on the frontier tier (`{{ $tiers.frontier }}`); never
-    dispatch a child on it. Before editing a non-trivial implementation slice,
+{{- /* the tier sentence renders only where the harness's default model is the
+       frontier tier (prefix match: a pin may carry a [1m] suffix); the
+       ownership rule holds for any driver (a hook enforces the tier) */ -}}
+{{- if not (has "driver_ownership" $native) }}
+  - {{ if and (hasKey $tiers "frontier") (hasPrefix $tiers.frontier $ag.defaults.model) -}}
+    The driver runs on the frontier tier (`{{ $tiers.frontier }}`); never
+    dispatch a child on it. {{ end -}}
+    Before editing a non-trivial implementation slice,
     delegate it once design, exclusive scope, and an objective gate are settled.
     Use the lowest capable pinned worker; it owns implementation/test/repair.
     Keep decomposition, architecture, cross-scope and overall planning decisions,

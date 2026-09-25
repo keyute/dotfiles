@@ -36,8 +36,8 @@ iterate it in every step, never enumerating harnesses. Tiers: `.subagent_tiers.<
    - `session+pin`: self-probe from your own system prompt. If the pin's model
      family (`.agents.<h>.defaults.model`, decorations stripped) differs from
      the session's, run the same probe as a one-shot `claude --model '<pin>'
-     -p '<probe>' --output-format json` — the PreToolUse hook denies the
-     driver tier as a child. Then probe each worker tier (`subagent_tiers.<h>`
+     -p '<probe>' --output-format json` — a subagent would probe the worker
+     prompt, not the driver's. Then probe each worker tier (`subagent_tiers.<h>`
      minus `frontier`) with one general-purpose subagent pinned to it, no
      tools. All return `{"<principle>": {"coverage": "…", "evidence": "…"}}`;
      a failed probe marks coverage unverified.

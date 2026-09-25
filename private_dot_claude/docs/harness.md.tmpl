@@ -9,9 +9,18 @@ behavior seems changed, verify with that agent and update this file.
 ## Models (last verified 2026-09-25)
 
 - Settings pin the driver (`model` key) to `{{ .agents.claude.defaults.model }}`
-  at `effortLevel` `{{ .agents.claude.defaults.reasoning_effort }}`; `/model`
-  changes only the current session, `[1m]` selects the 1M context. Installed
-  CLI 2.1.280 (Opus 5.5 needs it); changing channel does not move the pin.
+  at effort `{{ .agents.claude.defaults.reasoning_effort }}` under
+  `modelSettings`; a top-level `effortLevel` is ignored by Opus 5.5 (it would
+  start at `medium`) and only still covers `{{ .subagent_tiers.claude.frontier }}`
+  when escalated via `/model`. The 1M window is the default on Opus 4.7+ and
+  Fable, no `[1m]` suffix. `/model <name>` saves the model as the default in
+  `~/.claude/settings.json`, overwriting the pin until the next apply; for one
+  session open `/model` and press `s` on the row. Installed CLI 2.1.280
+  (Opus 5.5 needs it); changing channel does not move the pin.
+- `{{ .subagent_tiers.claude.frontier }}` is escalation-only (since 2026-09-25;
+  evidence and reversal triggers in the audit log): switch to it for one
+  session on an ambiguous root-cause or architecture problem where the pinned
+  driver at higher effort fell short.
 - Managed roles below render from `subagents` in agents.yaml, which records
   each choice's why; reversal gates are in the audit log. Pins do not follow
   `/model`; a child without explicit effort inherits session effort.

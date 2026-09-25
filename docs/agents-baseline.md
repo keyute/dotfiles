@@ -39,17 +39,19 @@ my actual intent changes, never to track harness churn.
   steps, and changes whose details the main context must retain. *Why: a
   handoff pays only when specifying and verifying its boundary costs less than
   doing — or repairing — the work in the main context.*
-- **Frontier driver**: the frontier owns overall planning decisions and synthesis,
+- **Driver ownership**: the driver owns overall planning decisions and synthesis,
   decomposition, architecture, cross-scope decisions, approval, integration,
   adjudication, and final verification. Delegate bounded read-only planning work.
   Before editing a non-trivial implementation slice, delegate it once design,
   exclusive scope, and an objective gate are settled. The lowest capable pinned
   worker owns implementation/test/repair. Override pins only to escalate after
   observed failure; unpinned children get the top worker tier explicitly;
-  no child gets frontier. Finish a failed worker's piece yourself, not via promotion.
-  *Why (decision 2026-09-15; evidence in the audit log): explicit ownership keeps
-  scoped implementation out of the driver's context without ceding cross-scope
-  decisions; objective gates make worker results reviewable.*
+  no child gets frontier, whichever tier the driver runs. Finish a failed
+  worker's piece yourself, not via promotion.
+  *Why (decision 2026-09-15, made tier-independent 2026-09-25; evidence in the
+  audit log): explicit ownership keeps scoped implementation out of the driver's
+  context without ceding cross-scope decisions; objective gates make worker
+  results reviewable.*
 - **Delegation wait**: once children are launched, their scope is off-limits:
   do only work outside it, then end the turn or wait for their results; read a
   child's report before deciding whether a finding needs your own check.

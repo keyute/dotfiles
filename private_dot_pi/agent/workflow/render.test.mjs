@@ -135,6 +135,13 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.match(piInstructions, /Working agreements/);
   assert.match(claudeInstructions, /Working agreements/);
   assert.match(claudeInstructions, /cross-model-review/);
+  for (const [h, text] of [["pi", piInstructions], ["claude", claudeInstructions]]) {
+    // the ownership rule renders for every driver; the tier sentence only for a frontier driver
+    const ag = data.agents[h];
+    const frontierDriver = ag.defaults.model.startsWith(data.subagent_tiers[h].frontier);
+    assert.match(text, /Use the lowest capable pinned worker/, h);
+    assert.equal(/The driver runs on the frontier tier/.test(text), frontierDriver, h);
+  }
   for (const [name, text] of [[".pi/agent/AGENTS.md", piInstructions], [".claude/CLAUDE.md", claudeInstructions]]) {
     const lines = text.replace(/\n$/, "").split("\n").length;
     assert.ok(lines <= PROJECTION_MAX_LINES, `${name} renders to ${lines} lines (max ${PROJECTION_MAX_LINES})`);
@@ -195,7 +202,7 @@ test("each role renders its roster tier and effort on every harness it targets",
 
   for (const [role, meta] of Object.entries(data.subagents)) {
     const harnesses = meta.harnesses ?? Object.keys(data.agents);
-    // The frontier tier is the driver's alone.
+    // No child runs the frontier tier.
     assert.notEqual(meta.tier, "frontier", role);
 
     const claudePath = target(`.claude/agents/${role}.md`);
@@ -232,6 +239,7 @@ test("each role renders its roster tier and effort on every harness it targets",
 
   const settings = JSON.parse(run("cat", target(".claude/settings.json")));
   assert.equal(settings.effortLevel, data.agents.claude.defaults.reasoning_effort);
+  assert.equal(settings.modelSettings[data.agents.claude.defaults.model].effortLevel, data.agents.claude.defaults.reasoning_effort);
   assert.equal(Object.hasOwn(settings.env, "CLAUDE_CODE_EFFORT_LEVEL"), false);
   const routingPins = JSON.parse(run("execute-template", '{{ dict "filter" .agents.pi.defaults.classifier_filter "judge" .agents.pi.defaults.classifier_judge "bridge" .agent_mcp_servers.pi.args | toJson }}'));
   // one classifier model keeps the judge's prompt a cache hit

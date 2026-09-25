@@ -13,8 +13,9 @@ agents:
     # Recomputed by the audit skill; evidence lives in the audit log.
     native_coverage: [call_batching, docs_mcp, initiative]
     defaults:
-      # Explicit ID: aliases float across releases; [1m] selects the context variant.
-      model: claude-fable-5-1[1m]
+      # Explicit ID: aliases float across releases. 1M context is the default on
+      # Opus 4.7+ and Fable, so no [1m] suffix is needed.
+      model: claude-opus-5-5
       reasoning_effort: high
     # tiers whose model has no effort knob: the render omits `effort:` there
     no_effort_tiers: [small]
@@ -195,8 +196,8 @@ subagents:
     # from here so a rename cannot leave the always-loaded line pointing at a
     # role that no longer exists. Exactly one subagent carries this flag.
     self_review: true
-    # high, not medium: the one recall-critical pass; the driver is the frontier
-    # tier and no child runs it.
+    # high, not medium: the one recall-critical pass; no child runs the frontier
+    # tier.
     tier: top
     effort: high
     readonly: true
@@ -232,7 +233,7 @@ subagents:
     description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. Works out the how within its scope; makes no design, API, or cross-scope decisions and stops to report when one surfaces. NOT for exploratory work or an unsettled design; never commits."
   # Overrides Claude Code's built-in of the same name and is pi's managed
   # catch-all: every tool and the only role that may launch children; the
-  # specialists stay leaf roles. Top, never the frontier driver's tier.
+  # specialists stay leaf roles. Top, never the frontier tier.
   general-purpose:
     tier: top
     effort: high
@@ -241,7 +242,7 @@ subagents:
     tools: "Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
     description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation. Runs the top worker tier; prefer a specialist when one fits."
   # Claude only: overrides the built-in planner, which otherwise inherits the
-  # frontier driver (CLAUDE_CODE_SUBAGENT_MODEL never reaches it). pi's
+  # session model (CLAUDE_CODE_SUBAGENT_MODEL never reaches it). pi's
   # workflow has a native read-only plan mode and needs no planner role.
   Plan:
     harnesses: [claude]
@@ -252,8 +253,9 @@ subagents:
     description: "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs."
 # explicit model IDs, not aliases: aliases re-resolve across CLI releases and can
 # silently land on another tier; the audit skill live-probes these pins.
-# `frontier` is the driver's tier (agents.<harness>.defaults.model), never a
-# child's. small/top only: add a tier key when a model lands between them.
+# `frontier` is the tier no child ever runs: pi's driver tier, and on Claude the
+# escalation-only tier (`/model`) since 2026-09-25, when the driver moved to
+# `top`. small/top only: add a tier key when a model lands between them.
 subagent_tiers:
   claude:
     # re-tier when Haiku 5.5 ships (announced 2026-09-22); no effort knob
@@ -263,7 +265,8 @@ subagent_tiers:
     # 32 at $1.79 (AA v4.3.2). Revert to claude-opus-5 if spec-reviewer catches
     # fall below the 2026-09-15 baseline in the audit log.
     top: claude-opus-5-5
-    # Keep in lockstep with agents.claude.defaults.model.
+    # Escalation-only; kept as a tier so the deny-frontier-child hook keeps
+    # denying it to children.
     frontier: claude-fable-5-1
   pi:
     # GPT-6 (2026-09-23): Luna 6 matches Luna 5.6 at 0.4x cost per task; Sol 6

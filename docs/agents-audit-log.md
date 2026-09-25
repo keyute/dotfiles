@@ -11,6 +11,54 @@ history keeps it.
 
 ## 2026-09-25
 
+### Claude driver → Opus 5.5; Fable 5.1 becomes escalation-only
+
+Decision: `agents.claude.defaults.model` `claude-opus-5-5` at `high` (saved
+under `modelSettings`; Claude Code ignores a top-level `effortLevel` for Opus
+5.5 and would start it at `medium`; `[1m]` dropped, the 1M window is default on
+Opus 4.7+ and Fable). `subagent_tiers.claude.frontier` stays Fable 5.1 so the
+deny hook keeps it off children. The shared template's frontier-driver bullet
+was gated whole on the driver being the frontier tier; the cross-model review
+and the implementer both flagged that the ownership half (delegate
+implementation slices, keep decisions and final verification in the driver,
+finish a failed piece yourself) is tier-independent, so only the tier sentence
+is conditional now and the pi render is unchanged; the baseline principle
+is retitled Frontier driver → Driver ownership (coverage key `frontier_driver`
+→ `driver_ownership`) to match. The 2026-09-23 paired-replay gate was not
+run; the swap rests on:
+
+- Anthropic, Opus 5.5 announcement (2026-09-22): "performs at the level of
+  Claude Fable 5.1 on most work"; its max-effort table has Opus 5.5 ahead on
+  every row (Terminal-Bench 4.0 66.4 vs 55.8, FrontierCode 54.4 vs 50.3,
+  CursorBench 57.8 vs 51.8, OSWorld 81.8 vs 80.7, HLE 67.7 vs 65.6), "the gap
+  … is narrower than these scores suggest" in their own use; 40% less verbose
+  than Opus 5. Models overview: start with Opus 5.5, use Fable "when your
+  evals on Opus 5.5 at higher effort still fall short"; Claude Code
+  model-config: Fable for ambiguous root-cause and architecture work.
+- [Artificial Analysis](https://artificialanalysis.ai/models/comparisons/claude-opus-5-5-vs-claude-fable-5-1)
+  (max): index 58 vs 53, $5.98 vs $7.63 per task, Opus 5.5 ~1.5x output
+  tokens; Fable `high` 51 vs Opus 5.5 `high` 54 (the pinned level).
+- [Snorkel](https://snorkel.ai/blog/opus-5-5-vs-opus-5-vs-fable-5-1-coding-benchmark-results/)
+  (2026-09-23, 24 terminal tasks): pass@1 60.7 vs 61.5, runs passed 68% vs
+  49%, Fable failures dominated by premature termination. Practitioner reports
+  (every.to 2026-09-22, HN 49804160): Opus 5.5 ≈ 90% of Fable at coding, PR
+  review 8/14 at $15 vs 7/14 at $66; Fable kept for the hardest problems.
+- Max metering (support article 2026-09-02): Fable ≤50% of the weekly pool
+  and drains it "faster"; no multiplier published, API ratio 2.5x input.
+- Not found: a matched-effort long-horizon comparison; SWE-bench Verified for
+  either; Max drain ratio.
+
+Reversal triggers:
+- Revert the driver to Fable if spec-reviewer catches on driver-authored plans
+  or adjudication rise above the 2026-09-15 baseline, or the Opus 5.5
+  text-only end-of-turn (vendor watch item) recurs in the driver on
+  unattended runs.
+- Re-run the frontier question if Anthropic lifts the Fable weekly cap or a
+  matched-effort long-horizon eval puts Fable ahead.
+- Claude-side `agent-instructions-audit` after this model change, not yet run
+  (the audit's `session+pin` probe runs one-shot when the pin family differs
+  from the session's).
+
 ### Re-unified role matrix — one tier and one effort per role
 
 Decision: `subagents.<role>` carries one `tier` and one `effort` serving both
@@ -161,10 +209,9 @@ catalog with the GPT-6 tiers and Opus 5.5; pinned from 0.87.0 in the same change
 - Claude top → `claude-opus-5-5`; frontier stays Fable 5.1. Opus 5.5 at max
   outscores Fable 5.1 at max on the same day at 0.4x the price, but uses ~1.5x
   the tokens per task, and the frontier/top split carries the frontier_driver
-  rule and the deny-frontier-child hook. **Open**: paired replay (3 cases,
-  same-prompt clones at the parent SHA, gate-green then blinded pairwise)
-  Fable 5.1 vs Opus 5.5 as driver; swap if Opus 5.5 holds gate-green and
-  pairwise at lower cost per completed task.
+  rule and the deny-frontier-child hook. Superseded 2026-09-25: the driver
+  moved to Opus 5.5 on external evidence without the paired replay (entry
+  above).
 
 ### (claude) Cross-model consultation yield
 
