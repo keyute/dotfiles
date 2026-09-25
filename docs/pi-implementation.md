@@ -10,10 +10,10 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   package, pinned exactly); the Brew entry was dropped because it cannot
   declare a version and pi breaks extension APIs across 0.x releases.
   Upgrade as one unit: bump the pin, `npm ci`, `npm run test:pi`, apply.
-- OpenAI subscription OAuth only: Luna small, Sol mid and top worker, Astra
-  the frontier driver and default (decision 2026-09-15; `children.mjs` rejects
-  a child on it). The pinned Pi SDK (see `package.json`) lists Astra; if a
-  future pin drops it, report unavailable — do not invent an alias.
+- OpenAI subscription OAuth only; tier models live in agents.yaml
+  (`subagent_tiers.pi`), and `children.mjs` rejects a child on the frontier
+  tier (decision 2026-09-15). The pinned Pi SDK (see `package.json`) lists
+  Astra; if a future pin drops it, report unavailable — do not invent an alias.
 - Native host Pi and trusted extensions. The `workspace_*` tools are the SDK's
   own tools running in-host with the real harness context; each invocation
   routes its primitive operations (documented `operations` seam, as pi's

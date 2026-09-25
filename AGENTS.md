@@ -34,6 +34,12 @@ file are chezmoi-ignored (repo-local only).
   surfaces template errors that `chezmoi diff` silently hides, and a shared
   template is only half-checked from one harness's target.
 - Nested shared templates need `includeTemplate`, not `{{ template }}`.
+- Declare a subagent once in `.chezmoidata/agents.yaml`, scoped
+  with `harnesses:` where it is not for every harness; a shared skill body
+  lives once in `.chezmoitemplates/skills/` with a one-line stub per harness.
+  The render parity test in `private_dot_pi/agent/workflow/render.test.mjs`
+  (run by `npm run test:pi`, in CI) is the gate. *Why: per-harness copies and
+  hand-kept tables drift from the data; a failing test catches it, prose does not.*
 - Before editing the pi TUI (`{rows,footer,fleet,replay,index}.mjs` or a dialog — `dialog`, `questionnaire`,
   `plan-approval`, `peek` — under `private_dot_pi/agent/workflow/`) read `docs/pi-design.md`; its rules change only with a dated decision there.
 - Leave `chezmoi apply` and 1Password signin to me; stub `onepasswordRead`
@@ -43,8 +49,8 @@ file are chezmoi-ignored (repo-local only).
 ## Authoring agent instructions
 
 Apply the gates below to instruction sources: the baseline, shared and consumer
-templates, subagent and skill bodies. `npm run test:docs` enforces file budgets,
-why lengths, dated annotations, audit-log pruning, and cross-file duplication.
+templates, subagent and skill bodies. `npm run test:pi` checks that each
+harness projection renders and stays within 100 lines.
 
 ### Gates — a rule earns its place only if all four hold
 
@@ -117,13 +123,12 @@ erodes compliance across the whole set, not just the new rule's.*
   it computes coverage fresh. Hand-run "lean passes" restart the churn.
 - Before rewording an existing line, check its `git log -p` history: if it
   has oscillated, delete it or change the intent — never re-word.
-- On-demand docs expire by their own annotations (a section-level date covers
-  its bullets); generated content (Claude's `sandbox.md`) is exempt.
-- Before a novel rule enters the baseline, and whenever a why here or in
-  the baseline feels stale, run the `doctrine-refresh` skill — it re-checks
-  every empirical claim in both against current practitioner consensus.
-- Both maintenance skills are Claude-side; from a pi session, flag the
-  need for a run instead of attempting one.
+- On-demand docs date each fact (a section-level date covers its bullets);
+  re-verify a stale-dated fact before relying on it, since nothing checks
+  expiry. Generated content (Claude's `sandbox.md`) is exempt.
+- A new why cites its source in the dated audit log.
+- The audit skill is Claude-side; from a pi session, flag the need for a run
+  instead of attempting one.
 - Agent memory holds only what this repo cannot record — session-side
   gotchas; a method belongs in the skill and a measurement in the dated
   audit log.

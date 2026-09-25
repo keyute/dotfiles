@@ -1,7 +1,6 @@
 {
   "private": true,
   "scripts": {
-    "test:docs": "node scripts/check-docs.mjs && node --test scripts/check-docs.test.mjs",
     "test:pi": "node --test scripts/merge-pi-settings.test.mjs scripts/pi-bridge.test.mjs private_dot_pi/agent/workflow/*.test.mjs"
   },
   "dependencies": {

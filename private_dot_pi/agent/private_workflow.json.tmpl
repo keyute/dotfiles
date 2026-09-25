@@ -11,7 +11,6 @@
       $agentDir
       (printf "%s/.zshrc" .chezmoi.homeDir)
       (printf "%s/node_modules" $source) -}}
-{{- $domains := concat .agent_sandbox.network.allowed_domains $pi.extras.allowed_domains (list "api.exa.ai") | uniq | sortAlpha -}}
 {{- /* Apple's /bin/bash 3.2 puts here-document temp files in the first writable
        of /var/tmp, /tmp and the working directory, never $TMPDIR, so a
        read-only role (or plan mode) lost every heredoc until /var/tmp was
@@ -19,6 +18,10 @@
        roles have none. Verified 2026-09-11 under the SRT profile. */ -}}
 {{- $allowWrite := append $sandbox.allowWrite "/var/tmp" -}}
 {{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
+{{- /* MCP servers run inside SRT here, so each server's own hosts join the allowlist */ -}}
+{{- $domains := concat .agent_sandbox.network.allowed_domains $pi.extras.allowed_domains -}}
+{{- range $mcp -}}{{- $domains = concat $domains .policy.domains -}}{{- end -}}
+{{- $domains = $domains | uniq | sortAlpha -}}
 {{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 {{- dict
       "version" 1

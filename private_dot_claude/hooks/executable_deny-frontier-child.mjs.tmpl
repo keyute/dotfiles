@@ -4,9 +4,9 @@
 // only sets the default for unpinned children; a per-call `model` still wins,
 // which is the path this hook closes. Rendered from agents.yaml so the pin
 // cannot drift from subagent_tiers.claude.frontier.
-// The CLI accepts many frontier spellings (fable, fable-5, fable51,
-// claude-fable-5-1, claude-fable-5-mythos-5, ...), so the match is by family
-// prefix, not the exact pin; `inherit` resolves to the parent, i.e. the
+// The CLI accepts many frontier spellings (fable, fable-5, fable51, the full
+// pin, a mythos spelling, ...), so the match is by family prefix, not the
+// exact pin; `inherit` resolves to the parent, i.e. the
 // frontier driver, so it is denied too. Forks (`subagent_type: fork`) always
 // run the parent model by harness design and carry no `model`; they are a
 // driver-context continuation, not a worker, and pass through here.

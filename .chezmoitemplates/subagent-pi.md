@@ -6,7 +6,8 @@
 {{- $name := .name -}}
 {{- $root := .root -}}
 {{- $meta := index $root.subagents $name -}}
-{{- $role := index (includeTemplate "pi-roles" (dict "root" $root) | fromJson) $name -}}
+{{- $role := get (includeTemplate "pi-roles" (dict "root" $root) | fromJson) $name -}}
+{{- if not $role -}}{{- fail (printf "%s: not in the roster, or scoped to another harness" $name) -}}{{- end -}}
 ---
 name: {{ $name }}
 description: {{ $meta.description | toJson }}

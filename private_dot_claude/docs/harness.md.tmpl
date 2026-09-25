@@ -6,63 +6,39 @@ answerable live via the claude-code-guide agent; measurements, research and
 audit baselines live in the chezmoi repo's `docs/agents-audit-log.md`. If
 behavior seems changed, verify with that agent and update this file.
 
-## Models (last verified 2026-09-24)
+## Models (last verified 2026-09-25)
 
-- Global model is pinned in settings (`model` key) from the chezmoi repo as
-  `{{ .agents.claude.defaults.model }}`; `/model` changes only the current
-  session. The default is the frontier driver; `[1m]` selects its 1M context.
-  The installed CLI is latest 2.1.280, which serves Fable 5.1 and Opus 5.5
-  (Opus 5.5 needs 2.1.280 or later); changing channel does not update the
-  source model pin. Driver `effortLevel` is explicitly
-  `{{ .agents.claude.defaults.reasoning_effort }}` (2026-09-24).
-- Pins use explicit model IDs, never bare aliases: aliases re-resolve across CLI releases.
-- Role tier and effort live in `subagents.<role>.claude` in agents.yaml,
-  independently of Pi (2026-09-24). Haiku 4.5 effort is unsupported and
-  omitted. The complete matrix, evidence and reversal gates are in the audit
-  log; medium reviewer effort is a trial, not proven catch parity. Fable
-  remains the driver pending paired replay. Opus 5.5's API default is
-  `medium`, but a child without explicit effort inherits session effort.
-- Specialist pins do not follow `/model`. `CLAUDE_CODE_SUBAGENT_MODEL` is
-  the fallback for unpinned children at top (`{{ .subagent_tiers.claude.top }}`).
-  Native general-purpose and Plan are not independently managed/pinned: the
-  former takes that model fallback and session effort. The guide uses Haiku;
-  the statusline helper is upstream Sonnet. Forks (`subagent_type: fork`)
-  continue the parent model, not a worker.
-- Since Claude Code 2.1.251, subagent resolution is per-invocation `model`, then
-  definition frontmatter (`inherit` = main conversation), then
-  `CLAUDE_CODE_SUBAGENT_MODEL`, then the main conversation (release note and
-  sub-agents doc, 2026-09-15). Before 2.1.251 the env setting overrode the first
-  two. No roster entry uses `inherit`; leave the `_FORCE` variant unset because
-  it would erase specialist pins.
-- The no-frontier-child policy has a partial mechanical guard:
-  `~/.claude/hooks/deny-frontier-child.mjs` denies visible per-call requests for
-  the frontier pin, `fable`, or `inherit`. It cannot see a third-party agent
-  definition that declares `model: inherit` without a per-call model; the
-  managed roster carries none. Defaults and hooks do not prove actual routing.
+- Settings pin the driver (`model` key) to `{{ .agents.claude.defaults.model }}`
+  at `effortLevel` `{{ .agents.claude.defaults.reasoning_effort }}`; `/model`
+  changes only the current session, `[1m]` selects the 1M context. Installed
+  CLI 2.1.280 (Opus 5.5 needs it); changing channel does not move the pin.
+- Managed roles below render from `subagents` in agents.yaml, which records
+  each choice's why; reversal gates are in the audit log. Pins do not follow
+  `/model`; a child without explicit effort inherits session effort.
+
+| role | model | effort |
+|---|---|---|
+{{ range $name, $role := includeTemplate "claude-roles" (dict "root" .) | fromJson -}}
+| {{ $name }} | `{{ $role.model }}` | {{ $role.effort | default "—" }} |
+{{ end }}
+- `general-purpose` and `Plan` are managed overrides of the built-ins
+  (2026-09-25). `CLAUDE_CODE_SUBAGENT_MODEL` (`{{ .subagent_tiers.claude.top }}`)
+  remains only the fallback for the built-in `claude` type and plugin agents;
+  leave its `_FORCE` variant unset, it would erase specialist pins. Forks
+  continue the parent model; the guide uses Haiku, the statusline helper Sonnet.
+- Resolution order (since 2.1.251): per-call `model`, frontmatter (`inherit` =
+  main conversation), the env fallback, main conversation; no role uses `inherit`.
+- `~/.claude/hooks/deny-frontier-child.mjs` denies visible per-call requests
+  for the frontier pin, `fable` or `inherit`; it cannot see a third-party
+  definition declaring `model: inherit`. Hooks do not prove actual routing.
 - After each CLI update, dispatch one unpinned child and one with an explicit
-  `{{ .subagent_tiers.claude.top }}` override and verify `message.model` rather
-  than self-report. Resume and upstream routing failures remain outside the
-  hook; issue history and the latest sample are in the audit log.
-- Every custom subagent loads `~/.claude/CLAUDE.md` (built-in Explore and Plan
-  do not), so shared driver-only rules are grouped under "session driver".
-  Continue an existing agent for follow-ups rather than re-spawning it; a
-  long-lived subagent retains context (Fable 5 guide).
-- Max has a rolling 5-hour window and shared weekly pool; Fable's 50% weekly
-  cap is shared usage, not reserved capacity. Fable drains limits faster, with
-  no fixed published Fable/Opus multiplier (2026-09-24). Anthropic reports
-  Opus 5.5 limits go ~25% further than Opus 5; its extra API cache discount
-  does not transfer to subscriptions. Raw tokens/API costs are not Max
-  quota; reconcile actual allowance against `/usage`.
-- Subagents draw the same Max pools. Delegation is for bounded ownership and
-  context quality, not assumed quota savings; neither the savings nor a single
-  primary cost lever is verified.
-- `cross-model-review` / `cross-model-advice` are read-only GPT consultations
-  for high-risk diffs or stuck calls; decision ownership stays in Claude. The
-  bridge pins `{{ .subagent_tiers.pi.top }}` (`--model`, anchored in
-  agents.yaml); configured routing is not verified service.
-- The review trigger is risk-or-breadth, never blanket (decision 2026-09-03);
-  the 2026-09-22 transcript sweep counted 20 reviews with ~30 fixed findings,
-  so the trigger stands (audit log).
+  `{{ .subagent_tiers.claude.top }}` override and verify `message.model`, not
+  self-report; routing issue history and the latest sample are in the audit log.
+- Every custom subagent loads `~/.claude/CLAUDE.md` (driver-only rules sit under
+  "session driver") and draws the same Max pools (5-hour window, shared weekly
+  pool; Fable's 50% weekly cap is shared, not reserved); check `/usage`.
+- `cross-model-review` / `cross-model-advice` are read-only GPT consultations;
+  decisions stay in Claude, triggered by risk or breadth (decision 2026-09-03).
 
 ## Local-only surface (decision 2026-09-21)
 
@@ -99,7 +75,3 @@ behavior seems changed, verify with that agent and update this file.
   allowlist or `tool_call` blocking regresses, or OpenAI withdraws
   ChatGPT-subscription OAuth from third-party harnesses (sanctioned as of
   2026-09-05) — then the review backend needs a new transport.
-- pi ships no permission system: the managed workflow extension leases a
-  per-tool srt (`@anthropic-ai/sandbox-runtime`) worker for every
-  `workspace_*` call with a profile rendered from agents.yaml, and its plan
-  mode gives read-only planning (verified 2026-09-09).

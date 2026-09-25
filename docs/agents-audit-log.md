@@ -9,74 +9,59 @@ carries the numbers and open triggers behind those annotations (rule in
 baseline no longer serves a future sweep is deleted, not archived — git
 history keeps it.
 
-## 2026-09-24
+## 2026-09-25
 
-### Per-role effort decision — Opus 5.5 / GPT-6
+### Re-unified role matrix — one tier and one effort per role
 
-Per-harness role decision, not a quota/quality trial; tier maps/policy hold:
+Decision: `subagents.<role>` carries one `tier` and one `effort` serving both
+harnesses (reverts the 2026-09-24 per-harness split); a tier is a capability
+class each harness maps to its cheapest current model meeting it; effort is
+absolute and re-checked once at the tier when its model changes. `mid` dropped
+(tiers `small`/`top`/`frontier`). Claude now renders `general-purpose` (top,
+nests) and `Plan` (`harnesses: [claude]`) as overrides of its built-ins.
+`log-triager` retired; pi's `explorer` renamed `Explore` on both harnesses.
+The Exa MCP host comes from agents.yaml data. Both harness docs now render
+their role table from `subagents`, which retires this log's hand-kept
+per-harness matrix; the CI render parity test
+(`private_dot_pi/agent/workflow/render.test.mjs`) gates roster, stubs and pins.
 
-| role | Claude tier / effort | pi tier / reasoning |
+[Artificial Analysis](https://artificialanalysis.ai/models/releases/comparisons/claude-opus-5-5-vs-claude-sonnet-5)
+(2026-09-24): Opus 5.5 medium index 51, $1.34/task; high 54, $1.82; Sonnet 5
+high 32, $1.79. [Sol medium/high](https://artificialanalysis.ai/models/comparisons/gpt-6-sol-high-vs-gpt-6-sol-medium):
+index 40/43, $0.25/$0.37 per task. [CodeRabbit](https://www.coderabbit.ai/blog/opus-5-5-model-review)
+compares Standard/Max pipelines, not effort levels: ordinary catches 51/80 vs
+50/80, harder in-diff 8/13 vs 10/13 — medium lens reviewers are a trial, not
+proven catch parity. API $ is not subscription drain.
+
+Dispatches, last 45 days (root session files, user-run extraction):
+
+| role | Claude | pi |
 |---|---|---|
-| driver | Fable 5.1 / high (explicit settings `effortLevel`) | Astra / high (unchanged) |
-| Explore / explorer | Haiku 4.5 / unsupported | Luna / low |
-| log-triager | Haiku 4.5 / unsupported | Luna / medium (was low; root-cause diagnosis) |
-| dep-researcher | Opus 5.5 / medium (was Haiku) | Luna / medium (unchanged) |
-| explore-deep, researcher, implementer | Opus 5.5 / medium (unchanged) | Sol / medium (unchanged) |
-| go-, python-, ts-, shell-, infra-, diff-reviewer | Opus 5.5 / medium (was high) | Sol / high (unchanged) |
-| spec-reviewer | Opus 5.5 / high | Sol / high |
-| general-purpose | Opus 5.5 / session effort (native unpinned env fallback) | Sol / high (managed) |
+| explore-deep | 99 | 120 |
+| researcher | 91 | 42 |
+| implementer | 84 | 83 |
+| diff-reviewer | 64 | 34 |
+| spec-reviewer | 49 | 53 |
+| ts-reviewer | 48 | 30 |
+| Explore | 37 | 25 |
+| dep-researcher | 21 | 29 |
+| Plan (Claude built-in) | 12 | — |
+| general-purpose | 9 | 9 |
+| go-reviewer | 7 | 12 |
+| shell-reviewer | 8 | 3 |
+| infra-reviewer | 3 | 5 |
+| python-reviewer | 0 | 1 |
+| log-triager (retired) | 0 | 2 |
 
-Claude native Plan/general-purpose inherit effort; guide is Haiku, statusline
-helper Sonnet, forks parent. Claude mid/top share Opus; pi mid/top Sol.
-Two pi dep-researcher small→mid overrides (2026-09-23) motivated medium.
-Reviewer reduction is a trial, not a measured high-effort quality failure.
-
-[Artificial Analysis Claude comparison](https://artificialanalysis.ai/models/releases/comparisons/claude-opus-5-5-vs-claude-sonnet-5)
-(2026-09-24): Opus 5.5 medium index 51, 26k output/task, API $1.34/task;
-high 54, 36k, $1.82; Sonnet 5 high 32, 44k, $1.79. High→medium is ~26%
-less *API task cost* for Opus on that test, not a Max quota conversion or
-review-recall result. [CodeRabbit's review pipelines](https://www.coderabbit.ai/blog/opus-5-5-model-review)
-compare Standard / Max, **not API effort levels**: ordinary catches 51/80 vs
-50/80, precision 38.6% vs 35.7%; harder in-diff catches 8/13 vs 10/13,
-full-stream catches both 10/13 including outside-diff. This warrants a
-medium-default reviewer experiment, not parity or safety claims. Anthropic's
-[2026-09-22 task-cost guidance](https://claude.com/blog/what-a-task-costs-on-opus-5-5)
-recommends medium for scoped daily work, high when medium stalls, smaller
-models for lookups/logs, and Fable for hard unsupervised orchestration. It
-attributes ~25% more subscription capacity vs Opus 5 to lower Opus 5.5
-pricing including cached context; the extra *API* cache discount is not a
-subscription benefit. [Fable plan guidance](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan)
-says its 50% weekly cap is shared usage, not reserved/additional capacity;
-it drains faster with no published fixed multiplier. [Every's early-access
-report](https://every.to/vibe-check/vibe-check-opus-5-5-is-pulling-our-codex-converts-back-to-claude)
-reports positive daily coding but keeps Fable for hard cases and notes runaways,
-unfinished work and false greens; seven early-access and two public days are
-not consensus. No exact Sonnet/Opus 5.5 Max conversion is published.
-
-[Artificial Analysis Sol comparison](https://artificialanalysis.ai/models/comparisons/gpt-6-sol-high-vs-gpt-6-sol-medium):
-medium/high index 40/43, reasoning 2k/5k, API $0.25/$0.37 per task;
-Terminal-Bench 19%/26%, **not reviewer recall**.
-[Luna low/medium](https://artificialanalysis.ai/models/comparisons/gpt-6-luna-medium-vs-gpt-6-luna-low):
-index 21/29, reasoning 515/6k, API $0.0045/$0.02 per task. The live
-[credit card](https://learn.chatgpt.com/docs/pricing) lists Astra
-250/25/1250 and Terra 50/5/300 credits per 1M but omits GPT-6 Sol/Luna;
-repo Sol 50/5/250 and Luna 2.5/0.25/12.5 rows are historical, **not
-reverified** on 2026-09-24. API $ is not observed subscription drain.
-
-Reversal: compare same-snapshot actionable catches, critical misses,
-false-positive work and accepted output including retries, input/cache,
-reasoning/output, parent repairs and observed allowance. Restore Claude
-reviewers high if an important catch is lost; reassess tiers on new models
-or changed allowance/round-trips. No automatic paid trial or session read.
-Claude-side `agent-instructions-audit` required after model change; not run.
-
-Classifier stays Terra: retired injection metric; instruction-hierarchy
-results are not comparable. The agents.yaml trigger stands.
-
-Prior-apply probe (2026-09-24, CLI 2.1.280, three child `message.model`):
-general-purpose served Opus 5.5, Explore/guide Haiku 4.5; no Fable. Not
-verification of new effort. **Open**: Fable/Opus driver replay (three cases,
-2026-09-20 protocol); Opus text-only-stop; Sol DeepSWE if round-trips rise.
+Reversal triggers:
+- A lens review that misses a catch restores `high` for that role on both
+  harnesses.
+- Re-tier Claude `small` when Haiku 5.5 ships.
+- Fall back to `gpt-5.6-sol` for pi `top` if implementer round-trips rise.
+- **Open**: after apply, Claude's `/agents` shows `general-purpose` and `Plan`
+  as user overrides and `/tasks` shows `claude-opus-5-5` for both; if the
+  `Plan` override does not take, the fallback is the deny hook. Claude-side
+  `agent-instructions-audit` after the model change, not yet run.
 
 ## 2026-09-23
 
@@ -86,21 +71,6 @@ Skill steps 1–4 and 6; step 5 pending the user-run store pipelines (below).
 Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
 (thread `ce600ac8`), run prompt-free from plan mode.
 
-- Probes. Served IDs: driver one-shot `claude-fable-5-1`; children by
-  self-report `claude-opus-5-5[1m]`, `claude-sonnet-5`,
-  `claude-haiku-4-5-20251001`; one-shots of all four Claude pins answered.
-  pi pins `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-terra` present in
-  the SDK's `openai-codex.json` catalog — `pi --offline --list-models` printed
-  nothing from the sandbox (availability filter on the denied auth store);
-  the skill now greps the catalog. pi static prompt (0.87.1 `system-prompt.js`
-  carries only "Be concise" / "Show file paths"; the managed workflow adds
-  the plan-mode research clause and edit-tool guidelines; the subagent tool
-  description carries contract fields, "do not poll or wait just for a wake"
-  and "models are pinned; pass model only to escalate"): every principle
-  absent or partial, none contradicted. Probe noise: Haiku quoted the
-  projection's long_running_work line as harness evidence (read as partial);
-  Sonnet called commit_etiquette "contradicted" on "When the user asks you to
-  create a new git commit…" — a condition, not an opposition.
 - Matrix (F/O/S/H/pi = Fable 5.1, Opus 5.5, Sonnet 5, Haiku 4.5, pi static;
   c/p/a): context_hygiene c/c/c/a/a; delegation_contract p/p/p/p/p;
   delegation_economics p/p/p/a/a; frontier_driver a/a/a/a/p; delegation_wait
@@ -122,7 +92,7 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   of turn on long unattended tasks (watch item for top-tier children); "at
   its default `medium` effort the model matched or beat Claude Opus 5 at
   `high`… in fewer steps and with fewer tokens". Former high-effort
-  reviewer trigger superseded by 2026-09-24. Haiku 4.5 has no model page.
+  reviewer trigger superseded by 2026-09-25. Haiku 4.5 has no model page.
   OpenAI: one GPT-6 family page, observed
   on Astra; Sol and Luna have no guidance of their own. Its initiative and
   under-delegation notes underwrite lines already projected on pi. Over-
@@ -138,17 +108,6 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   "favor leaner prompts" (vendor-internal 10–15% eval gain, 41–66% fewer
   tokens) and its warning that repeated approval wording causes approval
   requests support the density doctrine and the initiative decision.
-- Bodies and docs (historical 2026-09-23 snapshot). No contradictions, native duplicates or stale mechanics;
-  the approval gates in `ship-check`, `align-sibling` and both repo-local
-  skills are deliberate. The two cross-model skill bodies carried Claude
-  nouns in the shared templates directory with one Claude consumer each —
-  inlined into `private_dot_claude/skills/*/SKILL.md`, shared copies removed,
-  renders byte-identical. The Sol 50/5/250 and Luna 2.5/0.25/12.5 credit rows
-  recorded then were not reverified in the 2026-09-24 live card (above).
-  Docs lint was green before and after that earlier change.
-- Cross-check (pi advisor): agreed on the verdict and every edit; disputed
-  the scope_extras evidence reading (accepted, recorded as the open trigger
-  above); asked that the catalog grep never be read as a served pin.
 - Sweep, Claude store (user-run `jq` pipeline, tool_use metadata only; the
   store held 2026-09-17..23, 7 days not 30): 68 root sessions, 43 editing
   (≥3 Edit/Write). Fresh-eyes pass: spec-reviewer in 22/43 editing sessions
@@ -179,7 +138,7 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   31, ts-reviewer 27, dep-researcher 29, explorer 19, diff-reviewer 19,
   general-purpose 9); root `status`+`list` 114, 0.35 per launch (0.5 on
   2026-09-12). Edit+Write root 188 vs child 445. Overrides: 2 dep-researcher
-  → `gpt-5.6-terra` (small → mid escalation, pre-GPT-6), nothing else.
+  → `gpt-5.6-terra` (tier escalation, pre-GPT-6), nothing else.
   Nested: 5 child launches against 154 child `status`/`list` calls and 0
   `bg_wait` — the nesting child polls; the data predates the 2026-09-22
   `bg_wait` grant to nesting roles. Plan mode: `ask_user_question` in 29/56
@@ -194,9 +153,8 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
 
 Roster decision, no audit run: the audit itself runs in a fresh session
 against these pins. Evidence was same-day Artificial Analysis at `max`
-effort plus vendor pages; the table and per-effort figures now live in the
-2026-09-24 entry, which supersedes the max-only rows. Opus 5.5: API default
-effort `medium`, thinking cannot be disabled, forced `tool_choice` 400s,
+effort plus vendor pages; per-effort figures are in the 2026-09-25 entry.
+Opus 5.5: API default effort `medium`, thinking cannot be disabled, forced `tool_choice` 400s,
 Claude Code ≥ 2.1.280 (installed). Pi SDK 0.87.1 (2026-09-22) is the first
 catalog with the GPT-6 tiers and Opus 5.5; pinned from 0.87.0 in the same change.
 
@@ -207,20 +165,6 @@ catalog with the GPT-6 tiers and Opus 5.5; pinned from 0.87.0 in the same change
   same-prompt clones at the parent SHA, gate-green then blinded pairwise)
   Fable 5.1 vs Opus 5.5 as driver; swap if Opus 5.5 holds gate-green and
   pairwise at lower cost per completed task.
-- pi small → `gpt-6-luna`, mid and top → `gpt-6-sol`. Sol 6 dominates Terra
-  5.6 on every axis, so mid == top; reverse mid when a GPT-6 Terra ships or
-  verified Sol subscription credits exceed Terra's 50/5/300. Classifier stays Terra
-  5.6 (criterion: injection resistance); the appendix trigger is restated in
-  the 2026-09-24 entry.
-- Prompting-guide deltas, gated before the next audit: Opus 5.5's unattended-
-  run clause and progress-update reminder map to `initiative` and the harness
-  prompt; its multi-agent elapsed-time budget has no observed failure (doc
-  note at most); GPT-6's ask-vs-assume, under-delegation and over-testing
-  notes map to `initiative`, the delegation rule and scope of extras. No
-  candidate clears gate 1 today.
-- Opus 5.5 child class, all eight pins and the 0.87.1 prompt sources were
-  probed by the fresh-session audit; Sol/Luna credit rows remain unverified.
-  **Open**: first `mcp__pi__*` sweep once the bridge is applied.
 
 ### (claude) Cross-model consultation yield
 
@@ -260,91 +204,31 @@ the next audit.
 
 ## 2026-09-21
 
+### Implementer roster — one writer
+
+- Decision: `implementer` is the only write-capable specialist; no second
+  one. **Open**: add one only if a sweep shows implementer round-trips or
+  per-call model overrides rising.
+
 ### Context floor and tier routing — transcript count
 
 Counts only, session files modified in the prior 11 days (Claude 211, pi 675).
 First-turn context = first assistant usage record per file (input + cache
 write + cache read).
 
-- First-turn median tokens. Claude root 37.6k (22k–48k, n=43), children 12.0k
-  small / 16.3k mid / 14.2k top. pi root 11.4k (min 8.6k, n=51), children
+- First-turn median tokens. Claude root 37.6k (22k–48k, n=43), children
+  12.0k–16.3k by tier. pi root 11.4k (min 8.6k, n=51), children
   4.4k–4.8k (n=312).
 - pi verdict: no further meaningful saving. MCP is lazy (one `mcp` proxy;
   `addedToolNames` fired in 17 sessions for context7, 3 for Exa); the two
   remaining always-loaded items — the ≈1k-token roster in the `subagent` tool
   description and the ≈1.5k-token baseline children inherit — are deliberate.
-- Pins. Claude child messages: mid 2136, small 637, top 505, frontier 0.
-- Implementer open (c), measured before this day's description change applies:
-  dispatches Claude 20, pi 52; Claude writes Sep 17–21 root 231 /
-  child 280 (Sep 20 alone: 112 / 64).
 - Claude local-only decision (harness.md): 0 invocations of any account-synced,
   Chrome, scheduling or dataviz skill in the window; skills used were
   cross-model review 10, cross-model advice 5, claude-api 1,
   agent-instructions-audit 1.
-  Effort-per-role research (one published config: same-tier implementer medium
-  / reviewer high; no source measures effort against review yield) changed
-  nothing in the roster.
 - Re-counted 2026-09-23: root 34.5k after the apply (entry above).
   **Open**: decide `run` / `claude-api` visibility.
-
-### Implementer roster — no top-tier implementer; mid remit widened
-
-Decision: one write-capable specialist stays. Its description now covers any
-bounded slice of a settled design, not only mechanical change; the baseline
-already assigned that work to "the lowest capable pinned worker", so the
-description was narrower than the intent and the baseline is unchanged. The
-repair rule ("finish a failed worker's piece yourself, not via promotion")
-stands. Evidence: four `researcher` runs; Willison, Cognition and CodeRescue
-re-fetched by the driver, the rest as reported.
-
-- Executor tier. Willison's memory file (simonwillison.net/2026/jul/3/judgement/,
-  first-hand): Sonnet for "substantive implementation", Haiku for
-  "trivial/mechanical edits", main model keeps "design, auditing… anything
-  judgment-heavy"; "implementation work rarely needs the top-tier model".
-  Claude Code `opusplan` (code.claude.com/docs/en/model-config): strongest
-  model plans, Sonnet executes — design intent, not a benchmark. Aider
-  architect/editor (2024-09-26, 2025-01-24; controlled, pre-2026 models):
-  strong planner + cheap editor 85.0% vs 79.7% solo; R1+Sonnet at 14× lower
-  cost than the o1 SOTA. Leiva (andresleiva.com, 2026-07-11): Opus
-  orchestrates, Sonnet implements from file-and-symbol-level briefs. No
-  credible setup found delegating implementation to a near-frontier worker
-  under a stronger orchestrator.
-- Contradiction the change removes. The old description said "NOT for …
-  judgment-heavy implementation" while the projection told the driver to
-  delegate every non-trivial settled slice. OpenAI's Astra guide: the model is
-  "more sensitive" to conflicting guidance and "may delegate less often than
-  desired… specify when and how much"; Anthropic's Fable 5 guide: "provide
-  explicit guidance about when delegation is appropriate".
-- Failure handling. Neither vendor documents what to do when a worker's output
-  fails verification (Claude Code covers API-error retry only). CodeRescue
-  (arXiv:2607.19338): cheap recovery and escalation "exhibit complementary
-  success patterns", same solve rate as always-escalate at 35% of its recovery
-  cost — GPT-5.4-nano/GPT-5.4, and the paper is withdrawn, so low weight.
-  Cognition (Yan, 2026-04-22): multi-agent works where "writes stay
-  single-threaded"; a weaker primary fails at "knowing when to escalate".
-  Steinberger's write-free orchestrator is known only through secondhand
-  summaries. Nothing supports a mid → top → frontier ladder.
-- Break-even. One practitioner figure (dev.to/rulestack, 2026-08-20): spawn
-  fixed cost ~54k tokens, self-corrected from 436k in its own thread —
-  direction only. arXiv:2606.17099 (n=64): explicit delegation contracts left
-  task success unchanged and raised reviewability, +13% tokens, effect ~2×
-  larger on the weaker tier.
-- Unmeasured anywhere found: orchestrators over-selecting the most expensive
-  worker tier; brief detail required per worker tier.
-- OpenAI tier positioning (vendor subagents doc): Sol "for ambiguous,
-  multi-step work", Terra for "exploration, read-heavy scans", Luna for
-  "clear, repeatable, or high-volume work" — the OpenAI-side implementer sits
-  below that positioning, against 36 pi implementer runs on Terra with no
-  tier-attributable quality finding (2026-09-18 sweep; one run changed
-  nothing and was rejected).
-- **Open**: (a) add a top-tier implementer only if a sweep shows recurring
-  model overrides or failed round-trips on `implementer` dispatches for
-  settled-design slices; (b) count Terra implementer failures on pi — a
-  per-harness tier, not a new role, is the first lever there;
-  (c) re-measure `implementer` dispatches and root inline edits after the
-  description change (baselines: 0 dispatches / 374 inline edits Sep 11–12; 4
-  dispatches, 86 root / 61 child writes Sep 15; 20 dispatches, 231 root / 280
-  child writes Sep 17–21, entry above).
 
 ### Delegation audit over the paired replay (scoped run)
 
@@ -432,7 +316,7 @@ child's run window (duplication) or after it (post-report re-read).
   the root read raw `async-subagent-runs/*/output-0.log` and `status.json`
   (11 reads). Fix: `mutationTools` / `completionGuard: false` via `pi-roles`
   (`docs/pi-implementation.md` 2026-09-18).
-- **Open**: after the guard fix, re-measure post-report re-reads of explorer
+- **Open**: after the guard fix, re-measure post-report re-reads of Explore
   paths and general-purpose used for implementation-shaped work; both are
   named by existing rules (delegation economics, frontier driver) and get a
   baseline change only if they persist — which needs the claude sweep the
@@ -521,42 +405,12 @@ card, plan and model pages and OpenCode Go, plus a trace of pi-ai's
 
 ## 2026-09-15
 
-### Delegation sample and Claude routing correction
-
-The frontier-driver decision from `49b4cff` stands; this change makes its
-implementation handoff trigger concrete without changing worker pins or guards.
-
-- Five Sep 15 Claude sessions contained 26 child logs. Deduplicated direct
-  source Edit/Write calls (excluding 16 plan/memory writes; shell mutations not
-  counted) were 86 root / 61 child. Session prefixes (root/child): `ac795c23`
-  2/0, `fe817516` 0/0, `85d28926` 18/0, `1f35ace2` 5/0, `7c60182f` 61/61.
-  The pre-change Sep 11/12 `implementer = 0` remains the comparison baseline;
-  this sample had four implementation
-  dispatches, all in the i18n session. The root made 46 source writes before
-  the first, and those four handoffs totalled 14,230 prompt characters. After
-  receiving a glossary it still wrote five catalogs totalling 85,195
-  characters. Shared `en.json` made serial extraction and some root integration
-  reasonable; the sample proves neither delegate-everything nor worker quality.
-- The instruction change keeps read-only exploration, research, and bounded
-  option proposals available during planning, while reserving architecture,
-  approval, and synthesis for the driver. Its source-edit trigger applies only
-  after an implementation slice has settled design, exclusive ownership, and
-  an objective gate; the worker then owns its test/repair loop. Relevant
-  model-qualified guidance: [Astra](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra),
-  [Sol](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.6-sol),
-  [Fable 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5),
-  [Fable 5.1](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1),
-  and [Opus 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5);
-  planner/worker separation: [Cursor](https://cursor.com/blog/scaling-agents),
-  [Aider](https://aider.chat/2024/09/26/architect.html).
-
 ### Review of 49b4cff — doctrine, tiers, docs (same day)
 
 Full audit (skill steps 1–4 and 6; step 5 skipped, the doctrine was hours
-old), a doctrine-refresh pass and a bloat sweep. That review retained every pin,
-including Fable 5 for stable-channel compatibility. Current latest-channel
-availability and routing are recorded above; the pin remains unchanged.
-Measurements below were moved from the baseline whys into this audit record:
+old), a density-evidence pass and a bloat sweep. Measurements below were moved
+from the baseline whys into this audit record; they are the sources those
+whys cite:
 
 - Frontier-driver evidence. Anthropic's Fable 5 guide, verbatim: "dispatches
   parallel subagents more readily than prior models. Use subagents
@@ -624,7 +478,7 @@ Measurements below were moved from the baseline whys into this audit record:
 - Documented-reliance check: CLAUDE_CODE_SUBAGENT_MODEL, the four-step
   resolution order, hooks running inside subagents and the PreToolUse deny
   shape are vendor-documented; `_FORCE` stays unset to preserve specialist pins.
-- Doctrine-refresh: the density why is supported in direction (Anthropic
+- Density evidence: the density why is supported in direction (Anthropic
   memory doc: target under 200 lines, longer reduces adherence; OpenAI
   harness-engineering 2026-02-11: ~100-line AGENTS.md as a table of
   contents; arXiv 2602.11988: context files +20% cost, no general gain;
@@ -637,9 +491,6 @@ Measurements below were moved from the baseline whys into this audit record:
   frontier_driver; fan_out → delegation_contract; community_search →
   web_search. Shave by mechanism: the sensitive-path enumeration left the
   projection (sandbox-enforced on every harness).
-- Cross-model cross-check (Sol, two calls): agreed with every proposal except
-  a separate Exa-fetch clause (folded into web_search); noted Astra's
-  under-delegation justifies the delegation line, not the driver choice.
 
 ### (pi) Relocated from the pruned build log
 

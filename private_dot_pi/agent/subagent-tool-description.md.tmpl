@@ -1,10 +1,9 @@
 Delegate one bounded task to one named child: { agent, task } only when authorized by the current user request or applicable user/project instructions. Children always run in the background. One writer owns each write scope; do not give concurrent children the same files or worktree.
 
 Agents (models are pinned; pass model only to escalate after an observed failure):
-{{ range $name, $meta := .subagents -}}
-{{- if ne $name "Explore" }}- {{ $name }}: {{ $meta.description }}
-{{ end -}}
-{{- end }}
+{{ range $name, $_ := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
+- {{ $name }}: {{ (index $.subagents $name).description }}
+{{ end }}
 Notes:
 - Discover capabilities once with {action:"list", capabilities:true}, then reuse that result for this session's launches. Refresh after agent configuration changes/reloads or a capability mismatch, not before every invocation; launch preflight remains authoritative.
 - Plan mode may launch read-only agents only. Writers and nested agents require execute mode.

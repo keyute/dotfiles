@@ -37,11 +37,12 @@
   },
   "model": {{ .agents.claude.defaults.model | toJson }},
   "effortLevel": {{ .agents.claude.defaults.reasoning_effort | toJson }},
-  {{- /* The driver is the frontier tier; unpinned built-ins (general-purpose,
-         Plan, claude) default to the top worker tier instead of inheriting it.
-         A default, not a force: frontmatter and per-call overrides still win
-         (v2.1.251+ resolution order, harness.md), and the PreToolUse hook
-         below is what stops a per-call frontier override. */}}
+  {{- /* The driver is the frontier tier; general-purpose and Plan are managed
+         overrides pinned in the roster, so this default only catches the
+         built-in `claude` type and plugin agents (it never reaches Explore or
+         Plan; see agents.yaml subagents.Plan). A default, not a force: frontmatter and per-call
+         overrides still win, and the PreToolUse hook below is what stops a
+         per-call frontier override. */}}
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
     "CLAUDE_CODE_DISABLE_CRON": "1"

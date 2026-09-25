@@ -1,31 +1,24 @@
 {{- /* subagent-claude: render a shared subagent as a Claude Code agent file.
        metadata comes from .subagents/<name> in .chezmoidata/agents.yaml, the
        body from .chezmoitemplates/subagents/<name>.md.
-       input: dict "name" <subagent name> "root" <template data>
-       `inherit` is emitted literally, never by omitting `model:` — the two are not
-       equivalent; see the subagent model resolution order in
-       private_dot_claude/docs/harness.md.tmpl. */ -}}
+       input: dict "name" <subagent name> "root" <template data> */ -}}
 {{- $name := .name -}}
 {{- $root := .root -}}
-{{- $meta := index $root.subagents $name -}}
-{{- $routing := get $meta "claude" -}}
-{{- if not $routing -}}{{- fail (printf "%s: missing Claude routing" $name) -}}{{- end -}}
-{{- $tier := get $routing "tier" -}}
-{{- if not $tier -}}{{- fail (printf "%s: missing Claude tier" $name) -}}{{- end -}}
-{{- $model := "inherit" -}}
-{{- if ne $tier "inherit" -}}
-  {{- $model = get $root.subagent_tiers.claude $tier -}}
-  {{- if not $model -}}{{- fail (printf "%s: unknown Claude tier %s" $name $tier) -}}{{- end -}}
-{{- end -}}
-{{- $effort := get $routing "reasoning_effort" -}}
-{{- if and (ne $model "claude-haiku-4-5") (not $effort) -}}{{- fail (printf "%s: missing Claude effort" $name) -}}{{- end -}}
+{{- $meta := get $root.subagents $name -}}
+{{- if not $meta -}}{{- fail (printf "%s: not in the subagents roster" $name) -}}{{- end -}}
+{{- $role := get (includeTemplate "claude-roles" (dict "root" $root) | fromJson) $name -}}
+{{- if not $role -}}{{- fail (printf "%s: scoped to %v, not claude" $name $meta.harnesses) -}}{{- end -}}
 ---
 name: {{ $name }}
 description: {{ $meta.description }}
+{{- /* a nesting role gets every tool, Agent included, by omitting `tools`;
+       the roster's list is pi's translation input */}}
+{{- if not (get $meta "nests") }}
 tools: {{ $meta.tools }}
-model: {{ $model }}
-{{- if ne $model "claude-haiku-4-5" }}
-effort: {{ $effort }}
+{{- end }}
+model: {{ $role.model }}
+{{- if $role.effort }}
+effort: {{ $role.effort }}
 {{- end }}
 ---
 

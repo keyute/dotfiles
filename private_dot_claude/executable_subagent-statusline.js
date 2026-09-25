@@ -39,8 +39,8 @@ function formatTokens(n) {
 }
 
 // Derive a friendly label from a model id generically, so it doesn't rot as
-// models change (e.g. claude-opus-4-8 -> "Opus 4.8", claude-opus-4-8[1m] ->
-// "Opus 4.8 1M", claude-haiku-4-5-20251001 -> "Haiku 4.5"). Falls back to raw.
+// models change (family word, dotted version digits, "1M" for a [1m] suffix, a
+// trailing date stamp dropped). Falls back to raw.
 function prettyModel(id) {
   if (!id) return null;
   const oneM = /\[1m\]/i.test(id);

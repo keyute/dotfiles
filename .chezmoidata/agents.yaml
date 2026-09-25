@@ -1,14 +1,13 @@
 # `audit` per harness is what the agent-instructions-audit skill iterates: where
-# the consumer template and on-demand docs live in this repo, where the session
-# store is and which record shape it has, and how native coverage is probed. A
-# new harness is one block here plus (if new) a shape paragraph in the skill.
+# the consumer template and on-demand docs live in this repo and how native
+# coverage is probed. A new harness is one block here plus its session-store
+# path and record shape in scripts/agent-usage.mjs (dispatch counts).
 agents:
   claude:
     home: "~/.claude"
     audit:
       instructions: private_dot_claude/CLAUDE.md.tmpl
       docs: private_dot_claude/docs
-      sessions: { path: "~/.claude/projects/**/*.jsonl", shape: claude-projects }
       probe: session+pin
     # rules this harness carries natively; the shared template skips them.
     # Recomputed by the audit skill; evidence lives in the audit log.
@@ -17,6 +16,8 @@ agents:
       # Explicit ID: aliases float across releases; [1m] selects the context variant.
       model: claude-fable-5-1[1m]
       reasoning_effort: high
+    # tiers whose model has no effort knob: the render omits `effort:` there
+    no_effort_tiers: [small]
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -69,7 +70,6 @@ agents:
     audit:
       instructions: private_dot_pi/agent/AGENTS.md.tmpl
       docs: private_dot_pi/agent/docs
-      sessions: { path: "~/.pi/agent/sessions/*/*.jsonl", shape: pi-session }
       # pi's system prompt is static: coverage is read from these files, no live call
       probe: static
       prompt_sources:
@@ -125,65 +125,66 @@ agents:
         # version/update checks and install ping
         - "pi.dev"
 # shared subagent definitions rendered for every harness; bodies live in
-# .chezmoitemplates/subagents/<name>.md; each harness resolves its own tier.
-# `tools` binds the Claude render directly and the pi render via translation
-# (pi-roles maps each Claude tool name to its native tool).
+# .chezmoitemplates/subagents/<name>.md. One `tier` and one `effort` per role
+# serve both harnesses: a tier is a capability class, not a price band, and each
+# harness maps it to the cheapest current model whose default-effort score meets
+# it (decision 2026-09-25: Opus 5.5 medium over Sonnet 5 high; Sol 6 over Terra).
 subagents:
-  # Explore (Claude) / explorer (pi) override each harness's built-in role
-  # so managed routine exploration stays on the configured small tier.
-  # explore-deep handles broad/cross-subsystem sweeps. Names differ because
-  # the built-ins do: Claude's is `Explore`, pi's is `explorer`.
-  Explore: &explore
-    claude: { tier: small }
-    pi: { tier: small, reasoning_effort: low }
+  # Effort is absolute in the shared vocabulary (low/medium/high); when a
+  # tier's model changes, re-check role efforts once at the tier, never per
+  # harness per role. `harnesses` scopes a role (default: all). `tools` binds
+  # the Claude render directly and the pi render via translation (pi-roles).
+  # Overrides each harness's built-in exploration role (Claude matches on this
+  # exact name) so routine exploration stays on the small tier.
+  Explore:
+    tier: small
+    effort: low
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Returns distilled findings (paths, file:line), not raw file dumps. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those. Reads local code only — it has no web access, so upstream changelogs and release notes go to dep-researcher."
-  explorer: *explore
   explore-deep:
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: medium }
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself. Returns distilled findings (paths, file:line), not raw file dumps. Prefer this over the single-symbol explorer whenever scope is broad or unknown."
+    description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself. Returns distilled findings (paths, file:line), not raw file dumps. Prefer this over the single-symbol Explore role whenever scope is broad or unknown."
+  # Lens reviewers run the top tier at its default effort; a lens review that
+  # misses a catch restores `high` for that role (trigger recorded 2026-09-25).
   go-reviewer:
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: high }
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review Go code diffs for correctness and idiomatic style before merging."
   python-reviewer:
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: high }
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review Python diffs for correctness, type safety, and idiomatic style before merging."
   ts-reviewer:
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: high }
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review TS/JS (TypeScript/Node.js) diffs for type safety, async correctness, and idiomatic patterns."
   shell-reviewer:
-    # mid, not small: shell/template review is judgment work, where the small
-    # tier's documented failure mode (flailing, fabrication) lives
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: high }
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review shell/dotfile diffs — shell scripts, zsh configs, chezmoi templates — for correctness and safety."
   infra-reviewer:
-    # the third high-volume stack after go and ts, and the one diff-reviewer's
-    # "no language preset" cannot cover: chart/CRD/GitOps hazards are not
-    # inferable from surrounding manifests
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: high }
+    # chart/CRD/GitOps hazards are not inferable from surrounding manifests,
+    # which is what keeps this apart from diff-reviewer's "no language preset"
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review Kubernetes/Helm/ArgoCD manifest diffs — chart values, CRDs, GitOps app definitions — for correctness and upgrade safety before merging."
   diff-reviewer:
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: high }
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them — a conformance pass over requirements-plus-artifact goes to spec-reviewer."
@@ -194,92 +195,81 @@ subagents:
     # from here so a rename cannot leave the always-loaded line pointing at a
     # role that no longer exists. Exactly one subagent carries this flag.
     self_review: true
-    # top, not inherit: the driver is the frontier tier and no child runs it.
-    # The reviewer only proposes; evidence and the open catch-count trigger are
-    # in the audit log (2026-09-15).
-    claude: { tier: top, reasoning_effort: high }
-    pi: { tier: top, reasoning_effort: high }
+    # high, not medium: the one recall-critical pass; the driver is the frontier
+    # tier and no child runs it.
+    tier: top
+    effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Judge one finished artifact against the requirements it was built from, in one pass — dispatched for the fresh-eyes self-review before work is called done, not for ordinary diff review. Reports requirements that went unimplemented as readily as defects in what was written; read-only. Reviewing the changed lines under one lens is diff-reviewer's job."
-  log-triager:
-    claude: { tier: small }
-    pi: { tier: small, reasoning_effort: medium }
-    readonly: true
-    tools: "Read, Grep, Bash"
-    description: "Summarize large log files or stderr dumps into a short diagnosis instead of pasting them into the main context."
   dep-researcher:
     # no Bash: agent_sandbox.network allowlists 16 hosts, and upstream release
     # notes are not among them — WebFetch/WebSearch are harness tools and reach
-    # them, a curl would fail confusingly.
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: small, reasoning_effort: medium }
+    # them, a curl would fail confusingly. Top, not small: both observed
+    # escalations (2026-09-23) were tier escalations.
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
   researcher:
     # Dedicated web/docs research preset; no Bash for the same reason as
     # dep-researcher.
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: medium }
+    tier: top
+    effort: medium
     readonly: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
   implementer:
-    # the only write-capable entry: executor for settled-design leaf work. Mid,
-    # not small — small-tier executors regress on anything needing judgment,
-    # and a failed attempt round-trips back through the expensive parent context.
-    # One writer, not a second top-tier one (decision 2026-09-21): add that
-    # only on the override/round-trip trigger in the audit log.
-    claude: { tier: mid, reasoning_effort: medium }
-    pi: { tier: mid, reasoning_effort: medium }
+    # the only write-capable specialist: executor for settled-design leaf work.
+    # Top, not small — small-tier executors regress on anything needing
+    # judgment, and a failed attempt round-trips back through the expensive
+    # parent context. One writer, not a second (decision 2026-09-21).
+    tier: top
+    effort: medium
     readonly: false
     tools: "Read, Grep, Glob, Bash, Edit, Write"
     description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. Works out the how within its scope; makes no design, API, or cross-scope decisions and stops to report when one surfaces. NOT for exploratory work or an unsettled design; never commits."
-  # pi only (no per-harness file renders elsewhere): Claude Code ships an
-  # equivalent built-in. Mirrors Claude's general-purpose agent — every
-  # tool and the only role that may launch children; the specialists stay leaf
-  # roles. Top, not inherit: the parent is the frontier tier and no child runs
-  # it (Claude config supplies the same fallback via CLAUDE_CODE_SUBAGENT_MODEL).
+  # Overrides Claude Code's built-in of the same name and is pi's managed
+  # catch-all: every tool and the only role that may launch children; the
+  # specialists stay leaf roles. Top, never the frontier driver's tier.
   general-purpose:
-    pi: { tier: top, reasoning_effort: high }
+    tier: top
+    effort: high
     readonly: false
     nests: true
     tools: "Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
     description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation. Runs the top worker tier; prefer a specialist when one fits."
+  # Claude only: overrides the built-in planner, which otherwise inherits the
+  # frontier driver (CLAUDE_CODE_SUBAGENT_MODEL never reaches it). pi's
+  # workflow has a native read-only plan mode and needs no planner role.
+  Plan:
+    harnesses: [claude]
+    tier: top
+    effort: high
+    readonly: true
+    tools: "Read, Grep, Glob, Bash"
+    description: "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs."
 # explicit model IDs, not aliases: aliases re-resolve across CLI releases and can
 # silently land on another tier; the audit skill live-probes these pins.
 # `frontier` is the driver's tier (agents.<harness>.defaults.model), never a
-# child's: every harness holds children at `top` or below and no entry uses `inherit`.
+# child's. small/top only: add a tier key when a model lands between them.
 subagent_tiers:
   claude:
-    # re-tier when Haiku 5.5 ships (announced 2026-09-22 for the coming weeks)
+    # re-tier when Haiku 5.5 ships (announced 2026-09-22); no effort knob
+    # (agents.claude.no_effort_tiers)
     small: claude-haiku-4-5
-    # Opus 5.5 mid (2026-09-24): medium scores 51 at $1.34/task vs Sonnet 5
-    # high's 32 at $1.79/task (AA v4.3.2; not subscription quota). Split mid
-    # when Sonnet 5.5 undercuts Opus 5.5 within ~5 index points, or if
-    # `/usage` drains the weekly pool faster.
-    mid: claude-opus-5-5
-    # Opus 5.5 (2026-09-23): the Opus-line successor, ahead of Opus 5 on every
-    # measured board at 0.8x the token price, though more verbose at max effort.
-    # Revert to claude-opus-5 if the next sweep puts worker gate-green or
-    # spec-reviewer catches below the 2026-09-15 baselines in the audit log.
+    # Opus 5.5 (2026-09-24): medium scores 51 at $1.34/task vs Sonnet 5 high's
+    # 32 at $1.79 (AA v4.3.2). Revert to claude-opus-5 if spec-reviewer catches
+    # fall below the 2026-09-15 baseline in the audit log.
     top: claude-opus-5-5
-    # Keep in lockstep with agents.claude.defaults.model. Fable stays pending
-    # the paired-driver replay (2026-09-24); mixed hardest-task evidence and
-    # the swap gate live in the audit log.
+    # Keep in lockstep with agents.claude.defaults.model.
     frontier: claude-fable-5-1
   pi:
-    # GPT-6 tiers (2026-09-23): Luna 6 matches Luna 5.6 at 0.4x cost per task;
-    # Sol 6 beats Sol 5.6 and Terra 5.6 in fewer tokens at Terra's input price,
-    # so mid and top coincide until a model lands between them (keys stay
-    # distinct: roles bind to tier + effort). Split mid again when a GPT-6 Terra
-    # ships or the subscription rate card prices Sol 6 above Terra's row.
+    # GPT-6 (2026-09-23): Luna 6 matches Luna 5.6 at 0.4x cost per task; Sol 6
+    # beats Terra 5.6 in fewer tokens at Terra's input price. Fall back to
+    # gpt-5.6-sol if implementer round-trips rise (HN day-one DeepSWE reports).
     small: gpt-6-luna
-    mid: gpt-6-sol
-    # Watch (2026-09-24): HN day-one reports rank Sol 6 below Sol 5.6 on the
-    # vendor's DeepSWE chart at every effort; AA disagrees (48 vs 47). If a
-    # sweep shows implementer round-trips rising, fall back to gpt-5.6-sol at 2x.
     # anchored: the Claude->pi review/advice bridge pins this tier
     top: &openai_top gpt-6-sol
     frontier: gpt-6-astra
@@ -372,6 +362,8 @@ agent_mcp_servers:
     package_bin: exa-mcp-server
     direct_tools: false
     args: []
+    # pi runs the server inside SRT, so its API host joins that sandbox's allowlist
+    domains: [api.exa.ai]
     auto_approve_tools: true
     # web_fetch_exa is 3.4.x's fetch tool; crawling_exa is its legacy name and
     # stays listed while the build still carries it

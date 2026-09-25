@@ -1,3 +1,0 @@
-import { installWorkflow } from {{ printf "%s/.pi/agent/workflow/index.mjs" .chezmoi.homeDir | toJson }};
-
-export default (pi) => installWorkflow(pi, {{ printf "%s/.pi/agent/workflow.json" .chezmoi.homeDir | toJson }}, "log-triager");
