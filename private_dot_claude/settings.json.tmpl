@@ -1,18 +1,15 @@
 {{- $sb := fromJson (includeTemplate "agent-sandbox" (dict "self" "claude" "root" .)) -}}
-{{- $allowRead := $sb.allowRead -}}
 {{- $allowWrite := $sb.allowWrite -}}
-{{- $sandboxDenyRead := $sb.sandboxDenyRead -}}
 {{- $extras := .agents.claude.extras -}}
-{{- range $extras.readable_paths -}}
-  {{- $allowRead = append $allowRead . -}}
-{{- end -}}
 {{- range $extras.writable_paths -}}
   {{- $allowWrite = append $allowWrite . -}}
 {{- end -}}
 {{- $allowedDomains := concat .agent_sandbox.network.allowed_domains $extras.allowed_domains -}}
-{{- $uid := output "id" "-u" | trim -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
 {{- $permDeny := .agents.claude.denied_tools -}}
+{{- /* The harness merges Read() denies into the Bash sandbox's read denyOnly,
+       so they are the one read-deny list; restore sandbox.filesystem.denyRead
+       if a release stops merging them. */ -}}
 {{- range $sb.denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
        resolving their op secrets here would make settings.json depend on
@@ -26,25 +23,26 @@
     {{- $allowedPerms = append $allowedPerms (printf "mcp__%s" $name) -}}
   {{- end -}}
 {{- end -}}
-{{- range $extras.allowed_read_patterns -}}
-  {{- $allowedPerms = append $allowedPerms (printf "Read(%s)" (replace "{uid}" $uid .)) -}}
-{{- end -}}
 {
   "permissions": {
     "allow": {{ $allowedPerms | toPrettyJson | indent 4 | trim }},
     "deny": {{ $permDeny | toPrettyJson | indent 4 | trim }},
     "defaultMode": "plan"
   },
-  "model": {{ .agents.claude.defaults.model | toJson }},
-  "effortLevel": {{ .agents.claude.defaults.reasoning_effort | toJson }},
-  {{- /* Opus 5.5 ignores effortLevel; it only still covers Fable escalated via /model. */}}
-  "modelSettings": { {{ .agents.claude.defaults.model | toJson }}: { "effortLevel": {{ .agents.claude.defaults.reasoning_effort | toJson }} } },
+  "model": {{ (index .subagent_tiers.claude .agents.claude.defaults.tier) | toJson }},
+  {{- /* Both pins, so effort after a `/model` escalation to the frontier is
+         this value rather than the server-side default, which can change. */}}
+  "modelSettings": {
+    {{ .subagent_tiers.claude.top | toJson }}: { "effortLevel": {{ .agents.claude.defaults.reasoning_effort | toJson }} },
+    {{ .subagent_tiers.claude.frontier | toJson }}: { "effortLevel": {{ .agents.claude.defaults.reasoning_effort | toJson }} }
+  },
   {{- /* The driver runs the top tier; general-purpose and Plan are managed
          overrides pinned in the roster, so this default only catches the
-         built-in `claude` type and plugin agents (it never reaches Explore or
-         Plan; see agents.yaml subagents.Plan). A default, not a force: frontmatter and per-call
-         overrides still win, and the PreToolUse hook below is what stops a
-         per-call frontier override. */}}
+         built-in `claude` type, plugin agents and workflow agents (it never
+         reaches Explore or Plan; see agents.yaml subagents.Plan). A default,
+         not a force: frontmatter and per-call overrides still win, and the
+         Agent(model:fable) deny rule (agents.claude.denied_tools) is what stops
+         a per-call frontier override. */}}
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
     "CLAUDE_CODE_DISABLE_CRON": "1"
@@ -89,7 +87,6 @@
     "command": "{{ .chezmoi.homeDir }}/.claude/subagent-statusline.js"
   },
   "enabledPlugins": {{ .agents.claude.plugins | toPrettyJson | indent 2 | trim }},
-  "extraKnownMarketplaces": {{ .agents.claude.marketplaces | toPrettyJson | indent 2 | trim }},
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,
@@ -99,14 +96,14 @@
       "allowLocalBinding": {{ .agent_sandbox.network.allow_local_binding }}
     },
     "filesystem": {
-      "allowWrite": {{ $allowWrite | toPrettyJson | indent 6 | trim }},
-      "denyRead": {{ $sandboxDenyRead | toPrettyJson | indent 6 | trim }},
-      "allowRead": {{ $allowRead | toPrettyJson | indent 6 | trim }}
+      "allowWrite": {{ $allowWrite | toPrettyJson | indent 6 | trim }}
     }
   },
   "spinnerTipsEnabled": false,
-  "alwaysThinkingEnabled": true,
   "tui": "fullscreen",
+  {{- /* Internal one-time consent flag for the auto-mode workflow prompt; the
+         CLI writes it into this chezmoi-owned file, so without it every apply
+         brings the prompt back. */}}
   "skipWorkflowUsageWarning": true,
   "theme": "auto",
   "disableDeepLinkRegistration": "disable",

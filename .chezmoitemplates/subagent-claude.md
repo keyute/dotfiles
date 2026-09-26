@@ -20,6 +20,9 @@ model: {{ $role.model }}
 {{- if $role.effort }}
 effort: {{ $role.effort }}
 {{- end }}
+{{- if get $meta "omit_instructions" }}
+omitClaudeMd: true
+{{- end }}
 ---
 
 {{ includeTemplate (printf "subagents/%s.md" $name) (dict "instructions_file" "CLAUDE.md") -}}

@@ -3,7 +3,6 @@ import { constants } from "node:fs";
 import { access, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, join, matchesGlob, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { detectSupportedImageMimeTypeFromFile, truncateHead, truncateLine } from "@earendil-works/pi-coding-agent";
 import { workerTools } from "./policy.mjs";
 import { terminateProcessGroup } from "./sandbox-runner.mjs";
 
@@ -20,6 +19,9 @@ const TOOL_OPS = {
   ls: ["exists", "stat", "readdir"],
 };
 const GREP_DEFAULT_LIMIT = 100;
+// Loaded only by the handlers that use it: the SDK root costs ~0.25 s per
+// worker, and every tool call spawns one.
+const sdk = () => import("@earendil-works/pi-coding-agent");
 
 const name = process.argv[2];
 if (!workerTools.includes(name) || !TOOL_OPS[name]) throw new Error("Unregistered sandbox tool");
@@ -103,6 +105,7 @@ function matchesToolGlob(relativePath, pattern) {
 }
 
 async function grep(params, { signal }) {
+  const { truncateHead, truncateLine } = await sdk();
   const root = resolve(cwd, params.path ?? ".");
   const rootIsDirectory = (await stat(root)).isDirectory();
   const contextLines = params.context > 0 ? params.context : 0;
@@ -216,7 +219,7 @@ const handlers = {
   exists: async ({ path }) => { try { await access(path); return true; } catch { return false; } },
   stat: async ({ path }) => ({ isDirectory: (await stat(path)).isDirectory() }),
   readdir: ({ path }) => readdir(path),
-  detectImage: async ({ path }) => (await detectSupportedImageMimeTypeFromFile(path)) ?? null,
+  detectImage: async ({ path }) => (await (await sdk()).detectSupportedImageMimeTypeFromFile(path)) ?? null,
 };
 
 process.on("SIGTERM", () => {

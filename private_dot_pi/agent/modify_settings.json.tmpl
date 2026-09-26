@@ -5,7 +5,7 @@
 {{- end -}}
 {{- $managed := dict
       "defaultProvider" $pi.defaults.provider
-      "defaultModel" $pi.defaults.model
+      "defaultModel" (index .subagent_tiers.pi $pi.defaults.tier)
       "defaultThinkingLevel" $pi.defaults.reasoning_effort
       "enabledModels" ($enabledModels | uniq | sortAlpha)
       "fullscreenExitOutput" "resume-hint"
@@ -21,8 +21,13 @@
           "disableBuiltins" true
           "defaultProvider" $pi.defaults.provider) -}}
 #!/usr/bin/env bash
-# Pi writes trusted-project and UI state to settings.json. Keep it while replacing
-# only this declared settings subset.
+# pi's settings setters write UI state (theme, thinking level, changelog version)
+# to settings.json; jq's `*` keeps whatever this declared subset does not name
+# (theme and thinking level are managed, so they reset on apply; objects merge
+# recursively, arrays and scalars are replaced).
 set -euo pipefail
 
-node "{{ .chezmoi.sourceDir }}/scripts/merge-pi-settings.mjs" '{{ $managed | toJson }}'
+input=$(cat)
+[ -z "$input" ] && input='{}'
+
+printf '%s\n' "$input" | jq --argjson managed '{{ $managed | toJson }}' '. * $managed'

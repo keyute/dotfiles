@@ -15,7 +15,7 @@ Audit dependency version bumps for breaking changes and produce a risk matrix.
 2. **Research each bump.** Patch bumps of well-behaved deps get a changelog skim;
    majors and infrastructure charts get full treatment. Fan out one pinned
    `dep-researcher` per dependency — never an unpinned or built-in worker, which
-   falls back to the top worker tier and defeats the cost split. Give each one
+   lacks the role's tool scope, pinned effort and return format. Give each one
    dependency and its from → to; it owns the sources and the return format.
 
 3. **Check against this repo's usage.** A breaking change matters only if the repo

@@ -9,10 +9,12 @@
 // find, ls) plus the guard extension stand in for a harness sandbox;
 // project-local `.pi/` files are ignored (--no-approve) and
 // extension discovery is off, so a reviewed repo cannot load code into the
-// reviewer; the worker-tier model and reasoning effort arrive via
-// --model/--reasoning-effort from the rendered MCP config, not interactive pi
-// settings, so they cannot drift from the declared value. Callers choose
-// scope (base/uncommitted/prompt/brief), never tools, provider, or flags.
+// reviewer; context files are off, dropping the driver-scoped ~/.pi AGENTS.md
+// and the reviewed repo's own (the caller re-verifies every finding); the
+// worker-tier model and reasoning effort arrive via --model/--reasoning-effort
+// from the rendered MCP config, not interactive pi settings, so they cannot
+// drift from the declared value. Callers choose scope (base/prompt/brief),
+// never tools, provider, or flags.
 //
 // Reversal trigger: pi's print mode (`--mode json`), its tool allowlist, or
 // `tool_call` blocking regresses, or OpenAI withdraws subscription OAuth from
@@ -30,8 +32,7 @@ import { z } from "zod";
 
 const PI_BIN = fileURLToPath(new URL("../node_modules/.bin/pi", import.meta.url));
 const GUARD_PATH = fileURLToPath(new URL("./pi-bridge-guard.mjs", import.meta.url));
-// user-private and persistent across bridge restarts; os.tmpdir() is shared
-// on Linux, where a pre-created directory could expose prompts and responses
+// user-private and persistent across bridge restarts
 const SESSION_DIR = resolve(process.env.XDG_CACHE_HOME || resolve(homedir(), ".cache"), "pi-bridge", "sessions");
 const DIFF_CAP = 300_000;
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -40,24 +41,18 @@ const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 const ROLE_NOTE =
   "You are a read-only reviewer/advisor consulted by another agent. You have " +
   "only the read, grep, find, and ls tools, confined to the repository at your " +
-  "working directory. Ignore any loaded instructions about other tools, " +
-  "subagents, sandboxes, or a `!` shell composer — you do not have them. " +
-  "Answer in full in one message.";
+  "working directory. Answer in full in one message.";
 
 // reasoning effort and model are fixed by the rendered MCP config, not by
 // caller input, so a tool call can never drift the pinned worker tier
 const effortIndex = process.argv.indexOf("--reasoning-effort");
-const effort = effortIndex !== -1 ? process.argv[effortIndex + 1] : "high";
+const effort = effortIndex !== -1 ? process.argv[effortIndex + 1] : undefined;
 export function thinkingLevel(level) {
   if (!THINKING_LEVELS.includes(level)) throw new Error(`Invalid reasoning effort: ${level}`);
   return level;
 }
-thinkingLevel(effort);
 const modelIndex = process.argv.indexOf("--model");
 const pinnedModel = modelIndex !== -1 ? process.argv[modelIndex + 1] : undefined;
-if (pinnedModel !== undefined && !/^[A-Za-z0-9._-]+$/.test(pinnedModel)) {
-  throw new Error(`Invalid model: ${pinnedModel}`);
-}
 
 export function validateBase(base) {
   if (base === undefined) return;
@@ -212,6 +207,7 @@ export function piArgs({ model, effort, sessionId }) {
     "--thinking", effort,
     "--tools", "read,grep,find,ls",
     "--no-extensions", "-e", GUARD_PATH,
+    "--no-context-files",
     "--no-skills",
     "--no-prompt-templates",
     "--no-themes",
@@ -239,7 +235,6 @@ export function assertCompleted(parsed, code, stderr) {
 // caller-supplied text (e.g. an "@"-leading brief) can never be parsed as a
 // file argument or a flag
 async function runPi(promptText, { cwd, sessionId }, signal) {
-  checkCwd(cwd);
   await assertRepoRoot(cwd);
   assertNoPendingMigration(cwd);
   if (signal?.aborted) throw new Error("cancelled before launch");
@@ -298,12 +293,6 @@ server.registerTool(
         .string()
         .optional()
         .describe("Review changes against this base branch"),
-      uncommitted: z
-        .boolean()
-        .optional()
-        .describe(
-          "Review staged, unstaged, and untracked changes (default when base is unset)",
-        ),
       prompt: z
         .string()
         .optional()
@@ -311,10 +300,7 @@ server.registerTool(
     },
     annotations: readOnly,
   },
-  async ({ cwd, base, uncommitted, prompt }, extra) => {
-    if (base && uncommitted) {
-      throw new Error("pass either base or uncommitted, not both");
-    }
+  async ({ cwd, base, prompt }, extra) => {
     validateBase(base);
     checkCwd(cwd);
     const diffText = await gatherDiff(base, cwd);
@@ -365,8 +351,11 @@ server.registerTool(
 );
 
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
-  // without the pin pi would fall back to its interactive default, the
-  // frontier driver, for a worker role
+  // without the pins pi would fall back to its interactive defaults, the
+  // frontier driver and its effort, for a worker role
   if (pinnedModel === undefined) throw new Error("--model <worker-tier id> is required");
+  if (effort === undefined) throw new Error("--reasoning-effort <level> is required");
+  // pi only warns on an unknown --thinking value and falls back to its default
+  thinkingLevel(effort);
   await server.connect(new StdioServerTransport());
 }

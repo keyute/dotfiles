@@ -1,11 +1,9 @@
 {
   "globalConcurrencyLimit": 20,
   "maxActiveAsyncRunsPerSession": 20,
-  "maxSubagentDepth": 2,
   "timeoutMs": 7200000,
   "checkpointBeforeDeadlineMs": 300000,
-  "defaultSubagentContext": "fresh",
-  "toolDescriptionMode": "custom",
+  "toolDescriptionMode": "compact",
   "inlineToolDisplay": "summary",
   "fleetView": false,
   "asyncWidget": false,

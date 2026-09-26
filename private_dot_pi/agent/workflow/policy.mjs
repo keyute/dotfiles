@@ -12,7 +12,8 @@ export const rootTools = [...workerTools.map(publicToolName), "workspace_task", 
 // does: the SRT profile is the boundary. The one effect the profile
 // cannot judge is a remote mutation through an allowed domain with ambient
 // credentials (~/.config/gh and keychain git auth are reachable inside it), so
-// those verbs still go to review. Matching is per shell segment and errs
+// those verbs still go to review, as does a commit, which the user makes
+// themselves (docs/agents-baseline.md). Matching is per shell segment and errs
 // toward review: a verb anywhere after its program (so `git -C . push`,
 // `bash -c "git push"` and `xargs git push` all match), the ssh family in any
 // command position, and `gh` unless the segment is one of its read shapes.
@@ -20,6 +21,7 @@ export const rootTools = [...workerTools.map(publicToolName), "workspace_task", 
 // accepted residual.
 const REVIEWED = [
   /\bgit\b.*\bpush\b/,
+  /\bgit\b.*\bcommit\b/,
   /\bdocker\b.*\bpush\b/,
   /\b(npm|pnpm|yarn)\b.*\bpublish\b/,
   /\b(curl|wget)\b.*\s(-[a-zA-Z]*[dFTX]|--data|--form|--json|--request|--upload-file|--method|--post-|--body-)/,
@@ -212,8 +214,7 @@ export class Policy {
     if (this.transitioning) throw new Error("Policy transition in progress");
     if (!this.role(role).tools.includes("mcp")) throw new Error("MCP unavailable to this role");
     const entry = this.config.mcp[server];
-    if (!entry || entry.policy.denied_tools.includes(tool)
-      || (entry.policy.allowed_tools?.length && !entry.policy.allowed_tools.includes(tool))) throw new Error("MCP tool denied by managed policy");
+    if (!entry || entry.policy.denied_tools.includes(tool)) throw new Error("MCP tool denied by managed policy");
     const readOnly = entry.policy.readonly_tools?.includes(tool) ?? false;
     if (this.readonly(role) && !readOnly) throw new Error("MCP operation is not approved for read-only scope");
     for (const key of ["relative_path", "path", "file", "filename", "outputPath"]) {

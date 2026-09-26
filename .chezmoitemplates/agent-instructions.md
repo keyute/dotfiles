@@ -1,22 +1,15 @@
 {{- /* agent-instructions: portable, harness-agnostic instruction preamble.
        Keep this file free of harness/product-specific pointers — those belong in
        the consumer template (e.g. CLAUDE.md.tmpl). It renders for any agent or
-       harness (Claude Code, pi, ...), and every subagent loads it too, so the
-       driver-only rules sit under one explicit "session driver" bullet.
+       harness (Claude Code, pi, ...), and every subagent (bar Claude's
+       `omit_instructions` roles) loads it too, so the driver-only rules sit
+       under one explicit "session driver" bullet.
        input: dict "self" <agent name> "root" <template data> */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
 {{- $ag := index $root.agents $self -}}
 {{- /* rules the harness's own system prompt already carries; see
        .chezmoidata/agents.yaml native_coverage */ -}}
-{{- /* the self_review rule names a subagent; take the name from the roster so a
-       rename cannot leave this always-loaded line pointing at a missing role */ -}}
-{{- $reviewer := "" -}}
-{{- range $n, $m := $root.subagents -}}
-{{- if get $m "self_review" -}}{{- $reviewer = $n -}}{{- end -}}
-{{- end -}}
-{{- /* a missing marker must break the render, not silently drop the rule */ -}}
-{{- if not $reviewer -}}{{- fail "no subagent in .chezmoidata/agents.yaml carries `self_review: true`, so the self-review rule cannot name its reviewer" -}}{{- end -}}
 {{- $native := list -}}
 {{- if hasKey $ag "native_coverage" -}}{{ $native = $ag.native_coverage }}{{- end -}}
 
@@ -24,7 +17,6 @@
 
 {{/* Fleet instructions require a configured model-tier mapping. */ -}}
 {{ if hasKey $root.subagent_tiers $self -}}
-{{- $tiers := index $root.subagent_tiers $self -}}
 - When you are the session driver (the model this session started on, not a
   dispatched worker):
   - Delegate bounded, independent work that repays the handoff, including
@@ -33,14 +25,9 @@
     summary, never a raw dump. Verify delegated writes from the actual diff.
     Keep inline trivial tasks, tightly sequential steps, and changes whose
     details must stay in your context; never hand one worker the whole problem.
-{{- /* the tier sentence renders only where the harness's default model is the
-       frontier tier (prefix match: a pin may carry a [1m] suffix); the
-       ownership rule holds for any driver (a hook enforces the tier) */ -}}
+{{- /* no frontier child: children.mjs and the Claude frontier guard enforce it */ -}}
 {{- if not (has "driver_ownership" $native) }}
-  - {{ if and (hasKey $tiers "frontier") (hasPrefix $tiers.frontier $ag.defaults.model) -}}
-    The driver runs on the frontier tier (`{{ $tiers.frontier }}`); never
-    dispatch a child on it. {{ end -}}
-    Before editing a non-trivial implementation slice,
+  - Before editing a non-trivial implementation slice,
     delegate it once design, exclusive scope, and an objective gate are settled.
     Use the lowest capable pinned worker; it owns implementation/test/repair.
     Keep decomposition, architecture, cross-scope and overall planning decisions,
@@ -48,11 +35,11 @@
     verification in the driver.
     Finish a failed worker's piece yourself rather than promoting it.
 {{- end }}
-  - The subagents in `{{ default (printf "%s/agents" $ag.home) (get $ag "agents_dir") }}`
-    are pinned and the dispatch-time list does not show it: override a model
-    only to escalate after an observed failure. Spawn an unpinned child with
-    `{{ $tiers.top }}` named explicitly; never leave one to inherit the driver's
-    model — a pin is a default the harness can drop, not a guarantee.
+{{- if not (get $ag "pins_in_dispatch_list") }}
+  - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time
+    list does not show it: override a model only to escalate after an observed
+    failure.
+{{- end }}
 {{- if not (has "delegation_wait" $native) }}
   - Once children are launched, their scope is off-limits: do only work outside
     it, then wait for their results; read a report before deciding whether a
@@ -60,7 +47,7 @@
 {{- end }}
   - Before calling done a change that no deterministic check gates and that
     will be merged or applied — always on a high-stakes surface (auth,
-    security, data, concurrency, migrations) — hand `{{ $reviewer }}` the
+    security, data, concurrency, migrations) — hand `spec-reviewer` the
     artifact and its requirements: history-free (never a fork), pinned tier,
     one pass, naming the snapshot and the gates already green. Skip it when
     gates cover the requirements and the surface is not high-stakes; a
@@ -76,8 +63,9 @@
 {{ end -}}
 - Use Playwright for frontend interaction, inspection, and screenshots — not as a
   web-search substitute.
-{{ if and (hasKey $ag "native_web_search") (not $ag.native_web_search) -}}
-- Use the Exa MCP for web search and fetching; no native web-search tool is configured.
+{{ if and (hasKey $ag "native_fetch") (not $ag.native_fetch) -}}
+- Web search: built-in by default (cost); escalate to the Exa MCP when its
+  results are sparse, stale, or miss community sources. Fetch with the Exa MCP.
 {{ else -}}
 - Web search and fetch: built-in by default (cost); escalate to the Exa MCP
   (search or fetch) when built-in results are sparse, stale, miss community
@@ -137,7 +125,7 @@
   the task at hand.
 {{ if not (has "convention_recording" $native) -}}
 - When I correct your approach or re-explain a convention, offer to record it in
-  the project's instruction file (AGENTS.md/CLAUDE.md) or your memory.
+  the project's instruction file (AGENTS.md/CLAUDE.md){{ if not (and (hasKey $ag "native_memory") (not $ag.native_memory)) }} or your memory{{ end }}.
 {{ end -}}
 - Never read credential stores, shell history, agent transcripts/session stores,
   or auth configs unless I explicitly ask for that specific path — the sandbox

@@ -6,9 +6,8 @@ Expect from the dispatch: objective, owned files/scope, non-goals, acceptance
 criteria, and a verification command. If any is missing, stop and report what is
 missing rather than guessing.
 
-Read the current state of every file before editing it; match the surrounding
-code's style and check the project's {{ .instructions_file }} for conventions
-first. Never revert changes you did not make, and never run formatters or
+Read the current state of every file before editing it and match the surrounding
+code's style. Never revert changes you did not make, and never run formatters or
 generators that touch files outside your scope.
 
 If the work surfaces an unresolved design, API, data-model, or cross-cutting

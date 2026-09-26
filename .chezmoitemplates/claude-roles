@@ -1,9 +1,9 @@
 {{- /* claude-roles: resolve the shared role definitions to Claude Code pins.
        input: dict "root" <template data>
        output: JSON map keyed by role name to model and effort, effort "" for a
-       tier in agents.claude.no_effort_tiers; roles scoped to other harnesses are omitted */ -}}
+       model in agents.claude.no_effort_models; roles scoped to other harnesses are omitted */ -}}
 {{- $root := .root -}}
-{{- $noEffortTiers := default (list) (get $root.agents.claude "no_effort_tiers") -}}
+{{- $noEffortModels := default (list) (get $root.agents.claude "no_effort_models") -}}
 {{- $roles := dict -}}
 {{- range $name, $meta := $root.subagents -}}
   {{- $harnesses := get $meta "harnesses" -}}
@@ -16,7 +16,7 @@
     {{- if not $model -}}{{- fail (printf "%s: unknown tier %s" $name $tier) -}}{{- end -}}
     {{- $effort := get $meta "effort" -}}
     {{- if not $effort -}}{{- fail (printf "%s: missing effort" $name) -}}{{- end -}}
-    {{- if has $tier $noEffortTiers -}}{{- $effort = "" -}}{{- end -}}
+    {{- if has $model $noEffortModels -}}{{- $effort = "" -}}{{- end -}}
     {{- $roles = set $roles $name (dict "model" $model "effort" $effort) -}}
   {{- end -}}
 {{- end -}}

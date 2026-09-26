@@ -5,95 +5,86 @@ verify against the source repository and update this file. Sandbox, mode and
 approval questions: `~/.pi/agent/docs/sandbox.md`; sweep measurements and audit
 baselines: the chezmoi repo's `docs/agents-audit-log.md`.
 
-## Launch and ownership (last verified 2026-09-07)
+## Launch and ownership (last verified 2026-09-26)
 
 - Launch through the managed `pi` zsh function: it runs the repository's
   lockfile-pinned CLI (`node_modules/.bin/pi`) — no Brew install — disables
   native tools and ambient extensions, then loads the managed workflow and
   Herdr when present. A binary run outside it bypasses that.
-- Pi loads the applied copy under `~/.pi/agent/workflow`, not the repository
-  source; `~/.pi/agent/node_modules` symlinks to the repository's pinned
-  `node_modules`, which pi's documented "node_modules in a parent directory"
-  lookup follows. A source edit reaches a session only through `chezmoi apply`.
-- The repository's npm manifest/lockfile is the single source for the CLI, the
-  extension dependencies and the worker SDK — one pinned unit (currently {{ index (fromJson (include "package.json")).dependencies "@earendil-works/pi-coding-agent" }}),
-  so CLI/SDK skew cannot occur. Pi breaks extension APIs across 0.x point
-  releases: upgrade by bumping that one pin, then `npm ci`, `npm run test:pi` and
-  `chezmoi apply`; the npm dependency hook installs with lifecycle scripts off.
-- Settings are merged by managed key; unrelated UI/trust preferences survive.
+- Pi loads the applied `~/.pi/agent/workflow`, not the repository source; its
+  `node_modules` resolves through a symlink to the repository's pinned tree (pi's
+  parent-directory lookup). A source edit reaches a session only via `chezmoi apply`.
+- The repository's npm manifest/lockfile pins the CLI, extension dependencies
+  and worker SDK as one unit (currently {{ index (fromJson (include "package.json")).dependencies "@earendil-works/pi-coding-agent" }}), so they cannot skew. Pi
+  breaks extension APIs across 0.x point releases: upgrade by bumping that pin,
+  then `npm ci`, `npm run test:pi` and `chezmoi apply` (lifecycle scripts off).
+- Settings merge by managed key: pi's `lastChangelogVersion` survives apply; a
+  saved theme or `/thinking` level resets. Trust lives in `trust.json`.
   Authentication and session files stay unmanaged — sign in through Pi's normal
   OpenAI subscription login, and do not import another harness's auth files.
 
 ## Models (last verified 2026-09-25)
 
-- Default: `{{ .agents.pi.defaults.provider }}/{{ .agents.pi.defaults.model }}`, {{ .agents.pi.defaults.reasoning_effort }} reasoning; planning uses {{ .agents.pi.defaults.plan_reasoning_effort }}.
-- The approval classifier (MCP calls, remote-mutating shell verbs and unsandboxed
-  requests) runs in two stages with no tools: `{{ .agents.pi.defaults.classifier_filter.model }}` at {{ .agents.pi.defaults.classifier_filter.reasoning_effort }} reasoning
-  screens each reviewed action, and anything but allow goes to `{{ .agents.pi.defaults.classifier_judge.model }}` at
-  {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt; its verdict is final. Model, text and cache key
-  align; reasoning changes may miss cache.
-- Specialist roles below render from `subagents` in agents.yaml, which records
-  each choice's why; reversal gates are in the audit log.
+- Default: `{{ .agents.pi.defaults.provider }}/{{ index .subagent_tiers.pi .agents.pi.defaults.tier }}`, {{ .agents.pi.defaults.reasoning_effort }} reasoning.
+- The approval classifier (MCP calls, remote-mutating shell verbs, unsandboxed requests)
+  runs two tool-less stages: `{{ .agents.pi.defaults.classifier_filter.model }}` at {{ .agents.pi.defaults.classifier_filter.reasoning_effort }} reasoning screens each reviewed action; anything
+  but allow goes to `{{ .agents.pi.defaults.classifier_judge.model }}` at {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt, whose verdict is final.
+  Model, text and cache key align; reasoning changes may miss cache.
+- Specialist roles, from `subagents` in agents.yaml (which records each why):
 
 | role | model | reasoning |
 |---|---|---|
 {{ range $name, $role := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 | {{ $name }} | `{{ $role.model }}` | {{ $role.thinking }} |
 {{ end }}
-- `workflow/children.mjs` rejects frontier children.
-- SDK Astra pin is in the subscription catalog; if dropped, fail unavailable,
-  not an alias or API billing.
-{{ includeTemplate "openai-rate-card.md" . -}}
-{{ includeTemplate "openai-context-window.md" . -}}
-- Pi has no `/status`: read status line context and `/session`. Raising
-  `contextWindow` via `modelOverrides` on `openai-codex` only defers compaction
-  until provider rejection. Revisit at next SDK bump or if it reports ≠ 272K.
+- `workflow/children.mjs` rejects frontier children. The `{{ .subagent_tiers.pi.frontier }}` pin is in
+  the SDK's subscription catalog; if dropped, fail unavailable, not an alias or API billing.
+- All models draw one plan allowance at their own rate
+  ([live rate card](https://learn.chatgpt.com/docs/pricing); figures in the audit log).
+  API task cost is not Pro allowance; compare completed tasks including retries.
+- Context window: 272,000 input tokens on the subscription route, from the pinned
+  model catalog (2026-09-26); the model pages' 1,050,000 is API-key only. It has
+  moved without notice: trust the live readout (status line, `/session`; pi has no
+  `/status`). Raising `contextWindow` via `modelOverrides` only defers compaction
+  until provider rejection. Revisit at the next SDK bump or if it reports ≠ 272K.
 
 ## Specialists and skills (last verified 2026-09-22)
 
 - Specialists under `~/.pi/agent/agents` render from the shared roster, each with
-  an explicit OpenAI model, tool list and mandatory child policy extension. Native
-  builtin names cannot substitute for missing `workspace_*` tools; read-only
-  specialists stay read-only even when the root enters execution. They are leaf
-  roles: only `general-purpose` (every tool, the top worker tier) may launch
-  children, to the same depth as Claude Code's built-in general-purpose agent.
-- Named `subagent` launches use the roster in the tool description; capability
-  discovery follows that tool's reuse guidance, while every launch still preflights.
+  an explicit OpenAI model, tool list and mandatory child policy extension; native
+  builtin names cannot substitute for missing `workspace_*` tools, and read-only
+  specialists stay read-only when the root enters execution. Only `general-purpose`
+  (every tool, top worker tier) may launch children, to Claude Code's same depth.
+- Named `subagent` launches use the roster in the tool description and preflight.
   Children run in the background, up to twenty sharing the root policy (Claude
   Code's default); batch independent launches that each repay their handoff.
-- Children start fresh; `context: "fork"` branches this session's transcript into
-  the child for a second pass over material already read. They have no channel
-  back: the pi-subagents intercom bridge is off in
-  `extensions/subagent/config.json` (decision 2026-09-10).
+- Children start fresh and have no channel back: the pi-subagents intercom
+  bridge is off in `extensions/subagent/config.json` (decision 2026-09-10).
 - Schema and description expose managed keys/APIs only; executor and enforcement stay unchanged.
   Scripts/chains are refused. Status (fleet or transcript), stop, interrupt and non-recovering steer
-  are enabled; project role overrides, revival and mutating management are not. Roots receive native
-  notifications; nesting children lack that notifier and use blocking `bg_wait` to collect descendants
-  before synthesis. Only nesting roles have that tool (2026-09-22).
+  are enabled; project role overrides, revival and mutating management are not. Nesting children lack
+  the native notifier and collect descendants with blocking `bg_wait` before synthesis (2026-09-22).
 - Runs have a two-hour hard backstop and a best-effort checkpoint/stop steer five minutes before it.
   `bg_wait` window expiry is non-terminal; the separate headless `agent_end` auto-drain still has a
   30-minute limit. A nesting child collects results during its turn, not through that drain (2026-09-22).
-- Launched children's scope is off-limits to the parent (AGENTS.md).
 - Transcript and status-line rendering follows the source repo's `docs/pi-design.md`;
   the undocumented surfaces it leans on are inventoried in `docs/pi-coupling.md`.
-- Shared skills stay discoverable under `~/.agents/skills`; explicit skill
-  loading is available through Pi. Inside a child, pi-subagents' tool allowlist
-  may leave the direct `mcp__*` tools inactive; the `mcp` proxy is always
-  allowlisted and reaches the same servers.
+- Shared skills under `~/.agents/skills` load only by explicit `/skill:name`:
+  pi lists skills in the system prompt only while a tool named `read` or `bash`
+  is active, and the workflow exposes `workspace_*` (2026-09-26). Inside a
+  child, pi-subagents' tool allowlist may leave the direct `mcp__*` tools
+  inactive; the `mcp` proxy is always allowlisted and reaches the same servers.
 
 ## Web search (last verified 2026-09-23)
 
-- `web_search` is the pinned `pi-web-search` plugin: OpenAI's server-side
-  `web_search` tool, on the same ChatGPT-subscription Responses endpoint
-  as model calls, so it adds no endpoint, credential or network path beyond the
-  provider's own — and sits in the same terms grey zone as the provider itself.
-- Each search is one extra model request on the account's usage windows;
-  `~/.pi/agent/web-search.json` (from `agents.pi.search_tier`) pins it to the small
-  tier so the default model's quota is untouched.
+- `web_search` is the pinned `pi-web-search` plugin: OpenAI's server-side search
+  on the ChatGPT-subscription Responses endpoint model calls use — no extra
+  endpoint, credential or network path, and the provider's own terms grey zone.
+- Each search is one extra model request on the usage windows, at the small tier
+  set in `~/.pi/agent/web-search.json` from `agents.pi.search_tier` (2026-09-26).
 - Roles with Claude's `WebSearch` get it; the plugin's Gemini-only `url_context`
   also registers and is in no role's list. Fetching stays with the Exa MCP tools
-  and Playwright; OpenAI's search accepts extra `urls` to analyse
-  alongside the query.
+  and Playwright; search accepts extra `urls` to analyse alongside the query.
 
 ## MCP and code intelligence (last verified 2026-09-22)
 
@@ -112,8 +103,7 @@ baselines: the chezmoi repo's `docs/agents-audit-log.md`.
 - `freezeDirectTools: true` freezes registration after initialization, not cache updates: new tools
   remain reachable through `mcp`. Initial refresh can occur on first lazy connect; live owners are
   session-local, shared metadata caching is not fully isolated (2026-09-22).
-- No LSP here: diagnostics come from project toolchains via `workspace_bash`
-  (`tsc --noEmit`, `go vet`, pyright, linters); rationale in the
-  Decisions block of `docs/pi-implementation.md`.
+- No LSP: diagnostics come from project toolchains via `workspace_bash` (`tsc --noEmit`,
+  `go vet`, pyright, linters); rationale in `docs/pi-implementation.md` Decisions.
 - Claude's proprietary plugins, cloud services and exact UI interactions are
   not supplied by these packages; keep the other harness for those.

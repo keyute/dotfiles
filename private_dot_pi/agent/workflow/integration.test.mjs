@@ -46,23 +46,21 @@ function fixture(t) {
   writeFileSync(role.agentPath, `---\nname: fixture-reader\ndescription: Fixture\nmodel: ${role.model}\nthinking: low\ntools: workspace_read\nextensions: ${role.extensionPath}\n---\nRead only.\n`);
   writeFileSync(writer.extensionPath, "export default function () {}\n");
   writeFileSync(writer.agentPath, `---\nname: fixture-writer\ndescription: Fixture\nmodel: ${writer.model}\nthinking: low\ntools: workspace_read\nextensions: ${writer.extensionPath}\n---\nWrite enabled.\n`);
-  const config = { version: 1, agentDir, models: { provider: "openai-codex", default: "gpt-5.6-sol", defaultEffort: "medium", planEffort: "high", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {} };
+  const config = { version: 1, agentDir, models: { provider: "openai-codex", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {} };
   return { root, config };
 }
 
-test("active tool exposure follows root mode and UI without changing child authority", () => {
+test("active tool exposure follows permission and UI, never mode", () => {
   const tools = ["workspace_read", "workspace_write", "workspace_edit", "ask_user_question"].map(name => ({ name }));
-  const root = options => activeToolNames(tools, { ready: true, permitted: () => true, isRoot: true, mode: "plan", currentContext: { mode: "tui", hasUI: true }, ...options });
-  assert.deepEqual(root(), ["workspace_read", "ask_user_question"]);
-  assert.deepEqual(root({ mode: "execute" }), tools.map(tool => tool.name));
-  assert.deepEqual(root({ currentContext: { mode: "rpc", hasUI: true } }), ["workspace_read"]);
-  assert.deepEqual(root({ currentContext: { mode: "tui", hasUI: false } }), ["workspace_read"]);
+  const root = options => activeToolNames(tools, { ready: true, permitted: () => true, currentContext: { mode: "tui", hasUI: true }, ...options });
+  assert.deepEqual(root(), tools.map(tool => tool.name));
+  assert.deepEqual(root({ currentContext: { mode: "rpc", hasUI: true } }), ["workspace_read", "workspace_write", "workspace_edit"]);
+  assert.deepEqual(root({ currentContext: { mode: "tui", hasUI: false } }), ["workspace_read", "workspace_write", "workspace_edit"]);
   assert.deepEqual(root({ ready: false }), []);
-  assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name === "workspace_read", isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read"]);
-  assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name.startsWith("workspace_"), isRoot: false, mode: "plan", currentContext: { mode: "tui", hasUI: true } }), ["workspace_read", "workspace_write", "workspace_edit"]);
+  assert.deepEqual(root({ permitted: name => name === "workspace_read" }), ["workspace_read"]);
 });
 
-test("Subscription Responses payloads retain distinct workflow and project-context patches with mode tools", async () => {
+test("Subscription Responses payloads retain distinct workflow and project-context patches across mode switches", async () => {
   const model = { ...openaiCodexProvider().getModels().find(model => model.id === "gpt-6-astra"), baseUrl: "https://example.test" };
   assert.equal(model.id, "gpt-6-astra");
   const token = `x.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture" } })).toString("base64url")}.x`;
@@ -79,14 +77,17 @@ test("Subscription Responses payloads retain distinct workflow and project-conte
     await response.result();
     return payload;
   };
-  const prefix = [{ role: "system", content: "base prompt", sections: { workflow: "Workflow mode: plan.", projectContext: "Project context: fixture." }, toolsAdded: [read], timestamp: 1 }, { role: "user", content: "Plan it", timestamp: 2 }];
+  // Plan mode declares the same tools as execute (activeToolNames), so a mode
+  // switch is a section patch only.
+  const prefix = [{ role: "system", content: "base prompt", sections: { workflow: "Workflow mode: plan.", projectContext: "Project context: fixture." }, toolsAdded: [read, write], timestamp: 1 }, { role: "user", content: "Plan it", timestamp: 2 }];
   const plan = await capture(prefix);
   assert.deepEqual(await capture(prefix), plan, "repeated requests are byte-stable before transport");
   const planPatch = await capture([...prefix, { role: "system", content: "", sections: { workflow: "Workflow mode: plan; expanded.", projectContext: "Project context: expanded." }, timestamp: 3 }, { role: "user", content: "Continue", timestamp: 4 }]);
-  const execute = await capture([...prefix, { role: "system", content: "", sections: { workflow: "Workflow mode: execute." }, toolsAdded: [write], timestamp: 5 }, { role: "user", content: "Implement", timestamp: 6 }]);
-  const backToPlan = await capture([...prefix, { role: "system", content: "", sections: { workflow: "Workflow mode: execute." }, toolsAdded: [write], timestamp: 5 }, { role: "user", content: "Implement", timestamp: 6 }, { role: "system", content: "", sections: { workflow: "Workflow mode: plan." }, toolsRemoved: [{ name: "workspace_write" }], timestamp: 7 }, { role: "user", content: "Plan again", timestamp: 8 }]);
+  const toExecute = [...prefix, { role: "system", content: "", sections: { workflow: "Workflow mode: execute." }, timestamp: 5 }, { role: "user", content: "Implement", timestamp: 6 }];
+  const execute = await capture(toExecute);
+  const backToPlan = await capture([...toExecute, { role: "system", content: "", sections: { workflow: "Workflow mode: plan." }, timestamp: 7 }, { role: "user", content: "Plan again", timestamp: 8 }]);
   const commonInput = [{ role: "user", content: [{ type: "input_text", text: "Plan it" }] }];
-  const commonTools = [providerTool(read)];
+  const commonTools = [providerTool(read), providerTool(write)];
   assert.equal(plan.instructions, "base prompt\n\nWorkflow mode: plan.\n\nProject context: fixture.");
   assert.deepEqual(plan.input, commonInput);
   assert.deepEqual(plan.tools, commonTools);
@@ -94,16 +95,14 @@ test("Subscription Responses payloads retain distinct workflow and project-conte
     assert.equal(payload.instructions, plan.instructions);
     assert.deepEqual(payload.input.slice(0, plan.input.length), plan.input);
     assert.deepEqual(payload.reasoning, plan.reasoning);
+    assert.deepEqual(payload.tools, plan.tools, "mode switches keep the tool declarations");
+    assert.ok(!payload.input.some(message => message.type === "additional_tools"));
   }
-  assert.deepEqual(planPatch.tools, plan.tools);
   assert.match(JSON.stringify(planPatch.input), /Updated system prompt section \\"workflow\\"/);
   assert.match(JSON.stringify(planPatch.input), /Workflow mode: plan; expanded\./);
   assert.match(JSON.stringify(planPatch.input), /Updated system prompt section \\"projectContext\\"/);
   assert.match(JSON.stringify(planPatch.input), /Project context: expanded\./);
-  assert.deepEqual(execute.tools, commonTools);
-  assert.deepEqual(execute.input.slice(0, 2), [...commonInput, { type: "additional_tools", role: "developer", tools: [providerTool(write)] }]);
-  assert.deepEqual(backToPlan.tools, commonTools, "execute-to-plan restores the stable tool prefix");
-  assert.ok(!backToPlan.input.some(message => message.type === "additional_tools"), "execute-to-plan invalidates the additive tools prefix");
+  assert.deepEqual(backToPlan.input.slice(0, execute.input.length), execute.input, "execute-to-plan extends the execute prefix");
 });
 
 test("missing or empty managed descriptions stop root installation before broker startup", async t => {
@@ -197,9 +196,9 @@ test("pinned upstream packages register against the managed extension and prefli
     registerTool(tool) { tools.set(tool.name, tool); },
     registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
     getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
-    getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, setThinkingLevel() {},
+    getActiveTools() { return [...tools.keys()]; }, setActiveTools() {},
   };
-  const { installWorkflow, mcpServerDefinitions } = await import("./index.mjs");
+  const { installWorkflow, mcpGateway, mcpServerDefinitions } = await import("./index.mjs");
   config.mcp = Object.fromEntries(["context7", "exa", "playwright"].map(name => [name, { policy: { denied_tools: [], direct_tools: name === "context7" } }]));
   writeFileSync(configPath, JSON.stringify(config));
   const jiti = createJiti(import.meta.url);
@@ -227,6 +226,12 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.equal(tools.get("subagent").description, "Managed fixture: named asynchronous children only.");
   assert.doesNotMatch(tools.get("subagent").description, /workflowScript|runs\.|SAFETY-CRITICAL/);
   assert.ok(tools.has("mcp"));
+  // The pinned adapter's own gateway registration reaches the managed surface.
+  const gateway = mcpGateway(["context7", "exa", "playwright"]);
+  assert.equal(tools.get("mcp").description, gateway.description);
+  assert.equal(tools.get("mcp").promptSnippet, gateway.promptSnippet);
+  assert.deepEqual(Object.keys(tools.get("mcp").parameters.properties).sort(), ["args", "connect", "describe", "includeSchemas", "instructions", "limit", "offset", "regex", "search", "server", "tool"]);
+  assert.doesNotMatch(tools.get("mcp").parameters.properties.server.description, /install/);
   assert.ok(tools.has("mcp__context7_fixture_search"));
   for (const name of ["mcp__context7", "mcp__exa", "mcp__playwright", "mcpScript"]) assert.equal(tools.has(name), false, name);
   assert.ok(tools.has("submit_plan"));
@@ -312,7 +317,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); },
     registerCommand(name, command) { commands.set(name, command); }, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry(type, data) { entries.push({ type, data }); },
-    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return [...tools.keys()]; }, setActiveTools(names) { activeTools.push(names); }, setThinkingLevel() {},
+    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return [...tools.keys()]; }, setActiveTools(names) { activeTools.push(names); },
   };
   const broker = {
     env: { PI_WORKFLOW_SOCKET: "fake-socket", PI_WORKFLOW_TOKEN: "fake-token" },
@@ -358,7 +363,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   for (const handler of handlers.get("before_agent_start")) assert.equal(await handler(promptEvent, ctx), undefined);
   assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
   assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
-  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_bash", "workspace_grep", "workspace_find", "workspace_ls", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
+  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_bash", "workspace_grep", "workspace_find", "workspace_ls", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
   for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);
   const completed = {
@@ -378,14 +383,13 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   await commands.get("execute").handler("", ctx);
   assert.equal(broker.policy.mode, "execute");
   assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader", "fixture-writer"]);
-  assert.ok(activeTools.at(-1).includes("workspace_write"));
-  assert.ok(activeTools.at(-1).includes("workspace_edit"));
-  assert.equal(activeTools.at(-1).includes("ask_user_question"), false, "RPC UI cannot show the TUI questionnaire");
+  const executeTools = activeTools.at(-1);
+  assert.ok(executeTools.includes("workspace_write"));
+  assert.equal(executeTools.includes("ask_user_question"), false, "RPC UI cannot show the TUI questionnaire");
   await commands.get("plan").handler("", ctx);
   assert.equal(broker.policy.mode, "plan");
   assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader"]);
-  assert.equal(activeTools.at(-1).includes("workspace_write"), false);
-  assert.equal(activeTools.at(-1).includes("workspace_edit"), false);
+  assert.deepEqual(activeTools.at(-1), executeTools, "plan mode keeps the tool declarations; the broker refuses writes");
   running = true;
   log.length = 0;
   await assert.rejects(commands.get("plan").handler("", ctx), /owned-run: stop request failed/);

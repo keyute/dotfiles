@@ -19,7 +19,7 @@
 {{- $allowWrite := append $sandbox.allowWrite "/var/tmp" -}}
 {{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
 {{- /* MCP servers run inside SRT here, so each server's own hosts join the allowlist */ -}}
-{{- $domains := concat .agent_sandbox.network.allowed_domains $pi.extras.allowed_domains -}}
+{{- $domains := .agent_sandbox.network.allowed_domains -}}
 {{- range $mcp -}}{{- $domains = concat $domains .policy.domains -}}{{- end -}}
 {{- $domains = $domains | uniq | sortAlpha -}}
 {{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
@@ -28,11 +28,8 @@
       "agentDir" $agentDir
       "models" (dict
           "provider" $pi.defaults.provider
-          "default" $pi.defaults.model
           "classifierFilter" (dict "model" $pi.defaults.classifier_filter.model "reasoningEffort" $pi.defaults.classifier_filter.reasoning_effort)
           "classifierJudge" (dict "model" $pi.defaults.classifier_judge.model "reasoningEffort" $pi.defaults.classifier_judge.reasoning_effort)
-          "defaultEffort" $pi.defaults.reasoning_effort
-          "planEffort" $pi.defaults.plan_reasoning_effort
           "tiers" .subagent_tiers.pi)
       "filesystem" (dict
           "denyRead" $denyRead

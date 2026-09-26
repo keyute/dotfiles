@@ -34,7 +34,7 @@ iterate it in every step, never enumerating harnesses. Tiers: `.subagent_tiers.<
    instructs the opposite, not that it omits it; quote that passage verbatim.
    Exclude anything sourced from the projection, memory, or this repo.
    - `session+pin`: self-probe from your own system prompt. If the pin's model
-     family (`.agents.<h>.defaults.model`, decorations stripped) differs from
+     family (`subagent_tiers.<h>` at `.agents.<h>.defaults.tier`) differs from
      the session's, run the same probe as a one-shot `claude --model '<pin>'
      -p '<probe>' --output-format json` — a subagent would probe the worker
      prompt, not the driver's. Then probe each worker tier (`subagent_tiers.<h>`
@@ -86,7 +86,7 @@ iterate it in every step, never enumerating harnesses. Tiers: `.subagent_tiers.<
 
 7. **Report, then edit only on confirmation.** Emit the matrix, the usage
    counts, and for each proposal a concrete diff — shaped per the authoring
-   doctrine in the repo-root `AGENTS.md` — against the source templates, the
+   doctrine in `docs/agent-authoring.md` — against the source templates, the
    harness docs and `docs/agents-audit-log.md`, never the rendered targets.
    A SHAVE is recorded by adding the rule's key to that harness's
    `native_coverage` list in `.chezmoidata/agents.yaml`, never by deleting the

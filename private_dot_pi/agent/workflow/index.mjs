@@ -63,9 +63,37 @@ const GUIDELINES = {
 // socket and token from the inherited process environment, never from here.
 export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.entries(config.mcp).map(([name, entry]) => [name, {
   command: process.execPath, args: [runnerPath, "server", name], env: { PI_WORKFLOW_ROLE: role },
-  excludeTools: entry.policy.denied_tools, ...(entry.policy.allowed_tools?.length ? { includeTools: entry.policy.allowed_tools } : {}), approveTools: true,
+  excludeTools: entry.policy.denied_tools, approveTools: true,
   directTools: entry.policy.direct_tools === true,
 }]));
+// The gateway as exposed here: upstream's description, snippet and schema
+// (the `server` parameter's text included) also advertise install, auth and UI
+// actions and mcpScript, which the tool_call hook and scriptMode:false refuse. A pure function of config, as upstream's
+// is, so the adapter's re-registration never rewrites the prompt prefix.
+const MCP_REFUSED_PARAMS = new Set(["action", "url", "target", "searchMode"]);
+export const mcpGateway = servers => ({
+  description: [
+    "MCP gateway — server status, tool search/describe, and single MCP tool calls. Non-MCP Pi tools should be called directly, not through mcp.",
+    "",
+    `Servers: ${servers.join(", ")}`,
+    "",
+    "Usage:",
+    "  mcp({ })                              → Show server status and tool counts",
+    '  mcp({ server: "name" })               → List tools from server',
+    '  mcp({ search: "query" })              → Search MCP tools by name/description',
+    '  mcp({ describe: "tool_name" })        → Show tool details and parameters',
+    '  mcp({ instructions: "name" })         → Show full server usage instructions',
+    '  mcp({ connect: "server-name" })       → Connect to a server and refresh metadata',
+    '  mcp({ tool: "name", args: { key: "value" } })         → Call a tool (object args; JSON string also accepted)',
+    "",
+    "Mode: tool (call) > connect > describe > instructions > search > server (list) > nothing (status)",
+  ].join("\n"),
+  promptSnippet: "MCP gateway — status, search, describe, and single MCP tool calls",
+  narrow: schema => {
+    const properties = Object.fromEntries(Object.entries(schema.properties).filter(([key]) => !MCP_REFUSED_PARAMS.has(key)));
+    return { ...schema, properties: { ...properties, server: { ...properties.server, description: "Server name: filters searches and disambiguates calls and describe operations" } } };
+  },
+});
 export const mcpAdapterSettings = { hostConfigDiscovery: "off", directTools: false, freezeDirectTools: true, toolPrefix: "mcp", namespaceProxyTools: false, scriptMode: false, jev: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false };
 export async function installMcpAdapter(pi, config, jiti) {
   const { logger } = await jiti.import(new URL("logger.ts", import.meta.resolve("pi-mcp-adapter")).pathname);
@@ -109,7 +137,8 @@ export const controlNotice = (message, _options, theme) => {
 // API they are handed and pi keeps what they pass, so a Proxy that decorates
 // every registration gives their rows the transcript's shape without touching
 // execution or message content. The subagent schema and description reflect
-// only the managed launch/control surface. A message renderer we own is composed
+// only the managed launch/control surface, and the mcp gateway's only the
+// calls this workflow admits (mcpGateway). A message renderer we own is composed
 // over the plugin's, which stays as the fallback: ours answers undefined for a
 // payload it does not recognise, so a plugin that changes its details shape
 // renders its own way again rather than losing its notice. A customType in
@@ -117,13 +146,14 @@ export const controlNotice = (message, _options, theme) => {
 // context, never drawn. Everything else
 // (events included) is the original, and the raw function is called on the raw
 // API because the adapter extracts it.
-export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = [], narrowSchema, isShuttingDown = () => false, subagentDescription) {
+export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = [], narrowSchema, isShuttingDown = () => false, subagentDescription, mcp) {
   return new Proxy(pi, {
     get(target, key, receiver) {
       if (key === "registerTool") return tool => target.registerTool({
         ...tool,
         ...(tool.name === "subagent" && narrowSchema ? { parameters: narrowSchema(tool.parameters) } : {}),
         ...(tool.name === "subagent" && subagentDescription !== undefined ? { description: subagentDescription } : {}),
+        ...(tool.name === "mcp" && mcp ? { parameters: mcp.narrow(tool.parameters), description: mcp.description, promptSnippet: mcp.promptSnippet } : {}),
         ...renderersFor(tool.name),
       });
       if (key === "sendMessage") return (message, options) => {
@@ -387,11 +417,12 @@ export function workflowPrompt({ mode, readonly, isRoot }) {
   return `Workflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}`;
 }
 
-export function activeToolNames(tools, { ready, permitted, isRoot, mode, currentContext }) {
+// Plan mode keeps write/edit declared: the broker refuses the call, while a
+// retracted tool makes pi-ai resend the whole tool list and re-bill the
+// context on every later mode switch (docs/pi-implementation.md, 2026-09-26).
+export function activeToolNames(tools, { ready, permitted, currentContext }) {
   if (!ready) return [];
-  const planningRoot = isRoot && mode === "plan";
   return tools.map(tool => tool.name).filter(name => permitted(name)
-    && !(planningRoot && (name === "workspace_write" || name === "workspace_edit"))
     && !(name === "ask_user_question" && (currentContext?.mode !== "tui" || !currentContext?.hasUI)));
 }
 
@@ -439,9 +470,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
   const permittedTools = isRoot ? rootTools : config.agents[role].tools;
   const permitted = name => permittedTools.includes(name) || (permittedTools.includes("mcp") && isDirectMcpTool(name));
-  const refreshActiveTools = () => pi.setActiveTools(activeToolNames(pi.getAllTools(), {
-    ready, permitted, isRoot, mode: broker?.policy.mode, currentContext,
-  }));
+  const refreshActiveTools = () => pi.setActiveTools(activeToolNames(pi.getAllTools(), { ready, permitted, currentContext }));
 
   async function authorize(tool, args) {
     if (!ready) throw new Error("Managed workflow is not ready");
@@ -567,7 +596,6 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     ceiling?.update({ allowedAgents: allowedChildAgents(config, role, broker.policy.mode), allowedTools: permittedTools });
     ready = true;
     refreshActiveTools();
-    pi.setThinkingLevel(mode === "plan" ? config.models.planEffort : config.models.defaultEffort);
     publishStatus(ctx);
   }
 
@@ -638,7 +666,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
     refreshActiveTools();
-    if (!ctx.modelRegistry.find(config.models.provider, config.models.tiers.frontier)) ctx.ui.notify("Astra is configured as frontier but unavailable in this Pi model catalog; no fallback will be used.", "warning");
+    // classify's own availability test: a classifier that fails it silently
+    // turns every reviewed action into a prompt, or a denial without a UI.
+    for (const id of new Set([config.models.tiers.frontier, config.models.classifierFilter.model, config.models.classifierJudge.model])) {
+      const model = ctx.modelRegistry.find(config.models.provider, id);
+      if (!model || !ctx.modelRegistry.isUsingOAuth(model)) ctx.ui.notify(`${id} is pinned but unavailable on subscription OAuth in this Pi model catalog; no fallback will be used.`, "warning");
+    }
   });
   pi.on("input", event => {
     if (isRoot && event.source !== "extension") userTask = `${userTask}\n${event.text}`.slice(-8000);
@@ -668,7 +701,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
-  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY], narrowSubagentSchema, () => shuttingDown, subagentDescription);
+  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY], narrowSubagentSchema, () => shuttingDown, subagentDescription, mcpGateway(Object.keys(config.mcp)));
   // Fleet owns detached-run lifecycle for every root, including headless roots;
   // only its footer rendering is conditional on UI. Register our shutdown
   // before pi-subagents installs its hook, which disposes the RPC bridge.

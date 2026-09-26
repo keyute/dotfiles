@@ -1,12 +1,12 @@
-Delegate one bounded task to one named child: { agent, task } only when authorized by the current user request or applicable user/project instructions. Children always run in the background. One writer owns each write scope; do not give concurrent children the same files or worktree.
+Delegate one bounded task to one named child: { agent, task }. Children always run in the background. One writer owns each write scope; do not give concurrent children the same files or worktree.
 
-Agents (models are pinned; pass model only to escalate after an observed failure):
+Agents (models are pinned; pass model only to escalate after an observed failure, never to the frontier tier, `{{ .subagent_tiers.pi.frontier }}`):
 {{ range $name, $_ := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 - {{ $name }}: {{ (index $.subagents $name).description }}
 {{ end }}
 Notes:
-- Discover capabilities once with {action:"list", capabilities:true}, then reuse that result for this session's launches. Refresh after agent configuration changes/reloads or a capability mismatch, not before every invocation; launch preflight remains authoritative.
+- Launch by name from the list above; launch preflight validates agent, mode and model.
 - Plan mode may launch read-only agents only. Writers and nested agents require execute mode.
-- Children start with fresh context: state objective, scope, files and output format in the task. Pass context:"fork" only when the child should reason over what this session already read (for example a second review of the same diff).
+- Children start with fresh context: state objective, scope, files and output format in the task. Pass context:"fork" only when the child should reason over what this session already read.
 - Completion arrives as a native notification; do not poll or wait just for a wake. Use bg_wait only when this turn cannot proceed without the result. Controls: status (fleet or transcript), interrupt, stop, steer; steering recovery is disabled.
 - On launch or child infrastructure failure, stop that lane and report the exact failure, run status, cwd and branch/ref. Verify a clean worktree or capture its partial diff before retrying. Do not silently substitute another agent, model, protocol or execution mode.

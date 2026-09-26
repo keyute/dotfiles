@@ -30,9 +30,9 @@ file are chezmoi-ignored (repo-local only).
   except for the customised lines. *Why: they stay diffable against upstream.*
 
 - Edit source state only; verify renders with `chezmoi diff` plus
-  `chezmoi cat <target>` for every harness the file renders to — `chezmoi cat`
-  surfaces template errors that `chezmoi diff` silently hides, and a shared
-  template is only half-checked from one harness's target.
+  `chezmoi cat <target>` for every harness the file renders to — `chezmoi diff`
+  reports a template error after all the other diffs, where it is easy to miss,
+  and a shared template is only half-checked from one harness's target.
 - Nested shared templates need `includeTemplate`, not `{{ template }}`.
 - Declare a subagent once in `.chezmoidata/agents.yaml`, scoped
   with `harnesses:` where it is not for every harness; a shared skill body
@@ -40,95 +40,25 @@ file are chezmoi-ignored (repo-local only).
   The render parity test in `private_dot_pi/agent/workflow/render.test.mjs`
   (run by `npm run test:pi`, in CI) is the gate. *Why: per-harness copies and
   hand-kept tables drift from the data; a failing test catches it, prose does not.*
-- Before editing the pi TUI (`{rows,footer,fleet,replay,index}.mjs` or a dialog — `dialog`, `questionnaire`,
-  `plan-approval`, `peek` — under `private_dot_pi/agent/workflow/`) read `docs/pi-design.md`; its rules change only with a dated decision there.
+- Before editing a module under `private_dot_pi/agent/workflow/`, check the
+  TUI module list at the top of `docs/pi-design.md`; for a listed module read
+  the whole doc — its rules change only with a dated decision there.
 - Leave `chezmoi apply` and 1Password signin to me; stub `onepasswordRead`
   when verifying affected templates. Resolved values belong only in applied
   private targets, never in source files, commits, or terminal output.
 
-## Authoring agent instructions
+## Agent instructions
 
-Apply the gates below to instruction sources: the baseline, shared and consumer
-templates, subagent and skill bodies. `npm run test:pi` checks that each
-harness projection renders and stays within 100 lines.
-
-### Gates — a rule earns its place only if all four hold
-
-*Why: always-loaded instructions compete through contradiction, duplication,
-density, and the reasoning cost every line adds on every turn; overspending
-erodes compliance across the whole set, not just the new rule's.*
-
-1. **Observed failure**: it fixes a diagnosed, recurring mistake — never an
-   anticipated one. Diagnose first: a mechanical mistake wants enforcement,
-   a one-off wants a better prompt; only a durable intent gap wants a rule.
-   A failure the vendor documents for the model generation in use counts as
-   observed when the harness prompt does not already carry the fix.
-2. **Non-inferable**: agents cannot derive it at runtime from the code, the
-   harness's own system prompt, or enforced policy.
-3. **Durable intent**: it encodes what I want, not a workaround for a
-   current model or harness quirk. Quirk workarounds go to the on-demand
-   docs (`~/.claude/docs`, `~/.pi/agent/docs`), where they expire cheaply.
-4. **Not mechanically checkable**: anything a sandbox rule, hook, or linter
-   can enforce goes there instead — prose fails silently, enforcement
-   fails loudly.
-
-### Placement
-
-- Intent change → `docs/agents-baseline.md`, then reproject.
-- Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`.
-  Every subagent loads the projection too, so driver-only rules sit under its
-  one "session driver" bullet and read as the driver's, never the reader's.
-- Subagent and skill bodies render for every harness: keep harness-specific
-  nouns — tool names, agent names, instruction filenames — out of them, and take
-  what varies as a parameter, as `reviewer-common.md` does with
-  `instructions_file`.
-- Harness-specific *intent* → `docs/agents-baseline.md`, tagged `(claude)` /
-  `(pi)`; its projection prose stays in the consumer template so the audit
-  adjudicates it like any principle. A tag encodes intent intrinsic to that
-  harness, never the harness where a failure was observed — such a failure
-  still gets the full coverage matrix and projects wherever coverage is not
-  native; only non-intent harness mechanics (doc pointers) live solely in the
-  consumer template.
-- Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
-  from it, never hand-write what it already encodes. The harness roster and
-  each harness's audit paths (`agents.<name>.audit`) live there too: skills
-  iterate it, never enumerate harness names.
-- Environment facts and decisions → on-demand docs; give every doc
-  pointer an explicit trigger ("read X before Y") — discretionary loading
-  under-triggers.
-- An on-demand doc loads whole at its trigger, so it carries only what that
-  trigger's question needs: each fact at its current state with a dated
-  annotation. Measurements, probe results and superseded history go to
-  `docs/agents-audit-log.md` while they carry a live baseline or open
-  trigger, and are deleted otherwise — git history keeps the rest. *Why: the
-  doc's reader is a session answering one question; audit state's only
-  reader is the audit skill.*
-- Occasional workflows → skills.
-
-### Style
-
-- One imperative intent line plus a why; the why records the tradeoff or
-  failure the rule is meant to protect, so the rule survives cases it never
-  enumerated. Evidence, numbers and sources go to the audit log, not the why.
-- State the constraint with its concrete trigger, not a description of the
-  preferred world.
-- Say what to do; reserve "never" for absolute boundaries and emphasis
-  markers for almost nothing — both work only while scarce.
-- Reuse the baseline's exact terminology; synonyms obscure equivalence and
-  make drift harder to detect.
-
-### Maintenance
-
-- After model or harness updates, run the `agent-instructions-audit` skill;
-  it computes coverage fresh. Hand-run "lean passes" restart the churn.
-- Before rewording an existing line, check its `git log -p` history: if it
-  has oscillated, delete it or change the intent — never re-word.
-- On-demand docs date each fact (a section-level date covers its bullets);
-  re-verify a stale-dated fact before relying on it, since nothing checks
-  expiry. Generated content (Claude's `sandbox.md`) is exempt.
-- A new why cites its source in the dated audit log.
-- The audit skill is Claude-side; from a pi session, flag the need for a run
-  instead of attempting one.
+- Before editing an instruction source — `docs/agents-baseline.md`,
+  `.chezmoitemplates/agent-instructions.md`, a consumer template
+  (`private_dot_claude/CLAUDE.md.tmpl`, `private_dot_pi/agent/AGENTS.md.tmpl`),
+  a subagent or skill body (`.chezmoitemplates/{subagents,skills}/`, the
+  shared `.chezmoitemplates/*.md`, `private_dot_claude/skills/`,
+  `.claude/skills/`), `private_dot_pi/agent/subagent-tool-description.md.tmpl`,
+  `.chezmoidata/agents.yaml`, an on-demand doc (`private_dot_*/docs/`) or
+  `docs/agents-audit-log.md` — read `docs/agent-authoring.md`.
+  `npm run test:pi` checks that each harness projection, each rendered
+  `harness.md` and this file render within the line budgets it declares.
 - Agent memory holds only what this repo cannot record — session-side
   gotchas; a method belongs in the skill and a measurement in the dated
   audit log.

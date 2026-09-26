@@ -12,11 +12,7 @@ against the source repository and update this file.
 - New sessions start in plan mode with auto-reviewed approvals. In the normal
   sandbox, source writes remain disabled; temporary build/cache artifacts use
   designated writable roots. This read-only claim does not apply to a reviewed
-  unsandboxed plan action, which is not OS-enforced read-only. The mode asks for
-  the work as well as forbidding the edits: research the request to the point of
-  a plan unprompted, delegate the independent exploration, ask where different
-  readings would lead to materially different work, then submit the plan without
-  being asked for it (2026-09-16).
+  unsandboxed plan action, which is not OS-enforced read-only.
 - Plan mode admits only configured read-only child roles; writers (including
   `general-purpose`) are refused before launch preflight. The existing capability
   ceiling follows mode transitions; approval restores writer admission without
@@ -26,10 +22,6 @@ against the source repository and update this file.
   new mode takes effect — `/plan` before enabling planning, and approval of
   `submit_plan` the same way before enabling execution, so a child still
   running when the plan is approved ends aborted.
-  `submit_plan` shows a framed title and vertical Yes/No choices; selecting No
-  immediately opens inline input. Submitted text requests revision; blank Enter
-  or Esc stops without an acknowledgement model turn. Tab returns to Yes without
-  submitting the draft; only Yes enables execution (2026-09-16).
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
 - Shell commands run inside the SRT profile without review, as sandboxed
@@ -37,9 +29,9 @@ against the source repository and update this file.
   remote-mutating verbs the profile cannot judge — `git push`, `gh` other than
   view/list/status/search/diff/checks, `gh api` with a method or field,
   `npm publish`, `docker push`, `curl`/`wget` with data, json or upload flags,
-  `ssh`, `scp`, `sftp`, `rsync` — go to the auto classifier, then to a confirm
-  dialog on `ask`. File edits inside the workspace run without review once
-  execution is approved.
+  `ssh`, `scp`, `sftp`, `rsync` — and `git commit` (the user commits) go to
+  the auto classifier, then to a confirm dialog on `ask`. File edits inside
+  the workspace run without review once execution is approved.
 - Inside the profile the environment is the host's minus the workflow's own
   variables, secret-named exports (`KEY|SECRET|TOKEN|PASSW|CREDENTIAL|AUTH`)
   and pre-sandbox shell/loader hooks (`BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`,
@@ -70,10 +62,12 @@ against the source repository and update this file.
 - `ask_user_question` is the owned TUI-only questionnaire: up to four questions,
   per-option notes and literal free answers. Completed decisions retain question
   text for the classifier, while model results omit presentation data.
-  Root `workspace_write` and `workspace_edit` are hidden during planning and
-  restored on execution approval; the questionnaire remains available in either
-  mode. Approval dialogs are once-only; MCP approvals are never cached across
-  a mode change (2026-09-17).
+  Root `workspace_write` and `workspace_edit` stay listed in plan mode, as in
+  Claude Code, so a mode switch keeps the tool list and its prompt cache; the
+  broker refuses them (`Writes are disabled in this scope`) until execution is
+  approved (2026-09-26). The questionnaire is available in either mode.
+  Approval dialogs are once-only; MCP approvals are never cached across a mode
+  change (2026-09-17).
 - `workspace_bash` with `run_in_background: true` starts a background task
   (Claude Code's flag). The call is held open for 10 s first: a command that
   ends inside that grace is answered like a foreground call and never
@@ -98,10 +92,8 @@ against the source repository and update this file.
   `CLAUDE.md`) is appended to the system prompt after passing the read policy
   (a symlink out of the directory or onto a denied path refuses the add).
   Home, its ancestors, denied paths and directories already in scope are
-  refused with the reason. `/remove-dir <path>` drops one. Both take their
-  argument inline; Tab lists what each accepts (the addable directories, the
-  added ones) and, once accepted, lists the next level down, so Tab walks the
-  tree. State is per session; skills
+  refused with the reason. `/remove-dir <path>` drops one. State is per
+  session; skills
   under an added directory need a restart with `--skill <path>`, since pi
   discovers resources only at startup and `/reload`. Reads were never
   confined to the workspace; only the deny list applies.

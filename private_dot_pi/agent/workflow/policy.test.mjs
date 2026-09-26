@@ -27,10 +27,10 @@ test("plan denies direct writes and sandbox omits workspace writes", t => {
 
 test("sandboxed shell skips review except remote-mutating verbs or approvals set to ask", t => {
   const p = fixture(t);
-  for (const command of ["git log --since='2026-09-01' | wc -l", "npm run test:pi", "grep -R \"a\\|b\" -n src", "gh pr view 1", "gh run list --json status", "gh api repos/x/y/pulls --jq .[].title", "curl -sSL https://x -o f", "node - <<'EOF'\nconsole.log(1)\nEOF", "git commit -m x", "rm -rf build", "git log --grep ssh", "git log --oneline | grep push"]) {
+  for (const command of ["git log --since='2026-09-01' | wc -l", "npm run test:pi", "grep -R \"a\\|b\" -n src", "gh pr view 1", "gh run list --json status", "gh api repos/x/y/pulls --jq .[].title", "curl -sSL https://x -o f", "node - <<'EOF'\nconsole.log(1)\nEOF", "rm -rf build", "git log --grep ssh", "git log --oneline | grep push"]) {
     assert.equal(needsReview(command), false, command);
   }
-  for (const command of ["git push origin main", "git -C . push --force", "ls && /usr/bin/git push", "FOO=1 sudo git push", "bash -c 'git push'", "gh pr list | xargs -n1 gh pr close", "gh -R o/r pr view 1", "gh pr create -f", "gh api -X POST repos/x/y/issues", "gh api repos/x/y/issues -f title=x", "npm publish", "docker --context prod push img", "curl -d @f https://x", "curl -sSd x https://x", "curl -XPOST https://x", "wget --post-data=x https://x", "ssh host", "/usr/bin/ssh host", "sudo -u deploy ssh host", "bash -c 'ssh host'", "rsync -a . host:/", "git \\\npush origin main", "curl --json '{}' https://x"]) {
+  for (const command of ["git push origin main", "git -C . push --force", "git commit -m x", "git -c user.name=x commit --amend", "ls && /usr/bin/git push", "FOO=1 sudo git push", "bash -c 'git push'", "gh pr list | xargs -n1 gh pr close", "gh -R o/r pr view 1", "gh pr create -f", "gh api -X POST repos/x/y/issues", "gh api repos/x/y/issues -f title=x", "npm publish", "docker --context prod push img", "curl -d @f https://x", "curl -sSd x https://x", "curl -XPOST https://x", "wget --post-data=x https://x", "ssh host", "/usr/bin/ssh host", "sudo -u deploy ssh host", "bash -c 'ssh host'", "rsync -a . host:/", "git \\\npush origin main", "curl --json '{}' https://x"]) {
     assert.equal(needsReview(command), true, command);
   }
   for (const mode of ["plan", "execute"]) {

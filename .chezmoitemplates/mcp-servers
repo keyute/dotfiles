@@ -1,15 +1,14 @@
 {{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries for one
-       harness. Skips entries scoped to other harnesses (`harnesses` list) and
-       entries whose `requires` binary is absent from PATH.
+       harness. Skips entries scoped to other harnesses (`harnesses` list).
        input:  dict "root" (the root template data) "harness" ("claude"|"pi")
                ["policyOnly" true]
        output: JSON {name: {connection: {...}, policy: {...}}}
-                 connection: {type: "http", url} | {type: "stdio", command, args, env}
-                             — op: refs resolved via onepasswordRead, command
-                             defaulting to node_modules/.bin/<package_bin>, or
+                 connection: {type: "stdio", command, args, env}
+                             — env op: refs resolved via onepasswordRead;
+                             command node_modules/.bin/<package_bin>, or
                              `node scripts/<script>` for repo-local bridges
                  policy:     {auto_approve_tools, denied_tools, readonly_tools,
-                             allowed_tools, direct_tools, unsandboxed, domains} — always
+                             direct_tools, unsandboxed, domains} — always
                              all keys, normalized to false/[] so consumers can
                              index them unguarded (direct_tools: pi registers the
                              server's tools by name instead of behind the mcp
@@ -31,64 +30,34 @@
   {{- if and $harnesses (not (has $harness $harnesses)) -}}
     {{- continue -}}
   {{- end -}}
-  {{- $requires := get $cfg "requires" -}}
-  {{- if and $requires (not (lookPath $requires)) -}}
-    {{- continue -}}
-  {{- end -}}
   {{- $entry := dict "policy" (dict
         "auto_approve_tools" (default false (get $cfg "auto_approve_tools"))
         "denied_tools" (default (list) (get $cfg "denied_tools"))
         "readonly_tools" (default (list) (get $cfg "readonly_tools"))
-        "allowed_tools" (default (list) (get $cfg "allowed_tools"))
         "direct_tools" (default false (get $cfg "direct_tools"))
         "unsandboxed" (default false (get $cfg "unsandboxed"))
         "domains" (default (list) (get $cfg "domains"))) -}}
   {{- if not $policyOnly -}}
-    {{- $connection := dict -}}
-    {{- $url := get $cfg "url" -}}
-    {{- if $url -}}
-      {{- $connection = dict "type" "http" "url" $url -}}
+    {{- $command := "node" -}}
+    {{- $args := list -}}
+    {{- $script := get $cfg "script" -}}
+    {{- if $script -}}
+      {{- $args = append $args (printf "%s/scripts/%s" $root.chezmoi.sourceDir $script) -}}
     {{- else -}}
-      {{- $command := get $cfg "command" -}}
-      {{- $args := list -}}
-      {{- $script := get $cfg "script" -}}
-      {{- if $command -}}
-      {{- else if $script -}}
-        {{- $command = "node" -}}
-        {{- $args = append $args (printf "%s/scripts/%s" $root.chezmoi.sourceDir $script) -}}
-      {{- else -}}
-        {{- $command = printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
-      {{- end -}}
-      {{- range $cfg.args -}}
-        {{- if kindIs "map" . -}}
-          {{- if hasKey . "home_path" -}}
-            {{- $args = append $args (printf "%s/%s" $root.chezmoi.homeDir .home_path) -}}
-          {{- else -}}
-          {{- $ref := .op -}}
-          {{- if not (hasPrefix "op://" $ref) -}}
-            {{- $ref = printf "op://%s" $ref -}}
-          {{- end -}}
-          {{- $args = append $args (onepasswordRead $ref) -}}
-          {{- end -}}
-        {{- else -}}
-          {{- $args = append $args . -}}
-        {{- end -}}
-      {{- end -}}
-      {{- $env := dict -}}
-      {{- range $key, $value := default (dict) (get $cfg "env") -}}
-        {{- if kindIs "map" $value -}}
-          {{- $ref := $value.op -}}
-          {{- if not (hasPrefix "op://" $ref) -}}
-            {{- $ref = printf "op://%s" $ref -}}
-          {{- end -}}
-          {{- $env = set $env $key (onepasswordRead $ref) -}}
-        {{- else -}}
-          {{- $env = set $env $key $value -}}
-        {{- end -}}
-      {{- end -}}
-      {{- $connection = dict "type" "stdio" "command" $command "args" $args "env" $env -}}
+      {{- $command = printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
     {{- end -}}
-    {{- $entry = set $entry "connection" $connection -}}
+    {{- range $cfg.args -}}
+      {{- $args = append $args . -}}
+    {{- end -}}
+    {{- $env := dict -}}
+    {{- range $key, $value := default (dict) (get $cfg "env") -}}
+      {{- $ref := $value.op -}}
+      {{- if not (hasPrefix "op://" $ref) -}}
+        {{- $ref = printf "op://%s" $ref -}}
+      {{- end -}}
+      {{- $env = set $env $key (onepasswordRead $ref) -}}
+    {{- end -}}
+    {{- $entry = set $entry "connection" (dict "type" "stdio" "command" $command "args" $args "env" $env) -}}
   {{- end -}}
   {{- $out = set $out $name $entry -}}
 {{- end -}}

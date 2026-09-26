@@ -14,7 +14,7 @@ nothing here says what is currently projected or covered. Run the
 `agent-instructions-audit` skill to compute coverage and drift fresh against the
 models actually in use.
 
-Each principle takes the shape the repo AGENTS.md prescribes (Style): an
+Each principle takes the shape `docs/agent-authoring.md` prescribes (Style): an
 intent line plus a why that records the tradeoff or failure it protects.
 Measurements, sources and decision history live in `docs/agents-audit-log.md`
 under the dated entry the why points at, never here. Edit this file only when
@@ -45,9 +45,11 @@ my actual intent changes, never to track harness churn.
   Before editing a non-trivial implementation slice, delegate it once design,
   exclusive scope, and an objective gate are settled. The lowest capable pinned
   worker owns implementation/test/repair. Override pins only to escalate after
-  observed failure; unpinned children get the top worker tier explicitly;
-  no child gets frontier, whichever tier the driver runs. Finish a failed
-  worker's piece yourself, not via promotion.
+  observed failure. Unpinned children get the top worker tier and no child
+  gets frontier, whichever tier the driver runs — enforced, not projected
+  (2026-09-26: Claude's `CLAUDE_CODE_SUBAGENT_MODEL` and `Agent(model:…)`
+  deny; pi's roster and `children.mjs`). Finish a failed worker's piece
+  yourself, not via promotion.
   *Why (decision 2026-09-15, made tier-independent 2026-09-25; evidence in the
   audit log): explicit ownership keeps scoped implementation out of the driver's
   context without ceding cross-scope decisions; objective gates make worker

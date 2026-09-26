@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   assertCompleted,
@@ -23,6 +25,7 @@ test("piArgs pins the read-only, prompt-free, worker-tier envelope", () => {
   assert.equal(after("--tools"), "read,grep,find,ls");
   assert.ok(args.includes("--no-approve"));
   assert.ok(args.includes("--no-extensions"));
+  assert.ok(args.includes("--no-context-files"));
   assert.match(after("-e"), /pi-bridge-guard\.mjs$/);
   assert.equal(after("--model"), "gpt-test");
   assert.equal(after("--thinking"), "high");
@@ -74,6 +77,13 @@ test("assertCompleted accepts only a stop reason of stop", () => {
 test("thinkingLevel validates against pi's thinking levels", () => {
   assert.equal(thinkingLevel("high"), "high");
   assert.throws(() => thinkingLevel("extreme"));
+});
+
+test("the bridge refuses to start without a pinned reasoning effort", () => {
+  const bridge = fileURLToPath(new URL("./pi-bridge.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [bridge, "--model", "gpt-test"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--reasoning-effort <level> is required/);
 });
 
 test("validateBase rejects a leading dash and unsafe characters", () => {
@@ -153,14 +163,18 @@ test("guard hands pi the vetted absolute path so its own normalization cannot es
   assert.ok(decide("read", { path: "a b.ts" }, cwd));
 });
 
-test("guard blocks a symlink that resolves outside cwd", () => {
+test("guard blocks a canary outside cwd directly and through symlinks", () => {
   const root = mkdtempSync(join(tmpdir(), "pi-bridge-guard-"));
   const cwd = join(root, "repo");
   const outside = join(root, "outside");
+  const canary = join(outside, "auth.json");
   mkdirSync(cwd);
   mkdirSync(outside);
-  writeFileSync(join(outside, "secret.txt"), "shh");
-  symlinkSync(join(outside, "secret.txt"), join(cwd, "link"));
+  writeFileSync(canary, "shh");
+  symlinkSync(canary, join(cwd, "link"));
+  symlinkSync(outside, join(cwd, "linkdir"));
 
-  assert.ok(decide("read", { path: "link" }, cwd));
+  for (const raw of [canary, "link", "linkdir", "linkdir/auth.json", "./linkdir/../link"]) {
+    for (const tool of ["read", "grep", "find", "ls"]) assert.ok(decide(tool, { path: raw }, cwd), `${tool} ${raw}`);
+  }
 });

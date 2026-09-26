@@ -81,7 +81,7 @@ jobs:
           cache: npm
 
       - name: Install repo npm dependencies
-        run: npm ci --ignore-scripts --omit=dev --prefix "$GITHUB_WORKSPACE"
+        run: npm ci --ignore-scripts --prefix "$GITHUB_WORKSPACE"
 
       - name: Apply into scratch home
         run: |
@@ -134,10 +134,14 @@ jobs:
               missing=1
             fi
           done <<< "$bins"
+          # the pi launcher (zshrc, the MCP bridge) is not in a rendered config
+          test -x "$GITHUB_WORKSPACE/node_modules/.bin/pi"
           [ "$missing" -eq 0 ]
 
-      # Includes the render test, the roster/stub/pin drift gate; the live
-      # sandbox tests stay opt-in via PI_WORKFLOW_LIVE_TESTS.
+      # Includes the render test, the roster/stub/pin drift gate. The live SRT
+      # tests stay off: they need a host Unix socket the local agent sandbox
+      # denies, so they have no green run yet; set PI_WORKFLOW_LIVE_TESTS=1
+      # here after one green run on the macOS runner.
       - name: Run pi and render tests
         run: npm run test:pi
 

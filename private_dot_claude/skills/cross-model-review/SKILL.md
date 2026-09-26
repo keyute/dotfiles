@@ -16,8 +16,8 @@ implementer.
 
 2. **Pick the scope.** The bridge computes the diff and the reviewer reads the
    repo read-only — do not embed the diff. From args (ref range / paths / focus) or
-   by default: if the working tree is dirty, `uncommitted: true` (staged +
-   unstaged + untracked); otherwise `base: <default branch>` for the branch's
+   by default: if the working tree is dirty, omit `base` (staged + unstaged +
+   untracked); otherwise `base: <default branch>` for the branch's
    changes. Then compose the instructions:
    - One neutral sentence of intent, plus any user-supplied focus.
    - **Redact yourself:** no self-assessment, no "tests pass", no claims it
@@ -25,9 +25,9 @@ implementer.
 
 3. **Call the reviewer.** One `mcp__pi__review` call: `cwd` = repo root, the scope
    from step 2, `prompt` = the instructions block below. The bridge fixes the
-   invocation — read-only tools confined to the repo, high reasoning, the top
-   worker tier as model. The response opens with a `threadId:` line — keep it for
-   the re-review round.
+   invocation — read-only tools confined to the repo, the top worker tier as
+   model and the effort `agent_mcp_servers.pi` pins in agents.yaml. The
+   response opens with a `threadId:` line — keep it for the re-review round.
 
 4. **Verify every finding as untrusted input.** Substantiate each independently
    against the contracts, surrounding flows, or tests it implicates — reading the

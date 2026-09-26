@@ -19,7 +19,7 @@ jobs:
   lint:
     # Dependabot's npm bumps only move version literals in package.json and
     # package-lock.json — nothing here would fire, and the MegaLinter image pull
-    # is not free; verify.yml's render job is what validates those. Its
+    # is not free; test.yml's render job is what validates those. Its
     # github-actions bumps are the opposite case:
     # they rewrite the action pins in these workflows, including MegaLinter's
     # own, so actionlint and zizmor have to see them.
@@ -89,5 +89,5 @@ jobs:
           # inline HTML and the frontmatter `---` as a setext heading. Every one
           # of the 13 findings there was that mis-parse or a nit inside a
           # template comment. What renders out of them is markdown, and
-          # verify.yml already renders it.
+          # test.yml's render job already renders it.
           MARKDOWN_FILTER_REGEX_EXCLUDE: \.chezmoitemplates/.*

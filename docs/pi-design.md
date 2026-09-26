@@ -1,6 +1,6 @@
 # Pi TUI design language
 
-Last verified 2026-09-24 (pi 0.87.1, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval,pending-input,shell}.mjs`;
+Last verified 2026-09-24 (pi 0.87.1, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval,pending-input,shell,header}.mjs`;
 change a rule only with a dated decision here, never by re-wording.
 
 The intent, set on 2026-09-07 from a side-by-side of pi and Claude Code:

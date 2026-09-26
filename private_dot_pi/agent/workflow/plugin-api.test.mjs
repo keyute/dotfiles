@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { controlNotice, pluginApi, recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
+import { controlNotice, mcpGateway, pluginApi, recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
 import { narrowSubagentSchema } from "./children.mjs";
 
 test("the plugin API decorates every registration and forwards everything else untouched", () => {
@@ -59,6 +59,25 @@ test("the plugin API narrows only the subagent definition and preserves its exec
   assert.equal(tools.get("other").parameters, schema);
   assert.equal(tools.get("subagent").parameters.additionalProperties, false);
   assert.equal("cwd" in tools.get("subagent").parameters.properties, false);
+});
+
+test("the plugin API gives the mcp gateway the managed surface and keeps its executor", () => {
+  const tools = new Map();
+  const execute = () => {};
+  const parameters = { type: "object", properties: Object.fromEntries(["tool", "args", "search", "server", "action", "url", "target", "searchMode"].map(name => [name, {}])) };
+  const gateway = mcpGateway(["context7", "exa"]);
+  const styled = pluginApi({ registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, [], undefined, undefined, undefined, gateway);
+  styled.registerTool({ name: "mcp", description: "install by URL", promptSnippet: "install, auth", parameters, execute });
+  styled.registerTool({ name: "other", description: "other upstream", parameters, execute });
+  const mcp = tools.get("mcp");
+  assert.deepEqual(Object.keys(mcp.parameters.properties), ["tool", "args", "search", "server"]);
+  assert.equal(mcp.execute, execute);
+  assert.equal(mcp.promptSnippet, gateway.promptSnippet);
+  assert.match(mcp.description, /^Servers: context7, exa$/m);
+  assert.doesNotMatch(mcp.description + mcp.promptSnippet + mcp.parameters.properties.server.description, /install|auth|mcpScript|ui-messages/);
+  // Byte-stable per config, so re-registration never rewrites the prompt prefix.
+  assert.equal(mcpGateway(["context7", "exa"]).description, mcp.description);
+  assert.equal(tools.get("other").parameters, parameters);
 });
 
 test("a message renderer we own is composed over the plugin's, which stays as the fallback", () => {

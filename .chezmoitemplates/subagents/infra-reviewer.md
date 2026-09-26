@@ -11,7 +11,7 @@ Check for:
   set here
 - Image or registry moves; mutable tags where the surrounding charts pin a digest
 - ArgoCD wiring: sync waves and hooks, `ignoreDifferences`, prune/self-heal, and
-  whether a new app is registered in both `apps/` and the relevant `clusters/`
+  whether a new app is registered wherever the repo's app-of-apps layout expects it
 - Secret references — external-secrets `ExternalSecret`/`SecretStore` wiring, and
   any literal secret material committed to a values file
 

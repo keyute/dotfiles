@@ -49,7 +49,7 @@ test("bundled extension entry installs skill and pending-input displays through 
     rmSync(root, { recursive: true, force: true });
   });
   writeFileSync(join(root, "subagent-tool-description.md"), "Fixture children.");
-  writeFileSync(join(root, "workflow.json"), JSON.stringify({ models: { provider: "openai-codex", tiers: { frontier: "gpt-6-astra" } }, agents: {}, mcp: {} }));
+  writeFileSync(join(root, "workflow.json"), JSON.stringify({ models: { provider: "openai-codex", tiers: { frontier: "gpt-6-astra" }, classifierFilter: { model: "gpt-6-sol" }, classifierJudge: { model: "gpt-6-sol" } }, agents: {}, mcp: {} }));
   const path = join(root, "workflow.ts");
   writeFileSync(path, entry.replace(/\{\{[^\n]+\}\}/, '"fixture:workflow"'));
   const broker = { env: {}, policy: { mode: "plan", epoch: 1 }, async setMode() {}, async close() {} };
@@ -74,16 +74,21 @@ test("bundled extension entry installs skill and pending-input displays through 
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); }, getAllTools: () => [...tools.values()], getActiveTools: () => [...tools.keys()],
     registerCommand() {}, registerFlag() {}, getFlag() {}, registerEntryRenderer() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {},
-    setActiveTools() {}, setThinkingLevel() {},
+    setActiveTools() {},
   };
   await start(pi);
   const ctx = { cwd: root, mode: "tui", hasUI: true, isProjectTrusted: () => false,
-    sessionManager: { getSessionId: () => "skill-fixture", getBranch: () => [], getEntries: () => [] }, modelRegistry: { find: () => true },
-    ui: { theme: palette, setStatus() {}, setToolsExpanded() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {}, notify() {} },
+    sessionManager: { getSessionId: () => "skill-fixture", getBranch: () => [], getEntries: () => [] },
+    // The classifier's shared id is off subscription OAuth; the frontier is on it.
+    modelRegistry: { find: (provider, id) => ({ provider, id }), isUsingOAuth: model => model.id !== "gpt-6-sol" },
+    ui: { theme: palette, setStatus() {}, setToolsExpanded() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {}, notify(message, level) { notices.push([message, level]); } },
   };
+  const notices = [];
   t.after(async () => { for (const handler of handlers.get("session_shutdown") ?? []) await handler({}, ctx); });
   assert.notEqual(host.InteractiveMode, InteractiveMode, "bundled Pi does not use the native SDK prototype");
   for (const handler of [...handlers.get("session_start")]) await handler({ reason: "startup" }, ctx);
+  assert.deepEqual(notices.filter(([message]) => message.includes("unavailable")),
+    [["gpt-6-sol is pinned but unavailable on subscription OAuth in this Pi model catalog; no fallback will be used.", "warning"]]);
   const raw = skill("ship-check", "first line\nsecond line");
   const message = freeze({ role: "user", content: [{ type: "text", text: raw }], timestamp: 1 });
   const { mode, history } = receiver(host.InteractiveMode);

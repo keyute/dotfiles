@@ -53,8 +53,8 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - No root `@earendil-works/pi-client` pin: pi-subagents 0.70.1 resolves runner
   imports through the host's packages (`runner-aliases.js`, 2026-09-22).
 - 2026-09-17: an owned questionnaire replaces RPIV and its dependencies using
-  public TUI primitives. Root write/edit schemas are hidden during planning;
-  Exa moves behind the existing MCP gateway, while Context7 stays direct.
+  public TUI primitives. Exa moves behind the existing MCP gateway, while
+  Context7 stays direct.
   These exposure changes leave broker enforcement and child permissions intact.
 - 2026-09-22: pi-subagents 0.70.1 removed the completion guard the roles were
   tuned for on 2026-09-18; the driver's diff check is the gate. Roles carry
@@ -62,8 +62,7 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   `mutationTools` (reasons in `docs/pi-coupling.md`).
 - 2026-09-22: keep structured `workflow`/`contextFiles` prompt options, not a
   forced `systemPrompt`. Offline pinned request fixtures preserve initial
-  instructions/input for section patches and plan → execute tool additions;
-  execute → plan retracts earlier tool declarations, changing the prefix.
+  instructions, input and tools across section patches and mode switches.
   These are request-shape guarantees, not live subscription cache/billing proof.
   No cache plugin or long-TTL override: this request builder does not request one.
 - 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization; the proxy stays live and the initial sync may still notify. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
@@ -74,14 +73,30 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   prompt-prefix renderer hook (`user_bash` still draws pi's own block; the
   editor-border spinner breaks rule 3; pi#8154 closed not-planned);
   pi-mcp-adapter 2.37.0 has no log-level setting; pi-subagents 0.71.0 keeps
-  run ids out of the fleet DTO and appends guidance to custom descriptions.
+  run ids out of the fleet DTO and appends its safety guidance only in
+  `custom` description mode, so `toolDescriptionMode` is `compact` and the
+  managed description replaces that fixed text (2026-09-26).
   Grouping packages patch pi's private components; dialog, compact-tool and
   status-line packages bring their own grammar. Also rejected: chezmoi-native
-  settings merge (sprig `mergeOverwrite` skips `false`/`0`); `modelScope.strict`
+  settings merge (sprig `mergeOverwrite` skips `false`/`0`; 2026-09-26: jq's
+  `. * $m` in the modify script, as `.claude.json` uses jq, replaces the owned
+  Node merge); `modelScope.strict`
   for the tier check (loses refusal text and the frontier rule); dropping the
   double checks on child launch and MCP policy (defence in depth); pooled SRT
   workers, no broker or a one-stage classifier (each recreates leases or changes
   decisions). Durable cut: upstream log level, DTO run id, description override.
+- 2026-09-26: settings `defaultThinkingLevel` is the one owner of the root
+  thinking level; the workflow no longer sets it per mode. Mode switches and
+  `/remove-dir` no longer reset it, so a `/thinking` choice survives them.
+  Reversal trigger: a measured need for a plan/execute effort split.
+- 2026-09-26: root `workspace_write`/`workspace_edit` stay declared in plan
+  mode, reversing 2026-09-17's hiding. After any tool removal pi-ai resends the
+  full tool list for the rest of the transcript, so every later mode switch
+  re-billed the grown context once, and session start (forced into plan) paid
+  it on resume. The broker already refuses a plan-mode write and forwards its
+  reason, so the cost is one refused call; Claude Code's plan mode lists
+  Edit/Write too. Reversal trigger: refused plan-mode writes outnumber mode
+  switches in sessions, or pi-ai stops re-declaring tools after a removal.
 - 2026-09-18: TypeSafe Jev is not adopted for the approval classifier: the
   only slice an offline replay fast-allows safely is the sandboxed reviewed
   verbs, 11% of reviews, and escalations rarely clear the confidence bar.
@@ -89,18 +104,20 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   misses its latency target, escalations stop dominating, and a fresh replay
   clears the escalation slice with zero wrong allows (numbers in the audit
   log, 2026-09-18).
-- 2026-09-18: the approval classifier runs both stages on Terra, the filter
-  at `none` and the judge at `medium`. One model for the whole gate, as Claude
-  Code's auto mode runs, keeps model, text and cache
-  key aligned, not a guaranteed hit: reasoning changes (clarified 2026-09-22).
-  `none` replaces `minimal`, which the 5.6 family lacks and pi-ai
-  silently sent as `low`. Terra rather than Luna because the judge's verdict
-  is final and OpenAI's own card scores Terra higher on tool-borne and direct
-  injection; classifier cost is negligible either way. Fallback, on the live
-  per-stage numbers only: a Terra filter median over ~2 s that a Luna probe
-  beats moves both stages to Luna (audit log 2026-09-18).
+- 2026-09-26 (Terra since 2026-09-18): the approval classifier runs both
+  stages on Sol 6, the filter at `none` and the judge at `medium`. One model
+  for the whole gate, as Claude Code's auto mode runs, keeps model, text and
+  cache key aligned, not a guaranteed hit: reasoning changes (clarified
+  2026-09-22). `none` is Sol's own `off` level; `minimal` would reach the wire
+  as `low`. Sol rather than Luna because the judge's verdict is final, and
+  rather than Terra 5.6 on indirect-injection defence, Terra being kept only
+  during the GPT-6 rollout (audit log 2026-09-26); classifier cost is
+  negligible either way. Reversal: Sol's false-allow or false-deny count on
+  the TypeSafe replay above Terra's. Fallback, on the live per-stage numbers
+  only: a Sol filter median over ~2 s that a Luna probe beats moves both
+  stages to Luna (audit log 2026-09-18).
 - 2026-09-18: no second model vendor for children. Children are a quarter of
-  pi spend and the Terra roles that could move about a sixth; a weaker
+  pi spend and the roles that could move (then on Terra) about a sixth; a weaker
   substitute repays its saving through repairs in the Astra context, and no
   Pro limit has been seen binding. Trigger: a weekly limit binds two weeks
   running with children at or above 30% of spend — then trial OpenCode Go
@@ -128,10 +145,8 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   descendant that leaves the command's process group (`setsid`, double fork)
   or that another user owns escapes the terminal-proof group kill;
   `handlePaste` cancels the completion menu and nothing re-opens it;
-  `subagent {action:"list"}` still fires twice a session; `folds.*` grow for
+  `folds.*` grow for
   the session's life and `derive` rescans the timeline on every mutation;
-  `sandbox-live.test.mjs` fails on a drifted `/denied/` expectation
-  (lines 28-29) against the broker's "Writes are disabled in this scope";
   `@hk_net/pi-usage-bars` is the package to read if the `wham/usage` read
   breaks; `forkContext` stays at the full copy because the pruned mode fails
   the launch on any summary error; the fleet rows live in the footer because

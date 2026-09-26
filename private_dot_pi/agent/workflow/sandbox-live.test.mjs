@@ -24,9 +24,9 @@ test("live SRT rejects source writes and sensitive symlinks, then permits approv
     try { return await client.call(op, params, handlers); } finally { await client.close(); }
   };
   // Policy layer: plan mode rejects writes and symlinked secrets before any
-  // lease (the broker reports every policy rejection with one generic denial).
-  await assert.rejects(call("write", { path: "file" }, "writeFile", { path: join(work, "file"), data: "blocked" }), /denied/);
-  await assert.rejects(call("read", { path: "link" }, "readFile", { path: join(work, "link") }), /denied/);
+  // lease; the broker forwards the policy's own reason.
+  await assert.rejects(call("write", { path: "file" }, "writeFile", { path: join(work, "file"), data: "blocked" }), /Writes are disabled in this scope/);
+  await assert.rejects(call("read", { path: "link" }, "readFile", { path: join(work, "link") }), /Resolved path denied by managed policy/);
   // SRT layer: an approved bash lease still cannot write the workspace in plan mode.
   const planBash = await call("bash", { command: "printf blocked > file" }, "exec", { command: "printf blocked > file", cwd: work });
   assert.notEqual(planBash.exitCode, 0);

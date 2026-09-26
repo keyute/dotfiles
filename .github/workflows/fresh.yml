@@ -4,8 +4,8 @@ name: Fresh
 # weekly + manual dispatch only, never per-PR. No path filters by design —
 # the point is ordering: a script invoking a binary that no earlier step
 # installed must fail the apply. Manual baseline is git, chezmoi and Homebrew
-# only: node/npm/jq come from the repo's own run_once bootstrap script, so the
-# apply is validated from bare.
+# only: node/npm come from the repo's own run_once bootstrap script and jq from
+# macOS, so the apply is validated from bare.
 on:
   workflow_dispatch:
   schedule:

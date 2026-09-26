@@ -8,19 +8,20 @@ behavior seems changed, verify with that agent and update this file.
 
 ## Models (last verified 2026-09-25)
 
-- Settings pin the driver (`model` key) to `{{ .agents.claude.defaults.model }}`
-  at effort `{{ .agents.claude.defaults.reasoning_effort }}` under
-  `modelSettings`; a top-level `effortLevel` is ignored by Opus 5.5 (it would
-  start at `medium`) and only still covers `{{ .subagent_tiers.claude.frontier }}`
-  when escalated via `/model`. The 1M window is the default on Opus 4.7+ and
-  Fable, no `[1m]` suffix. `/model <name>` saves the model as the default in
-  `~/.claude/settings.json`, overwriting the pin until the next apply; for one
-  session open `/model` and press `s` on the row. Installed CLI 2.1.280
-  (Opus 5.5 needs it); changing channel does not move the pin.
-- `{{ .subagent_tiers.claude.frontier }}` is escalation-only (since 2026-09-25;
-  evidence and reversal triggers in the audit log): switch to it for one
-  session on an ambiguous root-cause or architecture problem where the pinned
-  driver at higher effort fell short.
+- Settings pin the driver (`model` key) to `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}`;
+  effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned per model under `modelSettings` for both
+  `{{ .subagent_tiers.claude.top }}` and `{{ .subagent_tiers.claude.frontier }}`, so a `/model` escalation keeps
+  it. The 1M window is the default on Opus 4.7+ and Fable, no
+  `[1m]` suffix. Opus 5.5 needs CLI ≥ 2.1.280; changing channel
+  does not move the pin.
+- Escalate effort first: `/effort xhigh` keeps the prompt cache. `{{ .subagent_tiers.claude.frontier }}`
+  is escalation-only (since 2026-09-25): for an ambiguous root-cause or
+  architecture problem where the driver at higher effort fell short, start a
+  fresh session with `claude --model {{ .subagent_tiers.claude.frontier }}`. Do not `/model` a grown
+  session: each model has its own cache, so the next request re-reads the
+  whole history uncached at the frontier rate; `/model <name>` also saves it
+  as the default in `~/.claude/settings.json` until the next apply (decision
+  2026-09-26; evidence and reversal triggers in the audit log).
 - Managed roles below render from `subagents` in agents.yaml, which records
   each choice's why; reversal gates are in the audit log. Pins do not follow
   `/model`; a child without explicit effort inherits session effort.
@@ -32,14 +33,18 @@ behavior seems changed, verify with that agent and update this file.
 {{ end }}
 - `general-purpose` and `Plan` are managed overrides of the built-ins
   (2026-09-25). `CLAUDE_CODE_SUBAGENT_MODEL` (`{{ .subagent_tiers.claude.top }}`)
-  remains only the fallback for the built-in `claude` type and plugin agents;
+  remains only the fallback for the built-in `claude` type, plugin agents,
+  workflow agents and teammates;
   leave its `_FORCE` variant unset, it would erase specialist pins. Forks
   continue the parent model; the guide uses Haiku, the statusline helper Sonnet.
 - Resolution order (since 2.1.251): per-call `model`, frontmatter (`inherit` =
   main conversation), the env fallback, main conversation; no role uses `inherit`.
-- `~/.claude/hooks/deny-frontier-child.mjs` denies visible per-call requests
-  for the frontier pin, `fable` or `inherit`; it cannot see a third-party
-  definition declaring `model: inherit`. Hooks do not prove actual routing.
+{{- $bare := list }}{{ $scoped := list }}{{ $frontierDeny := "" }}
+{{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $frontierDeny = . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
+- The `{{ $frontierDeny }}` deny rule is the per-call frontier guard;
+  `~/.claude/hooks/deny-frontier-child.mjs` is the legacy second guard until
+  the owner's trial of that rule deletes it. Neither sees a third-party
+  definition declaring `model: inherit`, and neither proves actual routing.
 - After each CLI update, dispatch one unpinned child and one with an explicit
   `{{ .subagent_tiers.claude.top }}` override and verify `message.model`, not
   self-report; routing issue history and the latest sample are in the audit log.
@@ -54,8 +59,9 @@ behavior seems changed, verify with that agent and update this file.
 - The CLI carries no claude.ai-product surface: account skill and plugin sync,
   claude.ai connectors and Remote Control are off in settings; the cron
   scheduler is disabled by env;
-  `{{ .agents.claude.denied_tools | join "`, `" }}` are bare-denied, which
-  removes them from the tool list. Bundled skills hidden via `skillOverrides` and the
+  `{{ $bare | join "`, `" }}` are bare-denied, which removes them from the tool
+  list; `{{ $scoped | join "`, `" }}` are scoped denies that block only the
+  matching call. Bundled skills hidden via `skillOverrides` and the
   deny list live in agents.yaml (`agents.claude.skill_overrides`,
   `denied_tools`). Web search, Exa, context7 and Playwright stay — research
   subagents depend on them.
@@ -69,8 +75,9 @@ behavior seems changed, verify with that agent and update this file.
 - The `pi` MCP entry spawns `scripts/pi-bridge.mjs` from the chezmoi source
   repo, which runs the repo-local pi in `--mode json` print mode. Tools:
   `review`, `advise`, `reply`; invocation fixed to the read-only tool
-  allowlist (`read,grep,find,ls`), no extensions except the bridge's own path
-  guard, high reasoning, top worker tier — callers pick scope only. `review`
+  allowlist (`read,grep,find,ls`), `--no-context-files`, no extensions except
+  the bridge's own path guard, model (top worker tier) and effort pinned by `agent_mcp_servers.pi` in
+  agents.yaml — callers pick scope only. `review`
   embeds a bridge-computed git diff because the child cannot run git.
 - MCP transport kept deliberately: the bridge is harness-spawned outside the
   Bash sandbox (the `~/.pi` deny stays intact) and its rendered allow rule

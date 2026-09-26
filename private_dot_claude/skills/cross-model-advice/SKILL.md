@@ -27,8 +27,8 @@ verdict. The value is a decorrelated perspective — protect it from anchoring.
      against it
 
 4. **Call the advisor.** One `mcp__pi__advise` call: `cwd` = repo root, `brief` =
-   the brief; tool access, reasoning effort and model (top worker tier) are
-   pinned by the bridge, not chosen here.
+   the brief; tool access is fixed by the bridge and reasoning effort and model
+   (top worker tier) by `agent_mcp_servers.pi` in agents.yaml, not chosen here.
    The response opens with a `threadId:` line — probe weak points or follow up
    via `mcp__pi__reply` on it, challenging reasoning that conflicts with
    yours rather than accepting or dismissing it.

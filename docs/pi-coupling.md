@@ -2,292 +2,209 @@
 
 The undocumented pi and plugin surfaces the managed workflow leans on
 (`docs/pi-design.md` rule 7). Re-check on every pin bump; `npm run test:pi` is
-the gate. Moved here from `~/.pi/agent/docs/harness.md` on 2026-09-12: its
-consumers are sessions editing this repo, not runtime pi sessions. Source pins
-name the files a package ships: pi-subagents publishes compiled `src/**/*.js`
-plus `.d.ts` (its `extension-api.md`, "Published package vs source checkout"),
-pi-web-search and pi-mcp-adapter ship `.ts` (2026-09-22).
+the gate. Each entry names the seam, why it exists, any accepted residual, when
+to retire it, and the test that fails on the bump; mechanics a pin's claim
+string already states live only there. Source pins name the files a package
+ships: pi-subagents publishes compiled `src/**/*.js` plus `.d.ts` (its
+`extension-api.md`, "Published package vs source checkout"), pi-web-search and
+pi-mcp-adapter ship `.ts` (2026-09-22).
 
-- Documented pi surfaces: tool renderers (`renderShell: "self"`,
-  `context.expanded/toolCallId/invalidate/state`), `registerMarkdownTransformer`,
-  `appendEntry`/`registerEntryRenderer`, `setFooter`, `setHeader`,
-  `setEditorComponent`, `setWidget`, `setWorkingVisible`, the `outputPad` and
-  `hideThinkingBlock` settings, the `agent_start/agent_end/agent_settled`,
-  `message_update/message_end`, `tool_execution_*`, `ui_prompt_*` and `input`
-  events; pi-subagents' `subagents:rpc:v1` status reply and
-  `subagent:async-started/complete` and `subagent:process-terminal` events.
-  Detached-run cleanup requires observed proof, not logical completion; its
-  root shutdown hook precedes the plugin's RPC disposal, including headless
-  sessions. A capped history alone is not failure; remaining unaccounted active
-  work is. `fleet.test.mjs` and `integration.test.mjs` cover this ordering and
-  evidence; `stability.test.mjs` checks imports and, since 0.87.1 moved the event and API reference out of `docs/extensions.md`, the `on()` overloads and API members in the shipped extension declarations (2026-09-23).
-- Plugin rows: pi-subagents, pi-mcp-adapter and web-search receive a Proxy of
-  the extension API whose `registerTool` swaps `renderShell`/`renderCall`/
-  `renderResult` and, for `subagent` only, narrows its schema from managed
-  accepted-key definitions and replaces its description from the trusted
-  rendered `subagent-tool-description.md` (missing/empty fails installation;
-  `index.mjs` `pluginApi`; `subagent`, `bg_wait`, the
-  supervisor channel, `mcp`, `mcpScript`, `mcp__*`, `web_search`,
-  `url_context`). The wrapper retains the executor, and launch/
-  control enforcement is unchanged; it rests on plugins registering through
-  the API they are handed and pi keeping the definition object (`loader.js`).
-  Rows read `args` and the result text; the two `details` reads are the
-  adapter's `error` (failures it reports without `isError`) and pi-subagents'
-  `asyncId` (a launch; the fleet also keeps its documented `asyncDir`). `stability.test.mjs` pins registrations and both fields;
-  `plugin-api.test.mjs`, `render.test.mjs` and `integration.test.mjs` gate schema,
-  description safety and actual package registration without a fork (2026-09-22).
-  No upstream prose slicing; revisit this override when the plugin exposes a
-  description option that can omit disabled workflow APIs and their guidance.
-- MCP public settings `namespaceProxyTools: false`, `jev: false` and
-  `freezeDirectTools: true` keep gateway/direct Context7 exposure, lexical search
-  and a stable tool surface after initialization. The initial sync may still
-  notify, including on a deferred first connection; proxy metadata remains live.
-  `mcp-lifecycle.test.mjs` uses local stdio fixtures to cover cold/warm caches,
-  peer cache writes, reconnects and peer shutdown. Cache schema/hash helpers are
-  test-only internals. This is not complete cache isolation: the adapter's shared
-  name-keyed cache still races and hashes the wrapper rather than the resolved
-  broker connection. Revisit when upstream supports connection-scoped or
-  instance-scoped metadata storage (2026-09-22).
-- MCP logging (2026-09-24): the workflow loads the adapter's internal
-  `logger.ts` singleton through the adapter's own Jiti instance and sets its
-  level to `warn` before installation. Its default `info` console output drew
-  the frozen-tool startup diagnostic over the live composer; warnings/errors
-  remain enabled, and editor state is untouched. Lifecycle tests and source
-  pins gate the seam; retire it when the adapter exposes a public logging
-  setting or stops routine terminal output.
-- Acceptance and mutation names: pi-subagents 0.70.1 dropped its completion
-  guard (the read-then-prose failure the roles were tuned for on 2026-09-18) for
-  acceptance inference keyed on `acceptanceRole` alone — `writer` infers checked
-  evidence plus a required review by its bundled `reviewer`, which would launch
-  outside the tier policy, and an omitted role adds an attestation section to
-  the child prompt. Read-only roles therefore declare `acceptanceRole:
-  read-only` (infers none, adds nothing) and write roles
-  `acceptance: {"level":"none",…}` (the driver verifies from the diff), keeping
-  `mutationTools: workspace_bash, workspace_edit, workspace_write` plus
-  `subagent` where they nest, since renamed tools are otherwise invisible to
-  the long-running guard's mutation check and the run's mutation evidence
-  (`pi-roles`, `subagent-pi.md`); `stability.test.mjs` pins the three
-  frontmatter reads and the name check (2026-09-22).
-- The quiet completion notice: the same `pluginApi` Proxy intercepts
-  `sendMessage` and sends pi-subagents' completion notice with `display` off
-  (`docs/pi-design.md` rule 4, 2026-09-12). Rests on the plugin sending that
-  notice as the literal customType `subagent-notify` through the API it is
-  handed, and on pi drawing a custom message only when its `display` flag is
-  truthy. Both pinned in `stability.test.mjs`. During shutdown, results still
-  reach the transcript but cannot request a new model turn (`triggerTurn: false`);
-  `plugin-api.test.mjs` covers this exception (2026-09-16).
-- Session surfaces: pi's `resetExtensionUI` (on `/new`, `/resume`) clears the
-  header, footer and custom editor, so `session_start` re-applies them every
-  time; pinned in `stability.test.mjs`.
-- Skill display (2026-09-24): the workflow wraps `InteractiveMode`'s
-  `getUserMessageText` once, converting only a native `parseSkillBlock` match
-  back to `/skill:name` plus arguments before `addMessageToChat` chooses its
-  component. The TypeScript extension entry passes the host `InteractiveMode`
-  from Pi's virtual modules into the native-imported workflow: the bundled CLI
-  and unbundled SDK otherwise export different classes. Both symbols are
-  exported, but the method is undocumented. Live
-  messages and rebuilt chats share that display path; initial rendering also
-  uses its return value for editor history. Stored messages and model context
-  stay untouched. Installation precedes the initial transcript render, and the
-  existing user Markdown transformer highlights only the command. Bundled-entry
-  and real-render regression tests plus `stability.test.mjs` gate the seam; retire it when Pi
-  exposes a user/skill-message renderer (rule 5's single user box).
-- Pending input (2026-09-24): replace only `InteractiveMode.updatePendingMessagesDisplay`
-  on the same injected host class as skill display, using its
-  `pendingMessagesContainer`, `getAllQueuedMessages` and `getAppKeyDisplay`.
-  Pi retains queue ownership, including compaction input, dequeue and abort;
-  the adapter only draws shaded input blocks with the live extension theme.
-  Installation is idempotent across reloads. Render/lifecycle tests and source
-  pins gate these undocumented members; retire when Pi offers a pending-input renderer.
-- Tab completion: the documented `addAutocompleteProvider` wrapper
-  (`index.mjs` `argumentCompletions`, re-added on every `session_start` and
-  self-idempotent, since pi stacks providers and `/reload` re-emits
-  `session_start` without the reset that clears them) re-issues a forced
-  request unforced, because pi routes Tab in a command's arguments to forced
-  file completion (`handleTabCompletion`) and its provider guards the whole
-  slash branch on `!options.force`; it also answers
-  `shouldTriggerFileCompletion` itself, as `/cmd` plus a trailing space trims
-  to a slash command pi refuses to force-complete. `CaretEditor` re-issues the
-  key after a Tab accept that lands on the command's space or a directory
-  separator, since the accept cancels the menu and nothing re-opens it. All
-  three behaviours pinned in `stability.test.mjs`; `caret.test.mjs` drives the
-  walk through pi's own provider.
-- Exported but undocumented: `renderDiff` and `getMarkdownTheme` (stability
-  test covers the export). `CustomEditor` is documented since pi 0.87.0, but the
-  render shape the prompt relies on — `renderTopBorder`/`renderBottomBorder`,
-  `setPaddingX`, the first content line's padding columns — is not;
-  `caret.test.mjs` pins it. Shell mode additionally relies on Editor's `state`,
-  `layoutText`, `buildVisualLineMap`, `setCursorCol`, `handleBackspace` and undo
-  snapshot methods: layout reads a temporary prefix-free state, visual columns
-  map back to native text, and Backspace removes the mode prefix atomically.
-  Native history, paste and submission retain their original text. Real-editor
-  wrapping/navigation/undo tests and `stability.test.mjs` pin these seams; retire
-  them when Pi exposes a shell-mode/prompt-prefix editor API (2026-09-22).
-- The owned questionnaire directly uses public `custom` and `Markdown`;
-  native paste expansion preserves complete notes and free answers (2026-09-17).
-- Inline dialog text (plan feedback, questionnaire notes and free answers) retains `Editor.render()` for wrapping, cursor and navigation geometry,
-  dropping its first/last border rows at one site, `dialog.mjs`'s field. `plan-approval.test.mjs` pins that render shape,
-  Unicode cursor and wrapped navigation alongside the placeholder (2026-09-21).
-- Mouse: the fold handle answers clicks on its summary line from its own
-  `handleMouse`; rests on pi-tui's `MouseRegion` asking the child before its
-  own handler and on `ToolExecutionComponent` forwarding self-shell mouse
-  events one row up (`y - 1`). Reasoning stays out because pi-tui's `Markdown`
-  renders no line when the transformer returns "" (an empty hidden-thinking
-  label is not empty: pi wraps it in colour codes, which rendered an
-  invisible clickable line). Pinned in `stability.test.mjs`.
-- Row spacing: pi's `ToolExecutionComponent` puts one spacer above each row
-  and returns no lines at all, spacer included, for a self-shelled row whose
-  content renders none; a group's hidden members lean on it, so a group is one
-  block under one blank line (`docs/pi-design.md` rule 8). Pinned in
-  `stability.test.mjs`; `transcript.test.mjs` mounts the real component and
-  asserts the lines, blanks included, at every level of detail (2026-09-18).
-  Native tool images render outside the self-shell row; managed
-  `terminal.showImages: false` removes their preview components without changing
-  result content. A real-component test gates folding without stray previews or
-  gaps (2026-09-22).
-- The owned `!` block: `CaretEditor` wraps the `onSubmit` callback pi assigns to
-  a custom editor (`newEditor.onSubmit = this.defaultEditor.onSubmit`) and routes
-  shell-mode follow-up keys through native submission before the copied app action;
-  streaming Alt+Enter otherwise queues literal text without shell parsing (2026-09-24).
-  It parses `!`/`!!` as pi's own `!` branch does, so
-  `handleBashCommand` and its `BashExecutionComponent` never run — no pi path
-  draws anything else, and the `input` event fires only after that branch. The
-  command runs through the documented `createLocalBashOperations` with the host
-  environment. Both forms append one visible `workflow-shell` entry on completion;
-  `!` also sends a hidden custom message, its text spelled like `bashExecutionToText`,
-  so display is immediate without moving context across a tool-call/result boundary.
-  `!!` sends no context message; historical visible messages still render.
-  Esc is caught in `handleInput`, since pi's `onEscape` aborts only its own bash. Rests
-  on pi-tui's `Editor` declaring `onSubmit` as a bare class field (the
-  caret deletes that own property after `super()` so its accessor is reached),
-  calling `this.onSubmit(text)` after clearing its state, and declaring
-  `addToHistory`, on the `!` branch living only in the submit handler, on
-  `sendCustomMessage` deferring a `triggerTurn: false` message while the agent
-  streams, and on those four message literals; each literal is pinned in
-  `stability.test.mjs` (the pins check text, not order). Shell result handles use
-  the custom-entry container's mouse dispatch and the existing TUI repaint callback;
-  native expansion rebuilds the renderer for Ctrl+O. Renderer state survives invalidation.
-  Not carried: `bash_execution_update`, the full-output file on truncation (the block
-  and context text say "truncated"), or pi's native pending shell component. pi's
-  `shellPath`/`shellCommandPrefix` settings are carried through the SDK's exported
-  `SettingsManager` (`create(cwd, agentDir, { projectTrusted })` with the session's
-  `isProjectTrusted()`, so an untrusted checkout's project file cannot pick the shell;
-  `getShellPath`, `getShellCommandPrefix`), read at each `session_start`, the prefix
-  joined by pi's own newline; the ops worker's own
-  `bash -c` keeps the model's tool on bash. Pinned in `stability.test.mjs`. Retire when pi
-  exposes a renderer for its shell block or a documented submit hook (2026-09-24).
-- Unified activity groups: tools and successful completions share one timeline.
-  An entry renderer gets no invalidate handle, so a completion-led group reads
-  the timeline at paint time and repaints through the footer's `tui.requestRender()`;
-  later completion members return `undefined`. Under Ctrl+O each tool result carries
-  only the completions immediately following it, preserving order after its output.
-  A completion arriving behind a pending call starts a new group: otherwise that
-  call's later failure could strand an entry whose component was already omitted. Rests on `CustomEntryComponent` adding its
-  spacer only around a returned component, on `addCustomEntryToChat` skipping
-  an entry without content, and on pi-tui's `Container` dispatching a click to
-  the child under it (the group's handle). All pinned in `stability.test.mjs`;
-  `CustomEntryComponent` is not exported, so `transcript.test.mjs` asserts the
-  block's own lines and the blank above it rests on the pin. Residuals: a
-  transcript rebuilt from a branch that lacks a group's first entry drops that
-  group's later members; pi inserts a completion above a streaming reply while
-  the timeline is event-ordered, so two completions with a text chunk between
-  them sit adjacent but ungrouped, as before this change (2026-09-18).
-- Heuristic (2026-09-23): fleet rows match active top-level named-agent runs
-  by unique exact agent/start time: active immediate step labels and timestamps take precedence,
-  falling back to the parent's timestamp when the step omits it; a root without
-  step nodes uses its own label/time (`fleet.mjs` `runIdFor`). Ambiguous or
-  missing matches have no control ID. The DTO's generated keys are opaque:
-  successful matches stay bound per visible key, never rebind to a sibling when
-  the run leaves the snapshot, and are pruned with the row or on session change;
-  synthetic unkeyed rows are not retained. The DTO's `goal` is never filled in
-  0.70.1. `fleet.test.mjs` gates matching and `stability.test.mjs` pins the
-  projection and DTO sources; retire this heuristic when upstream supplies the
-  run ID in the fleet DTO. Completion lines take each result's
-  resolved `status` from the `subagent:async-complete` payload (the result
-  file spread plus `runId`), falling back to `state`, `success` and `agent`,
-  the duration from the same file's `durationMs` (launch to end), and the task
-  from the launch's own tool events, since `async-started` redacts it. Row
-  text assumes the bash tool's `(no output)` stand-in and `Command exited
-  with code N` trailer, and pi's per-row click toggling one row's `expanded`
-  (a body only; a closed fold reopens when the documented
-  `ctx.ui.getToolsExpanded()` value changes, i.e. on Ctrl+O). All pinned in
+- **Documented pi surfaces** (listed so a bump re-checks them): tool renderers
+  (`renderShell: "self"`, `context.expanded/toolCallId/invalidate/state`),
+  `registerMarkdownTransformer`, `appendEntry`/`registerEntryRenderer`,
+  `setFooter`, `setHeader`, `setEditorComponent`, `setWidget`,
+  `setWorkingVisible`, the `outputPad` and `hideThinkingBlock` settings, the
+  `agent_start/agent_end/agent_settled`, `message_update/message_end`,
+  `tool_execution_*`, `ui_prompt_*` and `input` events; pi-subagents'
+  `subagents:rpc:v1` status reply and `subagent:async-started/complete` and
+  `subagent:process-terminal` events. Detached-run cleanup assumes the root
+  shutdown hook precedes the plugin's RPC disposal, headless included, and
+  counts only observed completion: unaccounted active work is failure, a capped
+  history alone is not. *Pin:* `fleet.test.mjs` and `integration.test.mjs`
+  (ordering, evidence); `stability.test.mjs` (imports, `on()` overloads and API
+  members in the shipped declarations, where 0.87.1 moved that reference).
+- **Plugin tool Proxy** (`index.mjs` `pluginApi`, 2026-09-22). pi-subagents,
+  pi-mcp-adapter and pi-web-search get a Proxy of the extension API whose
+  `registerTool` swaps the renderers of `subagent`, `bg_wait`, the supervisor
+  channel, `mcp`, `mcp__*`, `web_search` and `url_context`, and for `subagent`
+  and `mcp` replaces schema and description; executors are kept. `subagent`:
+  schema narrowed to managed keys, description from the rendered
+  `subagent-tool-description.md` (missing/empty fails installation). `mcp`
+  (2026-09-26, `mcpGateway`, adapter 2.36.0): description, `promptSnippet` and
+  schema are a pure function of config, without
+  `action`/`url`/`target`/`searchMode` or install text. Rows read `args` and
+  result text; the only `details` reads are the adapter's `error` and
+  pi-subagents' `asyncId` (plus documented `asyncDir`). *Why:* the model sees
+  only the calls this workflow admits — upstream's text advertises install,
+  auth, UI-message and `mcpScript` calls the `tool_call` hook and
+  `scriptMode: false` refuse — without slicing upstream prose. *Retire:* the
+  `subagent` override when the plugin exposes a description option that can
+  omit disabled workflow APIs and their guidance;
+  the `mcp` override when the adapter exposes an option that omits
+  install/auth/UI actions. *Pin:* `stability.test.mjs` (registrations, both
+  `details` fields); `plugin-api.test.mjs` and `integration.test.mjs` (schema,
+  description, real package registration); `render.test.mjs` (no disabled
+  workflow API in the rendered subagent description).
+- **MCP settings** (2026-09-22): public `namespaceProxyTools: false`,
+  `jev: false` and `freezeDirectTools: true`. *Why:* gateway plus direct
+  Context7 only, lexical search, a stable tool surface after initialization.
+  *Residual:* the initial sync may still notify, including on a deferred first
+  connection, and proxy metadata stays live; the adapter's shared name-keyed
+  cache races and hashes the wrapper rather than the resolved broker
+  connection. pi-mcp-adapter 2.36.0's optional `@earendil-works/pi-ai` peer
+  range stops at `^0.86.0`, behind the pinned 0.87.1 (2026-09-26). *Retire:*
+  when upstream supports connection- or instance-scoped metadata storage;
+  re-check the peer lag when the adapter widens its range or a pi-ai bump
+  breaks it. *Pin:* `mcp-lifecycle.test.mjs` (local stdio fixtures; its cache
+  schema/hash helpers are test-only internals).
+- **MCP logging** (2026-09-24): the adapter's internal `logger.ts` singleton,
+  loaded through the adapter's own Jiti instance and set to `warn` before
+  installation. *Why:* its default `info` output drew the frozen-tool startup
+  diagnostic over the live composer. *Retire:* when the adapter exposes a
+  public logging setting or stops routine terminal output. *Pin:* lifecycle
+  tests and source pins.
+- **Acceptance and mutation names** (2026-09-22): read-only roles declare
+  `acceptanceRole: read-only`, write roles `acceptance: {"level":"none",…}`,
+  with `mutationTools: workspace_bash, workspace_edit, workspace_write` plus
+  `subagent` where they nest (`pi-roles`, `subagent-pi.md`). *Why:*
+  pi-subagents infers acceptance from `acceptanceRole` alone — `writer` adds a
+  review by its bundled `reviewer` outside the tier policy, an omitted role an
+  attestation section — and renamed tools are otherwise invisible to its
+  mutation guard and evidence; the driver verifies from the diff. *Pin:*
   `stability.test.mjs`.
-- The fleet peek replays `<asyncDir>/events.jsonl`: the file and `asyncDir` (the
-  launch result's `details.asyncDir`, `observability.md`) are documented, and
-  so is the file's content in outline (the child's pi events with
-  `message_update` dropped); the record annotations are not — the events
-  (`tool_execution_start/end`, `message_end`) carry `subagentSource:
-  "child"`, `subagentRunId`, `subagentStepIndex`, `subagentAgent`, `observedAt`,
-  capped at 50 MiB with one `subagent.events.truncated` record and nothing
-  after; the runner's own `subagent.steer.*` receipts share the file through
-  an uncapped writer and carry no annotation, so records are read by `type`.
-  A steer reaches the child as a user message opening `Mid-run steering from
-  the parent orchestrator:` (`Queued follow-up …` for `follow_up`) and closing
-  with the `Incorporate this guidance…` line, which the replay strips; the
-  `steer` RPC blocks up to 3 s for its receipt, so the peek's call outlives
-  the fleet poll's 2 s timeout. All pinned in `stability.test.mjs`; each entry
-  retires when pi-subagents documents the shape or serves it over RPC
-  (2026-09-22). The replay also reads `agent_start`/`agent_end`/`agent_settled`
-  and each record's `observedAt` for the turn line and the working row, and
-  drives a quiet fold instance (no components to invalidate) through
-  `rows.mjs`'s own mutators; after a resume, `asyncDir` is read back from the
-  session branch's `subagent` tool results (`getBranch`, documented) (2026-09-23).
-  Peek's native editor is shaped at its bottom-border callback: `render()` puts
-  content between the borders and completion rows after them; pane clipping
-  keeps the cursor-marked line, with the native inverse cursor as its unfocused
-  counterpart. Slash-menu Enter submits after accepting, Tab accepts only.
-  Pinned in `stability.test.mjs`; retire the render-shape seam when Editor offers
-  a borderless, height-bounded render API (2026-09-24).
-- srt's `CLAUDE_CODE_TMPDIR` environment variable, read when it wraps a
-  command, names the `TMPDIR` it exports into that command; `sandbox-runner.mjs`
-  sets it to the lease's scratch path. Documented only in srt's source comment
-  (`generateProxyEnvVars`, 0.0.75) and pinned in `sandbox-runner.test.mjs`.
-- Plugin data the rows and policy read: pi-web-search's `details.error` and
-  its `web_search`/`url_context` names; the SDK bash schema being a plain
-  object whose `properties` take the `run_in_background` flag. All pinned in
-  `stability.test.mjs`, with `pi.sendMessage`, `ctx.ui.input` and
-  `ctx.ui.select` checked against the docs.
-- The working row above the composer: pi's own row is a column in under a
-  blank line (pi-tui's `Loader` hardcodes both) and `setWidget`'s string form
-  wraps its lines in the same indent, so the extension subclasses `Loader` and
-  drops that leading line; it rides `setWidget`'s documented component form at
-  `placement: "aboveEditor"`, which pi docks between the status container and
-  the composer; it stands down for pi's compaction indicator, and pi's
-  auto-retry countdown (no documented event) shows alongside it. Pinned in
+- **Quiet completion notice** (2026-09-16): the `pluginApi` Proxy intercepts
+  `sendMessage` and sends pi-subagents' completion notice with `display` off;
+  during shutdown results still reach the transcript with `triggerTurn: false`.
+  *Why:* `docs/pi-design.md` rule 4. *Pin:* `stability.test.mjs`;
+  `plugin-api.test.mjs` (the shutdown exception).
+- **Session surfaces**: pi's `resetExtensionUI` (on `/new`, `/resume`) clears
+  the header, footer and custom editor, so `session_start` re-applies them.
+  *Pin:* `stability.test.mjs`.
+- **Skill display** (2026-09-24): wraps `InteractiveMode`'s undocumented
+  `getUserMessageText` once, turning a native `parseSkillBlock` match back into
+  `/skill:name` plus arguments; the host class comes from pi's virtual modules,
+  since the bundled CLI and unbundled SDK export different classes. Stored
+  messages and model context stay untouched. *Why:* rule 5's single user box.
+  *Retire:* when pi exposes a user/skill-message renderer. *Pin:* bundled-entry
+  and real-render tests, `stability.test.mjs`.
+- **Pending input** (2026-09-24): replaces only
+  `InteractiveMode.updatePendingMessagesDisplay` on the same host class, using
+  `pendingMessagesContainer`, `getAllQueuedMessages` and `getAppKeyDisplay`;
+  pi keeps queue ownership and the adapter only draws shaded input blocks.
+  *Retire:* when pi offers a pending-input renderer. *Pin:* render/lifecycle
+  tests and source pins.
+- **Tab completion**: the documented `addAutocompleteProvider` wrapper
+  (`index.mjs` `argumentCompletions`) re-issues a forced request unforced,
+  answers `shouldTriggerFileCompletion` itself and is re-added idempotently on
+  every `session_start`; `CaretEditor` re-issues the key after a Tab accept on
+  the command's space or a directory separator. *Why:* pi routes Tab in a
+  command's arguments to forced file completion its slash branch skips, and an
+  accept closes the menu with nothing re-opening it. *Pin:*
+  `stability.test.mjs`; `caret.test.mjs` walks pi's own provider.
+- **Editor render shape** (2026-09-22): exported but undocumented `renderDiff`
+  and `getMarkdownTheme`; `CustomEditor`'s undocumented render shape
+  (`renderTopBorder`/`renderBottomBorder`, `setPaddingX`, first-line padding);
+  shell mode's use of Editor's `state`, `layoutText`, `buildVisualLineMap`,
+  `setCursorCol`, `handleBackspace` and undo snapshots. *Why:* the shell-mode
+  prefix renders and deletes atomically while native history, paste and
+  submission keep the original text. *Retire:* when pi exposes a
+  shell-mode/prompt-prefix editor API. *Pin:* `stability.test.mjs`,
+  `caret.test.mjs` (render shape), real-editor wrapping/navigation/undo tests.
+- **Questionnaire** (2026-09-17): uses public `custom` and `Markdown`; native
+  paste expansion preserves complete notes and free answers.
+- **Inline dialog text** (2026-09-21): plan feedback, questionnaire notes and
+  free answers keep `Editor.render()` for wrapping, cursor and navigation,
+  dropping its border rows at one site, `dialog.mjs`'s field. *Pin:*
+  `plan-approval.test.mjs`.
+- **Mouse**: the fold handle answers clicks on its summary line from its own
+  `handleMouse`, resting on `MouseRegion` asking the child first and
+  `ToolExecutionComponent` forwarding self-shell events one row up (`y - 1`).
+  Reasoning's transformer returns "" so no invisible clickable line renders.
+  *Pin:* `stability.test.mjs`.
+- **Row spacing** (2026-09-18): `ToolExecutionComponent` renders no line,
+  spacer included, for a self-shelled row with no content; a group's hidden
+  members lean on it (`docs/pi-design.md` rule 8). Managed
+  `terminal.showImages: false` removes native image previews outside the row
+  without changing result content. *Pin:* `stability.test.mjs`;
+  `transcript.test.mjs` (real component, every detail level).
+- **The owned `!` block** (2026-09-24): `CaretEditor` intercepts the `onSubmit`
+  pi assigns to a custom editor, parses `!`/`!!` as pi's branch does (shell-mode
+  follow-up keys included) so `handleBashCommand` never runs, and runs the
+  command through the documented `createLocalBashOperations` with pi's
+  `shellPath`/`shellCommandPrefix` from the exported `SettingsManager`, gated on
+  the session's `isProjectTrusted()` so an untrusted checkout cannot pick the
+  shell; the model's ops-worker `bash -c` stays on bash. Both forms append one
+  `workflow-shell` entry; `!` also sends a hidden custom message spelled like
+  `bashExecutionToText`; Esc is caught in `handleInput`. *Why:* pi has no
+  renderer hook for its shell block. *Residual:* no `bash_execution_update`, no
+  full-output file on truncation (block and context say "truncated"), no pi
+  pending shell component. *Retire:* when pi exposes a renderer for its shell
+  block or a documented submit hook. *Pin:* `stability.test.mjs` (each literal
+  by text, not order).
+- **Unified activity groups** (2026-09-18): tools and successful completions
+  share one timeline; a completion-led group reads it at paint time and
+  repaints through the footer's `tui.requestRender()`, since an entry renderer
+  gets no invalidate handle. Rests on `CustomEntryComponent`'s spacer rule,
+  `addCustomEntryToChat` skipping empty entries and `Container` click dispatch.
+  *Residual:* a transcript rebuilt from a branch lacking a group's first entry
+  drops that group's later members; two completions with a text chunk between
+  them sit adjacent but ungrouped. *Pin:* `stability.test.mjs`;
+  `transcript.test.mjs` (the block's own lines; `CustomEntryComponent` is not
+  exported).
+- **Fleet run matching heuristic** (2026-09-23): fleet rows match active
+  top-level named-agent runs by unique exact agent/start time (`fleet.mjs`
+  `runIdFor`); ambiguous or missing matches get no control ID and matches never
+  rebind to a sibling; the DTO's `goal` is never filled. Completion lines read
+  the `subagent:async-complete` payload and take the task from the launch's own
+  tool events, since `async-started` redacts it; row text assumes the bash
+  tool's stand-in and trailer literals and per-row click toggling. *Retire:*
+  the heuristic when upstream supplies the run ID in the fleet DTO. *Pin:*
+  `fleet.test.mjs` (matching); `stability.test.mjs` (projection, DTO sources,
+  row literals).
+- **Fleet peek replay** (2026-09-22): replays `<asyncDir>/events.jsonl`, whose
+  path and outline are documented but whose `subagent*` record annotations,
+  truncation marker and steer receipts are not; records are read by `type`, the
+  steer wrapper lines are stripped, and after a resume `asyncDir` is read back
+  from the branch's `subagent` results. Peek's native editor is shaped at its
+  bottom-border callback (2026-09-24). *Retire:* each record seam when
+  pi-subagents documents the shape or serves it over RPC; the render-shape seam
+  when Editor offers a borderless, height-bounded render API. *Pin:*
   `stability.test.mjs`.
-- Blanked reasoning: pi spaces an assistant message from its raw reasoning
-  before any display hook runs (earendil-works/pi#8154), so a `message_end`
-  handler blanks the thinking text. Rests on the OpenAI Responses replay
-  sending the opaque reasoning item alone (`JSON.parse(block.thinkingSignature)`
-  in pi-ai's `openai-responses-shared.js`, which also stores the provider's own
-  summary) and on the Anthropic replay sending the text with its signature,
-  which is why the handler is gated on `message.api`. Accepted cost:
-  `transformMessages` keeps a signed block only where provider, api and model
-  id all match and drops one whose text is empty, so after a model change the
-  earlier reasoning no longer reaches the new model as plain text. A
-  `message_update` handler swaps blanked copies into the event's message too,
-  so the streaming component spaces the same way while it is still typing;
-  this rests on pi emitting to extensions before listeners with the same
-  per-event shallow-copied message. All pinned in `stability.test.mjs`
-  (2026-09-18).
-- Outside the npm pin: the status line's usage segments come from
-  `GET chatgpt.com/backend-api/wham/usage`, called directly with pi's
-  stored `openai-codex` credential (the exported `readStoredCredential`; its
-  field shape is pinned in `stability.test.mjs`). The token is never refreshed
-  there: refresh tokens rotate, so a footer refresh racing pi's own would
-  invalidate the login — an expired credential skips the read and pi's next
-  model call restores it. The endpoint is an unversioned ChatGPT backend
-  surface; its window fields (`rate_limit.primary_window/secondary_window`:
-  `used_percent`, `limit_window_seconds`, `reset_at`) had only grown
-  additively over their observable history (verified 2026-09-11). Re-verify trigger: segments missing on
-  a live turn with a fresh login — check the response shape, not the parser.
-  A failed read only drops the segments.
-- Outside the npm pin: herdr's bundled pi extension (integration v9, herdr
-  0.9.1) is the pane's lifecycle authority and reports `blocked` only on the
-  `herdr:blocked` `{ active, label }` bus event, ref-counted — it does not read
-  pi's `ui_prompt_*`. `index.mjs` bridges the prompt span to it so plan
-  approval, questions and broker confirms raise herdr's needs-input
-  notification; pi-subagents emits the same event for async children
-  (`extension-api.md`). Re-check when the herdr integrations script re-fires
-  on an upgrade; delete the bridge once herdr's extension subscribes to
-  `ui_prompt_*` itself, or each prompt counts twice (2026-09-18).
+- **srt `CLAUDE_CODE_TMPDIR`**: names the `TMPDIR` srt exports into a wrapped
+  command; `sandbox-runner.mjs` sets it to the lease's scratch path.
+  Documented only in srt's source (`generateProxyEnvVars`, 0.0.75). *Pin:*
+  `sandbox-runner.test.mjs`.
+- **Plugin data the rows and policy read**: pi-web-search's `details.error` and
+  its `web_search`/`url_context` names; the SDK bash schema's `properties` map
+  taking the `run_in_background` flag. *Pin:* `stability.test.mjs`, with
+  `pi.sendMessage`, `ctx.ui.input` and `ctx.ui.select` checked against the docs.
+- **Working row**: the extension subclasses pi-tui's `Loader` and docks it via
+  `setWidget`'s documented component form at `placement: "aboveEditor"`. *Why:*
+  pi's own row and `setWidget`'s string form hardcode an indent and a leading
+  blank line. It stands down for pi's compaction indicator; pi's auto-retry
+  countdown (no documented event) shows alongside it. *Pin:*
+  `stability.test.mjs`.
+- **Blanked reasoning** (2026-09-18): `message_end` blanks the thinking text
+  and `message_update` swaps blanked copies into the streaming message, gated
+  on `message.api`. *Why:* pi spaces an assistant message from its raw
+  reasoning before any display hook runs (earendil-works/pi#8154). *Accepted
+  cost:* after a model change, earlier reasoning no longer reaches the new
+  model as plain text. *Pin:* `stability.test.mjs`.
+- **Usage segments** (outside the npm pin): `GET
+  chatgpt.com/backend-api/wham/usage`, an unversioned ChatGPT backend surface,
+  read with pi's stored `openai-codex` credential (exported
+  `readStoredCredential`) and its `rate_limit.primary_window/secondary_window`
+  fields (`used_percent`, `limit_window_seconds`, `reset_at`). The token is
+  never refreshed there: refresh tokens rotate, so a footer refresh racing pi's
+  would invalidate the login; an expired credential or failed read only drops
+  the segments. *Re-verify:* segments missing on a live turn with a fresh
+  login — check the response shape, not the parser. *Pin:*
+  `stability.test.mjs` (credential field shape).
+- **herdr blocked state** (outside the npm pin, 2026-09-18): herdr's bundled pi
+  extension (integration v9, herdr 0.9.1) reports `blocked` only on the
+  ref-counted `herdr:blocked` `{ active, label }` bus event, not pi's
+  `ui_prompt_*`; `index.mjs` bridges the prompt span to it so plan approval,
+  questions and broker confirms raise herdr's needs-input notification.
+  *Retire:* re-check when the herdr integrations script re-fires on an upgrade;
+  delete the bridge once herdr's extension subscribes to `ui_prompt_*` itself,
+  or each prompt counts twice.

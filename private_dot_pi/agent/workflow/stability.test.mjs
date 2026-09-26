@@ -95,6 +95,13 @@ for (const file of sourceFiles) {
   }
 }
 
+// ops-worker loads the SDK lazily, out of reach of the static import scan above.
+for (const name of ["detectSupportedImageMimeTypeFromFile", "truncateHead", "truncateLine"]) {
+  test(`ops-worker.mjs: ${name} is exported by pi-coding-agent/dist/index.d.ts`, () => {
+    assert.ok(isExported(join(nodeModules, "@earendil-works", "pi-coding-agent", "dist"), "index.d.ts", name));
+  });
+}
+
 // Source pins for the undocumented behaviour the transcript rows lean on
 // (docs/pi-design.md rule 7). Each names the text the code assumes; a pin bump
 // that rewrites it fails here before the row does on screen.
@@ -108,6 +115,8 @@ const pins = [
   ["appendEntry sends a custom-entry event without appending model context", "@earendil-works/pi-coding-agent/dist/core/agent-session.js", [/appendEntry: \(customType, data\) => \{\s*const entryId = this\.sessionManager\.appendCustomEntry\(customType, data\);\s*const entry = this\.sessionManager\.getEntry\(entryId\);\s*if \(entry\) \{\s*this\._emit\(\{ type: "entry_appended", entry \}\);\s*\}\s*\},/]],
   ["custom-entry renderers rebuild on Ctrl+O and theme invalidation while retaining the same entry object", "@earendil-works/pi-coding-agent/dist/modes/interactive/components/custom-entry.js", [/setExpanded\(expanded\) \{\s*if \(this\._expanded !== expanded\) \{\s*this\._expanded = expanded;\s*this\.rebuild\(\);/, /invalidate\(\) \{\s*super\.invalidate\(\);\s*this\.rebuild\(\);/, /this\.renderer\(this\.entry, \{ expanded: this\._expanded \}, theme\)/]],
   ["native skill rendering and restored editor history both use the same getUserMessageText result, and the extension starts before initial rendering", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/getUserMessageText\(message\) \{/, /const textContent = this\.getUserMessageText\(message\);[\s\S]{0,500}?const skillBlock = parseSkillBlock\(textContent\);/, /new UserMessageComponent\(textContent, this\.getMarkdownThemeWithSettings\(\), this\.outputPad, this\.getMarkdownTransformers\(\)\)/, /this\.editor\.addToHistory\?\.\(textContent\);/, /await this\.rebindCurrentSession\(\);[\s\S]{0,100}?this\.renderInitialMessages\(\);/, /this\.renderSessionEntries\(entries, \{\s*updateFooter: true,\s*populateHistory: true,/]],
+  ["pi's <skills> section renders only when a tool named read or bash is active, so the workspace_* surface never gets one and skills load by explicit /skill:name only", "@earendil-works/pi-coding-agent/dist/core/system-prompt.js", [/const skillFileReadTool = \["read", "bash"\]\.find\(\(tool\) => selectedTools\.includes\(tool\)\);/, /if \(skillFileReadTool && skills\.length > 0\) \{/]],
+  ["formatSkillsForPrompt names the read tool only for \"read\" and tells the model to use bash for any other tool name", "@earendil-works/pi-coding-agent/dist/core/skills.js", [/fileReadTool === "read"\s*\? "Use the read tool to load a skill's file when the task matches its description\."\s*: "Use bash to load a skill's file when the task matches its description\."/]],
   ["native skill block parser requires the complete tag so a reconstructed command takes the ordinary user-box branch", "@earendil-works/pi-coding-agent/dist/core/agent-session.js", [/text\.match\(\/\^<skill name=/, /userMessage: match\[4\]\?\.trim\(\) \|\| undefined,/]],
   ["the user box sends transformed markdown through native wrapping and userMessageText while retaining its shade", "@earendil-works/pi-coding-agent/dist/modes/interactive/components/user-message.js", [/theme\.bg\("userMessageBg", content\)/, /theme\.fg\("userMessageText", content\)/, /transform: createMarkdownTransform\("user", false, this\.markdownTransformers\)/]],
   ["peek shapes the native editor's border-delimited content before the unshaded autocomplete list, retaining its cursor marker when clipped", "@earendil-works/pi-tui/dist/components/editor.js", [/result\.push\(this\.renderTopBorder\(width, this\.scrollOffset\)\)/, /result\.push\(this\.renderBottomBorder\(width, linesBelow\)\)/, /const autocompleteResult = this\.autocompleteList\.render\(contentWidth\)/, /const marker = emitCursorMarker \? CURSOR_MARKER : ""/]],

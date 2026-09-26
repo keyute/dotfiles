@@ -5,9 +5,181 @@ probe results, and decision baselines, dated, newest first. Repo-local and
 chezmoi-ignored — sessions never load this. The on-demand harness docs carry
 each fact's *current* state with a one-line dated annotation; this file
 carries the numbers and open triggers behind those annotations (rule in
-`AGENTS.md` → Placement). An entry whose trigger has resolved and whose
-baseline no longer serves a future sweep is deleted, not archived — git
-history keeps it.
+`docs/agent-authoring.md` → Placement). An entry whose trigger has resolved
+and whose baseline no longer serves a future sweep is deleted, not archived —
+git history keeps it.
+
+## 2026-09-26
+
+### Model and effort data shape — one owner per fact
+
+Decisions from the harness remodel (plan evidence: Artificial Analysis and
+vendor pages, fetched 2026-09-26):
+
+- Effort is model-relative (intent change; supersedes the 2026-09-25
+  "effort is absolute"): each vendor calibrates low/medium/high on its own
+  model — Opus 5.5 at `medium` matched Opus 5 at `high` (vendor guide,
+  2026-09-23 entry). A role's effort is re-checked once at its tier when that
+  tier's pin moves, never per harness per role. `general-purpose` keeps
+  `high`: it nests and decomposes.
+- Each driver is a tier reference (`agents.<harness>.defaults.tier`), never a
+  second copy of the pin; settings, workflow.json, both harness docs, the
+  projection and the render test resolve it through `subagent_tiers`.
+  `no_effort_tiers: [small]` became `no_effort_models`: the missing effort
+  knob belongs to Haiku 4.5, not the slot (pi's small tier takes effort).
+- The Claude→pi bridge sets its own effort (`high`, recall-critical worker)
+  instead of borrowing the pi driver's anchor, and `--reasoning-effort` is
+  required; the render test asserts top tier plus a valid level, not
+  equality with the driver.
+- pi's plan effort knob is gone (`plan_reasoning_effort` and the per-mode
+  `setThinkingLevel`): `settings.defaultThinkingLevel` is the one owner, so a
+  `/thinking` choice survives mode switches (`docs/pi-implementation.md`
+  2026-09-26).
+- Tiers stay `small`/`top`/`frontier`; the render test asserts exactly those
+  keys, the driver tier among them, `no_effort_models` as current pins and no
+  role on `frontier`. No mid tier: Sonnet 5 medium (index 28, $1.00/task) is
+  dominated by Opus 5.5 low (42, $0.55), Terra 5.6 max (42, $1.40) by Sol 6
+  max (48, $1.06).
+
+Adoption protocol for a new model: a slot is a role class (cheapest capable,
+best worker, escalation-only), never a model generation; a new model lands in
+one slot or none; a slot's binding moves only when the cheapest model whose
+default-effort score meets its roles changes; a model serving a purpose
+outside the slots (the pi classifier) gets a named-purpose binding with its
+own trigger, not a fourth tier. Reversal: add a tier key only when a
+non-dominated model lands between `small` and `top`.
+
+### (claude) Escalation ladder — effort first, then a fresh frontier session
+
+Changed intent, not a re-word: `harness.md` taught `/model` then `s` for a
+one-session Fable switch; it now says `/effort xhigh` first, then a fresh
+`claude --model <frontier>` session, and not `/model` in a grown session.
+The grown-session clause oscillated as an always-loaded driver rule justified
+by re-metering (added fb4de68 07-24, ad28188 07-29, reworded f40a69f 07-31,
+re-added a71c5dd 09-14, removed 49b4cff 09-15 with the Advisor-consult path);
+it now lives only in the on-demand doc as an escalation mechanic, justified by
+per-model caches. The Advisor pairing stays removed.
+
+- code.claude.com/docs/en/prompt-caching: "On Opus 5.5 and Fable 5.1 … changing
+  effort keeps the cache"; "Each model has its own cache. Switching with
+  /model means the next request reads the entire conversation history with no
+  cache hits." Platform effort doc: Opus 5.5 per-message effort "preserves
+  the prompt cache". Model-config: `ultrathink` adds an in-context
+  instruction; the effort sent to the API is unchanged.
+- Opus 5.5 `high`→`xhigh` is +2 index for 1.9x cost (AA), so `xhigh` stays a
+  per-session bump, not the default.
+- The top-level `effortLevel` key went with its harness.md sentence; a fresh
+  frontier session runs the effort pinned under `modelSettings.<frontier>`,
+  rendered from `subagent_tiers` with the same value as the driver's (decision
+  2026-09-26: the unpinned default is a server-mutable flag).
+
+Reversal trigger: Claude Code keeps the cache across `/model`, or `/effort`
+stops keeping it on the driver model.
+
+### Driver ownership — two clauses leave the projection
+
+"Unpinned children get the top worker tier explicitly" and "no child gets
+frontier" are no longer projected (authoring gate 4): Claude's settings pin
+`CLAUDE_CODE_SUBAGENT_MODEL` to the top tier and deny the frontier alias
+under `Agent(model:…)` (both asserted by `render.test.mjs`); pi's roster
+pins every role and `children.mjs` refuses a frontier child. The baseline
+bullet now marks them enforced. Reversal: a child observed on the frontier
+model, or a release that routes around the deny (the post-update routing
+check in the Claude harness doc is the probe).
+
+### Measurable reversal triggers
+
+Retired: every trigger keyed to spec-reviewer catches against the 2026-09-15
+baseline (the Claude driver revert, the `subagent_tiers.claude.top` revert,
+the 2026-09-23 open item). spec-reviewer runs the top tier, which is the
+driver's model since 2026-09-25, so its catches on driver-authored work are
+same-model, and 13 runs cannot resolve a change. Replacements a sweep can
+count:
+
+- **Open**: `omitClaudeMd` on the Explore/Plan overrides (2026-09-26) —
+  compare one Explore dispatch's first-turn input tokens before and after
+  apply; revert the roster flag if a distilled-findings regression shows up.
+- Quota. **Owner to fill** — `/usage` on 2026-09-26: weekly all-models __%,
+  weekly Fable __%, current 5-hour window __%. Flip the Claude driver to
+  `medium` if the weekly limit binds in 2 of 4 weeks.
+- Frontier switches: `/model` switches to the frontier model and fresh
+  frontier sessions per week, counted from the session store (user-run
+  extension of `scripts/agent-usage.mjs`, which counts dispatches only
+  today). First count is the baseline; a doubling re-opens the driver choice.
+- Opus 5.5 text-only end of turn (vendor watch item) on unattended runs: if
+  it recurs in the driver, move `agents.claude.defaults.tier` to `frontier`;
+  if it recurs in top-tier children, revert the `subagent_tiers.claude.top`
+  pin to Opus 5.
+- pi driver effort: replay 10–20 real pi root tasks at `medium` vs `high`
+  (turns, credits, completion; `showCacheMissNotices` on). If `medium` needs
+  ≥1.3x `high`'s turns at equal completion, `high` stands; if turns are
+  equal, the default moves to `medium`. Evidence that raising effort does not
+  cut coding turns: AA GDPval Astra turns/task low→max 12/19/21/23/24 at
+  $0.85→$4.53; OpenAI DeepSWE cost per solved task medium $4.23, high $5.36,
+  xhigh $5.98, max $10.25; the one exception, AA Terminal-Bench 4.0, favours
+  `high` ($4.05 vs $4.43 per task, 54.0 vs 49.5). `xhigh`/`max` were never
+  cheapest per completed task.
+
+### (pi) Approval classifier → GPT-6 Sol, both stages
+
+Decision: filter and judge move from Terra 5.6 to Sol 6 (efforts unchanged).
+The 2026-09-24 trigger — a published Sol 6 figure on a metric shared with
+Terra 5.6 at least Terra's — has fired:
+
+- GPT-6 Astra system card, appendix 11.3.2, Figure 59 (indirect-injection
+  defender success): Sol 6 99.05% vs Terra 5.6 96.68% (the 5.6 card's 3.32%
+  GPT-Red indirect attack success). Table 28 (instruction hierarchy): Sol 6
+  99.97%; Terra 5.6 direct attack success 0.061% (99.939%).
+- OpenAI's models page: GPT-5.6 models "remain available during the
+  rollout", no date. pi-ai 0.87.1 maps Sol 6 `off` to `none`, so the filter's
+  `none` reaches the request. Credits 50/5/250 vs Terra 50/5/300 (live rate
+  card 2026-09-26); the classifier's spend is negligible either way.
+- The "one model keeps the judge's prompt a cache hit" rationale was false
+  (`approval.mjs`: the key aligns routing; the judge's effort change can miss
+  cache) and is dropped.
+
+Gate before apply (owner-run): replay the 137-action TypeSafe corpus
+(2026-09-18) through the Sol pairing. Reversal: Sol's false-allow or
+false-deny count on that corpus above Terra's → back to Terra 5.6 while it
+remains in the catalog.
+
+### (pi) Rate card and context window figures
+
+Baselines behind the pi `harness.md` Models bullets (moved from there to keep
+it within its line budget):
+
+- Standard credits per million input/cached/output tokens: Astra 250/25/1250,
+  Sol 50/5/250, Luna 2.5/0.25/12.5, Terra 5.6 50/5/300; Fast is 2.5×
+  Standard (live rate card, 2026-09-26). Feeds the pi driver effort replay's
+  credit comparison.
+- Context window: the 1,050,000 window on the model pages is API-key only;
+  there, input above 272,000 bills the whole request at 2x input / 1.5x
+  output. Subscription route 272,000 (pinned catalog, 2026-09-26); trigger:
+  the next SDK bump, or a live readout ≠ 272K.
+
+### Roster — 14 roles kept
+
+Decision: unchanged, 14 roles on Claude, 13 on pi. Overlap, not count,
+degrades routing: selection accuracy stays above 90% up to ~20 options and
+degrades from ~30 tools or 10+ agents (arXiv 2601.04748, 2410.14594,
+2505.03275, 2606.17519); one near-duplicate per option costs 7–30% accuracy.
+The five language reviewers are routed by ship-check, not by description, so
+that finding does not reach them, and they stay all-or-nothing: retiring one
+leaves that language alone on the generic lens. Claude's listing is ≈1.0k
+tokens for 14 roles. pi-subagents' 13 built-ins stay disabled (scout vs
+Explore/explore-deep, reviewer/oracle vs diff-/spec-reviewer, delegate vs
+general-purpose would be confusable pairs). Dispatches: 2026-09-25 table.
+
+Triggers:
+- Fold all five language reviewers into diff-reviewer with per-language
+  checklists only if an A/B on real diffs shows no difference in verified
+  catches.
+- dep-researcher → researcher if dep-audit stops dispatching per dependency
+  or their tool sets converge; Explore → explore-deep if the small tier stops
+  being cheaper per completed task (Haiku 5.5 re-tier).
+- Deny the built-in `claude` agent if dispatch counts show it chosen where
+  `general-purpose` was intended.
+- Re-open the count when description-routed roles approach ~20.
 
 ## 2026-09-25
 
@@ -48,23 +220,18 @@ run; the swap rests on:
 - Not found: a matched-effort long-horizon comparison; SWE-bench Verified for
   either; Max drain ratio.
 
-Reversal triggers:
-- Revert the driver to Fable if spec-reviewer catches on driver-authored plans
-  or adjudication rise above the 2026-09-15 baseline, or the Opus 5.5
-  text-only end-of-turn (vendor watch item) recurs in the driver on
-  unattended runs.
+Reversal triggers (the spec-reviewer-catch trigger retired 2026-09-26; the
+countable replacements are in 2026-09-26 → Measurable reversal triggers):
 - Re-run the frontier question if Anthropic lifts the Fable weekly cap or a
   matched-effort long-horizon eval puts Fable ahead.
-- Claude-side `agent-instructions-audit` after this model change, not yet run
-  (the audit's `session+pin` probe runs one-shot when the pin family differs
-  from the session's).
 
 ### Re-unified role matrix — one tier and one effort per role
 
 Decision: `subagents.<role>` carries one `tier` and one `effort` serving both
 harnesses (reverts the 2026-09-24 per-harness split); a tier is a capability
 class each harness maps to its cheapest current model meeting it; effort is
-absolute and re-checked once at the tier when its model changes. `mid` dropped
+re-checked once at the tier when its model changes (model-relative since
+2026-09-26). `mid` dropped
 (tiers `small`/`top`/`frontier`). Claude now renders `general-purpose` (top,
 nests) and `Plan` (`harnesses: [claude]`) as overrides of its built-ins.
 `log-triager` retired; pi's `explorer` renamed `Explore` on both harnesses.
@@ -108,8 +275,10 @@ Reversal triggers:
 - Fall back to `gpt-5.6-sol` for pi `top` if implementer round-trips rise.
 - **Open**: after apply, Claude's `/agents` shows `general-purpose` and `Plan`
   as user overrides and `/tasks` shows `claude-opus-5-5` for both; if the
-  `Plan` override does not take, the fallback is the deny hook. Claude-side
-  `agent-instructions-audit` after the model change, not yet run.
+  `Plan` override does not take, the fallback is the `Agent(model:fable)` deny rule. Claude-side
+  `agent-instructions-audit` after the model change, not yet run (the
+  audit's `session+pin` probe runs one-shot when the pin family differs from
+  the session's).
 
 ## 2026-09-23
 
@@ -194,8 +363,8 @@ Claude Code 2.1.280, pi SDK 0.87.1. Cross-model cross-check on the pi bridge
   after the `bg_wait` grant (baseline 154 polls / 5 launches); map that Fable child to its parent (slice the path to
   `<session>/subagents/<file>` next time) and name the spawn path the
   deny-frontier hook cannot see;
-  spec-reviewer catches and zero-finding share at Opus 5.5 vs the 1 high + 3
-  medium of 13 baseline; Opus 5.5 text-only stops in top-tier children.
+  spec-reviewer zero-finding share at Opus 5.5; Opus 5.5 text-only stops in
+  top-tier children.
 
 ### New-model placement — Opus 5.5, GPT-6 Sol and Luna (all released 2026-09-22)
 
@@ -205,13 +374,6 @@ effort plus vendor pages; per-effort figures are in the 2026-09-25 entry.
 Opus 5.5: API default effort `medium`, thinking cannot be disabled, forced `tool_choice` 400s,
 Claude Code ≥ 2.1.280 (installed). Pi SDK 0.87.1 (2026-09-22) is the first
 catalog with the GPT-6 tiers and Opus 5.5; pinned from 0.87.0 in the same change.
-
-- Claude top → `claude-opus-5-5`; frontier stays Fable 5.1. Opus 5.5 at max
-  outscores Fable 5.1 at max on the same day at 0.4x the price, but uses ~1.5x
-  the tokens per task, and the frontier/top split carries the frontier_driver
-  rule and the deny-frontier-child hook. Superseded 2026-09-25: the driver
-  moved to Opus 5.5 on external evidence without the paired replay (entry
-  above).
 
 ### (claude) Cross-model consultation yield
 
@@ -442,11 +604,11 @@ card, plan and model pages and OpenCode Go, plus a trace of pi-ai's
   subscription OAuth in third-party clients
   (The Register, 2026-02-20). Only pi could host a second vendor, via
   pi-subagents' per-agent `provider/model` behind `children.mjs`'s guard.
-- **Open**: after apply, per-stage latency of the Terra pairing with the
-  filter's `stopReason`, filter forward rate, judge verdicts on escalations
+- **Open**: after apply, per-stage latency of the classifier pairing (Sol 6
+  since 2026-09-26) with the filter's `stopReason`, filter forward rate, judge verdicts on escalations
   after a failed sandboxed attempt, cached-input tokens on the judge call,
-  and whether the `openai-codex` route accepts `none` (the model page says
-  yes).
+  and whether the `openai-codex` route accepts `none` on the wire (the
+  0.87.1 catalog maps Sol 6 `off` to `none`).
   The fallback trigger and the second-vendor trigger are recorded in
   `docs/pi-implementation.md`.
 
@@ -501,7 +663,7 @@ whys cite:
   13 times in 13 sessions in two days, trivial bodies included; 4–5
   zero-finding runs at ~51k top-tier tokens; one body re-reviewed 35 min
   later; suites re-run green; 1 high + 3 medium catches, all on high-stakes
-  surfaces (the Opus-tier baseline to beat). Precedence clause: the Claude
+  surfaces. Precedence clause: the Claude
   harness passage discouraging extra review passes was present 2026-09-09,
   absent from the Fable 5.1 main loop on 2026-09-15 (lapsed 2026-09-12).
 - Cross-model review evidence: a size-only trigger fired ~20x more often
@@ -558,6 +720,7 @@ the two measurements still carrying a trigger moved here.
 
 ## 2026-09-12
 
+### (claude) spec-reviewer yield
 
 13 spec-reviewer runs in 2 days, one per session; 669k subagent tokens
 (~51k avg) at Fable rates ≈17% of subagent spend. Yield: 1 high + 3 medium +

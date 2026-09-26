@@ -17,7 +17,6 @@ tools: {{ join ", " $role.tools }}
 extensions: {{ $role.extensionPath }}
 inheritProjectContext: true
 inheritGlobalContext: true
-inheritSkills: true
 allowNestedSubagents: {{ $role.nests }}
 {{ if $role.readonly }}acceptanceRole: read-only{{ else }}mutationTools: {{ join ", " $role.mutationTools }}
 acceptance: {"level":"none","reason":"the driver verifies each slice from its diff and gate"}{{ end }}

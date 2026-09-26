@@ -1,18 +1,14 @@
 {{- /* agent-sandbox: resolve the agnostic sandbox filesystem policy for one agent.
        input:  dict "self" <agent name> "root" <template data>
-       output: JSON {denyRead, sandboxDenyRead, allowRead, allowWrite} */ -}}
+       output: JSON {denyRead, allowWrite} */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
 {{- $denyRead := list -}}
-{{- $sandboxDenyRead := list -}}
-{{- $allowRead := list -}}
 {{- $allowWrite := list -}}
 {{- $fs := $root.agent_sandbox.filesystem -}}
 {{- range $path, $mode := $fs.paths -}}
   {{- if eq $mode "none" -}}
     {{- $denyRead = append $denyRead $path -}}
-    {{- $sandboxDenyRead = append $sandboxDenyRead $path -}}
-  {{- else if eq $mode "read" -}}{{- $allowRead = append $allowRead $path -}}
   {{- else if eq $mode "write" -}}{{- $allowWrite = append $allowWrite $path -}}
   {{- end -}}
 {{- end -}}
@@ -22,8 +18,6 @@
     {{- if $p -}}
       {{- if eq .mode "none" -}}
         {{- $denyRead = append $denyRead $p -}}
-        {{- $sandboxDenyRead = append $sandboxDenyRead $p -}}
-      {{- else if eq .mode "read" -}}{{- $allowRead = append $allowRead $p -}}
       {{- else if eq .mode "write" -}}{{- $allowWrite = append $allowWrite $p -}}
       {{- end -}}
     {{- end -}}
@@ -32,7 +26,6 @@
 {{- range $name, $agent := $root.agents -}}
   {{- if ne $name $self -}}
     {{- $denyRead = append $denyRead $agent.home -}}
-    {{- $sandboxDenyRead = append $sandboxDenyRead $agent.home -}}
   {{- else -}}
     {{- /* the agent's own home is denied only at its sensitive subpaths, so
            features living under home (e.g. projects/<proj>/memory) keep working */ -}}
@@ -41,4 +34,4 @@
     {{- end -}}
   {{- end -}}
 {{- end -}}
-{{- dict "denyRead" $denyRead "sandboxDenyRead" $sandboxDenyRead "allowRead" $allowRead "allowWrite" $allowWrite | toJson -}}
+{{- dict "denyRead" $denyRead "allowWrite" $allowWrite | toJson -}}
