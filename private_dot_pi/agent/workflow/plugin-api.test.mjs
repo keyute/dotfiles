@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { controlNotice, mcpGateway, pluginApi, recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
+import { recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
+import { controlNotice, mcpGateway, pluginApi } from "./plugin-api.mjs";
 import { narrowSubagentSchema } from "./children.mjs";
 
 test("the plugin API decorates every registration and forwards everything else untouched", () => {

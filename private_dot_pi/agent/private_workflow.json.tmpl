@@ -35,6 +35,6 @@
           "denyRead" $denyRead
           "denyWrite" $denyWrite
           "allowWrite" $allowWrite)
-      "network" (dict "allowedDomains" $domains)
+      "network" (dict "allowedDomains" $domains "allowLocalBinding" .agent_sandbox.network.allow_local_binding)
       "agents" $roles
       "mcp" $mcp | toPrettyJson -}}

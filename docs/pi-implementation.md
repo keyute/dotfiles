@@ -9,7 +9,12 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - The root npm manifest/lockfile is the only Pi install (CLI and SDK are one
   package, pinned exactly); the Brew entry was dropped because it cannot
   declare a version and pi breaks extension APIs across 0.x releases.
-  Upgrade as one unit: bump the pin, `npm ci`, `npm run test:pi`, apply.
+  Upgrade as one unit: bump the pin, `npm ci`, `npm run test:pi`, apply
+  (lifecycle scripts off). The applied `~/.pi/agent/node_modules` is a symlink
+  to that pinned tree, which `workflow/` reaches by parent-directory lookup.
+  Settings merge by managed key: pi's `lastChangelogVersion` survives apply, a
+  saved theme or `/thinking` level resets, and trust lives in `trust.json`
+  (2026-09-26).
 - OpenAI subscription OAuth only; tier models live in agents.yaml
   (`subagent_tiers.pi`), and `children.mjs` rejects a child on the frontier
   tier (decision 2026-09-15). The pinned Pi SDK (see `package.json`) lists
@@ -31,6 +36,7 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   does not expose (request upstream if it ever matters); each child write is
   still individually authorized under the current mode, so the residual is
   timing, not an unreviewed write path.
+  A mode change between approval and execution invalidates the lease.
   Child role shims connect to the same live policy. Tools have `workspace_`
   names to prevent native builtins satisfying child allowlists when the policy
   extension fails.
@@ -53,21 +59,25 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - No root `@earendil-works/pi-client` pin: pi-subagents 0.70.1 resolves runner
   imports through the host's packages (`runner-aliases.js`, 2026-09-22).
 - 2026-09-17: an owned questionnaire replaces RPIV and its dependencies using
-  public TUI primitives. Exa moves behind the existing MCP gateway, while
-  Context7 stays direct.
+  public TUI primitives. Completed decisions keep the question text for the
+  classifier; model results omit presentation data. Exa moves behind the
+  existing MCP gateway, while Context7 stays direct.
   These exposure changes leave broker enforcement and child permissions intact.
 - 2026-09-22: pi-subagents 0.70.1 removed the completion guard the roles were
   tuned for on 2026-09-18; the driver's diff check is the gate. Roles carry
   `acceptanceRole: read-only` or `acceptance: {"level":"none",…}` with
-  `mutationTools` (reasons in `docs/pi-coupling.md`).
+  `mutationTools` (reasons in `docs/pi-coupling.md`). The subagent schema and
+  description expose managed keys/APIs only; executor and enforcement are
+  unchanged. Nesting children lack the native notifier and collect descendants
+  with blocking `bg_wait` before synthesis.
 - 2026-09-22: keep structured `workflow`/`contextFiles` prompt options, not a
   forced `systemPrompt`. Offline pinned request fixtures preserve initial
   instructions, input and tools across section patches and mode switches.
   These are request-shape guarantees, not live subscription cache/billing proof.
   No cache plugin or long-TTL override: this request builder does not request one.
 - 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization; the proxy stays live and the initial sync may still notify. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
-- 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The two-hour runtime backstop with a five-minute checkpoint/stop steer replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts (runtime semantics in the harness reference).
-- 2026-09-22: no installed-package patches. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. 2026-09-23: rather than wait, the extension owns the `!` round-trip through documented surfaces (composer submit, custom message/entry, its own renderer; `docs/pi-coupling.md`); when the hook ships, hand execution back to pi and keep only the renderer. 2026-09-23, later: the `!` command honours pi's `shellPath`/`shellCommandPrefix` (managed zsh sourcing `~/.zshrc`) through the SDK's `SettingsManager`, so the hand-back changes nothing the user sees.
+- 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The two-hour runtime backstop with a five-minute checkpoint/stop steer replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts: `bg_wait` window expiry is non-terminal, the separate headless `agent_end` auto-drain keeps its 30-minute limit, and a nesting child collects results during its turn, not through that drain.
+- 2026-09-22: no on-disk patches; two guarded prototype replacements (skill display, pending input), pinned in `stability.test.mjs`. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. 2026-09-23: rather than wait, the extension owns the `!` round-trip through documented surfaces (composer submit, custom message/entry, its own renderer; `docs/pi-coupling.md`); when the hook ships, hand execution back to pi and keep only the renderer. 2026-09-23, later: the `!` command honours pi's `shellPath`/`shellCommandPrefix` (managed zsh sourcing `~/.zshrc`) through the SDK's `SettingsManager`, so the hand-back changes nothing the user sees.
 - 2026-09-24, maintainability survey: keep the owned UI and harness, adopt
   nothing. pi 0.87.1 (latest) has no user-message, pending-input, bash-block or
   prompt-prefix renderer hook (`user_bash` still draws pi's own block; the
@@ -97,6 +107,24 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   reason, so the cost is one refused call; Claude Code's plan mode lists
   Edit/Write too. Reversal trigger: refused plan-mode writes outnumber mode
   switches in sessions, or pi-ai stops re-declaring tools after a removal.
+- 2026-09-18: the approval classifier also sees the session's recent shell
+  commands (the command, whether it ran sandboxed, its exit code; never its
+  output), so a retry after a sandboxed failure is judged on that evidence.
+- 2026-09-16: mode changes and shutdown stop detached children through
+  session-owned RPC and require observed process-terminal proof, not a
+  completion notification. Unverified cleanup blocks mode changes; shutdown
+  still closes the broker and reports cleanup failures, and shutdown child
+  results cannot trigger a model turn. The close hook silently stops shell
+  tasks; cleanup retains their outputs and failures. Cleanup cannot run after
+  Pi receives SIGKILL, nor does it cover deliberately detached `setsid` daemons
+  or external services/containers.
+- 2026-09-26: no `modelOverrides` `contextWindow` raise: the subscription route
+  serves 272,000 input tokens, and a raise only defers compaction until the
+  provider rejects. Revisit at the next SDK bump or if the live readout
+  reports otherwise.
+- 2026-09-26: shared skills load only by explicit `/skill:name`: pi lists
+  skills in the system prompt only while a tool named `read` or `bash` is
+  active, and the workflow exposes `workspace_*`.
 - 2026-09-18: TypeSafe Jev is not adopted for the approval classifier: the
   only slice an offline replay fast-allows safely is the sandboxed reviewed
   verbs, 11% of reviews, and escalations rarely clear the confidence bar.
@@ -139,18 +167,8 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   not evidence of a successful sandbox run until executed on the user's host.
 - Live OAuth, foreground/background children, cancellation, the fleet widget and
   MCP remain acceptance gates. Do not treat fixture tests as full DX parity.
-- Open residuals and follow-ups (carried from the pruned build log,
-  2026-09-15): a timed-out approval does not cancel its queued classifier
-  review and a minted ticket is not bound to the reviewed arguments; a
-  descendant that leaves the command's process group (`setsid`, double fork)
-  or that another user owns escapes the terminal-proof group kill;
-  `handlePaste` cancels the completion menu and nothing re-opens it;
-  `folds.*` grow for
-  the session's life and `derive` rescans the timeline on every mutation;
-  `@hk_net/pi-usage-bars` is the package to read if the `wham/usage` read
-  breaks; `forkContext` stays at the full copy because the pruned mode fails
-  the launch on any summary error; the fleet rows live in the footer because
-  pi's dock order in `chat-viewport.js` is fixed with the footer last.
+- Open residuals and follow-ups live in `docs/agents-audit-log.md` "Known
+  residuals (pi)", each with its trigger.
 - From the source repository, run `npm run test:pi`. It covers policy,
   classifier fallback, terminal proof, child preflight and secret-stubbed
   chezmoi projections. `PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` additionally
@@ -163,3 +181,28 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - The default moved to Astra on 2026-09-15 on doctrine, not on a matched-task
   comparison; the 2026-09-09 cost read (same trajectory 2.5x Sol;
   `docs/agents-audit-log.md`) is the baseline to measure against.
+
+## Claude-side bridge internals (moved from harness.md 2026-09-26)
+
+- The `pi` MCP entry spawns `scripts/pi-bridge.mjs`, which runs the repo-local
+  pi in `--mode json` print mode with the read-only tool allowlist
+  (`read,grep,find,ls`), `--no-context-files` and no extensions except the
+  bridge's own path guard. `review` embeds a bridge-computed git diff because
+  the child cannot run git (decision 2026-09-23).
+- MCP transport is kept deliberately: the bridge is harness-spawned outside the
+  Bash sandbox (the `~/.pi` deny stays intact) and its rendered `mcp__pi` allow
+  rule makes the tools prompt-free in plan mode (verified 2026-09-23). Plan mode
+  blocks MCP tools unless allow-listed (`readOnlyHint` ignored; upstream #12368
+  closed "not planned") and Bash has no plan-mode exemption.
+- Read isolation is the guard extension, not a sandbox: pi's built-in tools run
+  in-process, so `scripts/pi-bridge-guard.mjs` rewrites each tool path to the
+  vetted canonical path inside `cwd` (which must be a git worktree root) and
+  blocks Claude's bare-name `Read()` denies (`.env`) at any depth. Reversal trigger: pi's print mode, tool allowlist or
+  `tool_call` blocking regresses, or OpenAI withdraws ChatGPT-subscription
+  OAuth from third-party harnesses (sanctioned as of 2026-09-05) — then the
+  review backend needs a new transport.
+- Subagent model resolution order (since CLI 2.1.251): per-call `model`,
+  frontmatter (`inherit` = main conversation), the `CLAUDE_CODE_SUBAGENT_MODEL`
+  fallback, main conversation; no managed role uses `inherit`. The
+  `deny-frontier-child.mjs` hook stays as a second guard until the owner's
+  trial of the `Agent(model:…)` deny rule deletes it.

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { argumentCompletions } from "./index.mjs";
+import { argumentCompletions } from "./editor.mjs";
 
 // The built-in provider, as far as the wrapper sees it: a forced request skips
 // the slash branch and answers with file paths, an unforced one runs the

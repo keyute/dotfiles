@@ -6,13 +6,16 @@ import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { thinkingLevel } from "../../../scripts/pi-bridge.mjs";
+import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-// line budgets (single owner; AGENTS.md's instruction-sources bullet points here)
+// line budgets (single owner; AGENTS.md's instruction-sources bullet points here):
+// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, the audit log
 const PROJECTION_MAX_LINES = 100;
-const HARNESS_DOC_MAX_LINES = 120;
+const ON_DEMAND_DOC_MAX_LINES = 80;
+const GENERATED_SANDBOX_DOC_MAX_LINES = 100;
 const REPO_AGENTS_MAX_LINES = 70;
+const AUDIT_LOG_MAX_LINES = 400;
 const lineCount = text => text.replace(/\n$/, "").split("\n").length;
 
 const fixture = (t) => {
@@ -114,22 +117,45 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const claudeInstructions = run("cat", target(".claude/CLAUDE.md"));
   const claudeHarness = run("cat", target(".claude/docs/harness.md"));
   const piHarness = run("cat", target(".pi/agent/docs/harness.md"));
+  const claudeSandboxDoc = run("cat", target(".claude/docs/sandbox.md"));
+  const piSandboxDoc = run("cat", target(".pi/agent/docs/sandbox.md"));
   // pi's escalation rule names the pin no child may take (children.mjs rejects it)
   assert.ok(description.includes(`\`${data.subagent_tiers.pi.frontier}\``));
   for (const [name, text, max] of [
     [".pi/agent/AGENTS.md", piInstructions, PROJECTION_MAX_LINES],
     [".claude/CLAUDE.md", claudeInstructions, PROJECTION_MAX_LINES],
-    [".pi/agent/docs/harness.md", piHarness, HARNESS_DOC_MAX_LINES],
-    [".claude/docs/harness.md", claudeHarness, HARNESS_DOC_MAX_LINES],
+    [".pi/agent/docs/harness.md", piHarness, ON_DEMAND_DOC_MAX_LINES],
+    [".claude/docs/harness.md", claudeHarness, ON_DEMAND_DOC_MAX_LINES],
+    [".pi/agent/docs/sandbox.md", piSandboxDoc, ON_DEMAND_DOC_MAX_LINES],
+    [".claude/docs/sandbox.md", claudeSandboxDoc, GENERATED_SANDBOX_DOC_MAX_LINES],
     // chezmoi-ignored, so read from source: it loads in every session in this repo
     ["AGENTS.md", readFileSync(join(source, "AGENTS.md"), "utf8"), REPO_AGENTS_MAX_LINES],
   ]) {
     const lines = lineCount(text);
     assert.ok(lines <= max, `${name} is ${lines} lines (max ${max})`);
   }
+  const auditLog = lineCount(readFileSync(join(source, "docs/agents-audit-log.md"), "utf8"));
+  assert.ok(auditLog <= AUDIT_LOG_MAX_LINES, `docs/agents-audit-log.md is ${auditLog} lines (max ${AUDIT_LOG_MAX_LINES}): prune entries without a live baseline or open trigger; do not raise the budget`);
   assert.ok(claudeHarness.includes(data.subagent_tiers.claude.top));
 
-  const claudeSettings = JSON.parse(run("cat", target(".claude/settings.json")));
+  const claudeSettingsText = run("cat", target(".claude/settings.json"));
+  const claudeSettings = JSON.parse(claudeSettingsText);
+  // the bridge takes its whole deny policy from this render; an empty denyNames
+  // would not fail closed, so pin it here
+  const bridgePolicy = sandboxPolicy(claudeSettingsText, "/h");
+  assert.ok(bridgePolicy.denyNames.includes(".env"));
+  for (const path of ["/h/.claude/ide", "/h/.claude/bridge-spawn"]) assert.ok(bridgePolicy.denyRead.includes(path), `bridge denyRead misses ${path}`);
+  assert.ok(bridgePolicy.writableRoots.length);
+  // shared network policy reaches both harnesses; Claude may append its own extra domains
+  const networkKeys = { allow_local_binding: "allowLocalBinding", allowed_domains: "allowedDomains" };
+  for (const [key, value] of Object.entries(data.agent_sandbox.network)) {
+    const rendered = networkKeys[key];
+    assert.ok(rendered, `agent_sandbox.network.${key}: render it for both harnesses (and map it here) or scope it to one harness`);
+    for (const [name, network] of [["claude", claudeSettings.sandbox.network], ["pi", workflow.network]]) {
+      if (Array.isArray(value)) assert.ok(value.every(item => network[rendered].includes(item)), `${name}: ${rendered} misses agent_sandbox.network.${key} entries`);
+      else assert.equal(network[rendered], value, `${name}: ${rendered}`);
+    }
+  }
   assert.equal(claudeSettings.model, data.subagent_tiers.claude[data.agents.claude.defaults.tier]);
   assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, data.subagent_tiers.claude.top);
   // the cross-model bridge stays prompt-free in plan mode only via this rule
@@ -212,6 +238,9 @@ test("each role renders its roster tier and effort on every harness it targets",
       const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: pi model ${model}`);
       assert.ok(agent.split("\n").includes(`thinking: ${meta.effort}`), `${role}: pi thinking ${meta.effort}`);
+      for (const key of ["inheritProjectContext", "inheritGlobalContext"]) {
+        assert.ok(agent.split("\n").includes(`${key}: ${!(meta.omit_instructions ?? false)}`), `${role}: pi ${key}`);
+      }
     }
   }
 

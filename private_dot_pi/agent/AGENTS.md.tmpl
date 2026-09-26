@@ -1,7 +1,5 @@
 {{ includeTemplate "agent-instructions.md" (dict "self" "pi" "root" .) }}
-- Model/tier & subagent questions (pins, tiers, limits, web search, MCP,
-  language tools): read `~/.pi/agent/docs/harness.md` before changing model
-  tiers or delegating a lookup.
-- Sandbox/permission questions (why an action or path was blocked, modes,
-  approvals, background tasks): read `~/.pi/agent/docs/sandbox.md` before
-  delegating a lookup.
+- Model tiers & pins: read `~/.pi/agent/docs/harness.md` before changing model
+  tiers, or when a question is about pins, limits, web search or MCP.
+- Sandbox/permissions: read `~/.pi/agent/docs/sandbox.md` when an action or
+  path was blocked, or for a mode, approval or background-task question.

@@ -50,6 +50,15 @@ test("canonical checks cover missing files, symlinks, sensitive and managed path
   const p = fixture(t);
   assert.throws(() => p.inspect("root", "read", { path: "link/fixture" }), /denied/);
   assert.throws(() => p.inspect("root", "read", { path: ".env" }), /denied/);
+  // A bare relative entry matches at any depth, the name exactly; absolute entries stay rooted.
+  assert.throws(() => p.inspect("root", "read", { path: "sub/.env" }), /denied/);
+  assert.throws(() => p.inspect("root", "read", { path: "a/b/.env" }), /denied/);
+  assert.throws(() => p.inspect("root", "read", { path: ".hidden/.env" }), /denied/);
+  assert.throws(() => p.inspect("root", "read", { path: "a/.config/.env" }), /denied/);
+  assert.equal(p.inspect("root", "read", { path: ".env.example" }), "allow");
+  assert.equal(p.inspect("root", "read", { path: "x.env" }), "allow");
+  assert.equal(p.inspect("root", "read", { path: "sub/.envrc" }), "allow");
+  assert.equal(p.inspect("root", "read", { path: "sub/secret/fixture" }), "allow");
   p.mode = "execute";
   assert.throws(() => p.inspect("root", "write", { path: "link/new" }), /denied/);
   assert.throws(() => p.inspect("root", "write", { path: "../outside" }), /workspace/);
@@ -68,6 +77,8 @@ test("an added directory widens edits and the sandbox write list; home, denied a
   assert.throws(() => p.inspect("root", "write", { path: "../other/.git/config" }), /denied/);
   assert.throws(() => p.inspect("root", "write", { path: "../other/.env" }), /denied/);
   assert.throws(() => p.inspect("root", "read", { path: "../other/.env" }), /denied/);
+  assert.throws(() => p.inspect("root", "read", { path: "../other/sub/.env" }), /denied/);
+  assert.throws(() => p.inspect("root", "read", { path: "../other/.devcontainer/.env" }), /denied/);
   assert.ok(p.profile("root").filesystem.denyRead.includes(join(canonical(other), ".env")));
   assert.ok(p.profile("root").filesystem.allowWrite.includes(canonical(other)));
   assert.ok(!p.profile("reviewer").filesystem.allowWrite.includes(canonical(other)));
@@ -166,6 +177,23 @@ test("MCP hard denial and plan scope precede approvals", t => {
   p.mode = "execute";
   assert.throws(() => p.inspectMcp("root", "docs", "unsafe"), /denied/);
   assert.throws(() => p.inspectMcp("reviewer", "docs", "search"), /unavailable/);
+});
+
+test("MCP output arguments are writes even on a read-only tool", t => {
+  const p = fixture(t);
+  assert.equal(p.inspectMcp("root", "docs", "search", { query: "x" }), "allow");
+  assert.throws(() => p.inspectMcp("root", "docs", "search", { filename: "snap.md" }), /disabled/);
+  p.mode = "execute";
+  assert.equal(p.inspectMcp("root", "docs", "search", { filename: "snap.md" }), "allow");
+  assert.throws(() => p.inspectMcp("root", "docs", "search", { outputPath: "../outside" }), /workspace/);
+  assert.throws(() => p.inspectMcp("root", "docs", "search", { path: "link/new" }), /denied/);
+});
+
+test("the sandbox profile carries local binding from the managed network policy", t => {
+  const p = fixture(t);
+  assert.equal(p.profile("root").network.allowLocalBinding, undefined);
+  p.config.network.allowLocalBinding = true;
+  assert.equal(p.profile("root").network.allowLocalBinding, true);
 });
 
 test("removed tools and calls during tightening fail closed", t => {

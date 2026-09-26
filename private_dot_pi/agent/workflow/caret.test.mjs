@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Theme } from "@earendil-works/pi-coding-agent";
 import { CombinedAutocompleteProvider, CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
-import { CaretEditor, argumentCompletions } from "./index.mjs";
+import { CaretEditor, argumentCompletions } from "./editor.mjs";
 
 const keybindings = { matches: (data, id) => ({ "app.interrupt": "\x1b", "tui.editor.cursorUp": "\x1b[A", "tui.editor.cursorDown": "\x1b[B", "tui.editor.cursorLineStart": "\x01", "tui.editor.deleteCharBackward": "\x7f", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b", "tui.input.submit": "\r", "app.message.followUp": "\x1b\r", "tui.input.tab": "\t" })[id] === data };
 // The host hands the editor factory an EditorTheme; the full palette arrives

@@ -1,136 +1,79 @@
 # Pi sandbox and permissions
 
-Env-specific facts and decisions only, each at its current state with a dated
-annotation. Generic harness behavior lives in the tool descriptions and the
-workflow's own system-prompt injection — it does not belong here; sweep
-measurements and audit baselines live in the chezmoi repo's
-`docs/agents-audit-log.md`, not here. If behavior seems changed, verify
-against the source repository and update this file.
+Env-specific facts and decisions, each dated; measurements live in the repo's
+`docs/agents-audit-log.md`. If behavior seems changed, verify against the source and update this file.
 
 ## Planning and permissions (last verified 2026-09-18)
 
 - New sessions start in plan mode with auto-reviewed approvals. In the normal
-  sandbox, source writes remain disabled; temporary build/cache artifacts use
-  designated writable roots. This read-only claim does not apply to a reviewed
-  unsandboxed plan action, which is not OS-enforced read-only.
+  sandbox, source writes stay disabled; build/cache artifacts use designated
+  writable roots. A reviewed unsandboxed plan action is not OS-enforced read-only.
 - Plan mode admits only configured read-only child roles; writers (including
-  `general-purpose`) are refused before launch preflight. The existing capability
-  ceiling follows mode transitions; approval restores writer admission without
-  widening read-only roles (2026-09-18).
-- `/execute` or approval of `submit_plan` explicitly enables scoped execution.
-  Every mode switch revokes child sessions and sandbox processes before the
-  new mode takes effect — `/plan` before enabling planning, and approval of
-  `submit_plan` the same way before enabling execution, so a child still
-  running when the plan is approved ends aborted.
+  `general-purpose`) are refused before launch. Approval restores writer
+  admission without widening read-only roles (2026-09-18).
+- `/execute` or approval of `submit_plan` enables scoped execution. Every mode
+  switch (`/plan`, `/execute`, plan approval) first revokes child sessions and
+  sandbox processes, so a child still running when the plan is approved ends
+  aborted. An approval is single-use: a mode change before its call runs voids it.
+- Root `workspace_write`/`workspace_edit` stay listed in plan mode, as in Claude
+  Code, and are refused (`Writes are disabled in this scope`) until execution is
+  approved (2026-09-26); `ask_user_question` works in either mode.
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
-- Shell commands run inside the SRT profile without review, as sandboxed
-  commands do in Claude Code; the profile is the boundary. Only
-  remote-mutating verbs the profile cannot judge — `git push`, `gh` other than
-  view/list/status/search/diff/checks, `gh api` with a method or field,
-  `npm publish`, `docker push`, `curl`/`wget` with data, json or upload flags,
-  `ssh`, `scp`, `sftp`, `rsync` — and `git commit` (the user commits) go to
-  the auto classifier, then to a confirm dialog on `ask`. File edits inside
-  the workspace run without review once execution is approved.
-- Inside the profile the environment is the host's minus the workflow's own
-  variables, secret-named exports (`KEY|SECRET|TOKEN|PASSW|CREDENTIAL|AUTH`)
-  and pre-sandbox shell/loader hooks (`BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`,
-  `LD_*`, `DYLD_*`); toolchain variables such as `GOPATH` arrive as exported
-  (2026-09-14).
-- `workspace_bash` with `dangerouslyDisableSandbox: true` (Claude Code's flag)
-  runs the command on the host outside the SRT profile, under the host
-  environment minus the workflow's own variables. Every such call is reviewed,
-  plan mode included, and never takes the sandboxed auto-allow: the classifier
-  under auto approvals, the confirm dialog (`Approve this unsandboxed action
-  once?`) under ask or on a classifier `ask`. Read-only roles are refused. The
-  row reads `Ran … · unsandboxed`. The model sets it only after a
-  sandbox-attributable failure of that command or on request, per command.
-  The docker socket is one such failure: no
-  `--config` or `DOCKER_HOST` workaround reaches it from inside the profile
-  (verified 2026-09-10).
-- Temp files inside the profile: `$TMPDIR` is the lease's scratch directory
-  (srt would otherwise export `/tmp/claude`, which the profile never allows),
-  so `mktemp -d "$TMPDIR/x.XXXXXX"` works while a bare `mktemp -d` does not —
-  macOS `mktemp` ignores `TMPDIR` without a template and writes to the
-  per-user `/var/folders` dir, which stays denied. Apple's `/bin/bash` 3.2
-  puts here-document temp files in `/var/tmp` (writable for every role on
-  macOS for exactly this) rather than `$TMPDIR`. Verified 2026-09-11. The classifier also sees the session's recent
-  shell commands (the command, whether it ran sandboxed, its exit code; never
-  its output), so a retry after a sandboxed failure is judged on that evidence.
+  Dialogs are once-only; MCP approvals are never cached across a mode change (2026-09-17).
+- Shell commands run inside the SRT profile without review, as sandboxed commands
+  do in Claude Code; the profile is the boundary. Only remote-mutating verbs it
+  cannot judge — `git push`, `gh` other than view/list/status/search/diff/checks,
+  `gh api` with a method or field, `npm publish`, `docker push`, `curl`/`wget`
+  with data, json or upload flags, `ssh`, `scp`, `sftp`, `rsync` — and `git commit`
+  (the user commits) go to the classifier, then a confirm dialog on `ask`.
+  Workspace file edits run without review once execution is approved.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
   A pending dialog is announced in the footer and times out after ten minutes.
-- `ask_user_question` is the owned TUI-only questionnaire: up to four questions,
-  per-option notes and literal free answers. Completed decisions retain question
-  text for the classifier, while model results omit presentation data.
-  Root `workspace_write` and `workspace_edit` stay listed in plan mode, as in
-  Claude Code, so a mode switch keeps the tool list and its prompt cache; the
-  broker refuses them (`Writes are disabled in this scope`) until execution is
-  approved (2026-09-26). The questionnaire is available in either mode.
-  Approval dialogs are once-only; MCP approvals are never cached across a mode
-  change (2026-09-17).
-- `workspace_bash` with `run_in_background: true` starts a background task
-  (Claude Code's flag). The call is held open for 10 s first: a command that
-  ends inside that grace is answered like a foreground call and never
-  notifies — most backgrounded commands end there, and each completion past
-  the grace wakes an idle parent for a full turn (verified 2026-09-10, the
-  cost that motivated the grace). A longer one returns its task id,
-  the worker keeps its lease, and when the command ends the model hears a
-  steer message with the exit status and the last twenty lines (with its
-  next tool result, or as a new turn when idle). `workspace_task`
-  `{ id, action: "output" | "stop" }` reads the output so far or stops it;
-  `{ action: "list" }` needs no id and returns known IDs, status, and command.
-  Output is kept in memory, tail-capped at 256 KiB. `/plan` and `/remove-dir`
-  stop running tasks like any sandbox process (they end as `stopped`); so does
-  exiting pi. The close hook silently stops shell tasks; cleanup retains their
-  outputs and failures. Cleanup cannot run after Pi receives SIGKILL, nor does it
-  cover deliberately detached `setsid` daemons or external services/containers
-  (2026-09-16).
-- `/add-dir <path>` adds a directory to the editable workspace, as Claude
-  Code's does: edits inside it are allowed once execution is approved, its
-  `.git`, `.pi` and every relative deny entry (`.env`) are protected there as
-  under cwd, and its `AGENTS.md` (or
-  `CLAUDE.md`) is appended to the system prompt after passing the read policy
-  (a symlink out of the directory or onto a denied path refuses the add).
-  Home, its ancestors, denied paths and directories already in scope are
-  refused with the reason. `/remove-dir <path>` drops one. State is per
-  session; skills
-  under an added directory need a restart with `--skill <path>`, since pi
-  discovers resources only at startup and `/reload`. Reads were never
-  confined to the workspace; only the deny list applies.
-- Mode changes and shutdown stop detached children through session-owned RPC
-  and require observed process-terminal proof, not a completion notification.
-  Unverified cleanup blocks mode changes; shutdown still closes the broker and
-  reports cleanup failures. Shutdown child results cannot trigger a model turn.
-  If termination cannot be established, check orphan processes and restart
-  (2026-09-16).
-- Playwright alone runs outside SRT so Chromium can launch, with only PATH,
-  HOME and the broker's scratch TMPDIR. Its isolated profile is disposable,
-  not filesystem/network containment: the browser and server have normal user
-  access. Tool approvals, denials, role checks and process cleanup still apply;
-  other MCP servers remain sandboxed (owner decision 2026-09-16).
+- Inside the profile the environment is the host's minus the workflow's own
+  variables, secret-named exports (`KEY|SECRET|TOKEN|PASSW|CREDENTIAL|AUTH`) and
+  pre-sandbox hooks (`BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`, `LD_*`, `DYLD_*`);
+  toolchain variables such as `GOPATH` arrive as exported (2026-09-14).
+- `workspace_bash` with `dangerouslyDisableSandbox: true` (Claude Code's flag) runs
+  on the host, environment minus the workflow's own variables. Every such call is
+  reviewed, plan mode included (classifier under auto, else the confirm dialog);
+  read-only roles are refused; the row reads `Ran … · unsandboxed`. Set it only
+  after a sandbox-attributable failure of that command or on request, per command.
+  The docker socket is one: no `--config`/`DOCKER_HOST` workaround reaches it (2026-09-10).
+- Temp files: `$TMPDIR` is the lease's scratch directory, so `mktemp -d
+  "$TMPDIR/x.XXXXXX"` works while a bare `mktemp -d` (macOS ignores `TMPDIR`
+  without a template) hits the denied `/var/folders`. Apple's `/bin/bash` 3.2
+  puts here-documents in `/var/tmp`, writable for every role (2026-09-11).
+- `run_in_background: true` on `workspace_bash` holds the call 10 s: a command
+  ending inside that is answered like a foreground call and never notifies
+  (2026-09-10). A longer one returns its task id; at exit the model hears the
+  status and last twenty lines (with its next tool result, or as a new turn).
+  `workspace_task` `{ id, action: "output" | "stop" }` reads or stops it, `{ action:
+  "list" }` lists tasks; output is tail-capped at 256 KiB. `/plan`, `/remove-dir`
+  and exiting pi stop tasks; detached `setsid` daemons and containers outlive that.
+  If a mode change is blocked on unverified cleanup, kill orphans and restart (2026-09-16).
+- `/add-dir <path>` adds an editable directory, as Claude Code's does: edits need
+  approved execution, its `.git`, `.pi` and relative denies (`.env`) are protected,
+  its `AGENTS.md`/`CLAUDE.md` joins the system prompt. Home, its ancestors, denied
+  paths, symlinks out and directories already in scope are refused with the reason.
+  `/remove-dir` drops one; state is per session; its skills need a restart with
+  `--skill <path>`. Reads were never workspace-confined; only the deny list applies.
+- Playwright alone runs outside SRT so Chromium can launch, with only PATH, HOME
+  and the broker's scratch TMPDIR; its disposable profile is not containment.
+  Approvals, denials, role checks and cleanup still apply (owner decision 2026-09-16).
 
-The `workspace_*` tools are the SDK's own tools running in the host Pi process;
-each invocation leases a per-tool SRT worker that performs the actual file and
-shell operations, so effects and subprocess execution are sandboxed — not all
-file I/O (path probes, diff generation, and output temp files stay host-side).
-Every lease consumes a single-use ticket minted by its approval, so a mode
-change between approval and execution invalidates the lease. Interactive `!`
-commands are the user's own (Claude Code's `!`): pi's local shell on the host,
-the host environment minus the workflow's own variables, no sandbox, no
-review, in any mode (owner decision 2026-09-21). MCP stdio servers other than
-Playwright run inside SRT; OAuth stays in the trusted host Pi process.
+Interactive `!` commands are the user's own (Claude Code's `!`): pi's local shell
+on the host, the host environment minus the workflow's own variables, no sandbox,
+no review, in any mode (owner decision 2026-09-21).
 
-Sensitive paths come from the shared denylist. File tools additionally resolve
-symlinks and confine edits to the workspace; git metadata and live-loaded code
-(`~/.pi/agent`, the repository `node_modules`, `~/.zshrc`) are write-protected
-in every mode, while the repository source is editable once execution is
-approved. A refusal names its reason (`Writes are disabled in this scope`,
-`Path denied by managed policy`, `File edits must remain inside the
-workspace`); the model should report it rather than re-submit the plan. This is
-an explicit denylist, not a guarantee against unknown credential locations. Add
-new credential paths to shared policy before exposing them to a session.
+Sensitive paths come from the shared denylist. File tools resolve symlinks and
+confine edits to the workspace; git metadata and live-loaded code (`~/.pi/agent`,
+the repository `node_modules`, `~/.zshrc`) are write-protected in every mode, the
+repository source editable once execution is approved. A refusal names its reason
+(`Writes are disabled in this scope`, `Path denied by managed policy`, `File edits
+must remain inside the workspace`); report it rather than re-submit the plan. The
+denylist does not cover unknown credential locations: add new ones to shared
+policy before exposing them to a session.
 
-Extensions are trusted host code. Per-tool SRT is not containment against a
-malicious extension. Reviewed host-shell runs, the user's own `!` commands and
-the managed Playwright server are the unsandboxed exceptions. macOS needs
-sandbox-exec.
+Extensions are trusted host code; per-tool SRT is not containment against a
+malicious one. macOS needs sandbox-exec.

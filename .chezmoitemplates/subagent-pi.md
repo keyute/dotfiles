@@ -15,8 +15,9 @@ model: {{ $role.model }}
 thinking: {{ $role.thinking }}
 tools: {{ join ", " $role.tools }}
 extensions: {{ $role.extensionPath }}
-inheritProjectContext: true
-inheritGlobalContext: true
+{{- /* omit_instructions drops both, as Claude's omitClaudeMd does: repo AGENTS.md/CLAUDE.md and ~/.pi/agent/AGENTS.md */}}
+inheritProjectContext: {{ not (get $meta "omit_instructions") }}
+inheritGlobalContext: {{ not (get $meta "omit_instructions") }}
 allowNestedSubagents: {{ $role.nests }}
 {{ if $role.readonly }}acceptanceRole: read-only{{ else }}mutationTools: {{ join ", " $role.mutationTools }}
 acceptance: {"level":"none","reason":"the driver verifies each slice from its diff and gate"}{{ end }}

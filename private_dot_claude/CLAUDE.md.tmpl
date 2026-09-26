@@ -10,8 +10,11 @@
   the `cross-model-review` skill once per body of work — unprompted, alongside
   the fresh-eyes subagent pass, never instead of it. The cross-model reviewer
   proposes; you stay the implementer: substantiate each finding independently,
-  fix only what survives, and say which you dropped and why.
+  fix only what survives, and say which you dropped and why.{{/* cross_model_review: yield tracks risk and breadth, not change count; a reviewer that rewrites the program degrades stronger work and a false finding can anchor the implementer, so findings stay hypotheses; the trigger sits in the always-loaded line because the skill body loads only after the model decides to fire (audit log 2026-09-23) */}}
 - As the driver, before committing to an architecture or approach decision that
   is expensive to reverse, or when a bug resists a second diagnosis, get a
   decorrelated read via `cross-model-advice` — unprompted, and before presenting a
-  plan for approval, not after.
+  plan for approval, not after.{{/* cross_model_advice: reversal cost is highest before implementation, and a cross-model reviewer cannot discard working code when none exists yet */}}
+- As the driver, give each Workflow `agent()` its roster `agentType` (no model
+  or effort), a narrow file-bounded scope and distilled inputs; size the fan-out
+  to the ask; a repeat review starts from the last findings, covering only changes.{{/* workflow_burn: workflow agents were 67% of a measured week's Claude usage (2026-09-26); cost is agent count x lifetime x read volume, 92% cache, which effort barely moves; agentType inherits the roster's tier and effort */}}

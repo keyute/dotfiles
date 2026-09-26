@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { createJiti } from "jiti";
 import { InteractiveMode, UserMessageComponent, initTheme, parseSkillBlock, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { installSkillDisplay, installWorkflow } from "./index.mjs";
+import { installWorkflow } from "./index.mjs";
+import { installSkillDisplay } from "./skill-display.mjs";
 import { bulletMarkdown } from "./rows.mjs";
 
 initTheme();

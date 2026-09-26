@@ -15,13 +15,22 @@ import { homedir } from "node:os";
 import { isAbsolute, resolve, sep } from "node:path";
 
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
-const DOTENV_RE = /^\.env(\..*)?$/;
 // pi folds these to ASCII space after the rewrite, which could turn a vetted
 // path into a sibling outside cwd; any such path is refused instead
 const UNICODE_SPACE_RE = /[  -   　]/;
 
+// the bridge hands over the bare deny names it derives from Claude's settings;
+// absent or malformed, every call throws and the handler blocks it
+function envDenyNames(raw = process.env.PI_BRIDGE_DENY_NAMES) {
+  const names = JSON.parse(raw);
+  if (!Array.isArray(names) || !names.every((name) => typeof name === "string" && name)) {
+    throw new Error("PI_BRIDGE_DENY_NAMES is not a list of names");
+  }
+  return names;
+}
+
 // Returns a block reason, or null after rewriting input.path to the vetted path.
-export function decide(toolName, input, cwd) {
+export function decide(toolName, input, cwd, denyNames = envDenyNames()) {
   if (!READ_ONLY_TOOLS.has(toolName)) return `tool not allowed: ${toolName}`;
   const canonicalCwd = existsSync(cwd) ? realpathSync(cwd) : cwd;
   const raw = input?.path;
@@ -32,7 +41,7 @@ export function decide(toolName, input, cwd) {
   if (real !== canonicalCwd && !real.startsWith(canonicalCwd + sep)) {
     return `path escapes repository: ${raw ?? "(cwd)"}`;
   }
-  if (real.split(sep).some((segment) => DOTENV_RE.test(segment))) {
+  if (real.split(sep).some((segment) => denyNames.includes(segment))) {
     return `blocked path: ${raw}`;
   }
   if (UNICODE_SPACE_RE.test(real)) return `path contains a unicode space: ${raw ?? "(cwd)"}`;

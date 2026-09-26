@@ -13,7 +13,7 @@ export const rootTools = [...workerTools.map(publicToolName), "workspace_task", 
 // cannot judge is a remote mutation through an allowed domain with ambient
 // credentials (~/.config/gh and keychain git auth are reachable inside it), so
 // those verbs still go to review, as does a commit, which the user makes
-// themselves (docs/agents-baseline.md). Matching is per shell segment and errs
+// themselves (.chezmoitemplates/agent-instructions.md). Matching is per shell segment and errs
 // toward review: a verb anywhere after its program (so `git -C . push`,
 // `bash -c "git push"` and `xargs git push` all match), the ssh family in any
 // command position, and `gh` unless the segment is one of its read shapes.
@@ -59,8 +59,13 @@ export function inside(path, root) {
   return path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
 }
 
+// A `<base>/**/<name>` entry (a bare name from resolvePaths) is compared by
+// path segment: matchesGlob's `**` does not descend into dot-directories, which
+// would let `.devcontainer/.env` through where SRT and Claude Code deny it.
 function denied(path, patterns) {
   return patterns.some(pattern => {
+    const bare = pattern.match(/^([^?*{[]*)\/\*\*\/([^/?*{[]+)$/);
+    if (bare) return inside(path, bare[1]) && path.slice(bare[1].length).split(sep).includes(bare[2]);
     for (let part = path; ; part = dirname(part)) {
       if (matchesGlob(part, pattern) || part === pattern) return true;
       if (dirname(part) === part) return false;
@@ -94,8 +99,12 @@ export class Policy {
     this.roots = new Map();
   }
 
+  // A bare relative name (`.env`) is denied at any depth under the root, as
+  // Claude Code's gitignore-style entries are; SRT's `**/` also matches zero
+  // directories.
   resolvePaths(paths, base) {
-    return paths.flatMap(p => { const path = expand(p, base); return [path, canonicalPattern(path)]; });
+    return paths.flatMap(p => [expand(p, base), ...(/^[^/~][^/]*$/.test(p) ? [join(base, "**", p)] : [])])
+      .flatMap(path => [path, canonicalPattern(path)]);
   }
 
   // The base lists never change; each added root contributes its own
@@ -217,8 +226,10 @@ export class Policy {
     if (!entry || entry.policy.denied_tools.includes(tool)) throw new Error("MCP tool denied by managed policy");
     const readOnly = entry.policy.readonly_tools?.includes(tool) ?? false;
     if (this.readonly(role) && !readOnly) throw new Error("MCP operation is not approved for read-only scope");
+    // An output argument writes even on a listed read-only tool (playwright's
+    // browser_snapshot saves to `filename`).
     for (const key of ["relative_path", "path", "file", "filename", "outputPath"]) {
-      if (typeof args[key] === "string") this.checkPath(args[key], !readOnly, role);
+      if (typeof args[key] === "string") this.checkPath(args[key], !readOnly || ["path", "filename", "outputPath"].includes(key), role);
     }
     return readOnly && entry.policy.auto_approve_tools ? "allow" : "review";
   }
@@ -230,7 +241,7 @@ export class Policy {
         allowWrite: [this.scratch, ...this.caches, ...(!this.readonly(role) ? [this.cwd, ...this.roots.keys()] : [])],
         denyWrite: this.denyWrite,
       },
-      network: { allowedDomains: this.config.network.allowedDomains, deniedDomains: [] },
+      network: { allowedDomains: this.config.network.allowedDomains, deniedDomains: [], allowLocalBinding: this.config.network.allowLocalBinding },
       enableWeakerNestedSandbox: false,
     };
   }

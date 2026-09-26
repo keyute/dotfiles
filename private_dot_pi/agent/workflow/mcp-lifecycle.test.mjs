@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
-import { mcpAdapterSettings, installMcpAdapter } from "./index.mjs";
+import { mcpAdapterSettings, installMcpAdapter } from "./plugin-api.mjs";
 
 const jiti = createJiti(import.meta.url);
 const { logger } = await jiti.import(new URL("logger.ts", import.meta.resolve("pi-mcp-adapter")).pathname);

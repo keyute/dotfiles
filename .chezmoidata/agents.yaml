@@ -29,6 +29,10 @@ agents:
       - "projects/**/*.jsonl"
       - "shell-snapshots"
       - "todos"
+      # IDE lock tokens and bridge spawn state: Claude Code denies these on its
+      # own, but listing them here carries them to the bridge's git sandbox
+      - "ide"
+      - "bridge-spawn"
     extras:
       writable_paths:
         - "~/.claude/plugins/data"
@@ -48,6 +52,7 @@ agents:
     # claude.ai-product entries follow the local-only decision (2026-09-21:
     # settings.json.tmpl also stops account sync and drops the cloud tools);
     # the rest carry their own reason. Reverse per entry once one is wanted.
+    # disableBundledSkills stays unset: it would also drop the review skills.
     skill_overrides:
       claude-in-chrome: "off"
       schedule: "off"
@@ -59,6 +64,10 @@ agents:
       # user-driven commands the model should not self-trigger
       keybindings-help: "user-invocable-only"
       init: "user-invocable-only"
+      # ship-check already runs a simplify lens; update-config edits
+      # ~/.claude/settings.json, which chezmoi owns (2026-09-26)
+      simplify: "user-invocable-only"
+      update-config: "user-invocable-only"
       # no `loop` entry: CLAUDE_CODE_DISABLE_CRON=1 (settings.json.tmpl) already
       # disables it; restore `loop: "off"` if that env var goes
     # bare names leave the model's tool list, not just block the call
@@ -90,6 +99,7 @@ agents:
       prompt_sources:
         - node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js
         - private_dot_pi/agent/workflow/index.mjs
+        - private_dot_pi/agent/workflow/plugin-api.mjs
         - private_dot_pi/agent/subagent-tool-description.md.tmpl
     native_coverage: []
     # composer prefix that runs a command I typed and feeds its output to the
@@ -110,6 +120,12 @@ agents:
     pins_in_dispatch_list: true
     defaults:
       provider: openai-codex
+      # Astra over Sol (Sol 6 tops out below Astra, AA index 48 vs 53, and OpenAI
+      # rates Astra-low above Sol-high), at high (owner decision 2026-09-26): medium needs more
+      # turns, so high costs less per completed task (AA Terminal-Bench 4.0
+      # $4.05 vs $4.43); total per-task cost, not price per token, decides.
+      # Reversal: the weekly pi pool binds in 2 of 4 weeks, or a matched replay
+      # shows medium at ≤1.1x high's turns (scripts/agent-usage.mjs).
       tier: frontier
       reasoning_effort: high
       # Approval classifier in Anthropic's two-stage shape: the filter answers
@@ -144,8 +160,9 @@ subagents:
   # scale): when a tier's pin moves, re-check role efforts once at the tier,
   # never per harness per role. `harnesses` scopes a role (default: all). `tools` binds
   # the Claude render directly and the pi render via translation (pi-roles).
-  # `omit_instructions` renders Claude's omitClaudeMd, matching the same-named
-  # built-in's lean context; pi ignores it.
+  # `omit_instructions` renders Claude's omitClaudeMd and pi's
+  # inheritProjectContext/inheritGlobalContext false, matching the same-named
+  # built-in's lean context.
   # Overrides each harness's built-in exploration role (Claude matches on this
   # exact name) so routine exploration stays on the small tier.
   Explore:
@@ -385,7 +402,8 @@ agent_mcp_servers:
     readonly_tools: [web_search_exa, web_fetch_exa, get_code_context_exa, company_research_exa, crawling_exa]
     # 3.4.1 added Exa-side agent orchestration: these dispatch and bill remote
     # agentic runs, a wider grant than the search/fetch tools blanket approval
-    # was given for.
+    # was given for. Default-off in 3.4.1; denied so a default flip cannot make
+    # them auto-approved.
     denied_tools:
       - deep_researcher_start
       - deep_researcher_check
@@ -402,17 +420,17 @@ agent_mcp_servers:
     package_bin: playwright-mcp
     # deliberately NOT auto_approve_tools: tools taking a caller-chosen filename
     # (snapshot, take_screenshot, evaluate, console_messages, network_request/s)
-    # write through a purely lexical workspace check (no realpath), so a
-    # workspace symlink reaches any user-writable path; upstream says to rely on
-    # client-level permissions, and the server runs outside the bash sandbox.
+    # write anywhere under the workspace or output dir (realpath-confined since
+    # playwright-core 1.64), navigate reaches any host, and the server runs
+    # outside the bash sandbox; upstream says to rely on client-level permissions.
     unsandboxed: true
     denied_tools:
       # denied outright rather than left to the prompt: never legitimate here.
       # Executes arbitrary JS in the Playwright *server* process
       # (RCE-equivalent, per its own tool description).
       - browser_run_code_unsafe
-      # both take `paths` and hand file contents to a page — the same lexical
-      # check, so the same symlink walk, in the exfiltration direction
+      # both take `paths` and hand local file contents to a page: exfiltration
+      # to whatever host the browser is on
       - browser_file_upload
       - browser_drop
     args:

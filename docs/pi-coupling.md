@@ -9,6 +9,12 @@ ships: pi-subagents publishes compiled `src/**/*.js` plus `.d.ts` (its
 `extension-api.md`, "Published package vs source checkout"), pi-web-search and
 pi-mcp-adapter ship `.ts` (2026-09-22).
 
+An entry whose owned surface has a native pi or plugin equivalent names it
+under *Fallback:* with the behaviour lost (2026-09-26). When a pi bump breaks a
+pin on such a surface, the default is to delete the surface and fall back, not
+to repair it, unless the owner chooses repair. A new owned surface names its
+Fallback and its pin count when it lands.
+
 - **Documented pi surfaces** (listed so a bump re-checks them): tool renderers
   (`renderShell: "self"`, `context.expanded/toolCallId/invalidate/state`),
   `registerMarkdownTransformer`, `appendEntry`/`registerEntryRenderer`,
@@ -23,7 +29,7 @@ pi-mcp-adapter ship `.ts` (2026-09-22).
   history alone is not. *Pin:* `fleet.test.mjs` and `integration.test.mjs`
   (ordering, evidence); `stability.test.mjs` (imports, `on()` overloads and API
   members in the shipped declarations, where 0.87.1 moved that reference).
-- **Plugin tool Proxy** (`index.mjs` `pluginApi`, 2026-09-22). pi-subagents,
+- **Plugin tool Proxy** (`plugin-api.mjs` `pluginApi`, 2026-09-22). pi-subagents,
   pi-mcp-adapter and pi-web-search get a Proxy of the extension API whose
   `registerTool` swaps the renderers of `subagent`, `bg_wait`, the supervisor
   channel, `mcp`, `mcp__*`, `web_search` and `url_context`, and for `subagent`
@@ -85,21 +91,29 @@ pi-mcp-adapter ship `.ts` (2026-09-22).
   `/skill:name` plus arguments; the host class comes from pi's virtual modules,
   since the bundled CLI and unbundled SDK export different classes. Stored
   messages and model context stay untouched. *Why:* rule 5's single user box.
-  *Retire:* when pi exposes a user/skill-message renderer. *Pin:* bundled-entry
-  and real-render tests, `stability.test.mjs`.
+  *Retire:* when pi exposes a user/skill-message renderer. *Fallback:* pi's
+  native skill card; lost: rule 5's single user box — the sent skill shows as a
+  second block carrying its instruction body. *Pin:* bundled-entry and
+  real-render tests, `stability.test.mjs`.
 - **Pending input** (2026-09-24): replaces only
   `InteractiveMode.updatePendingMessagesDisplay` on the same host class, using
   `pendingMessagesContainer`, `getAllQueuedMessages` and `getAppKeyDisplay`;
   pi keeps queue ownership and the adapter only draws shaded input blocks.
-  *Retire:* when pi offers a pending-input renderer. *Pin:* render/lifecycle
-  tests and source pins.
+  *Retire:* when pi offers a pending-input renderer. *Fallback:* pi's native
+  pending display; lost: the shaded `❯` blocks and their `π` steer/follow-up
+  labels (rule 5, queued input). *Pin:* render/lifecycle tests and source pins.
 - **Tab completion**: the documented `addAutocompleteProvider` wrapper
-  (`index.mjs` `argumentCompletions`) re-issues a forced request unforced,
+  (`editor.mjs` `argumentCompletions`) re-issues a forced request unforced,
   answers `shouldTriggerFileCompletion` itself and is re-added idempotently on
   every `session_start`; `CaretEditor` re-issues the key after a Tab accept on
   the command's space or a directory separator. *Why:* pi routes Tab in a
   command's arguments to forced file completion its slash branch skips, and an
-  accept closes the menu with nothing re-opening it. *Pin:*
+  accept closes the menu with nothing re-opening it. *Fallback:* pi's forced
+  completion (drop the wrapper and the re-issue); lost, for every slash
+  command's arguments since the wrapper serves them all (pi's `/model` and
+  `/thinking` included): Tab offers file paths instead of the command's
+  candidates, prose gets a file menu under Tab, and the menu no longer opens on
+  the command's space, `/` or `~` or re-opens after an accept. *Pin:*
   `stability.test.mjs`; `caret.test.mjs` walks pi's own provider.
 - **Editor render shape** (2026-09-22): exported but undocumented `renderDiff`
   and `getMarkdownTheme`; `CustomEditor`'s undocumented render shape
@@ -139,8 +153,11 @@ pi-mcp-adapter ship `.ts` (2026-09-22).
   renderer hook for its shell block. *Residual:* no `bash_execution_update`, no
   full-output file on truncation (block and context say "truncated"), no pi
   pending shell component. *Retire:* when pi exposes a renderer for its shell
-  block or a documented submit hook. *Pin:* `stability.test.mjs` (each literal
-  by text, not order).
+  block or a documented submit hook. *Fallback:* pi's native `!` branch
+  (`handleBashCommand`); lost: rule 5's shell block (shaded command, output
+  summary, `▸`/`▾` fold) and Alt+Enter executing shell input. The composer's
+  hidden prefix and red tint stay, as they are `CaretEditor`'s shell mode, not
+  this block. *Pin:* `stability.test.mjs` (each literal by text, not order).
 - **Unified activity groups** (2026-09-18): tools and successful completions
   share one timeline; a completion-led group reads it at paint time and
   repaints through the footer's `tui.requestRender()`, since an entry renderer
@@ -168,7 +185,9 @@ pi-mcp-adapter ship `.ts` (2026-09-22).
   from the branch's `subagent` results. Peek's native editor is shaped at its
   bottom-border callback (2026-09-24). *Retire:* each record seam when
   pi-subagents documents the shape or serves it over RPC; the render-shape seam
-  when Editor offers a borderless, height-bounded render API. *Pin:*
+  when Editor offers a borderless, height-bounded render API. *Fallback:*
+  pi-subagents' `/subagents-fleet`; lost: rule 6's peek — the child's transcript
+  in rule 2's grammar, the steering composer and the in-slot pane. *Pin:*
   `stability.test.mjs`.
 - **srt `CLAUDE_CODE_TMPDIR`**: names the `TMPDIR` srt exports into a wrapped
   command; `sandbox-runner.mjs` sets it to the lease's scratch path.

@@ -21,9 +21,9 @@
 // third-party harnesses — any of those and this bridge needs a new transport.
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -38,6 +38,66 @@ const DIFF_CAP = 300_000;
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const BASE_RE = /^[A-Za-z0-9._/-]+$/;
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+// Claude's rendered settings are the one owner of what its sandbox may write
+// and read; this bridge runs git outside that sandbox, so it takes both lists
+// from there and fails closed without them. Residual risk: git can still
+// disclose readable repo content; confining pi's reads is the guard extension
+// (pi-bridge-guard.mjs), not the OS.
+const CLAUDE_SETTINGS = join(homedir(), ".claude", "settings.json");
+const readPolicy = () => sandboxPolicy(readFileSync(CLAUDE_SETTINGS, "utf8"));
+const expandHome = (p, home) => (p.startsWith("~/") ? join(home, p.slice(2)) : p);
+const canonical = (p) => (existsSync(p) ? realpathSync(p) : p);
+// sandboxed Bash can plant a hostile .git/config under any root it may write
+// outside a project: the settings' allowWrite (resolved GOCACHE included) plus
+// the harness's own scratch dirs, which settings never list
+function sandboxWritableRoots(settings, home) {
+  const allowWrite = settings.sandbox?.filesystem?.allowWrite;
+  if (!Array.isArray(allowWrite)) throw new Error("no sandbox.filesystem.allowWrite in Claude settings");
+  const scratch = [tmpdir(), process.env.TMPDIR, "/tmp/claude", `/tmp/claude-${process.getuid()}`, join(home, ".claude", "debug")];
+  return [...allowWrite.map((p) => expandHome(p, home)), ...scratch]
+    .filter(Boolean)
+    .map(canonical);
+}
+// -c outranks every config file, so these defuse the repo-local .git/config
+// (the attack surface); global/system config is left on since the user owns it.
+// --no-optional-locks: status must not try to refresh the index under the
+// no-write profile.
+const GIT_OVERRIDES = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "diff.external=", "-c", "core.pager=cat"];
+// git runs read-only and offline under srt as a second layer for any repo
+// hook the overrides miss — a repo-local filter.<x>.clean still runs under
+// status/diff — so it also gets Claude's read-deny list: the Read() rules in
+// the rendered settings, which settings.json.tmpl makes the one list. Missing
+// or empty fails closed.
+const readRules = (settings) =>
+  (settings.permissions?.deny ?? []).map((rule) => /^Read\((.+)\)$/.exec(rule)?.[1]).filter(Boolean);
+function sandboxDenyRead(settings, home) {
+  const paths = readRules(settings)
+    .filter((p) => p.startsWith("~/") || p.startsWith("/"))
+    .map((p) => expandHome(p, home));
+  if (!paths.length) throw new Error("no Read() deny rules in Claude settings");
+  return paths;
+}
+// parsed once per tool call so every check in that call sees one settings
+// snapshot. denyNames: bare names (`.env`), denied at any depth inside the
+// reviewed repo as Claude matches them; the guard gets them too.
+export function sandboxPolicy(settingsText, home = homedir()) {
+  const settings = JSON.parse(settingsText);
+  return {
+    writableRoots: sandboxWritableRoots(settings, home),
+    denyRead: sandboxDenyRead(settings, home),
+    denyNames: readRules(settings).filter((p) => !p.includes("/")),
+  };
+}
+// per call, the reviewed repo's denied names join the deny: a repo-local
+// filter could otherwise read one and echo it through git's stderr
+export function gitSandboxProfile(policy, cwd) {
+  const repoDenies = cwd ? policy.denyNames.map((name) => join(cwd, "**", name)) : [];
+  return {
+    filesystem: { denyRead: [...policy.denyRead, ...repoDenies], allowWrite: [], denyWrite: [] },
+    network: { allowedDomains: [], deniedDomains: [] },
+    enableWeakerNestedSandbox: false,
+  };
+}
 const ROLE_NOTE =
   "You are a read-only reviewer/advisor consulted by another agent. You have " +
   "only the read, grep, find, and ls tools, confined to the repository at your " +
@@ -109,7 +169,14 @@ export function parseEvents(stdoutText) {
   return { threadId, text, stopReason: lastAssistant.stopReason, errorMessage: lastAssistant.errorMessage };
 }
 
-function checkCwd(cwd) {
+export function assertOutsideSandboxRoots(realCwd, roots) {
+  const root = roots.find((r) => realCwd === r || realCwd.startsWith(`${r}/`));
+  if (root) throw new Error(`refusing: ${realCwd} is under sandbox-writable ${root}`);
+}
+
+// returns the canonical cwd so later git and pi runs cannot be redirected by
+// a symlink swapped in after the checks
+export async function checkCwd(cwd, policy) {
   if (!isAbsolute(cwd)) throw new Error(`cwd must be absolute: ${cwd}`);
   let st;
   try {
@@ -118,6 +185,10 @@ function checkCwd(cwd) {
     throw new Error(`cwd does not exist: ${cwd}`);
   }
   if (!st.isDirectory()) throw new Error(`cwd is not a directory: ${cwd}`);
+  const realCwd = realpathSync(cwd);
+  assertOutsideSandboxRoots(realCwd, policy.writableRoots);
+  await assertRepoRoot(realCwd, policy);
+  return realCwd;
 }
 
 async function ensureSessionDir() {
@@ -137,11 +208,25 @@ export function assertNoPendingMigration(cwd) {
 }
 
 // the guard confines reads to cwd, so cwd itself must be a repository root
-// rather than any directory a caller names (/, ~/.pi/agent)
-async function assertRepoRoot(cwd) {
-  const top = (await gitOutput(["rev-parse", "--show-toplevel"], cwd).catch(() => "")).trim();
-  if (!top || realpathSync(top) !== realpathSync(cwd)) {
+// rather than any directory a caller names (/, ~/.pi/agent). Runs unpinned:
+// a pinned GIT_WORK_TREE would make --show-toplevel pass trivially.
+export async function assertRepoRoot(cwd, policy) {
+  const out = await gitOutput(["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"], cwd, policy, { pinned: false });
+  const [top, gitDir, commonDir] = out.trim().split("\n");
+  if (!top || realpathSync(top) !== cwd) {
     throw new Error(`cwd is not a git worktree root: ${cwd}`);
+  }
+  assertOwnGitDir(cwd, gitDir, commonDir);
+}
+
+// a `.git` file (gitdir:, linked worktrees) or a `.git/commondir` (which
+// sandboxed Bash may write) points git at a config outside cwd, which the
+// toplevel check alone accepts
+export function assertOwnGitDir(cwd, gitDir, commonDir) {
+  for (const dir of [gitDir, commonDir]) {
+    if (!dir || realpathSync(dir) !== join(cwd, ".git")) {
+      throw new Error(`refusing: git dir of ${cwd} is not ${cwd}/.git: ${dir}`);
+    }
   }
 }
 
@@ -158,9 +243,40 @@ async function checkSession(threadId, cwd) {
   }
 }
 
-function gitOutput(args, cwd) {
+// root, once checked, pins git's directories so a .git or .git/commondir
+// swapped in after the check cannot redirect its config
+export function gitInvocation(args, environment = process.env, root) {
+  const env = Object.fromEntries(Object.entries(environment).filter(([key]) => !key.startsWith("GIT_")));
+  if (root) Object.assign(env, { GIT_DIR: join(root, ".git"), GIT_COMMON_DIR: join(root, ".git"), GIT_WORK_TREE: root });
+  return { args: [...GIT_OVERRIDES, ...args], env };
+}
+
+const quoteArg = (value) => `'${String(value).replaceAll("'", "'\"'\"'")}'`;
+
+// one srt instance for the server's lifetime; a failed initialisation (e.g.
+// a nested sandbox) is retried on the next call and never falls back to
+// unsandboxed git
+let sandboxReady;
+async function sandboxed(command, cwd, policy) {
+  sandboxReady ??= import("@anthropic-ai/sandbox-runtime").then(async ({ SandboxManager }) => {
+    await SandboxManager.initialize(gitSandboxProfile(policy));
+    return SandboxManager;
+  });
+  let manager;
+  try {
+    manager = await sandboxReady;
+  } catch (error) {
+    sandboxReady = undefined;
+    throw new Error(`refusing to run git: sandbox-runtime failed to initialise: ${error.message}`);
+  }
+  return manager.wrapWithSandbox(command, "bash", gitSandboxProfile(policy, cwd));
+}
+
+export async function gitOutput(args, cwd, policy, { pinned = true } = {}) {
+  const invocation = gitInvocation(args, process.env, pinned ? cwd : undefined);
+  const command = await sandboxed(["git", ...invocation.args].map(quoteArg).join(" "), cwd, policy);
   return new Promise((resolvePromise, reject) => {
-    const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("bash", ["-c", command], { cwd, env: invocation.env, stdio: ["ignore", "pipe", "pipe"] });
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     let stdout = "";
@@ -177,23 +293,27 @@ function gitOutput(args, cwd) {
 
 // three-dot diff = changes since the merge base; untracked files are listed,
 // not embedded, since the model can open them with read
-export function diffCommands(base) {
+// the embedded diff bypasses the guard, so the repo-denied names stay out of
+// every command's output
+export const pathspecExcludes = (names) => ["--", ".", ...names.map((name) => `:(exclude,glob)**/${name}`)];
+export function diffCommands(base, excludes = pathspecExcludes([])) {
   return base
     ? [
-        ["stat", ["--no-pager", "diff", "--no-color", "--stat", `${base}...HEAD`]],
-        ["diff", ["--no-pager", "diff", "--no-color", `${base}...HEAD`]],
+        ["stat", ["--no-pager", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--stat", `${base}...HEAD`, ...excludes]],
+        ["diff", ["--no-pager", "diff", "--no-color", "--no-ext-diff", "--no-textconv", `${base}...HEAD`, ...excludes]],
       ]
     : [
-        ["status", ["status", "--porcelain"]],
-        ["diff", ["--no-pager", "diff", "--no-color", "HEAD"]],
-        ["untracked files (open with read)", ["ls-files", "--others", "--exclude-standard"]],
+        ["status", ["status", "--porcelain", ...excludes]],
+        ["diff", ["--no-pager", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "HEAD", ...excludes]],
+        ["untracked files (open with read)", ["ls-files", "--others", "--exclude-standard", ...excludes]],
       ];
 }
 
-async function gatherDiff(base, cwd) {
+export async function gatherDiff(base, cwd, policy) {
+  const excludes = pathspecExcludes(policy.denyNames);
   const sections = [];
-  for (const [label, args] of diffCommands(base)) {
-    const out = (await gitOutput(args, cwd)).trim();
+  for (const [label, args] of diffCommands(base, excludes)) {
+    const out = (await gitOutput(args, cwd, policy)).trim();
     if (out) sections.push(`git ${label}:\n${out}`);
   }
   return sections.join("\n\n");
@@ -234,14 +354,14 @@ export function assertCompleted(parsed, code, stderr) {
 // positionals are never used: the prompt always goes on stdin, so
 // caller-supplied text (e.g. an "@"-leading brief) can never be parsed as a
 // file argument or a flag
-async function runPi(promptText, { cwd, sessionId }, signal) {
-  await assertRepoRoot(cwd);
+async function runPi(promptText, { cwd, sessionId, policy }, signal) {
   assertNoPendingMigration(cwd);
   if (signal?.aborted) throw new Error("cancelled before launch");
   await ensureSessionDir();
   if (signal?.aborted) throw new Error("cancelled before launch");
   const args = piArgs({ model: pinnedModel, effort, sessionId });
-  const child = spawn(PI_BIN, args, { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+  const env = { ...process.env, PI_BRIDGE_DENY_NAMES: JSON.stringify(policy.denyNames) };
+  const child = spawn(PI_BIN, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   const onAbort = () => child.kill("SIGTERM");
@@ -302,10 +422,11 @@ server.registerTool(
   },
   async ({ cwd, base, prompt }, extra) => {
     validateBase(base);
-    checkCwd(cwd);
-    const diffText = await gatherDiff(base, cwd);
+    const policy = readPolicy();
+    const realCwd = await checkCwd(cwd, policy);
+    const diffText = await gatherDiff(base, realCwd, policy);
     const promptText = composeReviewPrompt({ base, prompt, diffText });
-    return runPi(promptText, { cwd, sessionId: randomUUID() }, extra?.signal);
+    return runPi(promptText, { cwd: realCwd, sessionId: randomUUID(), policy }, extra?.signal);
   },
 );
 
@@ -324,8 +445,9 @@ server.registerTool(
     annotations: readOnly,
   },
   async ({ cwd, brief }, extra) => {
-    checkCwd(cwd);
-    return runPi(brief, { cwd, sessionId: randomUUID() }, extra?.signal);
+    const policy = readPolicy();
+    const realCwd = await checkCwd(cwd, policy);
+    return runPi(brief, { cwd: realCwd, sessionId: randomUUID(), policy }, extra?.signal);
   },
 );
 
@@ -343,10 +465,11 @@ server.registerTool(
     annotations: readOnly,
   },
   async ({ cwd, threadId, prompt }, extra) => {
-    checkCwd(cwd);
     validateThreadId(threadId);
-    await checkSession(threadId, cwd);
-    return runPi(prompt, { cwd, sessionId: threadId }, extra?.signal);
+    const policy = readPolicy();
+    const realCwd = await checkCwd(cwd, policy);
+    await checkSession(threadId, realCwd);
+    return runPi(prompt, { cwd: realCwd, sessionId: threadId, policy }, extra?.signal);
   },
 );
 

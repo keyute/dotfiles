@@ -1,13 +1,13 @@
 ---
 name: agent-instructions-audit
 description: Audit the chezmoi-managed agent instructions (per-harness
-  projections, subagent and skill bodies) against docs/agents-baseline.md,
-  live harness prompt coverage and per-role dispatch counts; proposes adds,
+  projections, subagent and skill bodies) against the intent recorded in their
+  principle comments, live harness prompt coverage and per-role dispatch counts; proposes adds,
   shaves and conflicts. Use when asked to audit, de-drift, or lean-pass the
   agent instructions. Edits source templates and the audit log only.
 ---
 
-Audit = baseline intent × projections × live harness coverage × observed
+Audit = recorded intent × projections × live harness coverage × observed
 usage, computed fresh each run. A rule is shaved only when every probed model
 class covers it natively — the same projection must serve them all.
 
@@ -18,14 +18,17 @@ iterate it in every step, never enumerating harnesses. Tiers: `.subagent_tiers.<
 
 ## Steps
 
-1. **Gather inputs.** Read `docs/agents-baseline.md`,
-   `docs/agents-audit-log.md` (prior open triggers and baselines),
+1. **Gather inputs.** Read `docs/agents-audit-log.md` (prior open triggers
+   and baselines), `docs/agent-authoring.md` (Principles with no projected line),
    `.chezmoitemplates/agent-instructions.md`, every harness's
    `audit.instructions` template and its rendered target via `chezmoi cat
    <home>/<target>`, plus `.chezmoitemplates/subagents/*.md`,
    `.chezmoitemplates/skills/*.md` and `.claude/skills/*/SKILL.md`. The
-   baseline's principle list drives every later step; never hardcode topics.
-   A tagged principle is probed and reconciled only against its harness.
+   principle list is every `{{/* <principle>: <why> */}}` comment in the shared
+   and consumer templates plus agent-authoring's Principles; it drives every
+   later step; never hardcode topics.
+   A principle commented in one consumer template (its tag) is probed and
+   reconciled only against that harness.
 
 2. **Coverage probes — one per harness, by `audit.probe`.** For each principle
    applicable to the harness, judge whether the harness's own prompt covers
@@ -46,12 +49,12 @@ iterate it in every step, never enumerating harnesses. Tiers: `.subagent_tiers.<
 
 3. **Compute the audit matrix.** Per principle × harness, reconciling every
    probed class:
-   - baseline intent absent from the projection AND coverage absent or
+   - recorded intent absent from the projection AND coverage absent or
      partial in any class → **ADD**
    - projection rule covered natively by every class of every harness it
      renders to → **SHAVE**
    - classes disagree, or coverage partial → **KEEP**, recording which lacks it
-   - projection contradicts baseline intent or observed usage → **CONFLICT**
+   - projection contradicts recorded intent or observed usage → **CONFLICT**
    - any class reports `contradicted` → **HARNESS-CONFLICT**, never a SHAVE
      candidate; resolution (explicit precedence or changed intent) is my call.
    A new or reworded principle gets its own row across all classes before its

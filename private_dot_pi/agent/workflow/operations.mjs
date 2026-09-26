@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readLines, sendLine } from "./lines.mjs";
 
-const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
+export const runnerPath = fileURLToPath(new URL("./sandbox-runner.mjs", import.meta.url));
 // Runaway-worker backstop (a `yes` under workspace_bash streams forever in
 // small frames): never an ordinary-file limit, the SDK truncates after reading.
 const OUTPUT_LIMIT = 256 * 1024 * 1024;

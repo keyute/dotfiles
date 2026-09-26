@@ -1,4 +1,4 @@
-import { Container, Markdown, Text, visibleWidth } from "@earendil-works/pi-tui";
+import { Container, Markdown, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
@@ -57,10 +57,10 @@ export function shade(theme, line, background = "userMessageBg", foreground) {
   return theme.bg(background, line.replaceAll("\x1b[0m", `\x1b[0m${open}`));
 }
 
-// Pads a rendered line to a fixed visible width without truncating it. The
-// composer pads its own rows with `padRow` (index.mjs), which truncates
-// instead — the two are not the same function.
+// Pads a rendered line to a fixed visible width without truncating it; `padRow`
+// pads and truncates to exactly the width — the two are not the same function.
 export const pad = (text, width) => text + " ".repeat(Math.max(0, width - visibleWidth(text)));
+export const padRow = (text, width) => truncateToWidth(text, width, "", true);
 
 // The user box's shaded block (docs/pi-design.md rule 5). `foreground` is the
 // colour `shade` re-opens after a reset; `fit` is pad or truncate per surface.

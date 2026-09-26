@@ -198,7 +198,8 @@ test("pinned upstream packages register against the managed extension and prefli
     getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {},
   };
-  const { installWorkflow, mcpGateway, mcpServerDefinitions } = await import("./index.mjs");
+  const { installWorkflow } = await import("./index.mjs");
+  const { mcpGateway, mcpServerDefinitions } = await import("./plugin-api.mjs");
   config.mcp = Object.fromEntries(["context7", "exa", "playwright"].map(name => [name, { policy: { denied_tools: [], direct_tools: name === "context7" } }]));
   writeFileSync(configPath, JSON.stringify(config));
   const jiti = createJiti(import.meta.url);

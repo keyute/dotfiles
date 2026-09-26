@@ -1,93 +1,70 @@
 # Claude Code workflow reference
 
-Env-specific facts and decisions only, each at its current state with a dated
-annotation. Generic harness behavior is injected into every session or
-answerable live via the claude-code-guide agent; measurements, research and
-audit baselines live in the chezmoi repo's `docs/agents-audit-log.md`. If
-behavior seems changed, verify with that agent and update this file.
+Env-specific facts and decisions, each dated; measurements live in the chezmoi repo's
+`docs/agents-audit-log.md`. If behavior seems changed, verify (claude-code-guide) and update.
 
 ## Models (last verified 2026-09-25)
 
 - Settings pin the driver (`model` key) to `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}`;
   effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned per model under `modelSettings` for both
   `{{ .subagent_tiers.claude.top }}` and `{{ .subagent_tiers.claude.frontier }}`, so a `/model` escalation keeps
-  it. The 1M window is the default on Opus 4.7+ and Fable, no
-  `[1m]` suffix. Opus 5.5 needs CLI ≥ 2.1.280; changing channel
-  does not move the pin.
+  it. The 1M window is the default on Opus 4.7+ and Fable (no `[1m]` suffix); Opus 5.5 needs CLI ≥ 2.1.280.
 - Escalate effort first: `/effort xhigh` keeps the prompt cache. `{{ .subagent_tiers.claude.frontier }}`
-  is escalation-only (since 2026-09-25): for an ambiguous root-cause or
-  architecture problem where the driver at higher effort fell short, start a
-  fresh session with `claude --model {{ .subagent_tiers.claude.frontier }}`. Do not `/model` a grown
-  session: each model has its own cache, so the next request re-reads the
-  whole history uncached at the frontier rate; `/model <name>` also saves it
-  as the default in `~/.claude/settings.json` until the next apply (decision
-  2026-09-26; evidence and reversal triggers in the audit log).
-- Managed roles below render from `subagents` in agents.yaml, which records
-  each choice's why; reversal gates are in the audit log. Pins do not follow
-  `/model`; a child without explicit effort inherits session effort.
+  is escalation-only (since 2026-09-25): for an ambiguous root-cause or architecture problem
+  where the driver at higher effort fell short, start a fresh session with
+  `claude --model {{ .subagent_tiers.claude.frontier }}`. Do not `/model` a grown session: each model has its own
+  cache, so the next request re-reads the whole history uncached at the frontier rate, and
+  `/model <name>` saves it as the default until the next apply (decision 2026-09-26). In a
+  Fable session don't fork and don't run workflows — forks inherit Fable, and a workflow
+  `agent({model:'fable'})` has no guard.
+- Roles render from `subagents` in agents.yaml, which records each why. Pins do not
+  follow `/model`; a child without explicit effort inherits session effort.
 
 | role | model | effort |
 |---|---|---|
 {{ range $name, $role := includeTemplate "claude-roles" (dict "root" .) | fromJson -}}
 | {{ $name }} | `{{ $role.model }}` | {{ $role.effort | default "—" }} |
 {{ end }}
-- `general-purpose` and `Plan` are managed overrides of the built-ins
-  (2026-09-25). `CLAUDE_CODE_SUBAGENT_MODEL` (`{{ .subagent_tiers.claude.top }}`)
-  remains only the fallback for the built-in `claude` type, plugin agents,
-  workflow agents and teammates;
-  leave its `_FORCE` variant unset, it would erase specialist pins. Forks
-  continue the parent model; the guide uses Haiku, the statusline helper Sonnet.
-- Resolution order (since 2.1.251): per-call `model`, frontmatter (`inherit` =
-  main conversation), the env fallback, main conversation; no role uses `inherit`.
+- `general-purpose` and `Plan` override the built-ins (2026-09-25). `CLAUDE_CODE_SUBAGENT_MODEL`
+  (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin and workflow
+  agents and teammates; leave its `_FORCE` variant unset, it would erase specialist pins.
+  Forks continue the parent model; the guide uses Haiku, the statusline helper Sonnet.
 {{- $bare := list }}{{ $scoped := list }}{{ $frontierDeny := "" }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $frontierDeny = . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
-- The `{{ $frontierDeny }}` deny rule is the per-call frontier guard;
-  `~/.claude/hooks/deny-frontier-child.mjs` is the legacy second guard until
-  the owner's trial of that rule deletes it. Neither sees a third-party
-  definition declaring `model: inherit`, and neither proves actual routing.
-- After each CLI update, dispatch one unpinned child and one with an explicit
-  `{{ .subagent_tiers.claude.top }}` override and verify `message.model`, not
-  self-report; routing issue history and the latest sample are in the audit log.
-- Every custom subagent loads `~/.claude/CLAUDE.md` (driver-only rules sit under
-  "session driver") and draws the same Max pools (5-hour window, shared weekly
-  pool; Fable's 50% weekly cap is shared, not reserved); check `/usage`.
-- `cross-model-review` / `cross-model-advice` are read-only GPT consultations;
-  decisions stay in Claude, triggered by risk or breadth (decision 2026-09-03).
+- The `{{ $frontierDeny }}` deny rule is the per-call frontier guard, with the legacy
+  `~/.claude/hooks/deny-frontier-child.mjs` second guard; neither sees a Workflow
+  `agent()` opts.model or a third-party `model: inherit`, nor proves routing.
+- After each CLI update, check `message.model` of one unpinned child and one `{{ .subagent_tiers.claude.top }}` override.
+- Every custom subagent loads `~/.claude/CLAUDE.md` and draws the same Max pools (5-hour
+  window, shared weekly pool; Fable's 50% weekly cap is shared, not reserved); check `/usage`.
+
+## Workflows (verified 2026-09-26)
+
+- The keyword `ultracode` opts one turn into a workflow at session effort; `/effort ultracode`
+  is xhigh plus standing workflows, with no size warning and no 20-agent Agent-tool cap. Only the
+  driver can start one; concurrency is min(16, CPUs−2); `skipWorkflowUsageWarning: true`
+  suppresses auto mode's pre-workflow cost prompt. A bare `agent()` gets the
+  `CLAUDE_CODE_SUBAGENT_MODEL` pin at session effort; `agent({agentType})` the role's pin and effort.
+- Workflow agents were 67% of a week's Claude usage (measured 2026-09-26): ~50 calls and
+  200–250k context each, 92% of cost cache — fan-out size and per-agent scope drive burn,
+  effort barely does.
 
 ## Local-only surface (decision 2026-09-21)
 
-- The CLI carries no claude.ai-product surface: account skill and plugin sync,
-  claude.ai connectors and Remote Control are off in settings; the cron
-  scheduler is disabled by env;
-  `{{ $bare | join "`, `" }}` are bare-denied, which removes them from the tool
-  list; `{{ $scoped | join "`, `" }}` are scoped denies that block only the
-  matching call. Bundled skills hidden via `skillOverrides` and the
-  deny list live in agents.yaml (`agents.claude.skill_overrides`,
-  `denied_tools`). Web search, Exa, context7 and Playwright stay — research
-  subagents depend on them.
-- Plugin skills ignore `skillOverrides` (`enabledPlugins` owns them), and
-  `disableBundledSkills` is unused because it also drops the review skills.
-  `/code-review ultra` and `claude --cloud` have no disable knob; both are
-  user-invoked only.
+- No claude.ai-product surface: account skill/plugin sync, claude.ai connectors and Remote
+  Control are off in settings, the cron scheduler by env; `{{ $bare | join "`, `" }}` are
+  bare-denied (gone from the tool list); `{{ $scoped | join "`, `" }}` block only the
+  matching call. Skill overrides and denies live in agents.yaml (plugin skills follow
+  `enabledPlugins`). Web search, Exa, context7 and Playwright stay for research;
+  `/code-review ultra` and `claude --cloud` have no disable knob, both user-invoked only.
 
 ## Cross-model bridge on pi (decision 2026-09-23)
 
-- The `pi` MCP entry spawns `scripts/pi-bridge.mjs` from the chezmoi source
-  repo, which runs the repo-local pi in `--mode json` print mode. Tools:
-  `review`, `advise`, `reply`; invocation fixed to the read-only tool
-  allowlist (`read,grep,find,ls`), `--no-context-files`, no extensions except
-  the bridge's own path guard, model (top worker tier) and effort pinned by `agent_mcp_servers.pi` in
-  agents.yaml — callers pick scope only. `review`
-  embeds a bridge-computed git diff because the child cannot run git.
-- MCP transport kept deliberately: the bridge is harness-spawned outside the
-  Bash sandbox (the `~/.pi` deny stays intact) and its rendered allow rule
-  (`mcp__pi`) makes the tools prompt-free in plan mode (verified 2026-09-23).
-  Plan mode blocks MCP tools unless allow-listed (`readOnlyHint` ignored; upstream #12368 closed "not
-  planned") and Bash has no plan-mode exemption.
-- Read isolation is the guard extension, not a sandbox: pi's built-in tools
-  run in-process, so `scripts/pi-bridge-guard.mjs` rewrites each tool path to
-  the vetted canonical path inside `cwd` (which must be a git worktree root)
-  and blocks `.env*`. Reversal trigger for the bridge: pi's print mode, tool
-  allowlist or `tool_call` blocking regresses, or OpenAI withdraws
-  ChatGPT-subscription OAuth from third-party harnesses (sanctioned as of
-  2026-09-05) — then the review backend needs a new transport.
+- `cross-model-review` / `cross-model-advice` are read-only GPT consultations;
+  decisions stay in Claude, triggered by risk or breadth (2026-09-03).
+  They call the `pi` MCP server (`scripts/pi-bridge.mjs` in the chezmoi repo):
+  tools `review`, `advise`, `reply` run pi read-only at the model and effort
+  pinned by `agent_mcp_servers.pi`, so callers pick scope only; `review` embeds
+  the git diff (git read-only under srt), and `mcp__pi` is allow-listed so it runs
+  prompt-free in plan mode. It refuses a cwd under a sandbox-writable scratch root
+  or whose `.git` is not its own (2026-09-26): review a real checkout.

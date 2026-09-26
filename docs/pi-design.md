@@ -1,7 +1,35 @@
 # Pi TUI design language
 
-Last verified 2026-09-24 (pi 0.87.1, pi-subagents 0.70.1). Read this before editing `private_dot_pi/agent/workflow/{rows,footer,fleet,peek,replay,index,dialog,questionnaire,plan-approval,pending-input,shell,header}.mjs`;
+Last verified 2026-09-24 (pi 0.87.1, pi-subagents 0.70.1). Read this before editing a module the map below marks **TUI**;
 change a rule only with a dated decision here, never by re-wording.
+
+Module map (`private_dot_pi/agent/workflow/*.mjs`), one responsibility each:
+
+- `index` (TUI): the extension entry — config, broker connection, managed tool registration and gating, modes and commands, and wiring the other modules into pi's session lifecycle.
+- `editor` (TUI): the composer — `CaretEditor`'s rule 5 shape, shell-mode prefix and fleet entry, and Tab argument completion.
+- `plugin-api` (TUI): what plugins see of the extension API — the registration Proxy (renderers, `subagent`/`mcp` schema and description, quiet notices, the control-notice row) and the MCP adapter's configuration and install.
+- `skill-display` (TUI): a sent skill invocation shown as its `/skill:` command (rule 5).
+- `pending-input` (TUI): queued steer/follow-up input drawn as rule 5 blocks.
+- `rows` (TUI): the transcript's row grammar, the activity-group fold engine and blanked reasoning (rules 1, 2, 8).
+- `shell` (TUI): the owned `!` block — runner, context delivery and its transcript block.
+- `footer` (TUI): the status line, the working row and usage segments (rule 3).
+- `header` (TUI): the session header.
+- `fleet` (TUI): the fleet rows and detached-run lifecycle (rules 4, 6).
+- `peek` (TUI): the fleet peek dialog (rule 6).
+- `replay` (TUI): a child's `events.jsonl` replayed into rule 2 rows for the peek.
+- `dialog` (TUI): the shared dialog frame (rule 11).
+- `questionnaire` (TUI): `ask_user_question`, its tool and dialog.
+- `plan-approval` (TUI): `submit_plan`, its decision and dialog.
+- `approval`: reviewing one action — classifier verdict or user confirm.
+- `broker`: the policy broker — socket server, epochs and child leases.
+- `children`: subagent launch validation and schema narrowing.
+- `policy`: tool, path and mode policy.
+- `operations`: the host side of a sandboxed tool worker.
+- `ops-worker`: the sandboxed worker process that runs one tool's operations.
+- `sandbox-runner`: launching a process inside srt with a leased environment.
+- `tasks`: background shell tasks.
+- `lines`: newline-delimited JSON framing.
+- *2026-09-26:* each module has the one responsibility its map line states; a new concern gets its own module, or joins the module whose line names it, and the map line lands with it. *Why:* `index` had collected the composer, the plugin Proxy and the skill patch beside the workflow entry, so a TUI rule change meant reading an 800-line file for the 200 lines it touched.
 
 The intent, set on 2026-09-07 from a side-by-side of pi and Claude Code:
 Claude Code's presentation of the work in progress, pi's own glyphs. Each rule carries the why that earned it. How each rule was

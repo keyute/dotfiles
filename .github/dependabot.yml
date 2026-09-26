@@ -7,6 +7,14 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # pi breaks extension APIs across 0.x minors, so its family moves as one
+      # PR of its own; first matching group wins, keeping it out of non-breaking
+      pi:
+        applies-to: "version-updates"
+        patterns:
+          - "@earendil-works/*"
+          - "pi-*"
+          - "catppuccin-pi-theme"
       non-breaking:
         applies-to: "version-updates"
         patterns:
