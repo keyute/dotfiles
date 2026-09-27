@@ -12,16 +12,6 @@ git history keeps it.
 Pruned 2026-09-26 from 760 lines; `git show 79f042a:docs/agents-audit-log.md`
 holds every entry cut or condensed.
 
-## Pending owner decisions (2026-09-26)
-
-- Fable effort cap: `modelSettings.claude-fable-5-1.maxEffortLevel: "high"`
-  (clamps any request on Fable, blocks ultracode there; Opus keeps xhigh).
-- `workflowSizeGuideline` value in settings.json.tmpl (unset = server default).
-- Frontier hook: delete it after one denied `Agent(model:fable)` trial.
-- After the Opus 5.5 driver probe: gate the implementation-slice bullet on
-  driver tier > worker tier, recompute `native_coverage`, and confirm or drop
-  the self_review precedence intent ("outranks a harness prompt discouraging it").
-
 ## Known residuals (pi)
 
 From `docs/pi-implementation.md` → Verification and remaining gates (open
@@ -45,6 +35,27 @@ since 2026-09-15). Security first; each is fixed when its trigger fires.
   footer (pi makes dock order configurable); owned `wham/usage` read (it
   breaks — then read `@hk_net/pi-usage-bars`).
 
+## 2026-09-27
+
+### Post-apply probes and decisions (audit 2026-09-26)
+
+- Frontier deny: the hook fired first in-session (hooks precede rules); a
+  one-shot with only the rule got "Permission to use Agent with model:fable
+  has been denied." Hook deleted.
+- A Fable session's Workflow `agent({model:'fable'})` ran on Fable
+  (`claude-fable-5-1|workflow`, wf_b64b33dc-486). Left unguarded: no Fable
+  `maxEffortLevel`, no `workflowSizeGuideline` (advisory; a settings value
+  hides `/config`; claude-code#89865 reports 20× overshoot). Trigger: that row
+  or a Fable fork outside a probe → cap Fable at `high`.
+- Nested `.env` denied on both (Claude permission rule at depth 2; pi
+  "Operation not permitted", no escalation); pi bound 127.0.0.1:0 in-sandbox.
+- Opus 5.5 driver (`claude -p`; workers unprobed): driver_ownership, self_review
+  absent; delegation_wait, initiative ("confirm first" on hard-to-reverse
+  actions only), delegation_contract/economics partial; none contradicted.
+  So initiative is unshaved (rewraps hold CLAUDE.md at 100/100), the slice
+  bullet stays tier-independent, and the self_review precedence clause goes.
+- Bridge `advise` at the repo root answered correctly end to end.
+
 ## 2026-09-26
 
 ### Usage and quota — owner data
@@ -65,8 +76,7 @@ instead of a manual `/usage` line.
   0.62M. **Watch**: researcher on Opus 18 calls at 123k context vs 7 on
   Sonnet; re-check at the next agent-usage run.
 - Fable exposure: 0 forks in 30 days; the only Fable children were 5
-  built-in Plan dispatches before the 2026-09-25 override (closes the
-  2026-09-23 unattributed Fable child).
+  built-in Plan dispatches before the 2026-09-25 override.
 - Compactions: Claude 0 in 30 days; pi 10 in 10 days. pi week ≈ $294
   API-equivalent, Astra root 55%, OpenAI pool under no pressure.
 - Skills, 30 days (Claude / pi): ship-check 38 / 23, cross-model-review 20,
@@ -75,14 +85,12 @@ instead of a manual `/usage` line.
   both → deleted 2026-09-26. **Open**: decide `run` visibility.
 - pi `harness.md` loaded in 65 pi sessions via the over-broad "delegating a
   lookup" trigger; triggers narrowed and docs slimmed 2026-09-26 (baseline
-  for the next count).
+  for the next count; a 09-27 `/skill:ship-check` root read none).
 - pi-bridge: host-side git in a caller-chosen repo was an unsandboxed exec
   path; hardened 2026-09-26 (flags, env scrub, root refusal, SRT). Host probe
   2026-09-26: +13 ms per git call under SRT (21 vs 8.5 ms median), writes and
   network blocked; a hostile clean filter was refused `.env` and `~/.ssh` reads
   while status/diff exited 0 on a repo tracking `.env.example`.
-- Exa: PERMS-6 ("denylist names unregistered tools") was wrong — `agent_*`
-  ids exist in 3.4.1's registry, default-off; the denylist stays.
 
 ### (pi) Driver effort — resolved at `high`
 
@@ -225,16 +233,16 @@ go-reviewer 7/12, shell-reviewer 8/3, infra-reviewer 3/5, python-reviewer
 - Fall back to `gpt-5.6-sol` for pi `top` if implementer round-trips rise.
 - **Open**, next check 2026-10-03: `/agents` shows `general-purpose` and
   `Plan` as user overrides and `/tasks` shows `claude-opus-5-5` for both
-  (fallback: the `Agent(model:fable)` deny); the Claude-side
-  `agent-instructions-audit` after the model change is due the same date.
+  (fallback: the `Agent(model:fable)` deny, held alone 2026-09-27); worker-tier
+  coverage probes after the model change (driver probed 2026-09-27).
 
 ## 2026-09-23
 
 ### Fresh-session audit — sweep baselines
 
 Claude Code 2.1.280, pi SDK 0.87.1: no ADD, no new SHAVE, no CONFLICT; the
-coverage matrix is recomputed each audit. Initiative and docs_mcp shaves
-stand on the 2026-09-15 rationale.
+coverage matrix is recomputed each audit. The docs_mcp shave stands on the
+2026-09-15 rationale (initiative unshaved 2026-09-27).
 
 - Over-testing: vendor-documented for GPT; the 2026-09-20 replay saw
   2.8–3.5× the shipped test lines on GPT arms (Claude 1.2×) with
@@ -262,9 +270,9 @@ other pass made (e.g. the pi-ai WebSocket continuation key). Advise: every
 read used. The trigger stays risk-or-breadth;
 "in addition to" answers the displacement (68% on 2026-09-09). Re-count
 method: per `mcp__pi__review` tool_use, tally real/fixed vs rejected from
-later assistant text; ten reviews is the denominator. **Open**, next check
-2026-10-03: one `review` through the hardened `scripts/pi-bridge.mjs` and the
-guard's block of `~/.pi/agent/auth.json`.
+later assistant text; ten reviews is the denominator. `advise` through the
+hardened bridge passed 2026-09-27. **Open**, next check 2026-10-03: one
+`review` through it and the guard's block of `~/.pi/agent/auth.json`.
 
 ## 2026-09-21
 
@@ -334,8 +342,6 @@ judge the retry-after-sandboxed-failure fact from `history`.
 
 ### Review of 49b4cff — sources behind the principle whys
 
-Fable-driver-era frontier evidence superseded on 2026-09-25 is cut.
-
 - Delegation: GPT-6 Astra guide — "may delegate less often than desired…"
   (keeps the rule projected on pi); lilting.ch 2026-09-07 — Astra "promoted
   every task to itself"; martinfowler.com 2026-07-16 — the orchestrator tax
@@ -357,8 +363,8 @@ Fable-driver-era frontier evidence superseded on 2026-09-25 is cut.
 - Cross-model: a size-only trigger fired ~20x more often while its hit rate
   fell from ~4% to under 1%. Initiative: OpenAI (Astra) and Anthropic (Fable
   5.1) document stopping to ask where persistence is expected; GPT-5.6's
-  guide finds repeated approval wording causes approval requests. Shaved on
-  Claude (native), as is docs_mcp (context7 server instructions).
+  guide finds repeated approval wording causes approval requests. Unshaved
+  on Claude 2026-09-27 (Opus partial); docs_mcp shaved (context7 instructions).
 - Density: Anthropic memory doc (under 200 lines); OpenAI
   harness-engineering 2026-02-11 (~100-line AGENTS.md); arXiv 2602.11988
   (context files +20% cost, no general gain); 2608.12426 (compliance

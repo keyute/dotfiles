@@ -11,7 +11,7 @@ agents:
       probe: session+pin
     # rules this harness carries natively; the shared template skips them.
     # Recomputed by the audit skill; evidence lives in the audit log.
-    native_coverage: [call_batching, docs_mcp, initiative]
+    native_coverage: [call_batching, docs_mcp]
     defaults:
       # a subagent_tiers key, never a second copy of the pin. 1M context is the
       # default on Opus 4.7+ and Fable, so no pin needs a [1m] suffix.
@@ -77,10 +77,9 @@ agents:
       - "PushNotification"
       - "Agent(isolation:remote)"
       # no child runs the frontier tier: `fable` is the only frontier value the
-      # Agent tool's model enum takes (CLI 2.1.282; it has no `inherit`). Delete
-      # the deny-frontier-child hook once the owner has trialled one denied
-      # Agent(model:fable) call after apply. Revisit if a release adds another
-      # frontier alias to the enum.
+      # Agent tool's model enum takes (CLI 2.1.282; it has no `inherit`); trialled
+      # alone 2026-09-27. Revisit if a release adds another frontier alias to
+      # the enum.
       - "Agent(model:fable)"
       # a speed bump under the never-commit/push rule, not a boundary: prefix
       # rules miss `git -C x commit` and `sh -c` forms

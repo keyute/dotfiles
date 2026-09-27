@@ -31,18 +31,16 @@
     details must stay in your context; never hand one worker the whole problem.{{/* context_hygiene, delegation_contract, delegation_economics: degradation sets in well before the window is full; underspecified workers drift and unbounded scope wastes them; re-reading verbose worker output is the reported cost sink; a handoff pays only when specifying and verifying its boundary costs less than doing, or repairing, the work inline */}}
 {{- /* no frontier child: children.mjs and the Claude frontier guard enforce it */ -}}
 {{- if not (has "driver_ownership" $native) }}
-  - Before editing a non-trivial implementation slice,
-    delegate it once design, exclusive scope, and an objective gate are settled.
-    Use the lowest capable pinned worker; it owns implementation/test/repair.
-    Keep decomposition, architecture, cross-scope and overall planning decisions,
-    planning synthesis, approval, integration, adjudication, and final
-    verification in the driver.
+  - Before editing a non-trivial implementation slice, delegate it once design,
+    exclusive scope, and an objective gate are settled. Use the lowest capable
+    pinned worker; it owns implementation/test/repair. Keep decomposition,
+    architecture, cross-scope and overall planning decisions, planning synthesis,
+    approval, integration, adjudication, and final verification in the driver.
     Finish a failed worker's piece yourself rather than promoting it.{{/* driver_ownership: explicit ownership keeps scoped implementation out of the driver's context without ceding cross-scope decisions, and objective gates make worker results reviewable (2026-09-15; tier-independent since 2026-09-25) */}}
 {{- end }}
 {{- if not (get $ag "pins_in_dispatch_list") }}
-  - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time
-    list does not show it: override a model only to escalate after an observed
-    failure.{{/* specialist_pinning: presets are tuned once, not per session */}}
+  - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
+    does not show it: override a model only to escalate after an observed failure.{{/* specialist_pinning: presets are tuned once, not per session */}}
 {{- end }}
 {{- if not (has "delegation_wait" $native) }}
   - Once children are launched, their scope is off-limits: do only work outside
@@ -55,7 +53,7 @@
     artifact and its requirements: history-free (never a fork), pinned tier,
     one pass, naming the snapshot and the gates already green. Skip it when
     gates cover the requirements and the surface is not high-stakes; a
-    cross-model review does not replace it; a re-review verifies the fixes only.{{/* self_review: a producing context endorses its own output, a structural bias; a fresh-context pass catches what same-session review endorses, and iterated rounds add false positives faster than catches. The named role, history-free launch and pinned tier answer sweeps that found the pass aimed at write-capable or omission-blind reviewers; the skip and fix-scoped re-review answer over-firing on trivial gated work. Intent: it outranks a harness prompt discouraging it (pending owner decision, audit log 2026-09-26) */}}
+    cross-model review does not replace it; a re-review verifies the fixes only.{{/* self_review: a producing context endorses its own output, a structural bias; a fresh-context pass catches what same-session review endorses, and iterated rounds add false positives faster than catches. The named role, history-free launch and pinned tier answer sweeps that found the pass aimed at write-capable or omission-blind reviewers; the skip and fix-scoped re-review answer over-firing on trivial gated work. */}}
 {{- if hasKey $ag "user_shell_prefix" }}
   - Give a command I must run myself as a bare `{{ $ag.user_shell_prefix }}<command>` line: I paste it into
     the composer and its output returns here. It runs unsandboxed on the host

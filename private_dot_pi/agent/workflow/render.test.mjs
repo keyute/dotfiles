@@ -164,21 +164,6 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   // the native per-call deny must name the frontier pin's alias
   const frontierAliases = claudeSettings.permissions.deny.flatMap(rule => /^Agent\(model:(\w+)\)$/.exec(rule)?.[1] ?? []);
   assert.ok(frontierAliases.some(alias => frontierPin.includes(alias)), `no Agent(model:...) deny covers ${frontierPin}`);
-  const denyFrontierChild = run("cat", target(".claude/hooks/deny-frontier-child.mjs"));
-  const hookPath = target(".claude/hooks/deny-frontier-child.mjs");
-  mkdirSync(dirname(hookPath), { recursive: true });
-  writeFileSync(hookPath, denyFrontierChild);
-  const invokeHook = model => spawnSync(process.execPath, [hookPath], {
-    input: JSON.stringify({ tool_input: { model } }), encoding: "utf8",
-  });
-  for (const model of [frontierPin, `${frontierPin}[1m]`]) {
-    const result = invokeHook(model);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, "deny");
-  }
-  const allowed = invokeHook(data.subagent_tiers.claude.top);
-  assert.equal(allowed.status, 0, allowed.stderr);
-  assert.equal(allowed.stdout, "");
 
   assert.ok(piHarness.includes(data.subagent_tiers.pi.frontier));
   assert.match(run("cat", target(".pi/agent/extensions/workflow.ts")), /\/\.pi\/agent\/workflow\/index\.mjs/);
@@ -371,7 +356,6 @@ test("diff exits clean for each affected harness target against an isolated dest
     ".pi/agent/workflow/rows.mjs",
     ".pi/agent/node_modules",
     ".claude/settings.json",
-    ".claude/hooks/deny-frontier-child.mjs",
     ".claude/CLAUDE.md",
     ".claude/docs/harness.md",
     ".claude/skills/cross-model-review/SKILL.md",

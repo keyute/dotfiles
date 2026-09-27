@@ -31,9 +31,9 @@ Env-specific facts and decisions, each dated; measurements live in the chezmoi r
   Forks continue the parent model; the guide uses Haiku, the statusline helper Sonnet.
 {{- $bare := list }}{{ $scoped := list }}{{ $frontierDeny := "" }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $frontierDeny = . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
-- The `{{ $frontierDeny }}` deny rule is the per-call frontier guard, with the legacy
-  `~/.claude/hooks/deny-frontier-child.mjs` second guard; neither sees a Workflow
-  `agent()` opts.model or a third-party `model: inherit`, nor proves routing.
+- The `{{ $frontierDeny }}` deny rule is the per-call frontier guard (trialled 2026-09-27); it
+  does not see a Workflow `agent()` opts.model, which does reach the frontier, or a
+  third-party `model: inherit`, nor prove routing.
 - After each CLI update, check `message.model` of one unpinned child and one `{{ .subagent_tiers.claude.top }}` override.
 - Every custom subagent loads `~/.claude/CLAUDE.md` and draws the same Max pools (5-hour
   window, shared weekly pool; Fable's 50% weekly cap is shared, not reserved); check `/usage`.

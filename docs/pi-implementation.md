@@ -204,5 +204,5 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
 - Subagent model resolution order (since CLI 2.1.251): per-call `model`,
   frontmatter (`inherit` = main conversation), the `CLAUDE_CODE_SUBAGENT_MODEL`
   fallback, main conversation; no managed role uses `inherit`. The
-  `deny-frontier-child.mjs` hook stays as a second guard until the owner's
-  trial of the `Agent(model:…)` deny rule deletes it.
+  `Agent(model:…)` deny rule alone guards the per-call path (trialled
+  2026-09-27; the hook it superseded is deleted).

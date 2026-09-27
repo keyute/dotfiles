@@ -51,18 +51,6 @@
          so `herdr integration install claude` leaves this file untouched; the
          script itself is herdr-generated and chezmoi-unmanaged. */}}
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node '{{ .chezmoi.homeDir }}/.claude/hooks/deny-frontier-child.mjs'",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "^(startup|resume|clear|compact|fork)$",
