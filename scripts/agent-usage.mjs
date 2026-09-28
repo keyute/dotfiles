@@ -92,7 +92,8 @@ for (const file of walk(path.join(home, ".claude/projects"))) {
 }
 
 const perFile = new Map(); // file -> { model, calls, ctx, units }
-const modelOrigin = {};
+// Units compare only within one model (see units), so shares are of the model's own total.
+const modelOrigin = {}, modelTotal = {};
 for (const c of calls.values()) {
   const f = perFile.get(c.file) ?? { model: c.model, calls: 0, ctx: 0, units: 0 };
   f.calls++; f.ctx = Math.max(f.ctx, c.ctx); f.units += c.units;
@@ -100,8 +101,8 @@ for (const c of calls.values()) {
   const k = `${c.model}|${claudeOrigin(c.file)}`;
   modelOrigin[k] ??= { calls: 0, units: 0 };
   modelOrigin[k].calls++; modelOrigin[k].units += c.units;
+  modelTotal[c.model] = (modelTotal[c.model] ?? 0) + c.units;
 }
-const claudeTotal = sum(Object.values(modelOrigin).map((v) => v.units));
 
 const roles = {}, runs = {};
 for (const [file, f] of perFile) {
@@ -153,13 +154,12 @@ for (const { key, usage } of piCalls.values()) {
 const out = {
   days,
   claude: {
-    modelOrigin: byDesc(Object.fromEntries(Object.entries(modelOrigin).map(([k, v]) => [k, { ...v, share: pct(v.units, claudeTotal) }])), "units"),
-    origins: byOrigin(modelOrigin, "units"),
+    modelOrigin: byDesc(Object.fromEntries(Object.entries(modelOrigin).map(([k, v]) => [k, { ...v, share: pct(v.units, modelTotal[k.slice(0, k.lastIndexOf("|"))]) }])), "units"),
     roles: byDesc(Object.fromEntries(Object.entries(roles).map(([k, files]) => [k, {
       dispatches: files.length, medianCalls: median(files.map((f) => f.calls)), medianMaxCtx: median(files.map((f) => f.ctx)),
       unitsPerDispatch: Math.round(sum(files.map((f) => f.units)) / files.length),
     }])), "dispatches"),
-    workflowRuns: byDesc(Object.fromEntries(Object.entries(runs).map(([k, v]) => [k, { ...v, share: pct(v.units, claudeTotal) }])), "units"),
+    workflowRuns: byDesc(runs, "units"),
     dispatches: claudeDispatches,
     skills: claudeSkills,
   },
@@ -177,8 +177,7 @@ fs.writeFileSync(outFile, JSON.stringify(out, null, 2), { flag: "wx" });
 const counts = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, { n }]));
 const show = (title, rows) => { console.log(`\n${title}, last ${days} days`); console.table(rows); };
 const inMu = (o, keys) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { ...v, ...Object.fromEntries(keys.map((x) => [x, mu(v[x])])) }]));
-show("claude — weighted units (M) by model|origin", inMu(out.claude.modelOrigin, ["units"]));
-show("claude — weighted units (M) by origin", inMu(out.claude.origins, ["units"]));
+show("claude — weighted units (M) by model|origin, share of that model", inMu(out.claude.modelOrigin, ["units"]));
 show("claude — subagent cost by role|model (units M per dispatch)", inMu(out.claude.roles, ["unitsPerDispatch"]));
 show("claude — workflow runs (units M)", inMu(out.claude.workflowRuns, ["units"]));
 show("claude — dispatches", counts(claudeDispatches));

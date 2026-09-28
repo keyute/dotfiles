@@ -44,6 +44,7 @@ test("the subagent schema exposes only the managed launch and control surface", 
   assert.deepEqual(narrowed.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
   assert.deepEqual(narrowed.properties.context.enum, ["fresh", "fork"]);
   assert.deepEqual(narrowed.properties.agentScope.enum, ["user"]);
+  assert.equal(narrowed.properties.model.description, "provider/id of a small or top tier pin; the role's thinking level applies (no :effort suffix)");
   assert.equal(narrowed.description, "upstream safety description");
   assert.equal(narrowed.properties.task.description, "task definition");
 });

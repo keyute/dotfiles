@@ -107,10 +107,6 @@
   now; an edge case worth fixing only once a real user hits it gets a
   mention in the review — no code comment, no fix until that bug report is
   the task at hand.{{/* review_focus: speculative edge-case work crowds out the blocking signal and stalls shipping */}}
-{{ if not (has "convention_recording" $native) -}}
-- When I correct your approach or re-explain a convention, offer to record it in
-  the project's instruction file (AGENTS.md/CLAUDE.md).{{/* convention_recording: re-explaining is waste */}}
-{{ end -}}
 - Never read credential stores, shell history, agent transcripts/session stores,
   or auth configs unless I explicitly ask for that specific path — the sandbox
   denies them, and a denial there is the boundary, not an obstacle. If you

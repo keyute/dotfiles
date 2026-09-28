@@ -27,10 +27,10 @@ If behavior seems changed, verify (claude-code-guide) and update.
   (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin and workflow
   agents and teammates; leave its `_FORCE` variant unset, it would erase specialist pins.
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
-{{- $bare := list }}{{ $scoped := list }}{{ $frontierDeny := "" }}
-{{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $frontierDeny = . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
-- The `{{ $frontierDeny }}` deny rule is the per-call frontier guard; it
-  does not see a Workflow `agent()` opts.model, which does reach the frontier, or a
+{{- $bare := list }}{{ $scoped := list }}{{ $modelDeny := list }}
+{{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
+- The `{{ $modelDeny | join "` and `" }}` deny rules keep per-call children on the tier pins;
+  they do not see a Workflow `agent()` opts.model, which does reach the frontier, or a
   third-party `model: inherit`, nor prove routing.
 {{- $omit := list }}
 {{- range $name, $meta := .subagents }}{{ if and (get $meta "omit_instructions") (or (not (get $meta "harnesses")) (has "claude" (get $meta "harnesses"))) }}{{ $omit = append $omit $name }}{{ end }}{{ end }}

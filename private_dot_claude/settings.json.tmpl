@@ -9,10 +9,13 @@
   {{- end -}}
 {{- end -}}
 {{- $permDeny := .agents.claude.denied_tools -}}
-{{- /* The harness merges Read() denies into the Bash sandbox's read denyOnly,
-       so they are the one read-deny list; restore sandbox.filesystem.denyRead
-       if a release stops merging them. */ -}}
-{{- range $sb.denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
+{{- /* The harness merges Read()/Edit() denies into the Bash sandbox's deny
+       lists. Relative names also get Edit() because they fall inside the
+       writable cwd. Restore sandbox.filesystem.* if a release stops merging. */ -}}
+{{- range $sb.denyRead -}}
+  {{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}
+  {{- if not (or (hasPrefix "~" .) (hasPrefix "/" .)) -}}{{- $permDeny = append $permDeny (printf "Edit(%s)" .) -}}{{- end -}}
+{{- end -}}
 {{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
        resolving their op secrets here would make settings.json depend on
        1Password. An auto-approved server gets a per-tool allow for each of its
@@ -76,8 +79,7 @@
   {{- /* ccstatusline, and the model/effort row for subagents */}}
   "statusLine": {
     "type": "command",
-    "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
-    "padding": 0
+    "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline"
   },
   "subagentStatusLine": {
     "type": "command",

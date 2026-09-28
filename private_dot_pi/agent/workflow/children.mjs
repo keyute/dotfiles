@@ -18,6 +18,7 @@ export function narrowSubagentSchema(schema) {
       action: { ...properties.action, enum: [...managementActions] },
       context: { ...properties.context, enum: [...launchContexts] },
       agentScope: { ...properties.agentScope, enum: [...agentScopes] },
+      ...(properties.model && { model: { ...properties.model, description: "provider/id of a small or top tier pin; the role's thinking level applies (no :effort suffix)" } }),
     },
     additionalProperties: false,
   };

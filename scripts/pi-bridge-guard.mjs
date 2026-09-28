@@ -26,10 +26,16 @@ function envDenyNames(raw = process.env.PI_BRIDGE_DENY_NAMES) {
   if (!Array.isArray(names) || !names.every((name) => typeof name === "string" && name)) {
     throw new Error("PI_BRIDGE_DENY_NAMES is not a list of names");
   }
+  // names go into grep's rg exclusion glob verbatim; a metacharacter or
+  // separator would change what it excludes
+  if (names.some((name) => /[*?[\]{}!,\\/]/.test(name))) {
+    throw new Error("PI_BRIDGE_DENY_NAMES has a glob metacharacter or separator");
+  }
   return names;
 }
 
-// Returns a block reason, or null after rewriting input.path to the vetted path.
+// Returns a block reason, or null after rewriting input.path to the vetted path
+// (and, for grep, setting input.glob to exclude the deny names).
 export function decide(toolName, input, cwd, denyNames = envDenyNames()) {
   if (!READ_ONLY_TOOLS.has(toolName)) return `tool not allowed: ${toolName}`;
   const canonicalCwd = existsSync(cwd) ? realpathSync(cwd) : cwd;
@@ -37,7 +43,16 @@ export function decide(toolName, input, cwd, denyNames = envDenyNames()) {
   if (raw !== undefined && typeof raw !== "string") return "path must be a string";
   const expanded = raw === undefined ? canonicalCwd : raw.startsWith("~") ? resolve(homedir(), raw.slice(1)) : raw;
   const resolved = isAbsolute(expanded) ? expanded : resolve(canonicalCwd, expanded);
-  const real = existsSync(resolved) ? realpathSync(resolved) : resolved;
+  // lexical check first, so the reason for a missing outside path does not say
+  // whether it exists on the host; the realpath check below catches symlinks
+  if (resolved !== canonicalCwd && !resolved.startsWith(canonicalCwd + sep)) {
+    return `path escapes repository: ${raw ?? "(cwd)"}`;
+  }
+  // pi's read retries a missing path under unicode variants (curly quote, NFD,
+  // AM/PM space) and follows whichever exists, unvetted; no tool needs a
+  // missing path
+  if (!existsSync(resolved)) return `path does not exist: ${raw}`;
+  const real = realpathSync(resolved);
   if (real !== canonicalCwd && !real.startsWith(canonicalCwd + sep)) {
     return `path escapes repository: ${raw ?? "(cwd)"}`;
   }
@@ -45,6 +60,12 @@ export function decide(toolName, input, cwd, denyNames = envDenyNames()) {
     return `blocked path: ${raw}`;
   }
   if (UNICODE_SPACE_RE.test(real)) return `path contains a unicode space: ${raw ?? "(cwd)"}`;
+  // grep over a directory runs `rg --hidden`, so the segment check above never
+  // sees a nested .env; pi forwards glob as one `--glob`, which the guard owns
+  if (toolName === "grep") {
+    if (input.glob !== undefined) return "grep glob not allowed; narrow with path";
+    if (denyNames.length) input.glob = `!{${denyNames.join(",")}}`;
+  }
   if (raw !== undefined) input.path = real;
   return null;
 }

@@ -10,8 +10,7 @@ implementer.
 ## Steps
 
 1. **Check the tools.** If the `mcp__pi__*` tools are absent from the tool list, deferred included (the bridge has
-   not been applied into `~/.claude.json`, or `pi auth` has not been run), stop and
-   say so.
+   not been applied into `~/.claude.json`), stop and say so.
 
 2. **Pick the scope.** The bridge computes the diff and the reviewer reads the
    repo read-only — do not embed the diff. From args (ref range / paths / focus) or

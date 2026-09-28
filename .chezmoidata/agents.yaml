@@ -3,7 +3,7 @@ agents:
     home: "~/.claude"
     # lines this harness's own prompt surface already carries; the shared
     # projection skips them
-    native_coverage: [call_batching, convention_recording, docs_mcp, user_run_commands]
+    native_coverage: [call_batching, docs_mcp, user_run_commands]
     defaults:
       # a subagent_tiers key, never a second copy of the pin
       tier: top
@@ -42,6 +42,7 @@ agents:
       keybindings-help: "user-invocable-only"
       init: "user-invocable-only"
       simplify: "user-invocable-only"
+      code-review: "user-invocable-only"
       update-config: "user-invocable-only"
     # bare names leave the model's tool list, not just block the call
     denied_tools:
@@ -49,8 +50,10 @@ agents:
       - "RemoteTrigger"
       - "PushNotification"
       - "Agent(isolation:remote)"
-      # `fable` is the Agent tool's frontier model alias: no child runs it
+      # Agent-tool model aliases with no small/top pin: fable is the frontier,
+      # sonnet has no tier; children run only tier pins
       - "Agent(model:fable)"
+      - "Agent(model:sonnet)"
       # a speed bump under the never-commit/push rule, not a boundary: prefix
       # rules miss `git -C x commit` and `sh -c` forms
       - "Bash(git push:*)"
@@ -75,6 +78,7 @@ agents:
       - "agent/models.json"
       - "agent/mcp.json"
       - "agent/mcp-oauth"
+      - "agent/workflow.json"
 # shared subagent definitions rendered for every harness; bodies live in
 # .chezmoitemplates/subagents/<name>.md. Each harness maps `tier` to a pin in
 # subagent_tiers.
@@ -255,7 +259,8 @@ agent_mcp_servers:
     args: ["--reasoning-effort", high, "--model", *openai_top, "--provider", *pi_provider]
     auto_approve_tools: true
     readonly_tools: [review, advise, reply]
-    # children lose this server via their tool list
+    # rostered children lose this server (tool list, or disallowedTools on
+    # nesting roles); bare agent(), built-in claude and plugin agents keep it
     driver_only: true
     harnesses:
       - claude
@@ -306,3 +311,6 @@ agent_mcp_servers:
       - chromium
       - --headless
       - --isolated
+      # auto-named snapshots and logs land here, not in the session cwd
+      - --output-dir
+      - /tmp/claude/playwright-mcp

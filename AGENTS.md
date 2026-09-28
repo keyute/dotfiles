@@ -51,12 +51,11 @@ Rules for changing models, roles, settings or instructions; the record and
 the owner's procedure are `docs/decisions.md`, and `npm run test:pi` holds
 every mechanical check.
 
-- **One slot per change**, as a dated trial: a pin, a role's tier or effort,
-  a routing description, a harness setting, an always-loaded instruction
-  line — with its `docs/decisions.md` row in the same change. Only a
-  same-family successor to a released or retired model lands on vendor
-  evidence alone, without a trial.
-- **Dwell** for the period `docs/decisions.md` sets before judging a changed
+- **One slot per change**, as a dated trial where `docs/decisions.md`
+  requires one: a pin, a role's tier or effort, a routing description, a
+  harness setting, an always-loaded instruction line — with its
+  `docs/decisions.md` row in the same change.
+- **Dwell** for the period `docs/decisions.md` sets before judging a trial
   slot; earlier only when it is broken: rejected by the harness, withdrawn by
   the vendor, a red test, a security finding.
 - **Never cite an unrun gate.** Label evidence by the kinds `docs/decisions.md`

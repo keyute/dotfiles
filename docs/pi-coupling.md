@@ -212,8 +212,8 @@ Fallback when it lands.
   `stability.test.mjs`.
 - **srt `CLAUDE_CODE_TMPDIR`**: names the `TMPDIR` srt exports into a wrapped
   command; `sandbox-runner.mjs` sets it to the lease's scratch path.
-  Documented only in srt's source (`generateProxyEnvVars`, 0.0.75). *Pin:*
-  `sandbox-runner.test.mjs`.
+  Documented only in srt's source (`generateProxyEnvVars`). *Pin:*
+  `sandbox-runner.test.mjs`, `stability.test.mjs`.
 - **Plugin data the rows and policy read**: pi-web-search's `details.error` and
   its `web_search` name; the SDK bash schema's `properties` map
   taking the `run_in_background` flag. *Pin:* `stability.test.mjs`, with

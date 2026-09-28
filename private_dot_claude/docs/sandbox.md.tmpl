@@ -11,7 +11,8 @@ Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file
    `node_modules`, which Claude runs unsandboxed), outbound network only to
    `allowedDomains`. Reads are
    allowed everywhere except the `Read(...)` permission denies, which the harness
-   merges into the sandbox. Bash reads the agent's own home (`{{ $agent.home }}`)
+   merges into the sandbox; a relative deny name also gets an `Edit(...)` deny,
+   since it sits inside the writable cwd. Bash reads the agent's own home (`{{ $agent.home }}`)
    like any other path; the harness itself denies writes to most of it.
 2. **Permission rules** (`settings.json → permissions`) govern harness tools (Read,
    Edit, WebFetch, MCP). Deny beats allow: a denied path can only be re-opened by

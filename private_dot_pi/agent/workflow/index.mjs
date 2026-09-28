@@ -320,9 +320,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
     refreshActiveTools();
-    // classify's own availability test: a classifier that fails it silently
-    // turns every reviewed action into a prompt, or a denial without a UI.
-    for (const id of new Set([config.models.tiers.frontier, config.models.classifierFilter.model, config.models.classifierJudge.model])) {
+    // classify's own availability test, run on every tier pin and both
+    // classifier pins: a classifier that fails it silently turns every
+    // reviewed action into a prompt, or a denial without a UI.
+    for (const id of new Set([...Object.values(config.models.tiers), config.models.classifierFilter.model, config.models.classifierJudge.model])) {
       const model = ctx.modelRegistry.find(config.models.provider, id);
       if (!model || !ctx.modelRegistry.isUsingOAuth(model)) ctx.ui.notify(`${id} is pinned but unavailable on subscription OAuth in this Pi model catalog; no fallback will be used.`, "warning");
     }

@@ -9,8 +9,7 @@ verdict. The value is a decorrelated perspective — protect it from anchoring.
 ## Steps
 
 1. **Check the tools.** If the `mcp__pi__*` tools are absent from the tool list, deferred included (the bridge has
-   not been applied into `~/.claude.json`, or `pi auth` has not been run), stop and
-   say so.
+   not been applied into `~/.claude.json`), stop and say so.
 
 2. **Form your own position first — silently.** You need it for the comparison; it
    must not leak into the brief.

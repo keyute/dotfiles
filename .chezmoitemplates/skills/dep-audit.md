@@ -19,10 +19,10 @@ Audit dependency version bumps for breaking changes and produce a risk matrix.
    dependency and its from → to; it owns the sources and the return format.
 
 3. **Check against this repo's usage.** A breaking change matters only if the repo
-   touches that surface — grep for usage of removed/renamed APIs, values keys, or
-   CRD fields before flagging. Helm charts specifically: values schema changes,
-   PVC/storage or StatefulSet changes (orphaning risk), CRD version bumps, changed
-   replica/resource defaults, image/registry moves.
+   touches that surface — spot-check each reported breaking change against the
+   usage sites the researcher names before flagging. Helm charts specifically:
+   values schema changes, PVC/storage or StatefulSet changes (orphaning risk), CRD
+   version bumps, changed replica/resource defaults, image/registry moves.
 
 4. **Report a risk matrix.**
    `dependency | from → to | risk (low/med/high) | breaking changes that apply here | required actions`

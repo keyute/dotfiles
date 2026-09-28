@@ -165,10 +165,16 @@ test("assertNoPendingMigration refuses a repo pi would rewrite at startup", () =
 
 test("guard blocks escapes, denied names, and disallowed tools", () => {
   const cwd = mkdtempSync(join(tmpdir(), "pi-bridge-guard-"));
-  writeFileSync(join(cwd, "a.ts"), "");
+  // these exist, so the deny-name check is what blocks, not the missing-path one
+  for (const f of ["a.ts", ".env", "sub/.env", "sub/.env.local", "src/a.ts"]) {
+    mkdirSync(join(cwd, f, ".."), { recursive: true });
+    writeFileSync(join(cwd, f), "");
+  }
 
   assert.ok(decide("read", { path: "../x" }, cwd, NAMES));
   assert.ok(decide("read", { path: "/etc/passwd" }, cwd, NAMES));
+  // a missing outside path reports the escape, not whether it exists
+  assert.match(decide("read", { path: "/nonexistent/zz" }, cwd, NAMES), /escapes/);
   assert.ok(decide("read", { path: "~/.pi/agent/auth.json" }, cwd, NAMES));
   assert.ok(decide("read", { path: ".env" }, cwd, NAMES));
   assert.ok(decide("read", { path: "sub/.env" }, cwd, NAMES));
@@ -180,13 +186,39 @@ test("guard blocks escapes, denied names, and disallowed tools", () => {
   assert.equal(decide("ls", { path: "." }, cwd, NAMES), null);
 });
 
+test("guard owns grep's glob so a directory search skips denied names at any depth", (t) => {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "pi-bridge-grep-")));
+  mkdirSync(join(cwd, "sub"));
+  writeFileSync(join(cwd, "sub", ".env"), "SECRET=1\n");
+  writeFileSync(join(cwd, "a.txt"), "SECRET=0\n");
+  // a caller glob could re-include what the exclusion drops
+  assert.ok(decide("grep", { pattern: "SECRET", glob: "**/.env" }, cwd, NAMES));
+  assert.ok(decide("grep", { pattern: "SECRET", glob: "" }, cwd, NAMES));
+  const input = { pattern: "SECRET" };
+  assert.equal(decide("grep", input, cwd, NAMES), null);
+  assert.equal(input.glob, "!{.env}");
+  const multi = { pattern: "SECRET", path: "." };
+  assert.equal(decide("grep", multi, cwd, [".env", "id_rsa"]), null);
+  assert.equal(multi.glob, "!{.env,id_rsa}");
+  // pi's grep runs `rg --hidden --glob <glob> -- <pattern> <path>`
+  const rg = spawnSync("rg", ["--json", "--line-number", "--color=never", "--hidden", "--glob", input.glob, "--", "SECRET", cwd], { encoding: "utf8" });
+  if (rg.error) {
+    t.skip("rg not installed");
+  } else {
+    assert.match(rg.stdout, /SECRET=0/);
+    assert.doesNotMatch(rg.stdout, /SECRET=1|\.env/);
+  }
+  rmSync(cwd, { recursive: true, force: true });
+});
+
 test("guard blocks every call when the bridge's deny names are absent or malformed", () => {
   const cwd = mkdtempSync(join(tmpdir(), "pi-bridge-guard-"));
   let handler;
   guard({ on: (_, fn) => (handler = fn) });
   const saved = process.env.PI_BRIDGE_DENY_NAMES;
   try {
-    for (const raw of [undefined, "", '".env"', "[1]", '[""]']) {
+    // glob metacharacters or a separator would change grep's exclusion glob
+    for (const raw of [undefined, "", '".env"', "[1]", '[""]', '["secret[1]"]', '["a,b"]', '["!x"]', '["dir/.env"]', String.raw`["a\\b"]`]) {
       if (raw === undefined) delete process.env.PI_BRIDGE_DENY_NAMES;
       else process.env.PI_BRIDGE_DENY_NAMES = raw;
       assert.deepEqual(handler({ toolName: "ls", input: {} }, { cwd }), { block: true, reason: "guard error (fail-safe)" }, raw);
@@ -206,6 +238,8 @@ test("guard hands pi the vetted absolute path so its own normalization cannot es
   // pi strips a leading "@" and converts file:// before resolving; after the
   // guard both land inside cwd as literal names
   for (const raw of ["@/etc/passwd", "@~/.pi/agent/auth.json", "file:///etc/passwd", "a.ts"]) {
+    mkdirSync(join(cwd, raw, ".."), { recursive: true });
+    writeFileSync(join(cwd, raw), "");
     const input = { path: raw };
     assert.equal(decide("read", input, cwd, NAMES), null, raw);
     assert.equal(input.path === cwd || input.path.startsWith(`${cwd}/`), true, raw);
@@ -214,7 +248,22 @@ test("guard hands pi the vetted absolute path so its own normalization cannot es
   assert.equal(decide("ls", unset, cwd, NAMES), null);
   assert.equal("path" in unset, false);
   // pi folds unicode spaces after the rewrite, so such paths are refused
+  writeFileSync(join(cwd, "a b.ts"), "");
   assert.ok(decide("read", { path: "a b.ts" }, cwd, NAMES));
+});
+
+test("guard blocks a missing path pi's read would retry as an existing unicode variant", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-bridge-variant-")));
+  const cwd = join(root, "repo");
+  mkdirSync(cwd);
+  writeFileSync(join(root, "canary"), "");
+  writeFileSync(join(cwd, "a.ts"), "");
+  // pi falls back from l'ink to the existing l’ink, a symlink out of the repo
+  symlinkSync(join(root, "canary"), join(cwd, "l’ink"));
+  assert.match(decide("read", { path: "l'ink" }, cwd, NAMES), /does not exist/);
+  assert.match(decide("read", { path: "missing.ts" }, cwd, NAMES), /does not exist/);
+  assert.equal(decide("read", { path: "a.ts" }, cwd, NAMES), null);
+  rmSync(root, { recursive: true, force: true });
 });
 
 test("guard blocks a canary outside cwd directly and through symlinks", () => {

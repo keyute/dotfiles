@@ -25,25 +25,25 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
 {{ range $name, $role := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 | {{ $name }} | `{{ $role.model }}` | {{ $role.thinking }} |
 {{ end }}
-- `workflow/children.mjs` rejects frontier children. The `{{ .subagent_tiers.pi.frontier }}` pin is in
-  the SDK's subscription catalog; if dropped, fail unavailable, not an alias or API billing.
+- `workflow/children.mjs` rejects frontier children. Every tier pin is in the SDK's subscription
+  catalog (the startup probe checks each); if one is dropped, fail unavailable, not an alias or API billing.
 - All models draw one plan allowance at their own rate ([live rate card](https://learn.chatgpt.com/docs/pricing));
   API task cost is not Pro allowance; compare completed tasks including retries.
-- Context window: 272,000 input tokens on the subscription route (pinned catalog);
-  the model pages' 1,050,000 is API-key only. It has moved without
-  notice: trust the live readout (status line, `/session`; pi has no `/status`).
+- Context window: the subscription route's input limit is below the model page's API figure
+  and has moved without notice: trust the live readout (status line, `/session`; pi has no `/status`).
 
 ## Specialists and skills (last verified 2026-09-22)
 
 - Specialists under `~/.pi/agent/agents` render from the shared roster with an
   explicit model, tool list and policy extension; read-only ones stay read-only in
   execution. Only `general-purpose` may launch children, to Claude Code's depth.
-- Children run in the background, sharing the root policy, up to `globalConcurrencyLimit`
+{{- $sub := include "private_dot_pi/agent/extensions/subagent/config.json" | fromJson }}
+- Children run in the background, sharing the root policy, up to {{ $sub.globalConcurrencyLimit }} at once
   (`extensions/subagent/config.json`); they start fresh with no channel back (intercom off);
   batch independent launches.
 - Scripts/chains, role overrides, revival and mutating management are refused; status, stop,
-  interrupt and steer work. Runs stop at the config's `timeoutMs`, with a checkpoint steer
-  `checkpointBeforeDeadlineMs` before.
+  interrupt and steer work. Runs stop after {{ div $sub.timeoutMs 60000 }} minutes, with a checkpoint steer
+  {{ div $sub.checkpointBeforeDeadlineMs 60000 }} minutes before.
 - Skills are listed in the root's system prompt and load by `/skill:name` or on the model's own
   read. A child's MCP reach is its role's tool list; the policy refuses a tool outside it.
 

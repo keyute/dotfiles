@@ -1,7 +1,7 @@
 {{- $pi := .agents.pi -}}
 {{- $sandbox := includeTemplate "agent-sandbox" (dict "self" "pi" "root" .) | fromJson -}}
 {{- $agentDir := printf "%s/.pi/agent" .chezmoi.homeDir -}}
-{{- $denyRead := concat $sandbox.denyRead (list (printf "%s/workflow.json" $agentDir)) | uniq | sortAlpha -}}
+{{- $denyRead := $sandbox.denyRead | uniq | sortAlpha -}}
 {{- /* Only live-loaded code is write-protected: the shared node_modules deny
        plus the applied agent dir and the shell init that launches pi. Repo
        source is fair game, as for the other harnesses; chezmoi apply is the gate. */ -}}

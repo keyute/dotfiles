@@ -184,6 +184,9 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const bridgePolicy = sandboxPolicy(claudeSettingsText, "/h");
   assert.ok(bridgePolicy.denyNames.includes(".env"));
   for (const path of ["/h/.claude/ide", "/h/.claude/bridge-spawn"]) assert.ok(bridgePolicy.denyRead.includes(path), `bridge denyRead misses ${path}`);
+  // a relative deny name sits in the writable cwd, so it also gets an Edit() deny
+  assert.ok(claudeSettings.permissions.deny.includes("Edit(.env)"));
+  assert.ok(!claudeSettings.permissions.deny.some(rule => /^Edit\([~/]/.test(rule)));
   assert.ok(bridgePolicy.writableRoots.length);
   // shared network policy reaches both harnesses; Claude may append its own extra domains
   const networkKeys = { allow_local_binding: "allowLocalBinding", allowed_domains: "allowedDomains" };
@@ -450,18 +453,14 @@ test("docs/decisions.md records every tier pin and driver choice with a typed ev
       node = node[segment];
     }
   }
-  // a moved role tier or effort, or search tier, without a record edit fails here
-  for (const [key, [value]] of rows) {
-    const [, role, field] = key.match(/^subagents\.([^.]+)\.(tier|effort)$/) ?? [];
-    if (!role) continue;
-    assert.ok(value.startsWith(data.subagents[role][field]), `docs/decisions.md ${key} value does not start with "${data.subagents[role][field]}"`);
-  }
-  // "tier <t> for every role but <names> (<t>); effort <level>: <names>; <level>: the rest; ..."
-  assert.ok(rows.has("measure.role_matrix"), "docs/decisions.md has no measure.role_matrix row");
-  const [tierClause, ...effortClauses] = rows.get("measure.role_matrix")[0].split(";").map(clause => clause.trim());
-  const [, defaultTier, tierExceptions, exceptionTier] = tierClause.match(/^tier (\w+) for every role but (.+) \((\w+)\)$/) ?? [];
-  assert.ok(defaultTier, `docs/decisions.md measure.role_matrix tier clause: ${tierClause}`);
+  // measure.role_tiers: "<t> for every role but <names> (<t>)"; measure.role_matrix: "effort <level>: <names>; <level>: the rest; ..."
+  assert.ok(rows.has("measure.role_tiers"), "docs/decisions.md has no measure.role_tiers row");
+  const tierClause = rows.get("measure.role_tiers")[0];
+  const [, defaultTier, tierExceptions, exceptionTier] = tierClause.match(/^(\w+) for every role but (.+) \((\w+)\)$/) ?? [];
+  assert.ok(defaultTier, `docs/decisions.md measure.role_tiers: ${tierClause}`);
   const exceptions = tierExceptions.split(", ");
+  assert.ok(rows.has("measure.role_matrix"), "docs/decisions.md has no measure.role_matrix row");
+  const effortClauses = rows.get("measure.role_matrix")[0].split(";").map(clause => clause.trim());
   const effortOf = new Map();
   let restEffort;
   for (const [i, clause] of effortClauses.entries()) {
@@ -470,12 +469,21 @@ test("docs/decisions.md records every tier pin and driver choice with a typed ev
     if (names === "the rest") restEffort = level;
     else for (const name of names.split(", ")) effortOf.set(name, level);
   }
-  for (const name of [...exceptions, ...effortOf.keys()]) assert.ok(name in data.subagents, `docs/decisions.md measure.role_matrix: no subagents.${name}`);
+  for (const name of exceptions) assert.ok(name in data.subagents, `docs/decisions.md measure.role_tiers: no subagents.${name}`);
+  for (const name of effortOf.keys()) assert.ok(name in data.subagents, `docs/decisions.md measure.role_matrix: no subagents.${name}`);
   for (const [role, meta] of Object.entries(data.subagents)) {
-    assert.equal(meta.tier, exceptions.includes(role) ? exceptionTier : defaultTier, `docs/decisions.md measure.role_matrix: ${role} tier`);
+    assert.equal(meta.tier, exceptions.includes(role) ? exceptionTier : defaultTier, `docs/decisions.md measure.role_tiers: ${role} tier`);
     assert.equal(meta.effort, effortOf.get(role) ?? restEffort, `docs/decisions.md measure.role_matrix: ${role} effort`);
   }
-  if (rows.has("agents.pi.search_tier")) assert.ok(rows.get("agents.pi.search_tier")[0].startsWith(data.agents.pi.search_tier), `docs/decisions.md agents.pi.search_tier value does not start with "${data.agents.pi.search_tier}"`);
+  assert.ok(rows.has("agents.pi.search_tier"), "docs/decisions.md has no agents.pi.search_tier row");
+  assert.ok(rows.get("agents.pi.search_tier")[0].startsWith(data.agents.pi.search_tier), `docs/decisions.md agents.pi.search_tier value does not start with "${data.agents.pi.search_tier}"`);
+  const bridgeArgs = data.agent_mcp_servers.pi.args;
+  const bridgeEffort = `--reasoning-effort ${bridgeArgs[bridgeArgs.indexOf("--reasoning-effort") + 1]}`;
+  assert.ok(rows.has("agent_mcp_servers.pi.args"), "docs/decisions.md has no agent_mcp_servers.pi.args row");
+  assert.ok(rows.get("agent_mcp_servers.pi.args")[0].includes(bridgeEffort), `docs/decisions.md agent_mcp_servers.pi.args value lacks "${bridgeEffort}"`);
+  const modelDenies = data.agents.claude.denied_tools.filter(rule => rule.startsWith("Agent(model:"));
+  assert.ok(rows.has("agents.claude.denied_tools.models"), "docs/decisions.md has no agents.claude.denied_tools.models row");
+  assert.equal(rows.get("agents.claude.denied_tools.models")[0], modelDenies.join(", "), "docs/decisions.md agents.claude.denied_tools.models value");
   const cls = data.agents.pi.defaults.classifier;
   assert.ok(rows.has("agents.pi.defaults.classifier"), "docs/decisions.md has no agents.pi.defaults.classifier row");
   for (const part of [`tier ${cls.tier}`, `filter ${cls.filter_effort}`, `judge ${cls.judge_effort}`]) {
@@ -539,8 +547,8 @@ test("model pins live only in agents.yaml", () => {
   const hits = [
     ...walk(join(source, ".chezmoitemplates")),
     ...walk(join(source, "private_dot_claude")),
-    ...files("private_dot_pi/agent", name => name.endsWith(".tmpl")),
-    ...walk(join(source, "private_dot_pi/agent/docs")),
+    ...walk(join(source, "private_dot_pi")).filter(file => !file.endsWith(".test.mjs")),
+    ...walk(join(source, "dot_agents")),
     ...files("scripts", name => name.endsWith(".mjs") && !name.endsWith(".test.mjs")),
     // this file: the literal role tables it used to carry are what the gate replaces
     fileURLToPath(import.meta.url),

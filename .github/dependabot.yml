@@ -6,6 +6,10 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    # held: docs/decisions.md pin.pi_plugins
+    ignore:
+      - dependency-name: "pi-subagents"
+      - dependency-name: "pi-mcp-adapter"
     groups:
       # pi breaks extension APIs across 0.x minors, so its family moves as one
       # PR of its own; first matching group wins, keeping it out of non-breaking

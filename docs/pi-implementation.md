@@ -84,7 +84,7 @@ here.
   These are request-shape guarantees, not live subscription cache/billing proof.
   No cache plugin or long-TTL override: this request builder does not request one.
 - 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
-- 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The two-hour runtime backstop with a five-minute checkpoint/stop steer replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts: `bg_wait` window expiry is non-terminal, the separate headless `agent_end` auto-drain keeps its 30-minute limit, and a nesting child collects results during its turn, not through that drain.
+- 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The `timeoutMs` runtime backstop with its `checkpointBeforeDeadlineMs` checkpoint/stop steer (`extensions/subagent/config.json`) replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts: `bg_wait` window expiry is non-terminal, the separate headless `agent_end` auto-drain keeps its 30-minute limit, and a nesting child collects results during its turn, not through that drain.
 - 2026-09-22: no on-disk patches; two guarded prototype replacements (skill display, pending input), pinned in `stability.test.mjs`. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. 2026-09-23: rather than wait, the extension owns the `!` round-trip through documented surfaces (composer submit, custom message/entry, its own renderer; `docs/pi-coupling.md`); when the hook ships, hand execution back to pi and keep only the renderer. 2026-09-23, later: the `!` command honours pi's `shellPath`/`shellCommandPrefix` (managed zsh sourcing `~/.zshrc`) through the SDK's `SettingsManager`, so the hand-back changes nothing the user sees.
 - 2026-09-24, maintainability survey: keep the owned UI and harness, adopt
   nothing. pi 0.87.1 (latest) has no user-message, pending-input, bash-block or
@@ -141,9 +141,6 @@ here.
 - The approval classifier's model and efforts: `docs/decisions.md`,
   `agents.pi.defaults.classifier`; filter `off` maps to the model's `none`
   through pi-ai.
-- 2026-09-18: no second model vendor for children; a weaker substitute repays
-  its saving through repairs in the driver's context (trigger:
-  `docs/decisions.md`, `measure.pi_second_vendor`).
 - The host copies the settings `editorPaddingX` (default 0) onto custom editors
   right after the factory runs and on settings reloads; `CaretEditor` clamps
   `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`
@@ -186,7 +183,9 @@ here.
 - Read isolation is the guard extension, not a sandbox: pi's built-in tools run
   in-process, so `scripts/pi-bridge-guard.mjs` rewrites each tool path to the
   vetted canonical path inside `cwd` (which must be a git worktree root) and
-  blocks Claude's bare-name `Read()` denies (`.env`) at any depth. Reversal trigger: pi's print mode, tool allowlist or
+  blocks Claude's bare-name `Read()` denies (`.env`) at any depth; for grep it
+  owns the `--glob` pi forwards to `rg --hidden` (pinned in `stability.test.mjs`)
+  so a directory search excludes those names. Reversal trigger: pi's print mode, tool allowlist or
   `tool_call` blocking regresses, or OpenAI withdraws ChatGPT-subscription
   OAuth from third-party harnesses (sanctioned as of 2026-09-05) — then the
   review backend needs a new transport.

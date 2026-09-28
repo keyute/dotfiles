@@ -200,6 +200,8 @@ const pins = [
   ["SettingsManager exposes getShellPath and getShellCommandPrefix", "@earendil-works/pi-coding-agent/dist/core/settings-manager.d.ts", [/getShellPath\(\): string \| undefined;/, /getShellCommandPrefix\(\): string \| undefined;/]],
   ["SettingsManager.create defaults projectTrusted to true and skips the project file when it is false, so the shell settings read must pass the session's trust decision", "@earendil-works/pi-coding-agent/dist/core/settings-manager.js", [/const projectTrusted = options\.projectTrusted \?\? true;/, /if \(scope === "project" && !projectTrusted\) \{/]],
   ["ExtensionContext declares isProjectTrusted, the decision the shell settings read is gated on", "@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts", [/isProjectTrusted\(\): boolean;/]],
+  ["pi's grep runs rg --hidden and forwards glob as one --glob argument, which the bridge guard owns to exclude deny names", "@earendil-works/pi-coding-agent/dist/core/tools/grep.js", [/const args = \["--json", "--line-number", "--color=never", "--hidden"\];/, /args\.push\("--glob", glob\);/]],
+  ["srt exports CLAUDE_CODE_TMPDIR as the wrapped command's TMPDIR", "@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js", [/export function generateProxyEnvVars\(/, /const tmpdir = process\.env\.CLAUDE_CODE_TMPDIR \|\|/, /envVars\.push\(`TMPDIR=\$\{tmpdir\}`\)/]],
 ];
 for (const [claim, file, patterns] of pins) {
   test(`pin: ${claim} (${file})`, () => {
