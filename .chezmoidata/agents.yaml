@@ -30,6 +30,7 @@ agents:
         - "code.claude.com"
     plugins:
       "frontend-design@claude-plugins-official": true
+    # disableBundledSkills stays unset: it also drops the review skills
     # Bundled-skill listing: `off` drops a skill from the model's listing,
     # `user-invocable-only` keeps /name while hiding it from the model.
     skill_overrides:
@@ -221,11 +222,7 @@ agent_sandbox:
       "~/.npm/_cacache": write
       "~/.npm/_logs": write
       "~/Library/Caches/uv": write
-    resolved_paths:
-      # path resolved at chezmoi render time; skipped if `requires` binary absent
-      - mode: write
-        requires: go
-        command: "go env GOCACHE"
+      "~/Library/Caches/go-build": write
   network:
     allow_local_binding: true
     allowed_domains:

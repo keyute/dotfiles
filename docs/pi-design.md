@@ -175,7 +175,7 @@ arrived at is in git history (`git log -p docs/pi-design.md`).
    pi-flavoured markers in place of `⏺`/`◯`.
    - *2026-09-22:* the peek is a rule 11 dialog over the child's own transcript: the run's `events.jsonl` replayed
      through rule 2's row grammar (tool rows with their `↳` summary, bodies under ctrl+o, assistant markdown, sent
-     steers as rule 5 blocks), scrolling, a
+     steers as rule 5 blocks), a live header (`agent › task · model · tokens · elapsed · current tool`), scrolling, a
      rule 5 composer whose Enter steers the child, `/stop` behind a confirm, Esc back to the row it left. A run whose
      artifact directory this process never saw (restored, foreground) keeps pi-subagents' text tail. *Why:* the text
      tail named tools without outcomes; the owner wants to look at and talk to a child as if it were the main thread.

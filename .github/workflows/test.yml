@@ -18,7 +18,9 @@ concurrency:
 jobs:
   # docs/, README.md, AGENTS.md, CLAUDE.md and .claude/ are chezmoi-ignored —
   # repo-local only — so a commit touching nothing else cannot change a
-  # rendered target. Everything else, this workflow included, runs render.
+  # rendered target. docs/decisions.md and AGENTS.md still trigger the run:
+  # render.test reads them from source. Everything else, this workflow
+  # included, runs render.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -49,9 +51,9 @@ jobs:
           filters: |
             chezmoi:
               - '**'
-              - '!docs/**'
+              - '!docs/pi-*.md'
+              - '!docs/agent-authoring.md'
               - '!README.md'
-              - '!AGENTS.md'
               - '!CLAUDE.md'
               - '!.claude/**'
 

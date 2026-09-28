@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // MCP bridge exposing narrow pi-hosted GPT consultation tools over the
 // repo-local pi CLI's headless JSON mode. Two load-bearing properties of the
-// MCP transport (2026-09-23): harness-spawned outside the Bash sandbox (so the
+// MCP transport: harness-spawned outside the Bash sandbox (so the
 // ~/.pi read-deny stays intact) and MCP tools that permission allow rules make
 // prompt-free in plan mode — a Bash-based transport gets neither.
 //
@@ -15,10 +15,6 @@
 // --provider/--model/--reasoning-effort from the rendered MCP config, not interactive pi settings, so they cannot
 // drift from the declared value. Callers choose scope (base/prompt/brief),
 // never tools, provider, or flags.
-//
-// Reversal trigger: pi's print mode (`--mode json`), its tool allowlist, or
-// `tool_call` blocking regresses, or OpenAI withdraws subscription OAuth from
-// third-party harnesses — any of those and this bridge needs a new transport.
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
@@ -49,7 +45,7 @@ const readPolicy = () => sandboxPolicy(readFileSync(CLAUDE_SETTINGS, "utf8"));
 const expandHome = (p, home) => (p.startsWith("~/") ? join(home, p.slice(2)) : p);
 const canonical = (p) => (existsSync(p) ? realpathSync(p) : p);
 // sandboxed Bash can plant a hostile .git/config under any root it may write
-// outside a project: the settings' allowWrite (resolved GOCACHE included) plus
+// outside a project: the settings' allowWrite plus
 // the harness's own scratch dirs, which settings never list
 function sandboxWritableRoots(settings, home) {
   const allowWrite = settings.sandbox?.filesystem?.allowWrite;

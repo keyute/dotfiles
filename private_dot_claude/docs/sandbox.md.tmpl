@@ -30,10 +30,6 @@ Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file
 {{ range $path, $mode := .agent_sandbox.filesystem.paths -}}
 | `{{ $path }}` | {{ $mode }} |
 {{ end }}
-Resolved at render time (skipped when the binary is absent):
-{{ range .agent_sandbox.filesystem.resolved_paths -}}
-- `{{ .command }}` → {{ .mode }} (requires `{{ .requires }}`)
-{{ end }}
 ## Own home ({{ $agent.home }})
 
 Denied to this agent even for the Read tool (privacy — narrow in agents.yaml if needed):

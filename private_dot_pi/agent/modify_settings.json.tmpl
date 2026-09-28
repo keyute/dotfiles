@@ -18,7 +18,7 @@
 {{- $_ := set $managed "terminal" (dict "showImages" false) -}}
 {{- /* no horizontal transcript padding */ -}}
 {{- $_ := set $managed "outputPad" 0 -}}
-{{- /* the bash tool and ! commands run in zsh with the interactive config */ -}}
+{{- /* ! commands run in zsh with the interactive config */ -}}
 {{- $_ := set $managed "shellPath" "/bin/zsh" -}}
 {{- $_ := set $managed "shellCommandPrefix" "source ~/.zshrc" -}}
 {{- /* drops the subagent extension's built-in agents; the roster is the whole set */ -}}

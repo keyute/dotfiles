@@ -539,7 +539,7 @@ test("the broker refuses to start without a numeric child concurrency limit", as
   await assert.rejects(startBroker(config, root, async () => true), /Cannot read the child concurrency limit/);
 });
 
-test("an inherit-model child resolves to the parent's model before the tier check", { skip }, async t => {
+test("an inherit-model child resolves to the parent's model before the tier check", async t => {
   const { config } = fixture(t);
   const role = config.agents["fixture-reader"];
   config.agents["fixture-worker"] = { ...role, readonly: false };

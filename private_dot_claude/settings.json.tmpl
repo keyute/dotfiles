@@ -35,6 +35,7 @@
     {{- /* sessions start in plan mode, not default */}}
     "defaultMode": "plan"
   },
+  {{- /* driver pin from agents.yaml */}}
   "model": {{ (index .subagent_tiers.claude .agents.claude.defaults.tier) | toJson }},
   {{- /* every Claude pin that takes an effort knob gets the driver effort, so a
          /model change keeps it */}}
@@ -49,7 +50,9 @@
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
     {{- /* also disables the bundled `loop` skill; add `loop: "off"` to skill_overrides if this goes */}}
-    "CLAUDE_CODE_DISABLE_CRON": "1"
+    "CLAUDE_CODE_DISABLE_CRON": "1",
+    {{- /* no Statsig telemetry (local-only) */}}
+    "DISABLE_TELEMETRY": "1"
   },
   {{- /* Mirrors herdr's canonical SessionStart entry (structural JSON equality)
          so `herdr integration install claude` leaves this file untouched; the
@@ -70,6 +73,7 @@
   },
   {{- /* no Remote Control bridge to claude.ai or the mobile app */}}
   "disableRemoteControl": true,
+  {{- /* ccstatusline, and the model/effort row for subagents */}}
   "statusLine": {
     "type": "command",
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline",
@@ -79,11 +83,12 @@
     "type": "command",
     "command": "{{ .chezmoi.homeDir }}/.claude/subagent-statusline.js"
   },
+  {{- /* plugin set from agents.yaml */}}
   "enabledPlugins": {{ .agents.claude.plugins | toPrettyJson | indent 2 | trim }},
+  {{- /* Bash runs in the OS sandbox; refuse to start without it */}}
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,
-    "autoAllowBashIfSandboxed": true,
     "network": {
       "allowedDomains": {{ $allowedDomains | uniq | toPrettyJson | indent 6 | trim }},
       "allowLocalBinding": {{ .agent_sandbox.network.allow_local_binding }}
@@ -112,5 +117,6 @@
   "disableClaudeAiConnectors": true,
   "syncClaudeAiSkills": false,
   "syncClaudeAiPlugins": false,
+  {{- /* bundled-skill listing from agents.yaml */}}
   "skillOverrides": {{ .agents.claude.skill_overrides | toPrettyJson | indent 2 | trim }}
 }

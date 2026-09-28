@@ -12,11 +12,12 @@ import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // byte budgets (single owner; docs/agent-authoring.md points here):
-// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md
+// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, pi's subagent tool description
 const PROJECTION_MAX_BYTES = 7000;
 const ON_DEMAND_DOC_MAX_BYTES = 6000;
 const GENERATED_SANDBOX_DOC_MAX_BYTES = 4000;
 const REPO_AGENTS_MAX_BYTES = 6000;
+const SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES = 5000;
 // decisions.md is read on trigger reviews only, never per turn: a per-row cap bounds verbosity, and the file grows one row per decision
 const DECISION_ROW_MAX_BYTES = 400;
 // roles take every documented level; the driver's settings effortLevel excludes `max`, which is session-only
@@ -151,6 +152,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     [".claude/docs/harness.md", claudeHarness, ON_DEMAND_DOC_MAX_BYTES],
     [".pi/agent/docs/sandbox.md", piSandboxDoc, ON_DEMAND_DOC_MAX_BYTES],
     [".claude/docs/sandbox.md", claudeSandboxDoc, GENERATED_SANDBOX_DOC_MAX_BYTES],
+    [".pi/agent/subagent-tool-description.md", description, SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES],
     // chezmoi-ignored, so read from source: it loads in every session in this repo
     ["AGENTS.md", readSource("AGENTS.md"), REPO_AGENTS_MAX_BYTES],
   ]) {
@@ -421,6 +423,14 @@ test("docs/decisions.md records every tier pin and driver choice with a typed ev
     const expected = `${data.agents[h].defaults.tier}, effort ${data.agents[h].defaults.reasoning_effort}`;
     assert.ok(rows.get(key)[0].startsWith(expected), `docs/decisions.md ${key} value does not start with "${expected}"`);
   }
+  // a moved role tier or effort, or search tier, without a record edit fails here
+  for (const [key, [value]] of rows) {
+    const [, role, field] = key.match(/^subagents\.([^.]+)\.(tier|effort)$/) ?? [];
+    if (!role) continue;
+    assert.ok(role in data.subagents, `docs/decisions.md ${key}: no subagents.${role} in agents.yaml`);
+    assert.ok(value.startsWith(data.subagents[role][field]), `docs/decisions.md ${key} value does not start with "${data.subagents[role][field]}"`);
+  }
+  if (rows.has("agents.pi.search_tier")) assert.ok(rows.get("agents.pi.search_tier")[0].startsWith(data.agents.pi.search_tier), `docs/decisions.md agents.pi.search_tier value does not start with "${data.agents.pi.search_tier}"`);
   const cls = data.agents.pi.defaults.classifier;
   assert.ok(rows.has("agents.pi.defaults.classifier"), "docs/decisions.md has no agents.pi.defaults.classifier row");
   for (const part of [`tier ${cls.tier}`, `filter ${cls.filter_effort}`, `judge ${cls.judge_effort}`]) {

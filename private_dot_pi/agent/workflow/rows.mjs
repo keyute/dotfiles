@@ -248,7 +248,7 @@ export const foldKey = (name, args = {}) => {
     if (args.agent && args.task) return "agent";
     return SUBAGENT_ACTIONS[args.action] ?? null;
   }
-  if (name === "web_search" || name === "url_context") return "web";
+  if (name === "web_search") return "web";
   return name.startsWith("workspace_") && name !== "workspace_task" ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null;
 };
 

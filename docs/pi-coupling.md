@@ -13,7 +13,7 @@ An entry whose owned surface has a native pi or plugin equivalent names it
 under *Fallback:* with the behaviour lost (2026-09-26). When a pi bump breaks a
 pin on such a surface, the default is to delete the surface and fall back, not
 to repair it, unless the owner chooses repair. A new owned surface names its
-Fallback and its pin count when it lands.
+Fallback when it lands.
 
 - **Documented pi surfaces** (listed so a bump re-checks them): tool renderers
   (`renderShell: "self"`, `context.expanded/toolCallId/invalidate/state`),
@@ -32,7 +32,7 @@ Fallback and its pin count when it lands.
 - **Plugin tool Proxy** (`plugin-api.mjs` `pluginApi`, 2026-09-22). pi-subagents,
   pi-mcp-adapter and pi-web-search get a Proxy of the extension API whose
   `registerTool` swaps the renderers of `subagent`, `bg_wait`, the supervisor
-  channel, `mcp`, `mcp__*`, `web_search` and `url_context`, and for `subagent`
+  channel, `mcp`, `mcp__*` and `web_search`, and for `subagent`
   and `mcp` replaces schema and description; executors are kept. `subagent`:
   schema narrowed to managed keys, description from the rendered
   `subagent-tool-description.md` (missing/empty fails installation). `mcp`
@@ -50,7 +50,12 @@ Fallback and its pin count when it lands.
   install/auth/UI actions. *Pin:* `stability.test.mjs` (registrations, both
   `details` fields); `plugin-api.test.mjs` and `integration.test.mjs` (schema,
   description, real package registration); `render.test.mjs` (no disabled
-  workflow API in the rendered subagent description).
+  workflow API in the rendered subagent description). *Fallback:* the raw
+  plugin API (plugins register on pi's own); lost: rule 2 rows and rule 10 for
+  plugin tools, whose upstream renderers return, and the narrowed
+  `subagent`/`mcp` schema and descriptions, so the model sees calls the
+  `tool_call` hook and `scriptMode: false` refuse; the quiet completion notice
+  rides the same Proxy.
 - **MCP settings** (2026-09-22): public `namespaceProxyTools: false`,
   `jev: false` and `freezeDirectTools: true`. *Why:* gateway plus direct
   Context7 only, lexical search, a stable tool surface after initialization.
@@ -95,6 +100,14 @@ Fallback and its pin count when it lands.
   native skill card; lost: rule 5's single user box — the sent skill shows as a
   second block carrying its instruction body. *Pin:* bundled-entry and
   real-render tests, `stability.test.mjs`.
+- **Skill listing**: the root's `before_agent_start` hook fills
+  `systemPromptOptions.sections.skills` from the undocumented
+  `formatSkillsForPrompt(skills, "read")` and rewrites its "Use the read tool"
+  sentence to name `workspace_read`. *Why:* pi renders its `<skills>` section
+  only when a tool named `read` or `bash` is active, and the workflow exposes
+  only `workspace_*` tools. *Fallback:* none native; lost: the root's skill
+  list, so skills load only by `/skill:name`. *Pin:* `stability.test.mjs` (the
+  `<skills>` gate and the helper's read-tool sentence).
 - **Pending input** (2026-09-24): replaces only
   `InteractiveMode.updatePendingMessagesDisplay` on the same host class, using
   `pendingMessagesContainer`, `getAllQueuedMessages` and `getAppKeyDisplay`;
@@ -122,7 +135,10 @@ Fallback and its pin count when it lands.
   `setCursorCol`, `handleBackspace` and undo snapshots. *Why:* the shell-mode
   prefix renders and deletes atomically while native history, paste and
   submission keep the original text. *Retire:* when pi exposes a
-  shell-mode/prompt-prefix editor API. *Pin:* `stability.test.mjs`,
+  shell-mode/prompt-prefix editor API. *Fallback:* pi's default editor render
+  and a plain `!` typed into the text; lost: rule 5's composer shape (shaded
+  block, `❯` prompt) and shell mode's red `!` prompt that deletes atomically.
+  *Pin:* `stability.test.mjs`,
   `caret.test.mjs` (render shape), real-editor wrapping/navigation/undo tests.
 - **Questionnaire** (2026-09-17): uses public `custom` and `Markdown`; native
   paste expansion preserves complete notes and free answers.
@@ -194,21 +210,27 @@ Fallback and its pin count when it lands.
   Documented only in srt's source (`generateProxyEnvVars`, 0.0.75). *Pin:*
   `sandbox-runner.test.mjs`.
 - **Plugin data the rows and policy read**: pi-web-search's `details.error` and
-  its `web_search`/`url_context` names; the SDK bash schema's `properties` map
+  its `web_search` name; the SDK bash schema's `properties` map
   taking the `run_in_background` flag. *Pin:* `stability.test.mjs`, with
   `pi.sendMessage`, `ctx.ui.input` and `ctx.ui.select` checked against the docs.
 - **Working row**: the extension subclasses pi-tui's `Loader` and docks it via
   `setWidget`'s documented component form at `placement: "aboveEditor"`. *Why:*
   pi's own row and `setWidget`'s string form hardcode an indent and a leading
   blank line. It stands down for pi's compaction indicator; pi's auto-retry
-  countdown (no documented event) shows alongside it. *Pin:*
+  countdown (no documented event) shows alongside it. *Fallback:* pi's own
+  working row (`setWorkingVisible` left on); lost: rule 3's column-0 row with a
+  trailing blank line, pi's indent and leading blank line returning, and the
+  frozen settled-root snapshot (`Loader` subclass's `snapshot`). *Pin:*
   `stability.test.mjs`.
 - **Blanked reasoning** (2026-09-18): `message_end` blanks the thinking text
   and `message_update` swaps blanked copies into the streaming message, gated
   on `message.api`. *Why:* pi spaces an assistant message from its raw
   reasoning before any display hook runs (earendil-works/pi#8154). *Accepted
   cost:* after a model change, earlier reasoning no longer reaches the new
-  model as plain text. *Pin:* `stability.test.mjs`.
+  model as plain text. *Fallback:* the `assistant-thinking` transformer alone
+  (or pi's `hideThinkingBlock`); lost: rule 2's "takes no space" — pi's spacer
+  before an assistant message that reasoned comes back. *Pin:*
+  `stability.test.mjs`.
 - **Usage segments** (outside the npm pin): `GET
   chatgpt.com/backend-api/wham/usage`, an unversioned ChatGPT backend surface,
   read with pi's stored `openai-codex` credential (exported
