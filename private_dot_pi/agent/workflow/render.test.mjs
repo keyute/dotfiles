@@ -37,11 +37,14 @@ const yamlComments = text => text.split("\n").flatMap(line => {
   }
   return [];
 });
-// capitalised model-family names of the current pins (claude-<family>-..., gpt-<n>-<family>)
-const familyNouns = data => [...new Set(Object.values(data.subagent_tiers).flatMap(Object.values).map(pin => {
+// variant suffixes after the version (a -pro id), not families: they collide with ordinary words like "Pro allowance"
+const NON_FAMILY_SEGMENTS = ["pro", "mini", "nano", "codex"];
+// capitalised model-family names of the current pins (claude-<family>-..., gpt-<n>-<family>); a bare gpt-<n> has none
+const familyNouns = data => [...new Set(Object.values(data.subagent_tiers).flatMap(Object.values).flatMap(pin => {
   const parts = pin.split("-");
   const family = pin.startsWith("claude-") ? parts[1] : parts[2];
-  return family[0].toUpperCase() + family.slice(1);
+  if (!/^[a-z]+$/i.test(family ?? "") || NON_FAMILY_SEGMENTS.includes(family.toLowerCase())) return [];
+  return [family[0].toUpperCase() + family.slice(1)];
 }))];
 
 const fixture = (t) => {
@@ -198,6 +201,19 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   // read-only tool on both harnesses, never a whole server
   for (const tool of data.agent_mcp_servers.pi.readonly_tools) assert.ok(claudeSettings.permissions.allow.includes(`mcp__pi__${tool}`), tool);
   assert.ok(!claudeSettings.permissions.allow.some(rule => /^mcp__[^_]+$/.test(rule)), "a server-wide mcp allow");
+  // driver_only is consumed on Claude (the tool-list-less nesting role disallows the server); pi never renders it
+  const driverOnly = Object.entries(data.agent_mcp_servers).filter(([, server]) => server.driver_only).map(([name]) => name);
+  // the bridge itself must stay driver-only (decisions.md parity.cross_model), or the loop below checks nothing
+  assert.ok(driverOnly.includes("pi"), "agent_mcp_servers.pi is not driver_only");
+  const claudeGeneral = run("cat", target(".claude/agents/general-purpose.md"));
+  const disallowed = /^disallowedTools: (.*)$/m.exec(claudeGeneral)?.[1].split(", ") ?? [];
+  for (const name of driverOnly) {
+    assert.ok(disallowed.includes(`mcp__${name}`), `claude general-purpose does not disallow mcp__${name}`);
+    assert.ok(!(name in workflow.mcp), `pi renders driver_only server ${name}`);
+  }
+  for (const text of [JSON.stringify(workflow), run("cat", target(".pi/agent/agents/general-purpose.md"))]) {
+    assert.doesNotMatch(text, /driver_only|disallowedTools/, "a pi render references driver_only");
+  }
   // live code Claude runs unsandboxed is write-denied to sandboxed Bash, as pi's workflow.json does
   assert.ok(claudeSettings.sandbox.filesystem.denyWrite.some(path => path.endsWith("/node_modules")));
   // the search plugin's config resolves its tier or fails the render
@@ -423,12 +439,41 @@ test("docs/decisions.md records every tier pin and driver choice with a typed ev
     const expected = `${data.agents[h].defaults.tier}, effort ${data.agents[h].defaults.reasoning_effort}`;
     assert.ok(rows.get(key)[0].startsWith(expected), `docs/decisions.md ${key} value does not start with "${expected}"`);
   }
+  // a key is a namespace label or a live agents.yaml path; a list-valued path may carry one sub-label
+  for (const key of rows.keys()) {
+    if (/^(parity|setting|measure|pin|instruction)\./.test(key)) continue;
+    let node = data;
+    const segments = key.split(".");
+    for (const [i, segment] of segments.entries()) {
+      if (Array.isArray(node) && i === segments.length - 1) break;
+      assert.ok(node && typeof node === "object" && !Array.isArray(node) && segment in node, `docs/decisions.md ${key}: neither a namespace label nor an agents.yaml path`);
+      node = node[segment];
+    }
+  }
   // a moved role tier or effort, or search tier, without a record edit fails here
   for (const [key, [value]] of rows) {
     const [, role, field] = key.match(/^subagents\.([^.]+)\.(tier|effort)$/) ?? [];
     if (!role) continue;
-    assert.ok(role in data.subagents, `docs/decisions.md ${key}: no subagents.${role} in agents.yaml`);
     assert.ok(value.startsWith(data.subagents[role][field]), `docs/decisions.md ${key} value does not start with "${data.subagents[role][field]}"`);
+  }
+  // "tier <t> for every role but <names> (<t>); effort <level>: <names>; <level>: the rest; ..."
+  assert.ok(rows.has("measure.role_matrix"), "docs/decisions.md has no measure.role_matrix row");
+  const [tierClause, ...effortClauses] = rows.get("measure.role_matrix")[0].split(";").map(clause => clause.trim());
+  const [, defaultTier, tierExceptions, exceptionTier] = tierClause.match(/^tier (\w+) for every role but (.+) \((\w+)\)$/) ?? [];
+  assert.ok(defaultTier, `docs/decisions.md measure.role_matrix tier clause: ${tierClause}`);
+  const exceptions = tierExceptions.split(", ");
+  const effortOf = new Map();
+  let restEffort;
+  for (const [i, clause] of effortClauses.entries()) {
+    const [, level, names] = (i === 0 ? clause.replace(/^effort /, "") : clause).match(/^(\w+): (.+)$/) ?? [];
+    assert.ok(level, `docs/decisions.md measure.role_matrix effort clause: ${clause}`);
+    if (names === "the rest") restEffort = level;
+    else for (const name of names.split(", ")) effortOf.set(name, level);
+  }
+  for (const name of [...exceptions, ...effortOf.keys()]) assert.ok(name in data.subagents, `docs/decisions.md measure.role_matrix: no subagents.${name}`);
+  for (const [role, meta] of Object.entries(data.subagents)) {
+    assert.equal(meta.tier, exceptions.includes(role) ? exceptionTier : defaultTier, `docs/decisions.md measure.role_matrix: ${role} tier`);
+    assert.equal(meta.effort, effortOf.get(role) ?? restEffort, `docs/decisions.md measure.role_matrix: ${role} effort`);
   }
   if (rows.has("agents.pi.search_tier")) assert.ok(rows.get("agents.pi.search_tier")[0].startsWith(data.agents.pi.search_tier), `docs/decisions.md agents.pi.search_tier value does not start with "${data.agents.pi.search_tier}"`);
   const cls = data.agents.pi.defaults.classifier;
@@ -445,6 +490,17 @@ test("docs/decisions.md records every tier pin and driver choice with a typed ev
     // a trigger is an event or a threshold: it is never empty and never a calendar date
     assert.ok(trigger && trigger.length > 0, `docs/decisions.md ${key}: empty trigger`);
     assert.doesNotMatch(trigger, /\d{4}-\d{2}-\d{2}/, `docs/decisions.md ${key}: dated trigger`);
+  }
+});
+
+test("every native_coverage key gates a line of the shared projection", (t) => {
+  const { data: load } = fixture(t);
+  const data = load();
+  const instructions = readSource(".chezmoitemplates/agent-instructions.md");
+  for (const [h, agent] of Object.entries(data.agents)) {
+    for (const key of agent.native_coverage ?? []) {
+      assert.ok(instructions.includes(`has "${key}" $native`), `agents.${h}.native_coverage ${key}: no line in agent-instructions.md checks it`);
+    }
   }
 });
 

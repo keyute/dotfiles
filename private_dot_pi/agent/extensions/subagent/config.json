@@ -1,6 +1,5 @@
 {
   "globalConcurrencyLimit": 20,
-  "maxActiveAsyncRunsPerSession": 20,
   "timeoutMs": 7200000,
   "checkpointBeforeDeadlineMs": 300000,
   "toolDescriptionMode": "compact",

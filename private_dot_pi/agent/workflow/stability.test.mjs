@@ -187,17 +187,17 @@ const pins = [
   ["bashExecutionToText's literal shape, which contextText mirrors for the `!` row and its recorded context text", "@earendil-works/pi-coding-agent/dist/core/messages.js", [/let text = `Ran \\`\$\{msg\.command\}\\`\\n`;/, /text \+= "\(no output\)";/, /text \+= "\\n\\n\(command cancelled\)";/, /text \+= `\\n\\nCommand exited with code \$\{msg\.exitCode\}`;/]],
   ["a triggerTurn: false custom message sent while the agent streams is deferred to the end of the turn rather than appended between an in-flight tool call and its result", "@earendil-works/pi-coding-agent/dist/core/agent-session.js", [/else if \(this\.isStreaming\) \{[\s\S]{0,400}?this\._pendingCustomMessages\.push\(appMessage\);/]],
   ["Alt+Enter on a non-streaming session acts like plain Enter, calling the editor's own onSubmit directly", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/else if \(this\.editor\.onSubmit\) \{\s*this\.editor\.setText\(""\);\s*this\.editor\.onSubmit\(text\);/]],
+  ["ExtensionUIContext declares input(title, placeholder?, opts?) resolving to string or undefined, the call plan approval's feedback prompt makes outside the TUI", "@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts", [/input\(title: string, placeholder\?: string, opts\?: ExtensionUIDialogOptions\): Promise<string \| undefined>;/]],
   ["ExtensionContext declares isIdle, the signal this editor's Esc precedence and the shell runner's abortable() gate on", "@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts", [/isIdle\(\): boolean;/]],
   ["pi-tui's main-screen renderer throws when a rendered line's visible width exceeds the terminal's, which is why every row here wraps to width", "@earendil-works/pi-tui/dist/tui-main-screen.js", [/`Rendered line \$\{i\} exceeds terminal width \(\$\{visibleWidth\(line\)\} > \$\{width\}\)\.`/]],
   // The shell runner's shellPath/shellCommandPrefix wiring (docs/pi-coupling.md's
   // owned `!` block): the bash tool's own prefix composition, the lazy shell
-  // resolution createLocalBashOperations wraps, SettingsManager's shell getters
-  // and export, and the model's workspace_bash tool staying on bash regardless
-  // of the setting.
+  // resolution createLocalBashOperations wraps, SettingsManager's shell getters,
+  // and the model's workspace_bash tool staying on bash regardless of the
+  // setting.
   ["the bash tool joins commandPrefix and command with a newline before spawning, the composition the shell runner mirrors", "@earendil-works/pi-coding-agent/dist/core/tools/bash.js", [/const resolvedCommand = commandPrefix \? `\$\{commandPrefix\}\\n\$\{command\}` : command;/]],
   ["createLocalBashOperations resolves shellPath through getShellConfig lazily, at exec time, not at construction", "@earendil-works/pi-coding-agent/dist/core/tools/bash.js", [/export function createLocalBashOperations\(options\) \{\s*return createLocalShellOperations\("bash", \(\) => getShellConfig\(options\?\.shellPath\)\);/]],
   ["SettingsManager exposes getShellPath and getShellCommandPrefix", "@earendil-works/pi-coding-agent/dist/core/settings-manager.d.ts", [/getShellPath\(\): string \| undefined;/, /getShellCommandPrefix\(\): string \| undefined;/]],
-  ["SettingsManager is exported from the package index", "@earendil-works/pi-coding-agent/dist/index.js", [/export \{ SettingsManager, \} from "\.\/core\/settings-manager\.js";/]],
   ["SettingsManager.create defaults projectTrusted to true and skips the project file when it is false, so the shell settings read must pass the session's trust decision", "@earendil-works/pi-coding-agent/dist/core/settings-manager.js", [/const projectTrusted = options\.projectTrusted \?\? true;/, /if \(scope === "project" && !projectTrusted\) \{/]],
   ["ExtensionContext declares isProjectTrusted, the decision the shell settings read is gated on", "@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts", [/isProjectTrusted\(\): boolean;/]],
 ];

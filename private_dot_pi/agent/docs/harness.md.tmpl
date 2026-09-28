@@ -38,10 +38,12 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
 - Specialists under `~/.pi/agent/agents` render from the shared roster with an
   explicit model, tool list and policy extension; read-only ones stay read-only in
   execution. Only `general-purpose` may launch children, to Claude Code's depth.
-- Children run in the background, up to twenty sharing the root policy (Claude Code's default),
-  start fresh with no channel back (intercom off); batch independent launches.
+- Children run in the background, sharing the root policy, up to `globalConcurrencyLimit`
+  (`extensions/subagent/config.json`); they start fresh with no channel back (intercom off);
+  batch independent launches.
 - Scripts/chains, role overrides, revival and mutating management are refused; status, stop,
-  interrupt and steer work. Runs stop at two hours, with a checkpoint steer five minutes before.
+  interrupt and steer work. Runs stop at the config's `timeoutMs`, with a checkpoint steer
+  `checkpointBeforeDeadlineMs` before.
 - Skills are listed in the root's system prompt and load by `/skill:name` or on the model's own
   read. A child's MCP reach is its role's tool list; the policy refuses a tool outside it.
 

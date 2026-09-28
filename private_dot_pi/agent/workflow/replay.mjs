@@ -6,13 +6,14 @@ import {
   foldGroup, foldKey, formatTurn, glyph, groupLines, isMcp, liveGroup, pluginTitle,
   rowLines, settleFold, shadedBlock, taskTitle,
 } from "./rows.mjs";
+import { workerTools } from "./policy.mjs";
 
 // The fleet peek replays a background child's own events.jsonl through this
 // extension's row grammar (docs/pi-design.md rule 6, 2026-09-22). Pure: no fs,
 // no timers, no pi context — the caller streams file chunks in and gets back
 // journal-order row facts plus a renderer.
 
-const WORKSPACE_TOOLS = new Set(["read", "grep", "find", "ls", "bash", "edit", "write"]);
+const WORKSPACE_TOOLS = new Set(workerTools);
 
 // A large tool result would otherwise hold the whole run's output in memory
 // for the life of the peek; only the fields the renderers actually read

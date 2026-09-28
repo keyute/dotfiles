@@ -1,4 +1,3 @@
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { canonical } from "./policy.mjs";
 
 const launchKeys = new Set(["agent", "task", "async", "model", "context", "agentScope"]);
@@ -53,11 +52,13 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   }
   args.agentScope = "user";
   if (args.context !== undefined && !launchContexts.has(args.context)) delete args.context;
-  let selected = args.model ?? child.model;
+  let modelName = args.model ?? child.model;
   // `inherit` is pi-subagents' own frontmatter value; resolving it here keeps
   // the launch contract check on a concrete tier-policy model.
-  if (selected === "inherit") selected = args.model = `${ctx.model.provider}/${ctx.model.id}`;
-  const [modelName, effort] = selected.split(":");
+  if (modelName === "inherit") modelName = args.model = `${ctx.model.provider}/${ctx.model.id}`;
+  // A child runs at its role's rendered thinking level; like Claude's Agent
+  // tool, a launch can pick the model but not the effort.
+  if (modelName.includes(":")) throw new Error("A child runs at its role's thinking level; pass the model without an :effort suffix");
   // The frontier tier is the driver's alone: a child on it, requested or
   // inherited, is the measured quota failure the tier policy exists to stop.
   const { frontier } = config.models.tiers;
@@ -67,10 +68,6 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   const modelId = modelName.slice(config.models.provider.length + 1);
   const model = ctx.modelRegistry.find(config.models.provider, modelId);
   if (!model || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error(`Subscription model unavailable: ${modelName}`);
-  if (effort) {
-    const levels = getSupportedThinkingLevels(model);
-    if (!levels.includes(effort)) throw new Error(`Child effort ${effort} is not supported by ${modelName} (supported: ${levels.join(", ")})`);
-  }
   // Always background: pi-subagents admits one foreground launch per turn, so
   // foreground children serialize; MCP provider extensions also require a
   // background child here.

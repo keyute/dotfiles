@@ -6,7 +6,7 @@ import { Text } from "@earendil-works/pi-tui";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, acquireChild } from "./broker.mjs";
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
-import { rootTools, canonical, expand, publicToolName, unsandboxed } from "./policy.mjs";
+import { rootTools, canonical, expand, publicToolName, unsandboxed, workerTools } from "./policy.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 import { reviewAction } from "./approval.mjs";
 import { allowedChildAgents, checkChildLaunch, narrowSubagentSchema } from "./children.mjs";
@@ -191,7 +191,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       } finally { await client.close(); }
     } });
   }
-  for (const name of ["read", "write", "edit", "bash", "grep", "find", "ls"]) sandboxTool(name);
+  for (const name of workerTools) sandboxTool(name);
   if (background) {
     pi.registerTool({ name: "workspace_task", label: "Background task", description: "List background tasks, read their output so far, or stop one.", parameters: Type.Object({ id: Type.Optional(Type.String()), action: Type.Union([Type.Literal("list"), Type.Literal("output"), Type.Literal("stop")]) }), ...taskRenderers, async execute(_id, args) {
       if (args.action === "list") {

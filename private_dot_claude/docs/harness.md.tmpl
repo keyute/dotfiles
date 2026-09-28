@@ -7,14 +7,14 @@ If behavior seems changed, verify (claude-code-guide) and update.
 
 - Settings pin the driver (`model` key) to `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}`;
   effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned under `modelSettings` for every pin with an
-  effort knob, so a `/model` escalation keeps it. The 1M window is the default on the current pins (no `[1m]` suffix).
+  effort knob, so a `/model` escalation keeps it.
 - Escalate effort first: `/effort xhigh` keeps the prompt cache. `{{ .subagent_tiers.claude.frontier }}`
   is escalation-only: for an ambiguous root-cause or architecture problem
   where the driver at higher effort fell short, start a fresh session with
   `claude --model {{ .subagent_tiers.claude.frontier }}`. Do not `/model` a grown session: each model has its own
   cache, so the next request re-reads the whole history uncached at the frontier rate, and
   `/model <name>` saves it as the default until the next apply. In a
-  frontier-model session don't fork and don't run workflows — forks inherit it.
+  frontier-model session don't fork — forks inherit it.
 - Roles render from `subagents` in agents.yaml; `docs/decisions.md` records each why. Pins do not
   follow `/model`; a child without explicit effort inherits session effort.
 
@@ -36,7 +36,7 @@ If behavior seems changed, verify (claude-code-guide) and update.
 {{- range $name, $meta := .subagents }}{{ if and (get $meta "omit_instructions") (or (not (get $meta "harnesses")) (has "claude" (get $meta "harnesses"))) }}{{ $omit = append $omit $name }}{{ end }}{{ end }}
 - Every custom subagent except the omit_instructions roles ({{ $omit | join ", " }}) loads
   `~/.claude/CLAUDE.md`; all draw the same Max pools (5-hour
-  window, shared weekly pool; the frontier model's 50% weekly cap is shared, not reserved); check `/usage`.
+  window, shared weekly pool; the frontier model's weekly cap is shared, not reserved); check `/usage`.
 
 ## Workflows (last verified 2026-09-26)
 

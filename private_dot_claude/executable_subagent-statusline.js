@@ -19,7 +19,6 @@
 // Code exposes no agent-type field here), so with no name the head is the
 // description alone (never the literal string "undefined").
 
-const FAMILIES = ["opus", "sonnet", "haiku", "fable", "instant"];
 const SEP = " · ";
 const NAME_SEP = " › "; // name↔description divider, matching the workflow row
 
@@ -39,8 +38,8 @@ function formatTokens(n) {
 }
 
 // Derive a friendly label from a model id generically, so it doesn't rot as
-// models change (family word, dotted version digits, "1M" for a [1m] suffix, a
-// trailing date stamp dropped). Falls back to raw.
+// models change (first non-numeric token as the family, dotted version digits,
+// "1M" for a [1m] suffix, a trailing date stamp dropped). Falls back to raw.
 function prettyModel(id) {
   if (!id) return null;
   const oneM = /\[1m\]/i.test(id);
@@ -49,7 +48,7 @@ function prettyModel(id) {
     .replace(/^claude-/i, "")
     .replace(/-\d{6,8}$/, ""); // strip date suffix
   const tokens = s.split("-").filter(Boolean);
-  const fam = tokens.find((t) => FAMILIES.includes(t.toLowerCase()));
+  const fam = tokens.find((t) => !/^\d+$/.test(t));
   const nums = tokens.filter((t) => /^\d+$/.test(t));
   let label;
   if (fam) {

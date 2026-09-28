@@ -157,8 +157,8 @@ test("plan mode rejects configured writers before resolving a child contract", a
   await checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "root", ctx, resolve, "execute");
   await assert.rejects(checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "fixture-reader", ctx, resolve, "execute"), /delegate to writers/);
   assert.equal(resolved, 2);
-  await checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture", model: "openai-codex/gpt-5.6-sol:off" }, config, "root", ctx, resolve, "plan");
-  await assert.rejects(checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture", model: "openai-codex/gpt-5.6-sol:high" }, config, "root", ctx, resolve, "plan"), /not supported/);
+  await checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture", model: "openai-codex/gpt-5.6-sol" }, config, "root", ctx, resolve, "plan");
+  await assert.rejects(checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture", model: "openai-codex/gpt-5.6-sol:xhigh" }, config, "root", ctx, resolve, "plan"), /without an :effort suffix/);
   assert.equal(resolved, 3);
 });
 
@@ -369,7 +369,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
   assert.match(promptEvent.systemPromptOptions.sections.skills, /Use the workspace_read tool[^]*<name>fixture-skill<\/name>/);
   assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
-  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_bash", "workspace_grep", "workspace_find", "workspace_ls", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
+  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
   for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);
   const completed = {

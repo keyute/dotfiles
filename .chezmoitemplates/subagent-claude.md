@@ -11,10 +11,19 @@
 ---
 name: {{ $name }}
 description: {{ $meta.description | toJson }}
-{{- /* a nesting role gets every tool, Agent included, by omitting `tools`;
-       the roster's list is pi's translation input */}}
+{{- /* a nesting role gets every tool, Agent included, by omitting `tools`,
+       less the driver_only MCP servers; the roster's list is pi's translation
+       input */}}
 {{- if not (get $meta "nests") }}
 tools: {{ $meta.tools }}
+{{- else }}
+{{- $driverOnly := list -}}
+{{- range $server, $cfg := $root.agent_mcp_servers }}
+{{- if get $cfg "driver_only" }}{{ $driverOnly = append $driverOnly (printf "mcp__%s" $server) }}{{ end }}
+{{- end }}
+{{- if $driverOnly }}
+disallowedTools: {{ join ", " $driverOnly }}
+{{- end }}
 {{- end }}
 model: {{ $role.model }}
 {{- if $role.effort }}

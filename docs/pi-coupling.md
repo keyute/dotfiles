@@ -181,7 +181,9 @@ Fallback when it lands.
   `addCustomEntryToChat` skipping empty entries and `Container` click dispatch.
   *Residual:* a transcript rebuilt from a branch lacking a group's first entry
   drops that group's later members; two completions with a text chunk between
-  them sit adjacent but ungrouped. *Pin:* `stability.test.mjs`;
+  them sit adjacent but ungrouped. *Fallback:* ungrouped per-tool rows; lost:
+  the unified tool/completion timeline (rule 2's group and its count once
+  passed). *Pin:* `stability.test.mjs`;
   `transcript.test.mjs` (the block's own lines; `CustomEntryComponent` is not
   exported).
 - **Fleet run matching heuristic** (2026-09-23): fleet rows match active
@@ -191,7 +193,10 @@ Fallback when it lands.
   the `subagent:async-complete` payload and take the task from the launch's own
   tool events, since `async-started` redacts it; row text assumes the bash
   tool's stand-in and trailer literals and per-row click toggling. *Retire:*
-  the heuristic when upstream supplies the run ID in the fleet DTO. *Pin:*
+  the heuristic when upstream supplies the run ID in the fleet DTO.
+  *Fallback:* pi-subagents' own async widget and `/subagents-fleet`; lost: the
+  owned fleet rows (rule 6) and their per-run control IDs, so no row-level
+  peek, steer or stop. *Pin:*
   `fleet.test.mjs` (matching); `stability.test.mjs` (projection, DTO sources,
   row literals).
 - **Fleet peek replay** (2026-09-22): replays `<asyncDir>/events.jsonl`, whose
@@ -239,7 +244,10 @@ Fallback when it lands.
   never refreshed there: refresh tokens rotate, so a footer refresh racing pi's
   would invalidate the login; an expired credential or failed read only drops
   the segments. *Re-verify:* segments missing on a live turn with a fresh
-  login — check the response shape, not the parser. *Pin:*
+  login — check the response shape, not the parser. *Fallback:*
+  `@hk_net/pi-usage-bars`; lost: the status line's own `ses`/`wk` used-% and
+  reset segments in rule 3's single status line (the package draws its own
+  display). *Pin:*
   `stability.test.mjs` (credential field shape).
 - **herdr blocked state** (outside the npm pin, 2026-09-18): herdr's bundled pi
   extension (integration v9, herdr 0.9.1) reports `blocked` only on the

@@ -72,7 +72,6 @@ agents:
     sensitive_subpaths:
       - "agent/auth.json"
       - "agent/sessions"
-      - "agent/settings.json"
       - "agent/models.json"
       - "agent/mcp.json"
       - "agent/mcp-oauth"
@@ -256,6 +255,8 @@ agent_mcp_servers:
     args: ["--reasoning-effort", high, "--model", *openai_top, "--provider", *pi_provider]
     auto_approve_tools: true
     readonly_tools: [review, advise, reply]
+    # children lose this server via their tool list
+    driver_only: true
     harnesses:
       - claude
   context7:

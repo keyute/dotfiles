@@ -13,6 +13,7 @@ const SUB = "↳";
 const FOLD_OPEN = "▾";
 const FOLD_CLOSED = "▸";
 export const PROMPT = "❯";
+export const CURSOR = "❭";
 export const PAD = "  ";
 const TITLE_WIDTH = 36;
 const PREVIEW_WIDTH = 48;

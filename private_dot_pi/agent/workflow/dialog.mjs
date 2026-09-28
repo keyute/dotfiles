@@ -1,6 +1,5 @@
 import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { CURSOR } from "./fleet.mjs";
-import { frameRule } from "./rows.mjs";
+import { CURSOR, frameRule } from "./rows.mjs";
 
 export const editorTheme = theme => ({
   borderColor: text => theme.fg("borderMuted", text),

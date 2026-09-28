@@ -32,6 +32,16 @@ const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 const pct = (x, total) => `${(100 * x / total).toFixed(1)}%`;
 const mu = (x) => Number((x / 1e6).toFixed(2));
 const byDesc = (o, k) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1][k] - a[1][k]));
+// Sums metric k of "model|origin" rows per origin, with each origin's share of the total.
+const byOrigin = (o, k) => {
+  const t = {};
+  for (const [key, v] of Object.entries(o)) {
+    const origin = key.slice(key.lastIndexOf("|") + 1);
+    t[origin] = { [k]: (t[origin]?.[k] ?? 0) + v[k] };
+  }
+  const total = sum(Object.values(t).map((v) => v[k]));
+  return byDesc(Object.fromEntries(Object.entries(t).map(([origin, v]) => [origin, { ...v, share: pct(v[k], total) }])), k);
+};
 
 // Weighted units: Anthropic's per-token price multiples relative to base input
 // within one model (cache write 5m 1.25x, 1h 2x, cache read 0.1x, output 5x) —
@@ -108,10 +118,15 @@ for (const [file, f] of perFile) {
 }
 
 // pi: child transcripts live under /run-N/ and are mirrored in subagent-artifacts/, so calls are deduplicated by responseId.
+// The pi bridge (scripts/pi-bridge.mjs SESSION_DIR) keeps its own sessions outside ~/.pi; they are origin "bridge".
+const bridgeSessions = path.resolve(process.env.XDG_CACHE_HOME || path.resolve(home, ".cache"), "pi-bridge", "sessions");
+const piFiles = [
+  ...walk(path.join(home, ".pi/agent/sessions")).map((f) => [f, /\/(run-\d+|subagent-artifacts)\//.test(f) ? "child" : "root"]),
+  ...walk(bridgeSessions).map((f) => [f, "bridge"]),
+];
 const piCalls = new Map();
 const piDispatches = {}, piSkills = {};
-for (const file of walk(path.join(home, ".pi/agent/sessions"))) {
-  const child = /\/(run-\d+|subagent-artifacts)\//.test(file);
+for (const [file, origin] of piFiles) {
   let model;
   records(file).forEach((r, n) => {
     if (r.type === "model_change") model = r.modelId;
@@ -119,9 +134,9 @@ for (const file of walk(path.join(home, ".pi/agent/sessions"))) {
     const m = r.message;
     const usage = r.usage ?? m?.usage;
     if ((r.role ?? m?.role) === "assistant" && usage) {
-      piCalls.set(m?.responseId ?? `${file}:${n}`, { key: `${r.model ?? m?.model ?? model}|${child ? "child" : "root"}`, usage });
+      piCalls.set(m?.responseId ?? `${file}:${n}`, { key: `${r.model ?? m?.model ?? model}|${origin}`, usage });
     }
-    if (child) return;
+    if (origin !== "root") return;
     for (const c of Array.isArray(m?.content) ? m.content : []) {
       if (c.type === "toolCall" && c.name === "subagent" && !c.arguments?.action) tally(piDispatches, c.arguments?.agent);
       if (m.role === "user" && c.type === "text") tally(piSkills, c.text?.match(/^<skill name="([^"]+)"/)?.[1]);
@@ -139,6 +154,7 @@ const out = {
   days,
   claude: {
     modelOrigin: byDesc(Object.fromEntries(Object.entries(modelOrigin).map(([k, v]) => [k, { ...v, share: pct(v.units, claudeTotal) }])), "units"),
+    origins: byOrigin(modelOrigin, "units"),
     roles: byDesc(Object.fromEntries(Object.entries(roles).map(([k, files]) => [k, {
       dispatches: files.length, medianCalls: median(files.map((f) => f.calls)), medianMaxCtx: median(files.map((f) => f.ctx)),
       unitsPerDispatch: Math.round(sum(files.map((f) => f.units)) / files.length),
@@ -149,6 +165,7 @@ const out = {
   },
   pi: {
     modelOrigin: byDesc(pi, "cost"),
+    origins: byOrigin(pi, "cost"),
     dispatches: piDispatches,
     skills: piSkills,
   },
@@ -161,11 +178,13 @@ const counts = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] -
 const show = (title, rows) => { console.log(`\n${title}, last ${days} days`); console.table(rows); };
 const inMu = (o, keys) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { ...v, ...Object.fromEntries(keys.map((x) => [x, mu(v[x])])) }]));
 show("claude — weighted units (M) by model|origin", inMu(out.claude.modelOrigin, ["units"]));
+show("claude — weighted units (M) by origin", inMu(out.claude.origins, ["units"]));
 show("claude — subagent cost by role|model (units M per dispatch)", inMu(out.claude.roles, ["unitsPerDispatch"]));
 show("claude — workflow runs (units M)", inMu(out.claude.workflowRuns, ["units"]));
 show("claude — dispatches", counts(claudeDispatches));
 show("claude — skills and slash commands", counts(claudeSkills));
 show("pi — by model|origin (cost USD)", Object.fromEntries(Object.entries(out.pi.modelOrigin).map(([k, v]) => [k, { ...v, cost: Number(v.cost.toFixed(2)) }])));
+show("pi — cost USD by origin", Object.fromEntries(Object.entries(out.pi.origins).map(([k, v]) => [k, { ...v, cost: Number(v.cost.toFixed(2)) }])));
 show("pi — dispatches", counts(piDispatches));
 show("pi — skills", counts(piSkills));
 console.log(`\nJSON: ${outFile}`);

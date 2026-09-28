@@ -1,5 +1,5 @@
-// Newline-delimited JSON is every wire in the harness: broker socket, worker
-// stdio. `limit` caps the bytes one line may buffer before
+// Newline-delimited JSON framing for the broker socket and the host side of
+// worker stdio. `limit` caps the bytes one line may buffer before
 // its newline arrives (a pre-auth socket or a worker can otherwise grow the
 // host's memory); the caller decides what an error means (destroy, kill).
 export function readLines(stream, onMessage, { limit = 1024 * 1024, onError = () => {} } = {}) {

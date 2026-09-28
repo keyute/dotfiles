@@ -52,6 +52,11 @@ here.
   presentation, narrowed schema and managed description (2026-09-22). Launch
   policy stays in `tool_call` and broker leases. Scripts/arbitrary management
   stay disabled; `list`, named launches and lifecycle controls remain enabled.
+  In `extensions/subagent/config.json`, `fleetView`/`asyncWidget` are off
+  because the owned fleet (rule 6) replaces them, `inlineToolDisplay` is
+  `summary` because the owned rows (`rows.mjs`) draw subagent calls and fold
+  under rule 2, and `intercomBridge` is off so children report only through
+  their completion, as Claude Code's subagents do.
   Own launch/status only if coupling rows grow across two consecutive bumps; re-judge when Pi ships native subagents.
   Keep existing plugins and owned UI: catalog alternatives do not remove these policy/presentation seams; reconsider
   adoption when a public API covers them without a wrapper or workaround.
@@ -138,7 +143,7 @@ here.
   through pi-ai.
 - 2026-09-18: no second model vendor for children; a weaker substitute repays
   its saving through repairs in the driver's context (trigger:
-  `docs/decisions.md`, `pi.second_vendor`).
+  `docs/decisions.md`, `measure.pi_second_vendor`).
 - The host copies the settings `editorPaddingX` (default 0) onto custom editors
   right after the factory runs and on settings reloads; `CaretEditor` clamps
   `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`
@@ -190,3 +195,9 @@ here.
   fallback, main conversation; no managed role uses `inherit`. The
   `Agent(model:…)` deny rule alone guards the per-call path (trialled
   2026-09-27; the hook it superseded is deleted).
+- `private_dot_claude/executable_subagent-statusline.js` (owned subagent row):
+  reversal trigger — Claude's stock subagent row shows model and effort →
+  delete it.
+- `scripts/agent-usage.mjs` (owned usage report): reversal trigger — a
+  maintained tool reports per-role and per-origin usage from both session
+  stores → adopt it.
