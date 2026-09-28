@@ -55,7 +55,7 @@ every mechanical check.
   a routing description, a harness setting, an always-loaded instruction
   line — with its `docs/decisions.md` row in the same change. Only a
   same-family successor to a released or retired model lands on vendor
-  evidence alone.
+  evidence alone, without a trial.
 - **Dwell** for the period `docs/decisions.md` sets before judging a changed
   slot; earlier only when it is broken: rejected by the harness, withdrawn by
   the vendor, a red test, a security finding.

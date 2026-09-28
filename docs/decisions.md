@@ -20,10 +20,11 @@ current pins, drivers, classifier and role matrix, and caps each row's length.
   When the pi pool binds, the driver effort drop (agents.pi.defaults.tier) goes
   first; the classifier and second-vendor rows follow only if it still binds at
   the next reading.
-- Dwell 14 days of use (two weekly pool windows) before judging a changed slot.
-- Every slot change lands its before reading (agent-usage) in the evidence cell
-  and its revert threshold as the trigger, in the same change; at dwell end the
-  owner takes the after reading and either reverts or rewrites the evidence as
+- Dwell 14 days of use (two weekly pool windows) before judging a trial slot.
+- Every slot change but a same-family successor (vendor evidence, no ', trial',
+  no dwell) lands its before reading (agent-usage) in the evidence cell and its
+  revert threshold as the trigger, in the same change; at dwell end the owner
+  takes the after reading and either reverts or rewrites the evidence as
   measured and drops ', trial'.
 - Rows that landed before 2026-09-28 without ', trial' are judged at their next
   trigger.
@@ -34,7 +35,7 @@ current pins, drivers, classifier and role matrix, and caps each row's length.
 
 1. Confirm it is live: `claude --model <id> -p 'reply OK' --output-format json`, or listed in `node_modules/@earendil-works/pi-ai/dist/providers/data/<provider>.json`; else land the SDK bump first, alone.
 2. Take the before reading: `! node scripts/agent-usage.mjs`.
-3. In one change, edit the slot in agents.yaml (`subagent_tiers` or `agents.<h>.defaults.tier`) and its whole row: value, evidence kind with the before reading, `since` = today, revert threshold as the trigger, and any row whose evidence or trigger depends on the moved slot (grep decisions.md for the slot key and the old pin). A model without a counterpart in the other lineup moves only its harness's pin; on Claude a new family also updates the `Agent(model:…)` alias in `agents.claude.denied_tools` and its row, and a pin without an effort knob goes in `agents.claude.no_effort_models`.
+3. In one change, edit the slot in agents.yaml (`subagent_tiers` or `agents.<h>.defaults.tier`) and its whole row: value, evidence kind with the before reading, `since` = today, revert threshold as the trigger (a same-family successor: vendor evidence, its own successor or retirement as the trigger), and any row whose evidence or trigger depends on the moved slot (grep decisions.md for the slot key and the old pin). A model without a counterpart in the other lineup moves only its harness's pin; on Claude a new family also updates the `Agent(model:…)` alias in `agents.claude.denied_tools` and its row, and `agents.claude.no_effort_models` lists exactly the pins without an effort knob: add, drop or re-key the moved pin's entry. Rows that name a tier rather than the slot move with it: the drivers (`agents.<h>.defaults.tier`: Claude top, pi frontier), `agents.pi.search_tier` (small), `agents.pi.defaults.classifier` and the bridge (`agent_mcp_servers.pi`), both pi top.
 4. Run `npm run test:pi` and `chezmoi diff`: pi efforts are checked against the pinned catalog, Claude's only against the documented level names.
 5. After the owner applies, re-confirm it is live as in (1).
 
