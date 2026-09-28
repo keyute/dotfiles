@@ -1,8 +1,10 @@
 # Pi implementation working record
 
 The durable decisions behind the managed pi setup; read before changing its architecture, policy or package pins. Dated design history through 2026-09-15
-is in git history (`git log -p docs/pi-implementation.md`) and, where a
-measurement still has an open trigger, in `docs/agents-audit-log.md`.
+is in git history (`git log -p docs/pi-implementation.md`); model,
+role, setting and asymmetry decisions, their evidence and reversal triggers
+are in `docs/decisions.md`; architecture decisions and their triggers stay
+here.
 
 ## Decisions
 
@@ -129,27 +131,15 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   only slice an offline replay fast-allows safely is the sandboxed reviewed
   verbs, 11% of reviews, and escalations rarely clear the confidence bar.
   Reversal trigger: the single-model classifier's per-stage measurement
-  misses its latency target, escalations stop dominating, and a fresh replay
-  clears the escalation slice with zero wrong allows (numbers in the audit
-  log, 2026-09-18).
-- 2026-09-26 (Terra since 2026-09-18): the approval classifier runs both
-  stages on Sol 6, the filter at `none` and the judge at `medium`. One model
-  for the whole gate, as Claude Code's auto mode runs, keeps model, text and
-  cache key aligned, not a guaranteed hit: reasoning changes (clarified
-  2026-09-22). `none` is Sol's own `off` level; `minimal` would reach the wire
-  as `low`. Sol rather than Luna because the judge's verdict is final, and
-  rather than Terra 5.6 on indirect-injection defence, Terra being kept only
-  during the GPT-6 rollout (audit log 2026-09-26); classifier cost is
-  negligible either way. Reversal: Sol's false-allow or false-deny count on
-  the TypeSafe replay above Terra's. Fallback, on the live per-stage numbers
-  only: a Sol filter median over ~2 s that a Luna probe beats moves both
-  stages to Luna (audit log 2026-09-18).
-- 2026-09-18: no second model vendor for children. Children are a quarter of
-  pi spend and the roles that could move (then on Terra) about a sixth; a weaker
-  substitute repays its saving through repairs in the Astra context, and no
-  Pro limit has been seen binding. Trigger: a weekly limit binds two weeks
-  running with children at or above 30% of spend — then trial OpenCode Go
-  (pi-validated, $10) on explore-deep alone (audit log 2026-09-18).
+  misses its latency target (a filter median over ~2 s), escalations stop
+  dominating, and a fresh replay clears the escalation slice with zero wrong
+  allows (replay numbers in git history, 2026-09-18).
+- The approval classifier's model and efforts: `docs/decisions.md`,
+  `agents.pi.defaults.classifier`; filter `off` maps to the model's `none`
+  through pi-ai.
+- 2026-09-18: no second model vendor for children; a weaker substitute repays
+  its saving through repairs in the driver's context (trigger:
+  `docs/decisions.md`, `pi.second_vendor`).
 - The host copies the settings `editorPaddingX` (default 0) onto custom editors
   right after the factory runs and on settings reloads; `CaretEditor` clamps
   `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`
@@ -167,8 +157,8 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   not evidence of a successful sandbox run until executed on the user's host.
 - Live OAuth, foreground/background children, cancellation, the fleet widget and
   MCP remain acceptance gates. Do not treat fixture tests as full DX parity.
-- Open residuals and follow-ups live in `docs/agents-audit-log.md` "Known
-  residuals (pi)", each with its trigger.
+- Open residuals and follow-ups live in `docs/decisions.md` (`pi.residual.*`
+  rows), each with its trigger.
 - From the source repository, run `npm run test:pi`. It covers policy,
   classifier fallback, terminal proof, child preflight and secret-stubbed
   chezmoi projections. `PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` additionally
@@ -178,9 +168,6 @@ measurement still has an open trigger, in `docs/agents-audit-log.md`.
   and foreground/background child model pins, auto approvals, cancellation,
   the fleet widget, MCP queries, diagnostics and approved edits in a
   disposable project.
-- The default moved to Astra on 2026-09-15 on doctrine, not on a matched-task
-  comparison; the 2026-09-09 cost read (same trajectory 2.5x Sol;
-  `docs/agents-audit-log.md`) is the baseline to measure against.
 
 ## Claude-side bridge internals (moved from harness.md 2026-09-26)
 

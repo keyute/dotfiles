@@ -45,25 +45,48 @@ file are chezmoi-ignored (repo-local only).
 - Leave `chezmoi apply` and 1Password signin to me; stub `onepasswordRead`
   when verifying affected templates. Resolved values belong only in applied
   private targets, never in source files, commits, or terminal output.
+## Harness iteration
 
-## Agent instructions
+Rules for changing models, roles, settings or instructions; the record is
+`docs/decisions.md`, and `npm run test:pi` holds every mechanical check.
 
-- Before editing an instruction source — `.chezmoitemplates/agent-instructions.md`,
-  a consumer template (`private_dot_claude/CLAUDE.md.tmpl`,
-  `private_dot_pi/agent/AGENTS.md.tmpl`), a subagent or skill body (`.chezmoitemplates/{subagents,skills}/`, the
-  shared `.chezmoitemplates/*.md`, `private_dot_claude/skills/`,
-  `.claude/skills/`), `private_dot_pi/agent/subagent-tool-description.md.tmpl`,
-  `.chezmoidata/agents.yaml`, an on-demand doc (`private_dot_*/docs/`) or
-  `docs/agents-audit-log.md` — read `docs/agent-authoring.md`.
-  `npm run test:pi` checks that each projection, each rendered on-demand doc,
-  the audit log and this file stay within the line budgets it declares.
-- Judge a tier, effort or workflow change by total subscription cost per
-  completed task (turns, cache reads, repairs), measured with
-  `scripts/agent-usage.mjs`; benchmarks and API prices are inputs, not
-  verdicts. After moving a tier pin or the driver tier, run the audit skill's
-  session+pin probe for the new model before changing instruction text.
-- A harness review starts from the latest dated audit-log entry and covers
-  only what changed since; prefer a pi session for broad read-only sweeps.
-- Agent memory holds only what this repo cannot record — session-side
-  gotchas; a method belongs in the skill and a measurement in the dated
-  audit log.
+- **One slot per change**, as a dated trial: a pin, a role's tier or effort,
+  a routing description, a harness setting. Its `docs/decisions.md` row
+  records the before reading from `scripts/agent-usage.mjs`, the evidence
+  kind and the revert threshold. Only a same-family successor to a released
+  or retired model lands on vendor evidence alone.
+- **Dwell 14 days** of use (two weekly pool windows) before judging a changed
+  slot; earlier only when it is broken: rejected by the harness, withdrawn by
+  the vendor, a red test, a security finding.
+- **Never cite an unrun gate.** Label evidence `measured`, `vendor`,
+  `benchmark`, `preference` or `forced`; benchmarks and API prices nominate a
+  candidate, the after reading decides.
+- **Drivers follow pool headroom**: each runs the most capable tier whose
+  weekly pool has not reached its limit in two of the last four weeks (Claude
+  `/usage`, pi's footer segments); when a pool binds, lower effort before
+  tier. Children never run the frontier tier.
+- **One record.** The why, evidence and reversal trigger of a model, role,
+  setting or asymmetry decision live only in its `docs/decisions.md` row; a
+  trigger is an external event or a measured threshold, never a date.
+  Comments in data, code and docs say what a thing does, not why; an
+  instruction line's why stays in its template comment.
+- **Review on triggers only** — a model release or retirement, a pin bump, a
+  pool binding, a trial's after reading due, an observed failure — and only
+  for what the trigger touches. No scheduled, post-update or whole-harness
+  sweeps; unused roles and skills are judged at those reviews.
+- **Parity by default.** Both harnesses get the same behaviour wherever each
+  can express it; an asymmetry exists only as a `decisions.md` row naming the
+  harness limit, and a side effect (a renamed tool, a disabled built-in)
+  counts. Name the boundary that enforces a restriction — sandbox, policy,
+  tool list — never imply one.
+- **Set a vendor setting only to change its default**, with a one-line
+  comment beside the key naming the behaviour it changes.
+- **An always-loaded instruction line** exists only for a diagnosed, recurring
+  failure that the harness prompt, the code or a check does not already
+  prevent; when `git log -p` shows a line oscillating, delete it or change its
+  intent, never reword it. Read `docs/agent-authoring.md` before editing an
+  instruction source (shared or consumer templates, subagent and skill
+  bodies, on-demand docs).
+- **Commit subjects name the decision** ("roster: Explore routes web questions
+  to researcher, trial"), never "update harness". A decision goes in
+  `docs/decisions.md`; agent memory holds only session-side gotchas.

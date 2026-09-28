@@ -1,7 +1,7 @@
 # Pi workflow reference
 
 Env-specific facts, dated; if behavior seems changed, verify against the source repo and
-update this file. Sandbox, modes, approvals: `sandbox.md`; measurements: the audit log.
+update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's `docs/decisions.md`.
 
 ## Launch and pins (last verified 2026-09-26)
 
@@ -15,9 +15,10 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; measurements: the aud
 
 - Default: `{{ .agents.pi.defaults.provider }}/{{ index .subagent_tiers.pi .agents.pi.defaults.tier }}`, {{ .agents.pi.defaults.reasoning_effort }} reasoning.
 - The approval classifier (MCP calls, remote-mutating shell verbs, unsandboxed requests)
-  runs two tool-less stages: `{{ .agents.pi.defaults.classifier_filter.model }}` at {{ .agents.pi.defaults.classifier_filter.reasoning_effort }} reasoning screens each reviewed action; anything
-  but allow goes to `{{ .agents.pi.defaults.classifier_judge.model }}` at {{ .agents.pi.defaults.classifier_judge.reasoning_effort }} reasoning on the same prompt, whose verdict is final.
-- Specialist roles, from `subagents` in agents.yaml (which records each why):
+{{- $cls := .agents.pi.defaults.classifier }}{{ $clsModel := index .subagent_tiers.pi $cls.tier }}
+  runs two tool-less stages: `{{ $clsModel }}` at {{ $cls.filter_effort }} reasoning screens each reviewed action; anything
+  but allow goes to `{{ $clsModel }}` at {{ $cls.judge_effort }} reasoning on the same prompt, whose verdict is final.
+- Specialist roles, from `subagents` in agents.yaml (`docs/decisions.md` records each why):
 
 | role | model | reasoning |
 |---|---|---|

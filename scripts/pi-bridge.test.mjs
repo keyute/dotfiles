@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 
 import {
   assertCompleted,
@@ -31,13 +33,14 @@ import guard, { decide } from "./pi-bridge-guard.mjs";
 const NAMES = [".env"];
 
 test("piArgs pins the read-only, prompt-free, worker-tier envelope", () => {
-  const args = piArgs({ model: "gpt-test", effort: "high", sessionId: "sid-1" });
+  const args = piArgs({ provider: "provider-test", model: "gpt-test", effort: "high", sessionId: "sid-1" });
   const after = (flag) => args[args.indexOf(flag) + 1];
   assert.equal(after("--tools"), "read,grep,find,ls");
   assert.ok(args.includes("--no-approve"));
   assert.ok(args.includes("--no-extensions"));
   assert.ok(args.includes("--no-context-files"));
   assert.match(after("-e"), /pi-bridge-guard\.mjs$/);
+  assert.equal(after("--provider"), "provider-test");
   assert.equal(after("--model"), "gpt-test");
   assert.equal(after("--thinking"), "high");
   assert.equal(after("--session-id"), "sid-1");
@@ -85,16 +88,33 @@ test("assertCompleted accepts only a stop reason of stop", () => {
   assert.throws(() => assertCompleted({ text: "" }, 0, "boom"), /produced no response/);
 });
 
-test("thinkingLevel validates against pi's thinking levels", () => {
-  assert.equal(thinkingLevel("high"), "high");
-  assert.throws(() => thinkingLevel("extreme"));
+// catalog models picked by shape, not id, so a pin bump cannot break these
+const codexModels = getBuiltinModels("openai-codex");
+const withOff = codexModels.find((model) => getSupportedThinkingLevels(model).includes("off"));
+const withoutOff = codexModels.find((model) => model.reasoning && !getSupportedThinkingLevels(model).includes("off"));
+
+test("thinkingLevel validates against the model's own catalog thinking levels", () => {
+  assert.equal(thinkingLevel("openai-codex", withOff.id, "off"), "off");
+  assert.throws(() => thinkingLevel("openai-codex", withOff.id, "extreme"), /Invalid reasoning effort/);
+  assert.throws(() => thinkingLevel("openai-codex", withoutOff.id, "off"), /Invalid reasoning effort/);
+  assert.throws(() => thinkingLevel("openai-codex", "no-such-model", "high"), /Unknown model/);
 });
 
-test("the bridge refuses to start without a pinned reasoning effort", () => {
-  const bridge = fileURLToPath(new URL("./pi-bridge.mjs", import.meta.url));
-  const result = spawnSync(process.execPath, [bridge, "--model", "gpt-test"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const startBridge = (args) => spawnSync(process.execPath, [fileURLToPath(new URL("./pi-bridge.mjs", import.meta.url)), ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+test("the bridge refuses to start without a pinned provider or reasoning effort", () => {
+  const noProvider = startBridge(["--model", withOff.id, "--reasoning-effort", "high"]);
+  assert.notEqual(noProvider.status, 0);
+  assert.match(noProvider.stderr, /--provider <id> is required/);
+  const noEffort = startBridge(["--provider", "openai-codex", "--model", withOff.id]);
+  assert.notEqual(noEffort.status, 0);
+  assert.match(noEffort.stderr, /--reasoning-effort <level> is required/);
+});
+
+test("the bridge refuses to start on an effort its model does not support", () => {
+  const result = startBridge(["--provider", "openai-codex", "--model", withoutOff.id, "--reasoning-effort", "off"]);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /--reasoning-effort <level> is required/);
+  assert.match(result.stderr, /Invalid reasoning effort/);
 });
 
 test("validateBase rejects a leading dash and unsafe characters", () => {

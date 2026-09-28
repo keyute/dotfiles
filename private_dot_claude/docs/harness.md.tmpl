@@ -1,23 +1,22 @@
 # Claude Code workflow reference
 
-Env-specific facts and decisions, each dated; measurements live in the chezmoi repo's
-`docs/agents-audit-log.md`. If behavior seems changed, verify (claude-code-guide) and update.
+Env-specific facts and decisions, each dated; decisions and their triggers live in the chezmoi
+repo's `docs/decisions.md`. If behavior seems changed, verify (claude-code-guide) and update.
 
 ## Models (last verified 2026-09-25)
 
 - Settings pin the driver (`model` key) to `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}`;
-  effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned per model under `modelSettings` for both
-  `{{ .subagent_tiers.claude.top }}` and `{{ .subagent_tiers.claude.frontier }}`, so a `/model` escalation keeps
-  it. The 1M window is the default on Opus 4.7+ and Fable (no `[1m]` suffix); Opus 5.5 needs CLI ≥ 2.1.280.
+  effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned under `modelSettings` for every pin with an
+  effort knob, so a `/model` escalation keeps it. The 1M window is the default on the current pins (no `[1m]` suffix).
 - Escalate effort first: `/effort xhigh` keeps the prompt cache. `{{ .subagent_tiers.claude.frontier }}`
   is escalation-only (since 2026-09-25): for an ambiguous root-cause or architecture problem
   where the driver at higher effort fell short, start a fresh session with
   `claude --model {{ .subagent_tiers.claude.frontier }}`. Do not `/model` a grown session: each model has its own
   cache, so the next request re-reads the whole history uncached at the frontier rate, and
   `/model <name>` saves it as the default until the next apply (decision 2026-09-26). In a
-  Fable session don't fork and don't run workflows — forks inherit Fable, and a workflow
+  frontier-model session don't fork and don't run workflows — forks inherit it, and a workflow
   `agent({model:'fable'})` has no guard.
-- Roles render from `subagents` in agents.yaml, which records each why. Pins do not
+- Roles render from `subagents` in agents.yaml; `docs/decisions.md` records each why. Pins do not
   follow `/model`; a child without explicit effort inherits session effort.
 
 | role | model | effort |
@@ -28,7 +27,7 @@ Env-specific facts and decisions, each dated; measurements live in the chezmoi r
 - `general-purpose` and `Plan` override the built-ins (2026-09-25). `CLAUDE_CODE_SUBAGENT_MODEL`
   (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin and workflow
   agents and teammates; leave its `_FORCE` variant unset, it would erase specialist pins.
-  Forks continue the parent model; the guide uses Haiku, the statusline helper Sonnet.
+  Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
 {{- $bare := list }}{{ $scoped := list }}{{ $frontierDeny := "" }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $frontierDeny = . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
 - The `{{ $frontierDeny }}` deny rule is the per-call frontier guard (trialled 2026-09-27); it
@@ -36,7 +35,7 @@ Env-specific facts and decisions, each dated; measurements live in the chezmoi r
   third-party `model: inherit`, nor prove routing.
 - After each CLI update, check `message.model` of one unpinned child and one `{{ .subagent_tiers.claude.top }}` override.
 - Every custom subagent loads `~/.claude/CLAUDE.md` and draws the same Max pools (5-hour
-  window, shared weekly pool; Fable's 50% weekly cap is shared, not reserved); check `/usage`.
+  window, shared weekly pool; the frontier model's 50% weekly cap is shared, not reserved); check `/usage`.
 
 ## Workflows (verified 2026-09-26)
 

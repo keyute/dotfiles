@@ -5,9 +5,9 @@
        `omit_instructions` roles) loads it too, so the driver-only rules sit
        under one explicit "session driver" bullet.
        Each bullet ends in a non-rendering `<principle>: <why>` template
-       comment: with docs/agent-authoring.md (Principles) and the consumer
-       templates' own commented bullets, these are the intent record. The keys
-       are the ones agents.yaml native_coverage and the audit skill use.
+       comment: with the consumer templates' own commented bullets, these are
+       the intent record. The keys are the ones agents.yaml native_coverage
+       lists to skip a bullet a harness already carries natively.
        input: dict "self" <agent name> "root" <template data> */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
@@ -19,8 +19,6 @@
 
 ## Working agreements
 
-{{/* Fleet instructions require a configured model-tier mapping. */ -}}
-{{ if hasKey $root.subagent_tiers $self -}}
 - When you are the session driver (the model this session started on, not a
   dispatched worker):
   - Delegate bounded, independent work that repays the handoff, including
@@ -38,7 +36,7 @@
     approval, integration, adjudication, and final verification in the driver.
     Finish a failed worker's piece yourself rather than promoting it.{{/* driver_ownership: explicit ownership keeps scoped implementation out of the driver's context without ceding cross-scope decisions, and objective gates make worker results reviewable (2026-09-15; tier-independent since 2026-09-25) */}}
 {{- end }}
-{{- if not (get $ag "pins_in_dispatch_list") }}
+{{- if not (has "specialist_pinning" $native) }}
   - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
     does not show it: override a model only to escalate after an observed failure.{{/* specialist_pinning: presets are tuned once, not per session */}}
 {{- end }}
@@ -53,9 +51,9 @@
     artifact and its requirements: history-free (never a fork), pinned tier,
     one pass, naming the snapshot and the gates already green. Skip it when
     gates cover the requirements and the surface is not high-stakes; a
-    cross-model review does not replace it; a re-review verifies the fixes only.{{/* self_review: a producing context endorses its own output, a structural bias; a fresh-context pass catches what same-session review endorses, and iterated rounds add false positives faster than catches. The named role, history-free launch and pinned tier answer sweeps that found the pass aimed at write-capable or omission-blind reviewers; the skip and fix-scoped re-review answer over-firing on trivial gated work. */}}
-{{- if hasKey $ag "user_shell_prefix" }}
-  - Give a command I must run myself as a bare `{{ $ag.user_shell_prefix }}<command>` line: I paste it into
+    re-review verifies the fixes only.{{/* self_review: a producing context endorses its own output, a structural bias; a fresh-context pass catches what same-session review endorses, and iterated rounds add false positives faster than catches. The named role, history-free launch and pinned tier answer sweeps that found the pass aimed at write-capable or omission-blind reviewers; the skip and fix-scoped re-review answer over-firing on trivial gated work. */}}
+{{- if not (has "user_run_commands" $native) }}
+  - Give a command I must run myself as a bare `!<command>` line: I paste it into
     the composer and its output returns here. It runs unsandboxed on the host
     with no terminal; when it needs one, say so and I will run it in mine.{{/* user_run_commands: a prose handoff adds an external-terminal round trip and the result never reaches the model */}}
 {{- end }}
@@ -65,15 +63,9 @@
 {{ end -}}
 - Use Playwright for frontend interaction, inspection, and screenshots — not as a
   web-search substitute.{{/* playwright: real rendering beats guessing */}}
-{{ if and (hasKey $ag "native_fetch") (not $ag.native_fetch) -}}
-- Web search: built-in by default (cost); escalate to the Exa MCP when its
-  results are sparse, stale, or miss community sources. Fetch with the Exa MCP.{{/* web_search: route by strength, meter by price; the built-in tools' misses are the tools', not the web's */}}
-{{ else -}}
 - Web search and fetch: built-in by default (cost); escalate to the Exa MCP
   (search or fetch) when built-in results are sparse, stale, miss community
-  sources, or a fetch is refused.{{/* web_search: as above */}}
-{{ end -}}
-{{ end -}}
+  sources, when a fetch is refused, or when the harness has no built-in fetch.{{/* web_search: route by strength, meter by price; the built-in tools' misses are the tools', not the web's */}}
 - Keep implementations simple — the simplest thing that works: no features,
   refactors, or abstractions beyond the task, no helpers for one-shot
   operations, no speculative error handling, fallbacks, or validation without a
@@ -127,7 +119,8 @@
   the task at hand.{{/* review_focus: speculative edge-case work crowds out the blocking signal and stalls shipping */}}
 {{ if not (has "convention_recording" $native) -}}
 - When I correct your approach or re-explain a convention, offer to record it in
-  the project's instruction file (AGENTS.md/CLAUDE.md){{ if not (and (hasKey $ag "native_memory") (not $ag.native_memory)) }} or your memory{{ end }}.{{/* convention_recording: re-explaining is waste */}}
+  the project's instruction file (AGENTS.md/CLAUDE.md) or, where available,
+  your memory.{{/* convention_recording: re-explaining is waste */}}
 {{ end -}}
 - Never read credential stores, shell history, agent transcripts/session stores,
   or auth configs unless I explicitly ask for that specific path — the sandbox

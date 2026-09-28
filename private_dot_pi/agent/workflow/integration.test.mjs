@@ -156,6 +156,9 @@ test("plan mode rejects configured writers before resolving a child contract", a
   await checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "root", ctx, resolve, "execute");
   await assert.rejects(checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "fixture-reader", ctx, resolve, "execute"), /delegate to writers/);
   assert.equal(resolved, 2);
+  await checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture", model: "openai-codex/gpt-5.6-sol:off" }, config, "root", ctx, resolve, "plan");
+  await assert.rejects(checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture", model: "openai-codex/gpt-5.6-sol:high" }, config, "root", ctx, resolve, "plan"), /not supported/);
+  assert.equal(resolved, 3);
 });
 
 test("broker does not expose its credential to the classifier and invalidates pending approval", { skip }, async t => {

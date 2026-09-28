@@ -11,8 +11,8 @@
 // extension discovery is off, so a reviewed repo cannot load code into the
 // reviewer; context files are off, dropping the driver-scoped ~/.pi AGENTS.md
 // and the reviewed repo's own (the caller re-verifies every finding); the
-// worker-tier model and reasoning effort arrive via --model/--reasoning-effort
-// from the rendered MCP config, not interactive pi settings, so they cannot
+// worker-tier provider, model and reasoning effort arrive via
+// --provider/--model/--reasoning-effort from the rendered MCP config, not interactive pi settings, so they cannot
 // drift from the declared value. Callers choose scope (base/prompt/brief),
 // never tools, provider, or flags.
 //
@@ -26,6 +26,8 @@ import { chmod, mkdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -35,7 +37,6 @@ const GUARD_PATH = fileURLToPath(new URL("./pi-bridge-guard.mjs", import.meta.ur
 // user-private and persistent across bridge restarts
 const SESSION_DIR = resolve(process.env.XDG_CACHE_HOME || resolve(homedir(), ".cache"), "pi-bridge", "sessions");
 const DIFF_CAP = 300_000;
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const BASE_RE = /^[A-Za-z0-9._/-]+$/;
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 // Claude's rendered settings are the one owner of what its sandbox may write
@@ -103,16 +104,24 @@ const ROLE_NOTE =
   "only the read, grep, find, and ls tools, confined to the repository at your " +
   "working directory. Answer in full in one message.";
 
-// reasoning effort and model are fixed by the rendered MCP config, not by
-// caller input, so a tool call can never drift the pinned worker tier
-const effortIndex = process.argv.indexOf("--reasoning-effort");
-const effort = effortIndex !== -1 ? process.argv[effortIndex + 1] : undefined;
-export function thinkingLevel(level) {
-  if (!THINKING_LEVELS.includes(level)) throw new Error(`Invalid reasoning effort: ${level}`);
+// provider, reasoning effort and model are fixed by the rendered MCP config,
+// not by caller input, so a tool call can never drift the pinned worker tier
+const argValue = (flag) => {
+  const index = process.argv.indexOf(flag);
+  return index !== -1 ? process.argv[index + 1] : undefined;
+};
+const effort = argValue("--reasoning-effort");
+const pinnedModel = argValue("--model");
+const provider = argValue("--provider");
+// levels come from the pinned pi-ai catalog, per model: a model may drop one
+// (e.g. no "off") that another on the same provider supports
+export function thinkingLevel(providerId, modelId, level) {
+  const model = getBuiltinModel(providerId, modelId);
+  if (!model) throw new Error(`Unknown model in the pi-ai catalog: ${providerId}/${modelId}`);
+  const levels = getSupportedThinkingLevels(model);
+  if (!levels.includes(level)) throw new Error(`Invalid reasoning effort for ${providerId}/${modelId}: ${level} (supported: ${levels.join(", ")})`);
   return level;
 }
-const modelIndex = process.argv.indexOf("--model");
-const pinnedModel = modelIndex !== -1 ? process.argv[modelIndex + 1] : undefined;
 
 export function validateBase(base) {
   if (base === undefined) return;
@@ -319,10 +328,10 @@ export async function gatherDiff(base, cwd, policy) {
   return sections.join("\n\n");
 }
 
-export function piArgs({ model, effort, sessionId }) {
+export function piArgs({ provider, model, effort, sessionId }) {
   return [
     "--mode", "json",
-    "--provider", "openai-codex",
+    "--provider", provider,
     "--model", model,
     "--thinking", effort,
     "--tools", "read,grep,find,ls",
@@ -359,7 +368,7 @@ async function runPi(promptText, { cwd, sessionId, policy }, signal) {
   if (signal?.aborted) throw new Error("cancelled before launch");
   await ensureSessionDir();
   if (signal?.aborted) throw new Error("cancelled before launch");
-  const args = piArgs({ model: pinnedModel, effort, sessionId });
+  const args = piArgs({ provider, model: pinnedModel, effort, sessionId });
   const env = { ...process.env, PI_BRIDGE_DENY_NAMES: JSON.stringify(policy.denyNames) };
   const child = spawn(PI_BIN, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   child.stdout.setEncoding("utf8");
@@ -476,9 +485,10 @@ server.registerTool(
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
   // without the pins pi would fall back to its interactive defaults, the
   // frontier driver and its effort, for a worker role
+  if (provider === undefined) throw new Error("--provider <id> is required");
   if (pinnedModel === undefined) throw new Error("--model <worker-tier id> is required");
   if (effort === undefined) throw new Error("--reasoning-effort <level> is required");
   // pi only warns on an unknown --thinking value and falls back to its default
-  thinkingLevel(effort);
+  thinkingLevel(provider, pinnedModel, effort);
   await server.connect(new StdioServerTransport());
 }

@@ -1,3 +1,4 @@
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { canonical } from "./policy.mjs";
 
 const launchKeys = new Set(["agent", "task", "async", "model", "context", "agentScope"]);
@@ -62,10 +63,14 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   const { frontier } = config.models.tiers;
   if (frontier && modelName === `${config.models.provider}/${frontier}`) throw new Error("Children never run the frontier tier; it is the driver's tier alone");
   const allowedModels = Object.values(config.models.tiers).map(id => `${config.models.provider}/${id}`);
-  if (!allowedModels.includes(modelName) || (effort && !["low", "medium", "high", "xhigh", "max"].includes(effort))) throw new Error("Child model is outside the OpenAI tier policy");
+  if (!allowedModels.includes(modelName)) throw new Error("Child model is outside the OpenAI tier policy");
   const modelId = modelName.slice(config.models.provider.length + 1);
   const model = ctx.modelRegistry.find(config.models.provider, modelId);
   if (!model || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error(`Subscription model unavailable: ${modelName}`);
+  if (effort) {
+    const levels = getSupportedThinkingLevels(model);
+    if (!levels.includes(effort)) throw new Error(`Child effort ${effort} is not supported by ${modelName} (supported: ${levels.join(", ")})`);
+  }
   if (child.model === "inherit") args.model = selected;
   // Always background: pi-subagents admits one foreground launch per turn, so
   // foreground children serialize; MCP provider extensions also require a

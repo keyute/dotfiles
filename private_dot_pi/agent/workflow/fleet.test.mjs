@@ -14,6 +14,7 @@ test("rows are the agent, a word-boundary title, compact tokens and the model; t
   // pi-subagents reports the launch string as model and the level again as effort.
   assert.equal(modelLabel("openai-codex/gpt-5.6-terra:medium", "medium"), "gpt-5.6-terra medium");
   assert.equal(modelLabel("openai-codex/gpt-5.6-terra:medium"), "gpt-5.6-terra");
+  assert.equal(modelLabel("openai-codex/gpt-5.6-terra:minimal"), "gpt-5.6-terra");
   assert.equal(modelLabel(undefined, "high"), null);
   assert.equal(formatTokens(1234567), "1.2m");
   assert.equal(formatTokens(undefined), null);

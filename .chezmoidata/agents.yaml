@@ -1,20 +1,11 @@
-# `audit` per harness is what the agent-instructions-audit skill iterates: where
-# the consumer template and on-demand docs live in this repo and how native
-# coverage is probed. A new harness is one block here plus its session-store
-# path and record shape in scripts/agent-usage.mjs (dispatch counts).
 agents:
   claude:
     home: "~/.claude"
-    audit:
-      instructions: private_dot_claude/CLAUDE.md.tmpl
-      docs: private_dot_claude/docs
-      probe: session+pin
-    # rules this harness carries natively; the shared template skips them.
-    # Recomputed by the audit skill; evidence lives in the audit log.
-    native_coverage: [call_batching, docs_mcp]
+    # lines this harness's own prompt surface already carries; the shared
+    # projection skips them
+    native_coverage: [call_batching, docs_mcp, user_run_commands]
     defaults:
-      # a subagent_tiers key, never a second copy of the pin. 1M context is the
-      # default on Opus 4.7+ and Fable, so no pin needs a [1m] suffix.
+      # a subagent_tiers key, never a second copy of the pin
       tier: top
       reasoning_effort: high
     # models with no effort knob: the render omits `effort:` for a role whose
@@ -40,108 +31,46 @@ agents:
       allowed_domains:
         - "*.anthropic.com"
         - "code.claude.com"
-    # LSP plugins dropped 2026-09-13: nvim owns its servers through mason, so
-    # these duplicated system packages on two platforms for session-only gain —
-    # the same call pi made 2026-09-06. Revisit only on measured pain; project
-    # toolchains via Bash already surface diagnostics. claude-security dropped
-    # the same day (unwanted); native security-review and cross-model-review remain.
     plugins:
       "frontend-design@claude-plugins-official": true
     # Bundled-skill listing: `off` drops a skill from the model's listing,
-    # `user-invocable-only` keeps /name while hiding it from the model. The
-    # claude.ai-product entries follow the local-only decision (2026-09-21:
-    # settings.json.tmpl also stops account sync and drops the cloud tools);
-    # the rest carry their own reason. Reverse per entry once one is wanted.
-    # disableBundledSkills stays unset: it would also drop the review skills.
+    # `user-invocable-only` keeps /name while hiding it from the model.
     skill_overrides:
       claude-in-chrome: "off"
       schedule: "off"
       dataviz: "off"
-      # feature-gated; pairs with the DesignSync tool denied below
       design-sync: "off"
-      # reads transcripts, which the sandbox denies: it cannot work here
       fewer-permission-prompts: "off"
-      # user-driven commands the model should not self-trigger
       keybindings-help: "user-invocable-only"
       init: "user-invocable-only"
-      # ship-check already runs a simplify lens; update-config edits
-      # ~/.claude/settings.json, which chezmoi owns (2026-09-26)
       simplify: "user-invocable-only"
       update-config: "user-invocable-only"
-      # no `loop` entry: CLAUDE_CODE_DISABLE_CRON=1 (settings.json.tmpl) already
-      # disables it; restore `loop: "off"` if that env var goes
     # bare names leave the model's tool list, not just block the call
     denied_tools:
       - "DesignSync"
       - "RemoteTrigger"
       - "PushNotification"
       - "Agent(isolation:remote)"
-      # no child runs the frontier tier: `fable` is the only frontier value the
-      # Agent tool's model enum takes (CLI 2.1.282; it has no `inherit`); trialled
-      # alone 2026-09-27. Revisit if a release adds another frontier alias to
-      # the enum.
+      # `fable` is the Agent tool's frontier model alias: no child runs it
       - "Agent(model:fable)"
       # a speed bump under the never-commit/push rule, not a boundary: prefix
       # rules miss `git -C x commit` and `sh -c` forms
       - "Bash(git push:*)"
       - "Bash(git commit:*)"
-  # Pi runs natively so OpenAI subscription authentication remains host-owned.
-  # A managed per-tool policy extension constrains model-invoked work; Pi's
-  # authentication and session state remain unmanaged.
   pi:
     home: "~/.pi"
-    audit:
-      instructions: private_dot_pi/agent/AGENTS.md.tmpl
-      docs: private_dot_pi/agent/docs
-      # pi's system prompt is static: coverage is read from these files, no live call
-      probe: static
-      prompt_sources:
-        - node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js
-        - private_dot_pi/agent/workflow/index.mjs
-        - private_dot_pi/agent/workflow/plugin-api.mjs
-        - private_dot_pi/agent/subagent-tool-description.md.tmpl
-    native_coverage: []
-    # composer prefix that runs a command I typed and feeds its output to the
-    # model; set only where the harness prompt does not already teach it
-    # (Claude's does). pi runs it on the host outside the sandbox, output
-    # captured, no TTY.
-    user_shell_prefix: "!"
-    # pi-web-search: OpenAI's server-side web_search tool through the same
-    # Responses endpoint and token as model calls; search_tier sets the model
-    # it bills at (the plugin's ~/.pi/agent/web-search.json). No built-in fetch:
-    # the projection routes fetching to the Exa MCP.
-    native_fetch: false
+    # lines this harness's own prompt surface already carries; the shared
+    # projection skips them
+    native_coverage: [specialist_pinning]
+    # model tier pi-web-search bills at (the plugin's ~/.pi/agent/web-search.json)
     search_tier: small
-    # no memory feature: the projection drops its "or your memory" clause
-    native_memory: false
-    # the subagent tool description lists roles as pinned and carries the
-    # override rule, so the projection skips its own copy
-    pins_in_dispatch_list: true
     defaults:
-      provider: openai-codex
-      # Astra over Sol (Sol 6 tops out below Astra, AA index 48 vs 53, and OpenAI
-      # rates Astra-low above Sol-high), at high (owner decision 2026-09-26): medium needs more
-      # turns, so high costs less per completed task (AA Terminal-Bench 4.0
-      # $4.05 vs $4.43); total per-task cost, not price per token, decides.
-      # Reversal: the weekly pi pool binds in 2 of 4 weeks, or a matched replay
-      # shows medium at ≤1.1x high's turns (scripts/agent-usage.mjs).
+      provider: &pi_provider openai-codex
       tier: frontier
       reasoning_effort: high
-      # Approval classifier in Anthropic's two-stage shape: the filter answers
-      # every reviewed action; anything but allow is re-judged on the same
-      # prompt. One model for both stages, as Claude Code gates on one, keeps
-      # model and text aligned; the effort change means no guaranteed cache
-      # hit. `none` is the model's own `off` level in pi-ai's catalog.
-      classifier_filter:
-        model: gpt-6-sol
-        reasoning_effort: none
-      # A named-purpose binding, not a tier, chosen on injection resistance:
-      # Sol 6 over Terra 5.6 (2026-09-26, audit log). Reversal: Sol's
-      # false-allow or false-deny count on the 137-action TypeSafe replay
-      # above Terra's.
-      classifier_judge:
-        model: gpt-6-sol
-        reasoning_effort: medium
+      # approval classifier: one tier model for both stages; the filter answers
+      # every reviewed action, anything but allow is re-judged
+      classifier: { tier: top, filter_effort: "off", judge_effort: medium }
     sensitive_subpaths:
       - "agent/auth.json"
       - "agent/sessions"
@@ -150,35 +79,28 @@ agents:
       - "agent/mcp.json"
       - "agent/mcp-oauth"
 # shared subagent definitions rendered for every harness; bodies live in
-# .chezmoitemplates/subagents/<name>.md. One `tier` and one `effort` per role
-# serve both harnesses: a tier is a capability class, not a price band, and each
-# harness maps it to the cheapest current model whose default-effort score meets
-# it (decision 2026-09-25: Opus 5.5 medium over Sonnet 5 high; Sol 6 over Terra).
+# .chezmoitemplates/subagents/<name>.md. Each harness maps `tier` to a pin in
+# subagent_tiers.
 subagents:
-  # Effort is model-relative (each model calibrates low/medium/high on its own
-  # scale): when a tier's pin moves, re-check role efforts once at the tier,
-  # never per harness per role. `harnesses` scopes a role (default: all). `tools` binds
-  # the Claude render directly and the pi render via translation (pi-roles).
-  # `omit_instructions` renders Claude's omitClaudeMd and pi's
-  # inheritProjectContext/inheritGlobalContext false, matching the same-named
-  # built-in's lean context.
+  # `harnesses` scopes a role (default: all). `tools` binds the Claude render
+  # directly and the pi render via translation (pi-roles). `omit_instructions`
+  # renders Claude's omitClaudeMd and pi's inheritProjectContext/
+  # inheritGlobalContext false. `nests` lets a role launch children.
   # Overrides each harness's built-in exploration role (Claude matches on this
-  # exact name) so routine exploration stays on the small tier.
+  # exact name).
   Explore:
     tier: small
     effort: low
     readonly: true
     omit_instructions: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those. No web access: upstream changelogs and release notes go to dep-researcher."
+    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those. No web access: web and docs questions go to researcher, a dependency bump to dep-researcher."
   explore-deep:
     tier: top
     effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself. Prefer this over the single-symbol Explore role whenever scope is broad or unknown."
-  # Lens reviewers run the top tier at its default effort; a lens review that
-  # misses a catch restores `high` for that role (trigger recorded 2026-09-25).
+    description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself."
   go-reviewer:
     tier: top
     effort: medium
@@ -204,8 +126,6 @@ subagents:
     tools: "Read, Grep, Glob, Bash"
     description: "Review shell/dotfile diffs — shell scripts, zsh configs, chezmoi templates — for correctness and safety."
   infra-reviewer:
-    # chart/CRD/GitOps hazards are not inferable from surrounding manifests,
-    # which is what keeps this apart from diff-reviewer's "no language preset"
     tier: top
     effort: medium
     readonly: true
@@ -217,60 +137,42 @@ subagents:
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them — a conformance pass over requirements-plus-artifact goes to spec-reviewer."
-  # Fresh-eyes conformance pass: unlike a diff-lens reviewer, this role checks
-  # the finished artifact for omissions against its requirements.
   spec-reviewer:
     # the projection's self-review rule names this role literally; render.test
-    # fails on a rename. High, not medium: the one recall-critical pass; no
-    # child runs the frontier tier.
+    # fails on a rename
     tier: top
     effort: high
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Judge one finished artifact against the requirements it was built from, in one pass — dispatched for the fresh-eyes self-review before work is called done, not for ordinary diff review. Reports requirements that went unimplemented as readily as defects in what was written; read-only. Reviewing the changed lines under one lens is diff-reviewer's job."
   dep-researcher:
-    # no Bash: agent_sandbox.network allowlists 16 hosts, and upstream release
-    # notes are not among them — WebFetch/WebSearch are harness tools and reach
-    # them, a curl would fail confusingly. Top, not small: both observed
-    # escalations (2026-09-23) were tier escalations.
     tier: top
     effort: medium
     readonly: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
   researcher:
-    # Dedicated web/docs research preset; no Bash for the same reason as
-    # dep-researcher.
     tier: top
     effort: medium
     readonly: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
   implementer:
-    # the only write-capable specialist: executor for settled-design leaf work.
-    # Top, not small — small-tier executors regress on anything needing
-    # judgment, and a failed attempt round-trips back through the expensive
-    # parent context. One writer, not a second (decision 2026-09-21).
     tier: top
     effort: medium
     readonly: false
     tools: "Read, Grep, Glob, Bash, Edit, Write"
     description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. NOT for exploratory work or an unsettled design; never commits."
   # Overrides Claude Code's built-in of the same name and is pi's managed
-  # catch-all: every tool and the only role that may launch children; the
-  # specialists stay leaf roles. Top, never the frontier tier.
+  # catch-all: the only role that may launch children.
   general-purpose:
     tier: top
-    # high: it nests and decomposes, driver-like work
     effort: high
     readonly: false
     nests: true
     tools: "Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
     description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation. Runs the top worker tier; prefer a specialist when one fits."
-  # Claude only: overrides the built-in planner, which inherits the session
-  # model — the frontier after a /model escalation, where the frontier guard
-  # (per-call models only) cannot see it. pi's workflow has a native
-  # read-only plan mode and needs no planner role.
+  # Claude only: overrides the built-in planner, which inherits the session model
   Plan:
     harnesses: [claude]
     tier: top
@@ -280,27 +182,16 @@ subagents:
     omit_instructions: true
     tools: "Read, Grep, Glob, Bash"
     description: "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs."
-# explicit model IDs, not aliases: aliases re-resolve across CLI releases and can
-# silently land on another tier; the audit skill live-probes these pins.
-# `frontier` is the tier no child ever runs: pi's driver tier, and on Claude the
-# escalation-only tier (`/model`) since 2026-09-25, when the driver moved to
-# `top`. small/top only: add a tier key when a model lands between them.
+# explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
 subagent_tiers:
   claude:
-    # re-tier when Haiku 5.5 ships (announced 2026-09-22); no effort knob
-    # (agents.claude.no_effort_models)
+    # no effort knob (agents.claude.no_effort_models)
     small: claude-haiku-4-5
-    # Opus 5.5 (2026-09-24): medium scores 51 at $1.34/task vs Sonnet 5 high's
-    # 32 at $1.79 (AA v4.3.2). Reversal: docs/agents-audit-log.md
-    # "2026-09-26 → Measurable reversal triggers".
     top: claude-opus-5-5
-    # Escalation-only; kept as a tier so the Agent(model:fable) rule in
-    # agents.claude.denied_tools keeps denying it to children.
+    # render.test checks the Agent(model:…) deny in agents.claude.denied_tools
+    # against this pin
     frontier: claude-fable-5-1
   pi:
-    # GPT-6 (2026-09-23): Luna 6 matches Luna 5.6 at 0.4x cost per task; Sol 6
-    # beats Terra 5.6 in fewer tokens at Terra's input price. Fall back to
-    # gpt-5.6-sol if implementer round-trips rise (HN day-one DeepSWE reports).
     small: gpt-6-luna
     # anchored: the Claude->pi review/advice bridge pins this tier
     top: &openai_top gpt-6-sol
@@ -362,21 +253,14 @@ agent_sandbox:
       - context7.com
       - "*.context7.com"
 agent_mcp_servers:
-  # Explicit shared trust: Claude emits an allow rule and pi's workflow/policy.mjs
-  # reads auto_approve_tools off this config to allow a read-only call outright;
-  # omission keeps normal review.
+  # auto_approve_tools: Claude emits an allow rule and pi's workflow/policy.mjs
+  # allows a read-only call outright; omission keeps normal review.
 
-  # scoped to claude: pi must not be handed itself as an MCP server. The
-  # bridge runs the repo-local pi in print mode; MCP transport keeps what a
-  # Bash call can't — harness-spawned outside the sandbox (~/.pi deny
-  # intact) and prompt-free in plan mode (harness.md).
+  # scoped to claude: pi must not be handed itself as an MCP server
   pi:
     script: pi-bridge.mjs
-    # Anchored to subagent_tiers.pi.top: review and advice are worker roles, so
-    # the bridge runs the top worker tier while interactive pi drives on the
-    # frontier. Effort is set here, not borrowed from the driver: the bridge is
-    # a recall-critical worker.
-    args: ["--reasoning-effort", high, "--model", *openai_top]
+    # the bridge runs the top worker tier at its own effort
+    args: ["--reasoning-effort", high, "--model", *openai_top, "--provider", *pi_provider]
     auto_approve_tools: true
     harnesses:
       - claude
@@ -396,13 +280,10 @@ agent_mcp_servers:
     # pi runs the server inside SRT, so its API host joins that sandbox's allowlist
     domains: [api.exa.ai]
     auto_approve_tools: true
-    # web_fetch_exa is 3.4.x's fetch tool; crawling_exa is its legacy name and
-    # stays listed while the build still carries it
+    # crawling_exa is web_fetch_exa's legacy name
     readonly_tools: [web_search_exa, web_fetch_exa, get_code_context_exa, company_research_exa, crawling_exa]
-    # 3.4.1 added Exa-side agent orchestration: these dispatch and bill remote
-    # agentic runs, a wider grant than the search/fetch tools blanket approval
-    # was given for. Default-off in 3.4.1; denied so a default flip cannot make
-    # them auto-approved.
+    # these dispatch and bill remote agentic runs; denied so a default flip
+    # cannot make them auto-approved
     denied_tools:
       - deep_researcher_start
       - deep_researcher_check
@@ -417,16 +298,13 @@ agent_mcp_servers:
   playwright:
     readonly_tools: [browser_navigate, browser_navigate_back, browser_snapshot, browser_tabs, browser_wait_for]
     package_bin: playwright-mcp
-    # deliberately NOT auto_approve_tools: tools taking a caller-chosen filename
-    # (snapshot, take_screenshot, evaluate, console_messages, network_request/s)
-    # write anywhere under the workspace or output dir (realpath-confined since
-    # playwright-core 1.64), navigate reaches any host, and the server runs
-    # outside the bash sandbox; upstream says to rely on client-level permissions.
+    # not auto_approve_tools: tools taking a caller-chosen filename (snapshot,
+    # take_screenshot, evaluate, console_messages, network_request/s) write
+    # anywhere under the workspace or output dir, navigate reaches any host, and
+    # the server runs outside the bash sandbox
     unsandboxed: true
     denied_tools:
-      # denied outright rather than left to the prompt: never legitimate here.
-      # Executes arbitrary JS in the Playwright *server* process
-      # (RCE-equivalent, per its own tool description).
+      # executes arbitrary JS in the Playwright *server* process
       - browser_run_code_unsafe
       # both take `paths` and hand local file contents to a page: exfiltration
       # to whatever host the browser is on

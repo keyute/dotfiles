@@ -23,13 +23,16 @@
 {{- range $mcp -}}{{- $domains = concat $domains .policy.domains -}}{{- end -}}
 {{- $domains = $domains | uniq | sortAlpha -}}
 {{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
+{{- $cls := $pi.defaults.classifier -}}
+{{- $clsModel := get .subagent_tiers.pi $cls.tier -}}
+{{- if not $clsModel -}}{{- fail (printf "classifier: unknown tier %s" $cls.tier) -}}{{- end -}}
 {{- dict
       "version" 1
       "agentDir" $agentDir
       "models" (dict
           "provider" $pi.defaults.provider
-          "classifierFilter" (dict "model" $pi.defaults.classifier_filter.model "reasoningEffort" $pi.defaults.classifier_filter.reasoning_effort)
-          "classifierJudge" (dict "model" $pi.defaults.classifier_judge.model "reasoningEffort" $pi.defaults.classifier_judge.reasoning_effort)
+          "classifierFilter" (dict "model" $clsModel "reasoningEffort" $cls.filter_effort)
+          "classifierJudge" (dict "model" $clsModel "reasoningEffort" $cls.judge_effort)
           "tiers" .subagent_tiers.pi)
       "filesystem" (dict
           "denyRead" $denyRead

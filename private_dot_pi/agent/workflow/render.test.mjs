@@ -6,17 +6,42 @@ import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
+
 import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-// line budgets (single owner; AGENTS.md's instruction-sources bullet points here):
-// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, the audit log
-const PROJECTION_MAX_LINES = 100;
-const ON_DEMAND_DOC_MAX_LINES = 80;
-const GENERATED_SANDBOX_DOC_MAX_LINES = 100;
-const REPO_AGENTS_MAX_LINES = 70;
-const AUDIT_LOG_MAX_LINES = 400;
-const lineCount = text => text.replace(/\n$/, "").split("\n").length;
+// byte budgets (single owner; AGENTS.md's instruction-sources bullet points here):
+// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, the decisions record
+const PROJECTION_MAX_BYTES = 7000;
+const ON_DEMAND_DOC_MAX_BYTES = 6000;
+const GENERATED_SANDBOX_DOC_MAX_BYTES = 4000;
+const REPO_AGENTS_MAX_BYTES = 6000;
+// read on trigger reviews only, never per turn: this bounds verbosity, not context
+const DECISIONS_MAX_BYTES = 10000;
+// roles take every documented level; the driver's settings effortLevel excludes `max`, which is session-only
+const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const CLAUDE_DRIVER_EFFORTS = ["low", "medium", "high", "xhigh"];
+
+const readSource = path => readFileSync(join(source, path), "utf8");
+// the text of each YAML comment: a `#` at line start or after whitespace, outside quotes
+const yamlComments = text => text.split("\n").flatMap(line => {
+  // walk to the first `#` outside quotes; a quote stripper would also eat text between two apostrophes inside a comment
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === "#" && (i === 0 || /\s/.test(line[i - 1]))) return [line.slice(i + 1)];
+  }
+  return [];
+});
+// capitalised model-family names of the current pins (claude-<family>-..., gpt-<n>-<family>)
+const familyNouns = data => [...new Set(Object.values(data.subagent_tiers).flatMap(Object.values).map(pin => {
+  const parts = pin.split("-");
+  const family = pin.startsWith("claude-") ? parts[1] : parts[2];
+  return family[0].toUpperCase() + family.slice(1);
+}))];
 
 const fixture = (t) => {
   const root = mkdtempSync(join(tmpdir(), "pi-workflow-render-"));
@@ -102,6 +127,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   // one entry per distinct tier model: tiers may share a pin
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
   assert.match(piSettings.themes[0], /\/node_modules\/catppuccin-pi-theme\/themes$/);
+  assert.equal(piSettings.enableInstallTelemetry, false);
 
   for (const role of Object.keys(workflow.agents)) {
     const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
@@ -122,21 +148,33 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   // pi's escalation rule names the pin no child may take (children.mjs rejects it)
   assert.ok(description.includes(`\`${data.subagent_tiers.pi.frontier}\``));
   for (const [name, text, max] of [
-    [".pi/agent/AGENTS.md", piInstructions, PROJECTION_MAX_LINES],
-    [".claude/CLAUDE.md", claudeInstructions, PROJECTION_MAX_LINES],
-    [".pi/agent/docs/harness.md", piHarness, ON_DEMAND_DOC_MAX_LINES],
-    [".claude/docs/harness.md", claudeHarness, ON_DEMAND_DOC_MAX_LINES],
-    [".pi/agent/docs/sandbox.md", piSandboxDoc, ON_DEMAND_DOC_MAX_LINES],
-    [".claude/docs/sandbox.md", claudeSandboxDoc, GENERATED_SANDBOX_DOC_MAX_LINES],
+    [".pi/agent/AGENTS.md", piInstructions, PROJECTION_MAX_BYTES],
+    [".claude/CLAUDE.md", claudeInstructions, PROJECTION_MAX_BYTES],
+    [".pi/agent/docs/harness.md", piHarness, ON_DEMAND_DOC_MAX_BYTES],
+    [".claude/docs/harness.md", claudeHarness, ON_DEMAND_DOC_MAX_BYTES],
+    [".pi/agent/docs/sandbox.md", piSandboxDoc, ON_DEMAND_DOC_MAX_BYTES],
+    [".claude/docs/sandbox.md", claudeSandboxDoc, GENERATED_SANDBOX_DOC_MAX_BYTES],
     // chezmoi-ignored, so read from source: it loads in every session in this repo
-    ["AGENTS.md", readFileSync(join(source, "AGENTS.md"), "utf8"), REPO_AGENTS_MAX_LINES],
+    ["AGENTS.md", readSource("AGENTS.md"), REPO_AGENTS_MAX_BYTES],
+    ["docs/decisions.md", readSource("docs/decisions.md"), DECISIONS_MAX_BYTES],
   ]) {
-    const lines = lineCount(text);
-    assert.ok(lines <= max, `${name} is ${lines} lines (max ${max})`);
+    const bytes = Buffer.byteLength(text);
+    assert.ok(bytes <= max, `${name} is ${bytes} bytes (max ${max}): cut, do not raise the budget`);
   }
-  const auditLog = lineCount(readFileSync(join(source, "docs/agents-audit-log.md"), "utf8"));
-  assert.ok(auditLog <= AUDIT_LOG_MAX_LINES, `docs/agents-audit-log.md is ${auditLog} lines (max ${AUDIT_LOG_MAX_LINES}): prune entries without a live baseline or open trigger; do not raise the budget`);
   assert.ok(claudeHarness.includes(data.subagent_tiers.claude.top));
+  // family names age with the pins; the pin id (or its tier) is the one spelling
+  const nouns = familyNouns(data);
+  for (const [name, text] of [
+    [".claude/CLAUDE.md", claudeInstructions],
+    [".pi/agent/AGENTS.md", piInstructions],
+    [".claude/docs/harness.md", claudeHarness],
+    [".pi/agent/docs/harness.md", piHarness],
+    [".claude/docs/sandbox.md", claudeSandboxDoc],
+    [".pi/agent/docs/sandbox.md", piSandboxDoc],
+    [".chezmoidata/agents.yaml comments", yamlComments(readSource(".chezmoidata/agents.yaml")).join("\n")],
+  ]) {
+    for (const noun of nouns) assert.doesNotMatch(text, new RegExp(`\\b${noun}\\b`), `${name} names the model family ${noun}: name the tier or the pin id`);
+  }
 
   const claudeSettingsText = run("cat", target(".claude/settings.json"));
   const claudeSettings = JSON.parse(claudeSettingsText);
@@ -157,6 +195,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     }
   }
   assert.equal(claudeSettings.model, data.subagent_tiers.claude[data.agents.claude.defaults.tier]);
+  assert.equal(claudeSettings.workflowSizeGuideline, "small");
   assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, data.subagent_tiers.claude.top);
   // the cross-model bridge stays prompt-free in plan mode only via this rule
   assert.equal(claudeSettings.permissions.allow.includes("mcp__pi"), true);
@@ -177,6 +216,9 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const syntax = spawnSync("zsh", ["-n", zshPath], { encoding: "utf8" });
   assert.equal(syntax.status, 0, syntax.stderr);
 });
+
+// every pi (pin, effort) pair must be a level the pinned pi-ai catalog offers that model
+const assertPiEffort = (provider, pin, effort, owner) => assert.doesNotThrow(() => thinkingLevel(provider, pin, effort), owner);
 
 test("each role renders its roster tier and effort on every harness it targets", (t) => {
   const { run, invoke, target, data: load } = fixture(t);
@@ -201,7 +243,10 @@ test("each role renders its roster tier and effort on every harness it targets",
       assert.match(agent, new RegExp(`^name: ${role}$`, "m"));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: claude model ${model}`);
       if (noEffort.includes(model)) assert.doesNotMatch(agent, /^effort:/m, role);
-      else assert.ok(agent.split("\n").includes(`effort: ${meta.effort}`), `${role}: claude effort ${meta.effort}`);
+      else {
+        assert.ok(CLAUDE_EFFORTS.includes(meta.effort), `${role}: ${meta.effort} is not a Claude effort level`);
+        assert.ok(agent.split("\n").includes(`effort: ${meta.effort}`), `${role}: claude effort ${meta.effort}`);
+      }
       // a nesting role inherits every tool, Agent included
       assert.equal(/^tools: /m.test(agent), !meta.nests, `${role}: claude tools line`);
       assert.equal(agent.split("\n").includes("omitClaudeMd: true"), meta.omit_instructions ?? false, `${role}: omitClaudeMd`);
@@ -212,6 +257,7 @@ test("each role renders its roster tier and effort on every harness it targets",
     if (harnesses.includes("pi")) {
       const model = `${provider}/${data.subagent_tiers.pi[meta.tier]}`;
       assert.notEqual(data.subagent_tiers.pi[meta.tier], data.subagent_tiers.pi.frontier, role);
+      assertPiEffort(provider, data.subagent_tiers.pi[meta.tier], meta.effort, role);
       const contract = workflow.agents[role];
       assert.deepEqual(
         [contract.model, contract.thinking, contract.readonly, contract.nests],
@@ -230,28 +276,47 @@ test("each role renders its roster tier and effort on every harness it targets",
   }
 
   const settings = JSON.parse(run("cat", target(".claude/settings.json")));
-  // effort is pinned per model for exactly the top and frontier pins
+  // effort is pinned per model for every Claude pin that takes one
   const effortLevel = data.agents.claude.defaults.reasoning_effort;
-  assert.deepEqual(settings.modelSettings, Object.fromEntries(
-    [data.subagent_tiers.claude.top, data.subagent_tiers.claude.frontier].map(model => [model, { effortLevel }]),
-  ));
-  const routingPins = JSON.parse(run("execute-template", '{{ dict "filter" .agents.pi.defaults.classifier_filter "judge" .agents.pi.defaults.classifier_judge "bridge" .agent_mcp_servers.pi.args | toJson }}'));
+  assert.ok(CLAUDE_DRIVER_EFFORTS.includes(effortLevel), `agents.claude.defaults.reasoning_effort ${effortLevel}`);
+  const effortPins = [...new Set(Object.values(data.subagent_tiers.claude))].filter(pin => !noEffort.includes(pin));
+  assert.deepEqual(Object.keys(settings.modelSettings).sort(), effortPins.sort());
+  for (const pin of effortPins) assert.deepEqual(settings.modelSettings[pin], { effortLevel }, pin);
+
+  const pi = data.agents.pi.defaults;
+  assertPiEffort(provider, data.subagent_tiers.pi[pi.tier], pi.reasoning_effort, "pi driver");
   // one model for the whole approval gate (docs/pi-implementation.md)
-  assert.equal(routingPins.filter.model, routingPins.judge.model);
+  const classifierPin = data.subagent_tiers.pi[pi.classifier.tier];
+  assert.ok(classifierPin, `agents.pi.defaults.classifier.tier ${pi.classifier.tier} is not a pi tier`);
+  assertPiEffort(provider, classifierPin, pi.classifier.filter_effort, "classifier filter");
+  assertPiEffort(provider, classifierPin, pi.classifier.judge_effort, "classifier judge");
+  // a model whose catalog maps the filter level to null (no `off`) would silently lift it
+  // a string wire value is required: null means the model has no such level, undefined would send the pi level verbatim
+  assert.equal(typeof getBuiltinModel(provider, classifierPin).thinkingLevelMap?.[pi.classifier.filter_effort], "string", `${classifierPin} maps no wire value for ${pi.classifier.filter_effort}`);
+  assert.deepEqual(
+    [workflow.models.classifierFilter, workflow.models.classifierJudge],
+    [{ model: classifierPin, reasoningEffort: pi.classifier.filter_effort }, { model: classifierPin, reasoningEffort: pi.classifier.judge_effort }],
+  );
   // the bridge is a worker: top tier, never the frontier, at its own effort
-  const [effortFlag, bridgeEffort, ...bridgeModel] = routingPins.bridge;
-  assert.equal(effortFlag, "--reasoning-effort");
-  assert.doesNotThrow(() => thinkingLevel(bridgeEffort), `bridge effort ${bridgeEffort}`);
-  assert.deepEqual(bridgeModel, ["--model", data.subagent_tiers.pi.top]);
+  const bridgeArgs = JSON.parse(run("execute-template", "{{ .agent_mcp_servers.pi.args | toJson }}"));
+  const bridgePairs = bridgeArgs.flatMap((arg, i) => i % 2 ? [] : [[arg, bridgeArgs[i + 1]]]).sort(([a], [b]) => a.localeCompare(b));
+  const effort = bridgePairs.find(([flag]) => flag === "--reasoning-effort")?.[1];
+  assert.deepEqual(bridgePairs, [["--model", data.subagent_tiers.pi.top], ["--provider", provider], ["--reasoning-effort", effort]]);
+  assertPiEffort(provider, data.subagent_tiers.pi.top, effort, "bridge");
 });
 
-test("each harness keeps the three tier slots, and its driver and no-effort models resolve through them", (t) => {
+test("every harness keeps one tier-key set with a distinct frontier, and its driver and no-effort models resolve through it", (t) => {
   const { data: load } = fixture(t);
   const data = load();
+  const tierKeys = Object.keys(Object.values(data.subagent_tiers)[0]).sort();
+  assert.ok(tierKeys.includes("frontier"), "no frontier tier");
   for (const [h, agent] of Object.entries(data.agents)) {
     const tiers = data.subagent_tiers[h];
-    assert.deepEqual(Object.keys(tiers).sort(), ["frontier", "small", "top"], h);
-    assert.ok(Object.hasOwn(tiers, agent.defaults.tier), `${h}: driver tier ${agent.defaults.tier}`);
+    assert.deepEqual(Object.keys(tiers).sort(), tierKeys, `${h}: tier keys differ across harnesses`);
+    for (const [tier, pin] of Object.entries(tiers)) {
+      if (tier !== "frontier") assert.notEqual(pin, tiers.frontier, `${h}: ${tier} shares the frontier pin`);
+    }
+    assert.ok(tiers[agent.defaults.tier], `${h}: driver tier ${agent.defaults.tier}`);
     for (const model of agent.no_effort_models ?? []) {
       assert.ok(Object.values(tiers).includes(model), `${h}: no_effort_models entry ${model} is not a current pin`);
     }
@@ -264,7 +329,7 @@ test("missing or unknown role tier and effort fail rendering rather than inherit
     '{{ includeTemplate "subagent-claude.md" (dict "root" . "name" "implementer") }}',
     '{{ includeTemplate "pi-roles" (dict "root" .) }}',
   ]) {
-    for (const edit of ['unset $role "tier"', 'unset $role "effort"', 'set $role "tier" "mid"']) {
+    for (const edit of ['unset $role "tier"', 'unset $role "effort"', 'set $role "tier" "no-such-tier"']) {
       const result = invoke("execute-template", `{{ $role := index .subagents "implementer" }}{{ $_ := ${edit} }}${render}`);
       assert.notEqual(result.status, 0, `${edit} should fail ${render}`);
     }
@@ -275,8 +340,8 @@ test("every roster role and shared skill has its source stubs, and every stub a 
   const { data: load } = fixture(t);
   const data = load();
   const stubDirs = {
-    claude: [["private_dot_claude/agents", ".md.tmpl"]],
-    pi: [["private_dot_pi/agent/agents", ".md.tmpl"], ["private_dot_pi/agent/policy-roles", ".ts.tmpl"]],
+    claude: [["private_dot_claude/exact_agents", ".md.tmpl"]],
+    pi: [["private_dot_pi/agent/exact_agents", ".md.tmpl"], ["private_dot_pi/agent/exact_policy-roles", ".ts.tmpl"]],
   };
   for (const [harness, dirs] of Object.entries(stubDirs)) {
     const roles = rolesFor(data, harness);
@@ -305,6 +370,81 @@ test("every roster role and shared skill has its source stubs, and every stub a 
     for (const skill of readdirSync(join(source, dir))) {
       if (!existsSync(join(source, dir, skill, "SKILL.md.tmpl"))) continue;
       assert.ok(skills.includes(skill), `${dir}/${skill}/SKILL.md.tmpl has no .chezmoitemplates/skills/${skill}.md`);
+    }
+  }
+});
+
+test("readonly roles grant no write tool and only read-only MCP tools; writers can write or nest", (t) => {
+  const { data: load } = fixture(t);
+  const data = load();
+  for (const [role, meta] of Object.entries(data.subagents)) {
+    const tools = meta.tools.split(",").map(tool => tool.trim());
+    const writes = tools.includes("Edit") || tools.includes("Write");
+    if (!meta.readonly) {
+      assert.ok(writes || meta.nests, `${role}: not readonly, yet neither writes nor nests`);
+      continue;
+    }
+    assert.ok(!writes, `${role}: readonly but grants Edit or Write`);
+    for (const tool of tools.filter(tool => tool.startsWith("mcp__"))) {
+      const [, server, name] = tool.split("__");
+      assert.ok(data.agent_mcp_servers[server]?.readonly_tools?.includes(name), `${role}: readonly but grants ${tool}, not a readonly_tools entry`);
+    }
+  }
+});
+
+test("docs/decisions.md records every tier pin and driver choice with a typed evidence cell", (t) => {
+  const { data: load } = fixture(t);
+  const data = load();
+  const cells = line => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
+  const [header, , ...body] = readSource("docs/decisions.md").split("\n").filter(line => line.trim().startsWith("|")).map(cells);
+  assert.deepEqual(header, ["key", "value", "evidence", "since", "trigger"]);
+  const rows = new Map(body.map(([key, ...rest]) => [key.replace(/^`(.*)`$/, "$1"), rest]));
+  for (const [h, tiers] of Object.entries(data.subagent_tiers)) {
+    for (const [tier, pin] of Object.entries(tiers)) {
+      const key = `subagent_tiers.${h}.${tier}`;
+      assert.ok(rows.has(key), `docs/decisions.md has no ${key} row`);
+      assert.ok(rows.get(key)[0].includes(pin), `docs/decisions.md ${key} does not name ${pin}`);
+    }
+  }
+  // value cells track the data, so a moved driver or classifier without a record edit fails here
+  for (const h of Object.keys(data.subagent_tiers)) {
+    const key = `agents.${h}.defaults.tier`;
+    assert.ok(rows.has(key), `docs/decisions.md has no ${key} row`);
+    const expected = `${data.agents[h].defaults.tier}, effort ${data.agents[h].defaults.reasoning_effort}`;
+    assert.ok(rows.get(key)[0].startsWith(expected), `docs/decisions.md ${key} value does not start with "${expected}"`);
+  }
+  const cls = data.agents.pi.defaults.classifier;
+  assert.ok(rows.has("agents.pi.defaults.classifier"), "docs/decisions.md has no agents.pi.defaults.classifier row");
+  for (const part of [`tier ${cls.tier}`, `filter ${cls.filter_effort}`, `judge ${cls.judge_effort}`]) {
+    assert.ok(rows.get("agents.pi.defaults.classifier")[0].includes(part), `docs/decisions.md classifier value lacks "${part}"`);
+  }
+  assert.equal(rows.size, body.length, "docs/decisions.md has a duplicate key");
+  for (const [key, [, evidence, , trigger]] of rows) {
+    assert.match(evidence, /^(measured|vendor|benchmark|preference|forced):/, `docs/decisions.md ${key}: evidence type`);
+    // a trigger is an event or a threshold: it is never empty and never a calendar date
+    assert.ok(trigger && trigger.length > 0, `docs/decisions.md ${key}: empty trigger`);
+    assert.doesNotMatch(trigger, /\d{4}-\d{2}-\d{2}/, `docs/decisions.md ${key}: dated trigger`);
+  }
+});
+
+test("agents.yaml comments carry no dates or reversal notes: those live in docs/decisions.md", () => {
+  for (const comment of yamlComments(readSource(".chezmoidata/agents.yaml"))) {
+    assert.doesNotMatch(comment, /\d{4}-\d{2}-\d{2}|Reversal|Revisit/, `agents.yaml comment: ${comment.trim()}`);
+  }
+});
+
+test("shared subagent and skill bodies name no harness-specific file, tool prefix or home", () => {
+  const files = [
+    ...readdirSync(join(source, ".chezmoitemplates/subagents")).filter(file => file.endsWith(".md")).map(file => `.chezmoitemplates/subagents/${file}`),
+    ...readdirSync(join(source, ".chezmoitemplates/skills")).filter(file => file.endsWith(".md")).map(file => `.chezmoitemplates/skills/${file}`),
+    ".chezmoitemplates/reviewer-common.md",
+    ".chezmoitemplates/explore-common.md",
+  ];
+  for (const file of files) {
+    // a harness-specific noun belongs in a template action, which renders it per harness
+    const prose = readSource(file).replace(/\{\{[\s\S]*?\}\}/g, "");
+    for (const noun of ["CLAUDE.md", "AGENTS.md", "workspace_", "mcp__", "~/.claude", "~/.pi"]) {
+      assert.ok(!prose.includes(noun), `${file} names ${noun} outside a template action`);
     }
   }
 });

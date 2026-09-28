@@ -10,7 +10,6 @@
       "enabledModels" ($enabledModels | uniq | sortAlpha)
       "fullscreenExitOutput" "resume-hint"
       "quietStartup" true
-      "hideThinkingBlock" false
       "terminal" (dict "showImages" false)
       "outputPad" 0
       "theme" "catppuccin-latte/catppuccin-mocha"
@@ -20,6 +19,10 @@
       "subagents" (dict
           "disableBuiltins" true
           "defaultProvider" $pi.defaults.provider) -}}
+{{- /* keeps thinking blocks shown even after pi's UI toggle persists hide */ -}}
+{{- $_ := set $managed "hideThinkingBlock" false -}}
+{{- /* turns off pi's install ping to pi.dev */ -}}
+{{- $_ := set $managed "enableInstallTelemetry" false -}}
 #!/usr/bin/env bash
 # pi's settings setters write UI state (theme, thinking level, changelog version)
 # to settings.json; jq's `*` keeps whatever this declared subset does not name

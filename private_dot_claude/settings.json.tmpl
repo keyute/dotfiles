@@ -6,6 +6,12 @@
 {{- end -}}
 {{- $allowedDomains := concat .agent_sandbox.network.allowed_domains $extras.allowed_domains -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
+{{- $modelSettings := dict -}}
+{{- range $tier, $pin := .subagent_tiers.claude -}}
+  {{- if not (has $pin $.agents.claude.no_effort_models) -}}
+    {{- $_ := set $modelSettings $pin (dict "effortLevel" $.agents.claude.defaults.reasoning_effort) -}}
+  {{- end -}}
+{{- end -}}
 {{- $permDeny := .agents.claude.denied_tools -}}
 {{- /* The harness merges Read() denies into the Bash sandbox's read denyOnly,
        so they are the one read-deny list; restore sandbox.filesystem.denyRead
@@ -30,12 +36,9 @@
     "defaultMode": "plan"
   },
   "model": {{ (index .subagent_tiers.claude .agents.claude.defaults.tier) | toJson }},
-  {{- /* Both pins, so effort after a `/model` escalation to the frontier is
-         this value rather than the server-side default, which can change. */}}
-  "modelSettings": {
-    {{ .subagent_tiers.claude.top | toJson }}: { "effortLevel": {{ .agents.claude.defaults.reasoning_effort | toJson }} },
-    {{ .subagent_tiers.claude.frontier | toJson }}: { "effortLevel": {{ .agents.claude.defaults.reasoning_effort | toJson }} }
-  },
+  {{- /* every Claude pin that takes an effort knob gets the driver effort, so a
+         /model change keeps it */}}
+  "modelSettings": {{ $modelSettings | toPrettyJson | indent 2 | trim }},
   {{- /* The driver runs the top tier; general-purpose and Plan are managed
          overrides pinned in the roster, so this default only catches the
          built-in `claude` type, plugin agents and workflow agents (it never
@@ -45,6 +48,7 @@
          a per-call frontier override. */}}
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
+    {{- /* also disables the bundled `loop` skill; add `loop: "off"` to skill_overrides if this goes */}}
     "CLAUDE_CODE_DISABLE_CRON": "1"
   },
   {{- /* Mirrors herdr's canonical SessionStart entry (structural JSON equality)
@@ -87,8 +91,12 @@
       "allowWrite": {{ $allowWrite | toPrettyJson | indent 6 | trim }}
     }
   },
+  {{- /* no rotating tips under the spinner */}}
   "spinnerTipsEnabled": false,
+  {{- /* alternate-screen TUI, as pi's managed launch */}}
   "tui": "fullscreen",
+  {{- /* advisory fan-out size the Workflow tool shows the driver */}}
+  "workflowSizeGuideline": "small",
   {{- /* Internal one-time consent flag for the auto-mode workflow prompt; the
          CLI writes it into this chezmoi-owned file, so without it every apply
          brings the prompt back. */}}

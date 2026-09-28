@@ -15,7 +15,7 @@ export const VISIBLE_ROWS = 5;
 // The fleet DTO's `model` is the launch string (provider/model:thinking) and
 // `effort` repeats the thinking level, so the suffix is dropped before the
 // effort is appended once — the footer's own spelling.
-const EFFORT_SUFFIX = /:(low|medium|high|xhigh|max)$/;
+const EFFORT_SUFFIX = /:([a-z]+)$/;
 
 export function formatTokens(n) {
   const v = Number(n);
