@@ -61,8 +61,9 @@ test("active tool exposure follows permission and UI, never mode", () => {
 });
 
 test("Subscription Responses payloads retain distinct workflow and project-context patches across mode switches", async () => {
-  const model = { ...openaiCodexProvider().getModels().find(model => model.id === "gpt-6-astra"), baseUrl: "https://example.test" };
-  assert.equal(model.id, "gpt-6-astra");
+  const found = openaiCodexProvider().getModels().find(model => model.reasoning && model.compat?.supportsMidConvoSystemMessages);
+  assert.ok(found);
+  const model = { ...found, baseUrl: "https://example.test" };
   const token = `x.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture" } })).toString("base64url")}.x`;
   const read = { name: "workspace_read", description: "Read", parameters: Type.Object({ path: Type.String() }) };
   const write = { name: "workspace_write", description: "Write", parameters: Type.Object({ path: Type.String() }) };
@@ -363,9 +364,10 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   const ceiling = () => resolveCurrentSubagentCapabilityCeiling(ctx.sessionManager.getSessionId());
   assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader"]);
   assert.equal(broker.policy.mode, "plan");
-  const promptEvent = { systemPromptOptions: { sections: {}, contextFiles: [] } };
+  const promptEvent = { systemPromptOptions: { sections: {}, contextFiles: [], skills: [{ name: "fixture-skill", description: "Fixture", filePath: "/skills/fixture/SKILL.md" }] } };
   for (const handler of handlers.get("before_agent_start")) assert.equal(await handler(promptEvent, ctx), undefined);
   assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
+  assert.match(promptEvent.systemPromptOptions.sections.skills, /Use the workspace_read tool[^]*<name>fixture-skill<\/name>/);
   assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
   assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_bash", "workspace_grep", "workspace_find", "workspace_ls", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
@@ -540,11 +542,11 @@ test("the broker refuses to start without a numeric child concurrency limit", as
 test("an inherit-model child resolves to the parent's model before the tier check", { skip }, async t => {
   const { config } = fixture(t);
   const role = config.agents["fixture-reader"];
-  config.agents["fixture-worker"] = { ...role, readonly: false, model: "inherit" };
+  config.agents["fixture-worker"] = { ...role, readonly: false };
   const contract = { agent: { filePath: role.agentPath }, tools: { configuredExtensions: [role.extensionPath], effectiveAllowlist: ["workspace_read"] }, digest: "d" };
   const resolve = async request => { resolve.model = request.model; return { ok: true, contract }; };
   const registry = { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] };
-  const launch = () => ({ agent: "fixture-worker", task: "Do the thing" });
+  const launch = () => ({ agent: "fixture-worker", task: "Do the thing", model: "inherit" });
   const ctxFor = id => ({ cwd: process.cwd(), model: { provider: "openai-codex", id }, modelRegistry: registry });
   const resolved = launch();
   await checkChildLaunch(resolved, config, "root", ctxFor("gpt-5.6-sol"), resolve, "execute");

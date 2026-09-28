@@ -1,6 +1,8 @@
 {{- /* pi-roles: render the shared role definitions as Pi's child contracts.
        input: dict "root" <template data>
-       output: JSON map keyed by role name; roles scoped to other harnesses are omitted */ -}}
+       output: JSON map keyed by role name; roles scoped to other harnesses are omitted.
+       mcpTools lists the "<server>__<tool>" names (or "*") the role may call through the mcp proxy,
+       taken from the source's mcp__<server>__<tool> entries, with WebFetch granting exa__web_fetch_exa */ -}}
 {{- $root := .root -}}
 {{- $agentDir := printf "%s/.pi/agent" $root.chezmoi.homeDir -}}
 {{- $roles := dict -}}
@@ -16,7 +18,7 @@
     {{- $pin := get $root.subagent_tiers.pi $tier -}}
     {{- if not $pin -}}{{- fail (printf "%s: unknown tier %s" $name $tier) -}}{{- end -}}
     {{- $tools := list -}}
-    {{- $needsMcp := false -}}
+    {{- $mcpTools := list -}}
     {{- range splitList "," $meta.tools -}}
       {{- $sourceTool := trim . -}}
       {{- if eq $sourceTool "Read" -}}{{- $tools = append $tools "workspace_read" -}}
@@ -28,11 +30,13 @@
       {{- else if eq $sourceTool "WebSearch" -}}{{- $tools = append $tools "web_search" -}}
       {{- end -}}
       {{- /* Exa fetch stays behind the MCP proxy, as WebFetch's counterpart */ -}}
-      {{- if or (eq $sourceTool "WebFetch") (hasPrefix "mcp__" $sourceTool) -}}
-        {{- $needsMcp = true -}}
+      {{- if eq $sourceTool "WebFetch" -}}{{- $mcpTools = append $mcpTools "exa__web_fetch_exa" -}}
+      {{- else if eq $sourceTool "mcp__*" -}}{{- $mcpTools = append $mcpTools "*" -}}
+      {{- else if hasPrefix "mcp__" $sourceTool -}}{{- $mcpTools = append $mcpTools (trimPrefix "mcp__" $sourceTool) -}}
       {{- end -}}
     {{- end -}}
-    {{- if $needsMcp -}}{{- $tools = append $tools "mcp" -}}{{- end -}}
+    {{- if has "*" $mcpTools -}}{{- $mcpTools = list "*" -}}{{- end -}}
+    {{- if $mcpTools -}}{{- $tools = append $tools "mcp" -}}{{- end -}}
     {{- $nests := default false (get $meta "nests") -}}
     {{- if $nests -}}{{- $tools = concat $tools (list "subagent" "bg_wait") -}}{{- end -}}
     {{- /* mutationTools: renamed tools are invisible to pi-subagents' long-running guard and mutation evidence, so mutation-capable roles declare them; the shell and (for nesting roles) subagent are listed too because only the literal `bash` name gets command inspection upstream, and an untracked file created by a shell command or a delegated child leaves no other evidence */ -}}
@@ -47,6 +51,7 @@
           "nests" $nests
           "tools" ($tools | uniq)
           "mutationTools" ($mutationTools | uniq)
+          "mcpTools" ($mcpTools | uniq)
           "model" (printf "%s/%s" $root.agents.pi.defaults.provider $pin)
           "thinking" $effort
           "extensionPath" (printf "%s/policy-roles/%s.ts" $agentDir $name)

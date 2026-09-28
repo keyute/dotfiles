@@ -1,8 +1,6 @@
 # Authoring agent instructions
 
-Moved out of the repo-root `AGENTS.md` on 2026-09-26 and cut to placement and
-style on 2026-09-28; the gates for adding a line now live in `AGENTS.md`
-(Harness iteration). `git log -p` on either file holds earlier history.
+Gates for adding a line: `AGENTS.md` (Harness iteration).
 
 ## Placement
 

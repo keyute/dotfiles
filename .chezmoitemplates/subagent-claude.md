@@ -10,7 +10,7 @@
 {{- if not $role -}}{{- fail (printf "%s: scoped to %v, not claude" $name $meta.harnesses) -}}{{- end -}}
 ---
 name: {{ $name }}
-description: {{ $meta.description }}
+description: {{ $meta.description | toJson }}
 {{- /* a nesting role gets every tool, Agent included, by omitting `tools`;
        the roster's list is pi's translation input */}}
 {{- if not (get $meta "nests") }}

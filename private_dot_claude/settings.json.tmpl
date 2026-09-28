@@ -1,14 +1,10 @@
 {{- $sb := fromJson (includeTemplate "agent-sandbox" (dict "self" "claude" "root" .)) -}}
-{{- $allowWrite := $sb.allowWrite -}}
-{{- $extras := .agents.claude.extras -}}
-{{- range $extras.writable_paths -}}
-  {{- $allowWrite = append $allowWrite . -}}
-{{- end -}}
-{{- $allowedDomains := concat .agent_sandbox.network.allowed_domains $extras.allowed_domains -}}
+{{- $allowedDomains := concat .agent_sandbox.network.allowed_domains .agents.claude.extras.allowed_domains -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
 {{- $modelSettings := dict -}}
+{{- $noEffort := default (list) (get .agents.claude "no_effort_models") -}}
 {{- range $tier, $pin := .subagent_tiers.claude -}}
-  {{- if not (has $pin $.agents.claude.no_effort_models) -}}
+  {{- if not (has $pin $noEffort) -}}
     {{- $_ := set $modelSettings $pin (dict "effortLevel" $.agents.claude.defaults.reasoning_effort) -}}
   {{- end -}}
 {{- end -}}
@@ -19,20 +15,24 @@
 {{- range $sb.denyRead -}}{{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}{{- end -}}
 {{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
        resolving their op secrets here would make settings.json depend on
-       1Password. deny wins over the blanket mcp__<server> allow, so denied_tools
-       subtracts individual tools from an otherwise auto-approved server. */ -}}
+       1Password. An auto-approved server gets a per-tool allow for each of its
+       readonly_tools only, so a tool it adds later keeps normal review;
+       denied_tools are denied outright. */ -}}
 {{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "harness" "claude" "policyOnly" true) | fromJson -}}
   {{- range $entry.policy.denied_tools -}}
     {{- $permDeny = append $permDeny (printf "mcp__%s__%s" $name .) -}}
   {{- end -}}
   {{- if $entry.policy.auto_approve_tools -}}
-    {{- $allowedPerms = append $allowedPerms (printf "mcp__%s" $name) -}}
+    {{- range $entry.policy.readonly_tools -}}
+      {{- $allowedPerms = append $allowedPerms (printf "mcp__%s__%s" $name .) -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 {
   "permissions": {
     "allow": {{ $allowedPerms | toPrettyJson | indent 4 | trim }},
     "deny": {{ $permDeny | toPrettyJson | indent 4 | trim }},
+    {{- /* sessions start in plan mode, not default */}}
     "defaultMode": "plan"
   },
   "model": {{ (index .subagent_tiers.claude .agents.claude.defaults.tier) | toJson }},
@@ -44,8 +44,8 @@
          built-in `claude` type, plugin agents and workflow agents (it never
          reaches Explore or Plan; see agents.yaml subagents.Plan). A default,
          not a force: frontmatter and per-call overrides still win, and the
-         Agent(model:fable) deny rule (agents.claude.denied_tools) is what stops
-         a per-call frontier override. */}}
+         Agent(model:…) deny in agents.claude.denied_tools is what stops a
+         per-call frontier override. */}}
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
     {{- /* also disables the bundled `loop` skill; add `loop: "off"` to skill_overrides if this goes */}}
@@ -68,6 +68,7 @@
       }
     ]
   },
+  {{- /* no Remote Control bridge to claude.ai or the mobile app */}}
   "disableRemoteControl": true,
   "statusLine": {
     "type": "command",
@@ -88,7 +89,8 @@
       "allowLocalBinding": {{ .agent_sandbox.network.allow_local_binding }}
     },
     "filesystem": {
-      "allowWrite": {{ $allowWrite | toPrettyJson | indent 6 | trim }}
+      "allowWrite": {{ $sb.allowWrite | toPrettyJson | indent 6 | trim }},
+      "denyWrite": {{ $sb.denyWrite | toPrettyJson | indent 6 | trim }}
     }
   },
   {{- /* no rotating tips under the spinner */}}
@@ -101,8 +103,11 @@
          CLI writes it into this chezmoi-owned file, so without it every apply
          brings the prompt back. */}}
   "skipWorkflowUsageWarning": true,
+  {{- /* follow the terminal's light/dark mode */}}
   "theme": "auto",
+  {{- /* no claude-cli:// URL handler registered with the OS */}}
   "disableDeepLinkRegistration": "disable",
+  {{- /* no claude.ai account surface */}}
   "enableArtifact": false,
   "disableClaudeAiConnectors": true,
   "syncClaudeAiSkills": false,

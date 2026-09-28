@@ -19,7 +19,9 @@ file are chezmoi-ignored (repo-local only).
   config knob, a frontmatter key). Own the code when the need is specific to
   this repo's policy or layout, when adoption would need a wrapper, pin or
   workaround for the coupling register, or when only a sliver of it would be
-  used. Either way, record beside the decision the trigger that reverses it.
+  used. Either way, record the trigger that reverses it with the decision: a
+  model, role or setting in `docs/decisions.md`, owned code in `docs/pi-implementation.md`
+  or the coupling register.
   A dependency pin bump lands as its own change, so its cost stays measurable.
 - Keep vendor-templated files (oh-my-tmux, ghostty, gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
@@ -37,39 +39,35 @@ file are chezmoi-ignored (repo-local only).
 - Code the harness spawns outside the sandbox (MCP servers, the bridge, hooks)
   treats caller-supplied paths, repos and arguments as hostile: pin its config,
   refuse sandbox-writable roots, and ship a malicious-input test.
-- Each module under `private_dot_pi/agent/workflow/` has the one
-  responsibility its line in the module map atop `docs/pi-design.md` states; a
-  new concern gets its own module or joins the one whose line names it. For a
-  module marked TUI read the whole doc — its rules change only with a dated
-  decision there.
+- Before adding to `private_dot_pi/agent/workflow/`, read the module map atop
+  `docs/pi-design.md` (the whole doc for a module it marks TUI).
 - Leave `chezmoi apply` and 1Password signin to me; stub `onepasswordRead`
   when verifying affected templates. Resolved values belong only in applied
   private targets, never in source files, commits, or terminal output.
+
 ## Harness iteration
 
-Rules for changing models, roles, settings or instructions; the record is
-`docs/decisions.md`, and `npm run test:pi` holds every mechanical check.
+Rules for changing models, roles, settings or instructions; the record and
+the owner's procedure are `docs/decisions.md`, and `npm run test:pi` holds
+every mechanical check.
 
 - **One slot per change**, as a dated trial: a pin, a role's tier or effort,
-  a routing description, a harness setting. Its `docs/decisions.md` row
-  records the before reading from `scripts/agent-usage.mjs`, the evidence
-  kind and the revert threshold. Only a same-family successor to a released
-  or retired model lands on vendor evidence alone.
-- **Dwell 14 days** of use (two weekly pool windows) before judging a changed
+  a routing description, a harness setting — with its `docs/decisions.md` row
+  in the same change. Only a same-family successor to a released or retired
+  model lands on vendor evidence alone.
+- **Dwell** for the period `docs/decisions.md` sets before judging a changed
   slot; earlier only when it is broken: rejected by the harness, withdrawn by
   the vendor, a red test, a security finding.
-- **Never cite an unrun gate.** Label evidence `measured`, `vendor`,
-  `benchmark`, `preference` or `forced`; benchmarks and API prices nominate a
-  candidate, the after reading decides.
-- **Drivers follow pool headroom**: each runs the most capable tier whose
-  weekly pool has not reached its limit in two of the last four weeks (Claude
-  `/usage`, pi's footer segments); when a pool binds, lower effort before
-  tier. Children never run the frontier tier.
+- **Never cite an unrun gate.** Label evidence by the kinds `docs/decisions.md`
+  defines; benchmarks and API prices nominate a candidate, the after reading
+  decides.
+- **Children never run the frontier tier.**
 - **One record.** The why, evidence and reversal trigger of a model, role,
   setting or asymmetry decision live only in its `docs/decisions.md` row; a
-  trigger is an external event or a measured threshold, never a date.
-  Comments in data, code and docs say what a thing does, not why; an
-  instruction line's why stays in its template comment.
+  trigger is an external event or a measured threshold, never a date. A
+  comment beside such a key says what it does and carries no evidence, date
+  or trigger; hazards and constraints stay beside the code; an instruction
+  line's why stays in its template comment.
 - **Review on triggers only** — a model release or retirement, a pin bump, a
   pool binding, a trial's after reading due, an observed failure — and only
   for what the trigger touches. No scheduled, post-update or whole-harness
@@ -79,14 +77,14 @@ Rules for changing models, roles, settings or instructions; the record is
   harness limit, and a side effect (a renamed tool, a disabled built-in)
   counts. Name the boundary that enforces a restriction — sandbox, policy,
   tool list — never imply one.
-- **Set a vendor setting only to change its default**, with a one-line
-  comment beside the key naming the behaviour it changes.
+- **Set a vendor setting only to change its default** or to pin a value the
+  harness UI persists, with a one-line comment beside the key naming the
+  behaviour it changes.
 - **An always-loaded instruction line** exists only for a diagnosed, recurring
   failure that the harness prompt, the code or a check does not already
   prevent; when `git log -p` shows a line oscillating, delete it or change its
   intent, never reword it. Read `docs/agent-authoring.md` before editing an
   instruction source (shared or consumer templates, subagent and skill
   bodies, on-demand docs).
-- **Commit subjects name the decision** ("roster: Explore routes web questions
-  to researcher, trial"), never "update harness". A decision goes in
-  `docs/decisions.md`; agent memory holds only session-side gotchas.
+- A decision goes in `docs/decisions.md`; agent memory holds only
+  session-side gotchas.

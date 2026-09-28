@@ -1,7 +1,7 @@
 # Claude Code workflow reference
 
-Env-specific facts and decisions, each dated; decisions and their triggers live in the chezmoi
-repo's `docs/decisions.md`. If behavior seems changed, verify (claude-code-guide) and update.
+Env-specific facts; decisions and their triggers live in the chezmoi repo's `docs/decisions.md`.
+If behavior seems changed, verify (claude-code-guide) and update.
 
 ## Models (last verified 2026-09-25)
 
@@ -9,13 +9,12 @@ repo's `docs/decisions.md`. If behavior seems changed, verify (claude-code-guide
   effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned under `modelSettings` for every pin with an
   effort knob, so a `/model` escalation keeps it. The 1M window is the default on the current pins (no `[1m]` suffix).
 - Escalate effort first: `/effort xhigh` keeps the prompt cache. `{{ .subagent_tiers.claude.frontier }}`
-  is escalation-only (since 2026-09-25): for an ambiguous root-cause or architecture problem
+  is escalation-only: for an ambiguous root-cause or architecture problem
   where the driver at higher effort fell short, start a fresh session with
   `claude --model {{ .subagent_tiers.claude.frontier }}`. Do not `/model` a grown session: each model has its own
   cache, so the next request re-reads the whole history uncached at the frontier rate, and
-  `/model <name>` saves it as the default until the next apply (decision 2026-09-26). In a
-  frontier-model session don't fork and don't run workflows — forks inherit it, and a workflow
-  `agent({model:'fable'})` has no guard.
+  `/model <name>` saves it as the default until the next apply. In a
+  frontier-model session don't fork and don't run workflows — forks inherit it.
 - Roles render from `subagents` in agents.yaml; `docs/decisions.md` records each why. Pins do not
   follow `/model`; a child without explicit effort inherits session effort.
 
@@ -24,31 +23,31 @@ repo's `docs/decisions.md`. If behavior seems changed, verify (claude-code-guide
 {{ range $name, $role := includeTemplate "claude-roles" (dict "root" .) | fromJson -}}
 | {{ $name }} | `{{ $role.model }}` | {{ $role.effort | default "—" }} |
 {{ end }}
-- `general-purpose` and `Plan` override the built-ins (2026-09-25). `CLAUDE_CODE_SUBAGENT_MODEL`
+- `general-purpose` and `Plan` override the built-ins. `CLAUDE_CODE_SUBAGENT_MODEL`
   (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin and workflow
   agents and teammates; leave its `_FORCE` variant unset, it would erase specialist pins.
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
 {{- $bare := list }}{{ $scoped := list }}{{ $frontierDeny := "" }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $frontierDeny = . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
-- The `{{ $frontierDeny }}` deny rule is the per-call frontier guard (trialled 2026-09-27); it
+- The `{{ $frontierDeny }}` deny rule is the per-call frontier guard; it
   does not see a Workflow `agent()` opts.model, which does reach the frontier, or a
   third-party `model: inherit`, nor prove routing.
-- After each CLI update, check `message.model` of one unpinned child and one `{{ .subagent_tiers.claude.top }}` override.
-- Every custom subagent loads `~/.claude/CLAUDE.md` and draws the same Max pools (5-hour
+{{- $omit := list }}
+{{- range $name, $meta := .subagents }}{{ if and (get $meta "omit_instructions") (or (not (get $meta "harnesses")) (has "claude" (get $meta "harnesses"))) }}{{ $omit = append $omit $name }}{{ end }}{{ end }}
+- Every custom subagent except the omit_instructions roles ({{ $omit | join ", " }}) loads
+  `~/.claude/CLAUDE.md`; all draw the same Max pools (5-hour
   window, shared weekly pool; the frontier model's 50% weekly cap is shared, not reserved); check `/usage`.
 
-## Workflows (verified 2026-09-26)
+## Workflows (last verified 2026-09-26)
 
 - The keyword `ultracode` opts one turn into a workflow at session effort; `/effort ultracode`
   is xhigh plus standing workflows, with no size warning and no 20-agent Agent-tool cap. Only the
   driver can start one; concurrency is min(16, CPUs−2); `skipWorkflowUsageWarning: true`
   suppresses auto mode's pre-workflow cost prompt. A bare `agent()` gets the
   `CLAUDE_CODE_SUBAGENT_MODEL` pin at session effort; `agent({agentType})` the role's pin and effort.
-- Workflow agents were 67% of a week's Claude usage (measured 2026-09-26): ~50 calls and
-  200–250k context each, 92% of cost cache — fan-out size and per-agent scope drive burn,
-  effort barely does.
+- Fan-out size and per-agent scope drive workflow burn; effort barely does.
 
-## Local-only surface (decision 2026-09-21)
+## Local-only surface
 
 - No claude.ai-product surface: account skill/plugin sync, claude.ai connectors and Remote
   Control are off in settings, the cron scheduler by env; `{{ $bare | join "`, `" }}` are
@@ -57,13 +56,13 @@ repo's `docs/decisions.md`. If behavior seems changed, verify (claude-code-guide
   `enabledPlugins`). Web search, Exa, context7 and Playwright stay for research;
   `/code-review ultra` and `claude --cloud` have no disable knob, both user-invoked only.
 
-## Cross-model bridge on pi (decision 2026-09-23)
+## Cross-model bridge on pi
 
 - `cross-model-review` / `cross-model-advice` are read-only GPT consultations;
-  decisions stay in Claude, triggered by risk or breadth (2026-09-03).
+  decisions stay in Claude, triggered by risk or breadth.
   They call the `pi` MCP server (`scripts/pi-bridge.mjs` in the chezmoi repo):
   tools `review`, `advise`, `reply` run pi read-only at the model and effort
   pinned by `agent_mcp_servers.pi`, so callers pick scope only; `review` embeds
-  the git diff (git read-only under srt), and `mcp__pi` is allow-listed so it runs
-  prompt-free in plan mode. It refuses a cwd under a sandbox-writable scratch root
-  or whose `.git` is not its own (2026-09-26): review a real checkout.
+  the git diff (git read-only under srt), and the three tools are allow-listed so they
+  run prompt-free in plan mode. It refuses a cwd under a sandbox-writable scratch root
+  or whose `.git` is not its own: review a real checkout.

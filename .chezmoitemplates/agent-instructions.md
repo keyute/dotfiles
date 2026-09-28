@@ -34,7 +34,7 @@
     pinned worker; it owns implementation/test/repair. Keep decomposition,
     architecture, cross-scope and overall planning decisions, planning synthesis,
     approval, integration, adjudication, and final verification in the driver.
-    Finish a failed worker's piece yourself rather than promoting it.{{/* driver_ownership: explicit ownership keeps scoped implementation out of the driver's context without ceding cross-scope decisions, and objective gates make worker results reviewable (2026-09-15; tier-independent since 2026-09-25) */}}
+    Finish a failed worker's piece yourself rather than promoting it.{{/* driver_ownership: explicit ownership keeps scoped implementation out of the driver's context without ceding cross-scope decisions, and objective gates make worker results reviewable */}}
 {{- end }}
 {{- if not (has "specialist_pinning" $native) }}
   - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list

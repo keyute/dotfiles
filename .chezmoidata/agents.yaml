@@ -3,7 +3,7 @@ agents:
     home: "~/.claude"
     # lines this harness's own prompt surface already carries; the shared
     # projection skips them
-    native_coverage: [call_batching, docs_mcp, user_run_commands]
+    native_coverage: [call_batching, convention_recording, docs_mcp, user_run_commands]
     defaults:
       # a subagent_tiers key, never a second copy of the pin
       tier: top
@@ -25,9 +25,6 @@ agents:
       - "ide"
       - "bridge-spawn"
     extras:
-      writable_paths:
-        - "~/.claude/plugins/data"
-        - "~/.claude/projects"
       allowed_domains:
         - "*.anthropic.com"
         - "code.claude.com"
@@ -185,7 +182,6 @@ subagents:
 # explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
 subagent_tiers:
   claude:
-    # no effort knob (agents.claude.no_effort_models)
     small: claude-haiku-4-5
     top: claude-opus-5-5
     # render.test checks the Agent(model:…) deny in agents.claude.denied_tools
@@ -262,6 +258,7 @@ agent_mcp_servers:
     # the bridge runs the top worker tier at its own effort
     args: ["--reasoning-effort", high, "--model", *openai_top, "--provider", *pi_provider]
     auto_approve_tools: true
+    readonly_tools: [review, advise, reply]
     harnesses:
       - claude
   context7:
@@ -288,10 +285,6 @@ agent_mcp_servers:
       - deep_researcher_start
       - deep_researcher_check
       - agent_run
-      - agent_create_run
-      - agent_get_run
-      - agent_wait_for_run
-      - agent_cancel_run
     env:
       EXA_API_KEY:
         op: Personal/Exa/api key

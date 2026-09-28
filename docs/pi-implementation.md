@@ -18,9 +18,7 @@ here.
   saved theme or `/thinking` level resets, and trust lives in `trust.json`
   (2026-09-26).
 - OpenAI subscription OAuth only; tier models live in agents.yaml
-  (`subagent_tiers.pi`), and `children.mjs` rejects a child on the frontier
-  tier (decision 2026-09-15). The pinned Pi SDK (see `package.json`) lists
-  Astra; if a future pin drops it, report unavailable — do not invent an alias.
+  (`subagent_tiers.pi`).
 - Native host Pi and trusted extensions. The `workspace_*` tools are the SDK's
   own tools running in-host with the real harness context; each invocation
   routes its primitive operations (documented `operations` seam, as pi's
@@ -29,7 +27,10 @@ here.
   host-side ripgrep spawn). MCP stdio servers also use SRT workers.
 - Root Unix-socket broker owns mode, approvals and process leases (owned code:
   re-check when a pi release ships per-tool approval or a policy hook API,
-  2026-09-18). Tool leases
+  2026-09-18). Its child lease cap is `globalConcurrencyLimit` in
+  `extensions/subagent/config.json`, shared with pi-subagents and equal to the
+  plugin default; plain JSON cannot say so, and the broker refuses to start
+  without it. Tool leases
   require a single-use ticket minted at approval, bound to epoch/role/tool.
   Child sessions carry the policy epoch they were launched under (via the
   parent's environment) and are refused if it changed before they connected.
@@ -77,7 +78,7 @@ here.
   instructions, input and tools across section patches and mode switches.
   These are request-shape guarantees, not live subscription cache/billing proof.
   No cache plugin or long-TTL override: this request builder does not request one.
-- 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization; the proxy stays live and the initial sync may still notify. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
+- 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
 - 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The two-hour runtime backstop with a five-minute checkpoint/stop steer replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts: `bg_wait` window expiry is non-terminal, the separate headless `agent_end` auto-drain keeps its 30-minute limit, and a nesting child collects results during its turn, not through that drain.
 - 2026-09-22: no on-disk patches; two guarded prototype replacements (skill display, pending input), pinned in `stability.test.mjs`. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. 2026-09-23: rather than wait, the extension owns the `!` round-trip through documented surfaces (composer submit, custom message/entry, its own renderer; `docs/pi-coupling.md`); when the hook ships, hand execution back to pi and keep only the renderer. 2026-09-23, later: the `!` command honours pi's `shellPath`/`shellCommandPrefix` (managed zsh sourcing `~/.zshrc`) through the SDK's `SettingsManager`, so the hand-back changes nothing the user sees.
 - 2026-09-24, maintainability survey: keep the owned UI and harness, adopt
@@ -96,11 +97,10 @@ here.
   for the tier check (loses refusal text and the frontier rule); dropping the
   double checks on child launch and MCP policy (defence in depth); pooled SRT
   workers, no broker or a one-stage classifier (each recreates leases or changes
-  decisions). Durable cut: upstream log level, DTO run id, description override.
-- 2026-09-26: settings `defaultThinkingLevel` is the one owner of the root
-  thinking level; the workflow no longer sets it per mode. Mode switches and
-  `/remove-dir` no longer reset it, so a `/thinking` choice survives them.
-  Reversal trigger: a measured need for a plan/execute effort split.
+  decisions).
+- Settings `defaultThinkingLevel` is the one owner of the root thinking
+  level; the workflow sets none per mode (`docs/decisions.md`,
+  `setting.pi_defaultThinkingLevel`).
 - 2026-09-26: root `workspace_write`/`workspace_edit` stay declared in plan
   mode, reversing 2026-09-17's hiding. After any tool removal pi-ai resends the
   full tool list for the rest of the transcript, so every later mode switch
@@ -120,13 +120,12 @@ here.
   tasks; cleanup retains their outputs and failures. Cleanup cannot run after
   Pi receives SIGKILL, nor does it cover deliberately detached `setsid` daemons
   or external services/containers.
-- 2026-09-26: no `modelOverrides` `contextWindow` raise: the subscription route
-  serves 272,000 input tokens, and a raise only defers compaction until the
-  provider rejects. Revisit at the next SDK bump or if the live readout
-  reports otherwise.
-- 2026-09-26: shared skills load only by explicit `/skill:name`: pi lists
-  skills in the system prompt only while a tool named `read` or `bash` is
-  active, and the workflow exposes `workspace_*`.
+- No `modelOverrides` `contextWindow` raise (`docs/decisions.md`,
+  `setting.pi_contextWindow`).
+- The workflow's `before_agent_start` hook lists skills to the root model
+  through the SDK's `formatSkillsForPrompt`, naming `workspace_read`: pi's own
+  listing keys on a tool named `read` or `bash`, and the workflow exposes
+  `workspace_*`.
 - 2026-09-18: TypeSafe Jev is not adopted for the approval classifier: the
   only slice an offline replay fast-allows safely is the sandboxed reviewed
   verbs, 11% of reviews, and escalations rarely clear the confidence bar.
@@ -150,26 +149,24 @@ here.
 
 ## Verification and remaining gates
 
-- Automated tests cover pinned package registration, real child launch preflight,
-  policy decisions, shared child capacity, revocation and runner lifecycle.
-- Actual Unix sockets/SRT cannot run in this session (socket binding returns
-  EPERM). Socket fixtures skip explicitly; lifecycle-only tests stub the broker. The opt-in live test is
-  not evidence of a successful sandbox run until executed on the user's host.
-- Live OAuth, foreground/background children, cancellation, the fleet widget and
-  MCP remain acceptance gates. Do not treat fixture tests as full DX parity.
-- Open residuals and follow-ups live in `docs/decisions.md` (`pi.residual.*`
-  rows), each with its trigger.
-- From the source repository, run `npm run test:pi`. It covers policy,
-  classifier fallback, terminal proof, child preflight and secret-stubbed
-  chezmoi projections. `PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` additionally
-  exercises actual Unix sockets and SRT against disposable fixtures; it needs
-  an unrestricted local host.
-- Before relying on the setup, separately verify subscription login, parent
-  and foreground/background child model pins, auto approvals, cancellation,
-  the fleet widget, MCP queries, diagnostics and approved edits in a
-  disposable project.
+- `npm run test:pi` covers pinned package registration, policy decisions,
+  classifier fallback, terminal proof, child launch preflight and the
+  secret-stubbed chezmoi projections; fixtures that need a Unix socket or SRT
+  skip where the sandbox denies them.
+- `PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` on an unrestricted host
+  exercises actual sockets and SRT against disposable fixtures.
+- After a pin bump, re-check live: subscription login, root and child model
+  pins, auto approvals, cancellation, the fleet rows and peek, MCP queries.
+- Accepted residuals, each with its trigger: a timed-out approval leaves its
+  review queued (approval timeouts seen, or a late verdict applied); a ticket
+  is bound to epoch/role/tool, not arguments (the approval flow changes, or pi
+  lets arguments change post-review); setsid/double-fork/other-user children
+  escape kill (an orphan after a kill, or a role granted a daemoniser);
+  follow-ups fixed on trigger — paste cancels completions, folds grow,
+  forkContext copies in full, fleet rows in the footer, the `wham/usage` read
+  (`@hk_net/pi-usage-bars` if it breaks).
 
-## Claude-side bridge internals (moved from harness.md 2026-09-26)
+## Claude-side bridge internals
 
 - The `pi` MCP entry spawns `scripts/pi-bridge.mjs`, which runs the repo-local
   pi in `--mode json` print mode with the read-only tool allowlist
@@ -177,8 +174,8 @@ here.
   bridge's own path guard. `review` embeds a bridge-computed git diff because
   the child cannot run git (decision 2026-09-23).
 - MCP transport is kept deliberately: the bridge is harness-spawned outside the
-  Bash sandbox (the `~/.pi` deny stays intact) and its rendered `mcp__pi` allow
-  rule makes the tools prompt-free in plan mode (verified 2026-09-23). Plan mode
+  Bash sandbox (the `~/.pi` deny stays intact) and its rendered per-tool allow
+  rules make the tools prompt-free in plan mode. Plan mode
   blocks MCP tools unless allow-listed (`readOnlyHint` ignored; upstream #12368
   closed "not planned") and Bash has no plan-mode exemption.
 - Read isolation is the guard extension, not a sandbox: pi's built-in tools run

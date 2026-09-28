@@ -61,5 +61,4 @@ synthesis.
 
 6. **Fix on approval, then call it.** Apply fixes only to the findings I approve, and
    keep each fix inside the defect it names — no adjacent cleanup, no new capability.
-   Correction is a separate step from finding. Never stage, commit, or push — I do
-   that myself. End with the ship verdict.
+   Correction is a separate step from finding. End with the ship verdict.

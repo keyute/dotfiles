@@ -344,6 +344,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     const options = event.systemPromptOptions;
     for (const { path, content } of extraDirs.values()) options.contextFiles.push({ path, content });
     options.sections.workflow = workflowPrompt({ mode: state.mode, readonly: state.readonly, isRoot });
+    // pi lists skills only when `read` or `bash` is selected, and the workflow
+    // exposes only workspace_* tools; an empty section is dropped.
+    if (isRoot) options.sections.skills = sdk.formatSkillsForPrompt(options.skills, "read").replace("Use the read tool", "Use the workspace_read tool").trim();
   });
 
   // /add-dir, Claude Code's added working directory: the policy widens the

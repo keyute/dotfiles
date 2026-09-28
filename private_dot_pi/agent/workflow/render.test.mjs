@@ -11,14 +11,14 @@ import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-// byte budgets (single owner; AGENTS.md's instruction-sources bullet points here):
-// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, the decisions record
+// byte budgets (single owner; docs/agent-authoring.md points here):
+// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md
 const PROJECTION_MAX_BYTES = 7000;
 const ON_DEMAND_DOC_MAX_BYTES = 6000;
 const GENERATED_SANDBOX_DOC_MAX_BYTES = 4000;
 const REPO_AGENTS_MAX_BYTES = 6000;
-// read on trigger reviews only, never per turn: this bounds verbosity, not context
-const DECISIONS_MAX_BYTES = 10000;
+// decisions.md is read on trigger reviews only, never per turn: a per-row cap bounds verbosity, and the file grows one row per decision
+const DECISION_ROW_MAX_BYTES = 400;
 // roles take every documented level; the driver's settings effortLevel excludes `max`, which is session-only
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CLAUDE_DRIVER_EFFORTS = ["low", "medium", "high", "xhigh"];
@@ -106,12 +106,9 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(workflow.agents.Explore.tools.includes("read"), false);
   // Only general-purpose delegates, as Claude Code's roster implies.
   assert.equal(workflow.agents.Explore.tools.includes("subagent"), false);
-  // The frontier driver never hands its own tier to a child: the nesting
-  // catch-all and the reviewer are both pinned to the top worker tier.
-  const top = `${data.agents.pi.defaults.provider}/${workflow.models.tiers.top}`;
   assert.notEqual(workflow.models.tiers.top, workflow.models.tiers.frontier);
-  assert.deepEqual([workflow.agents["general-purpose"].model, workflow.agents["general-purpose"].nests], [top, true]);
-  assert.deepEqual([workflow.agents["spec-reviewer"].model, workflow.agents["spec-reviewer"].readonly], [top, true]);
+  assert.equal(workflow.agents["general-purpose"].nests, true);
+  assert.equal(workflow.agents["spec-reviewer"].readonly, true);
   assert.ok(["workspace_write", "mcp", "subagent", "bg_wait"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
   for (const role of Object.values(workflow.agents)) assert.equal(role.tools.includes("bg_wait"), role.nests);
   for (const [name, server] of Object.entries(workflow.mcp)) {
@@ -156,7 +153,6 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     [".claude/docs/sandbox.md", claudeSandboxDoc, GENERATED_SANDBOX_DOC_MAX_BYTES],
     // chezmoi-ignored, so read from source: it loads in every session in this repo
     ["AGENTS.md", readSource("AGENTS.md"), REPO_AGENTS_MAX_BYTES],
-    ["docs/decisions.md", readSource("docs/decisions.md"), DECISIONS_MAX_BYTES],
   ]) {
     const bytes = Buffer.byteLength(text);
     assert.ok(bytes <= max, `${name} is ${bytes} bytes (max ${max}): cut, do not raise the budget`);
@@ -195,10 +191,16 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     }
   }
   assert.equal(claudeSettings.model, data.subagent_tiers.claude[data.agents.claude.defaults.tier]);
-  assert.equal(claudeSettings.workflowSizeGuideline, "small");
   assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, data.subagent_tiers.claude.top);
-  // the cross-model bridge stays prompt-free in plan mode only via this rule
-  assert.equal(claudeSettings.permissions.allow.includes("mcp__pi"), true);
+  // the cross-model bridge stays prompt-free in plan mode only via these rules; auto-approval is per
+  // read-only tool on both harnesses, never a whole server
+  for (const tool of data.agent_mcp_servers.pi.readonly_tools) assert.ok(claudeSettings.permissions.allow.includes(`mcp__pi__${tool}`), tool);
+  assert.ok(!claudeSettings.permissions.allow.some(rule => /^mcp__[^_]+$/.test(rule)), "a server-wide mcp allow");
+  // live code Claude runs unsandboxed is write-denied to sandboxed Bash, as pi's workflow.json does
+  assert.ok(claudeSettings.sandbox.filesystem.denyWrite.some(path => path.endsWith("/node_modules")));
+  // the search plugin's config resolves its tier or fails the render
+  const webSearch = JSON.parse(run("cat", target(".pi/agent/web-search.json")));
+  assert.deepEqual(webSearch, { provider: data.agents.pi.defaults.provider, model: data.subagent_tiers.pi[data.agents.pi.search_tier] });
   const frontierPin = data.subagent_tiers.claude.frontier;
   // the native per-call deny must name the frontier pin's alias
   const frontierAliases = claudeSettings.permissions.deny.flatMap(rule => /^Agent\(model:(\w+)\)$/.exec(rule)?.[1] ?? []);
@@ -266,6 +268,12 @@ test("each role renders its roster tier and effort on every harness it targets",
       );
       if (!meta.readonly) assert.ok(contract.mutationTools.length > 0, role);
       else assert.deepEqual(contract.mutationTools, [], role);
+      // pi's MCP reach is the Claude tools list: each mcp__<server>__<tool> by name, mcp__* as everything,
+      // and WebFetch's counterpart (policy.inspectMcp refuses a tool outside the list)
+      const claudeTools = meta.tools.split(",").map(tool => tool.trim());
+      const expectedMcp = claudeTools.flatMap(tool => tool === "mcp__*" ? ["*"] : tool.startsWith("mcp__") ? [tool.slice("mcp__".length)] : tool === "WebFetch" ? ["exa__web_fetch_exa"] : []);
+      assert.deepEqual([...contract.mcpTools].sort(), expectedMcp.includes("*") ? ["*"] : [...new Set(expectedMcp)].sort(), `${role}: mcpTools`);
+      assert.equal(contract.tools.includes("mcp"), expectedMcp.length > 0, `${role}: mcp grant`);
       const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: pi model ${model}`);
       assert.ok(agent.split("\n").includes(`thinking: ${meta.effort}`), `${role}: pi thinking ${meta.effort}`);
@@ -285,7 +293,7 @@ test("each role renders its roster tier and effort on every harness it targets",
 
   const pi = data.agents.pi.defaults;
   assertPiEffort(provider, data.subagent_tiers.pi[pi.tier], pi.reasoning_effort, "pi driver");
-  // one model for the whole approval gate (docs/pi-implementation.md)
+  // one model for the whole approval gate (docs/decisions.md, agents.pi.defaults.classifier)
   const classifierPin = data.subagent_tiers.pi[pi.classifier.tier];
   assert.ok(classifierPin, `agents.pi.defaults.classifier.tier ${pi.classifier.tier} is not a pi tier`);
   assertPiEffort(provider, classifierPin, pi.classifier.filter_effort, "classifier filter");
@@ -419,6 +427,9 @@ test("docs/decisions.md records every tier pin and driver choice with a typed ev
     assert.ok(rows.get("agents.pi.defaults.classifier")[0].includes(part), `docs/decisions.md classifier value lacks "${part}"`);
   }
   assert.equal(rows.size, body.length, "docs/decisions.md has a duplicate key");
+  for (const line of readSource("docs/decisions.md").split("\n").filter(line => line.trim().startsWith("|"))) {
+    assert.ok(Buffer.byteLength(line) <= DECISION_ROW_MAX_BYTES, `docs/decisions.md row over ${DECISION_ROW_MAX_BYTES} bytes: ${line.slice(0, 60)}`);
+  }
   for (const [key, [, evidence, , trigger]] of rows) {
     assert.match(evidence, /^(measured|vendor|benchmark|preference|forced):/, `docs/decisions.md ${key}: evidence type`);
     // a trigger is an event or a threshold: it is never empty and never a calendar date
@@ -484,6 +495,7 @@ test("diff exits clean for each affected harness target against an isolated dest
     ...rolesFor(data, "claude").map(role => `.claude/agents/${role}.md`),
     ".pi/agent/workflow.json",
     ".pi/agent/settings.json",
+    ".pi/agent/web-search.json",
     ".pi/agent/AGENTS.md",
     ".pi/agent/docs/harness.md",
     ".pi/agent/docs/sandbox.md",

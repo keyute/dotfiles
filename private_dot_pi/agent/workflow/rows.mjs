@@ -6,15 +6,15 @@ import { getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
 // hollow circle only on fleet rows, a caret for a fold handle's state. A line
 // that opens with a glyph starts at column 0; a line without one (↳) sits at
 // the text column, and so the caret puts the handle's text there too.
-export const BULLET = "•";
+const BULLET = "•";
 export const CHILD = "○";
 export const TURN_GLYPH = "π";
-export const SUB = "↳";
-export const FOLD_OPEN = "▾";
-export const FOLD_CLOSED = "▸";
+const SUB = "↳";
+const FOLD_OPEN = "▾";
+const FOLD_CLOSED = "▸";
 export const PROMPT = "❯";
 export const PAD = "  ";
-export const TITLE_WIDTH = 36;
+const TITLE_WIDTH = 36;
 const PREVIEW_WIDTH = 48;
 const SUMMARY_WIDTH = 60;
 
@@ -512,7 +512,7 @@ function view(folds, group) {
 // when open so a stacked run of groups shows which one is expanded. Takes the
 // sentence text rather than a group, so a completion's own wording (rule 4)
 // draws through the same handle as a tool group's.
-export const handleLine = (text, state, theme) =>
+const handleLine = (text, state, theme) =>
   theme.fg(state.open ? "toolTitle" : "muted", `${state.open ? FOLD_OPEN : FOLD_CLOSED} ${text}`);
 
 function toggleFold(folds, group, rendering) {
@@ -532,7 +532,7 @@ function completionMemberLine(entry, theme) {
   return indent(`${theme.fg("muted", SUB)} ${theme.fg("toolTitle", title)}${tail}`);
 }
 
-export function memberLine(folds, entry, theme) {
+function memberLine(folds, entry, theme) {
   if (entry.source === "completion") return completionMemberLine(entry, theme);
   const title = theme.fg("toolTitle", folds.titles.get(entry.id));
   const summary = entry.summary ?? "";

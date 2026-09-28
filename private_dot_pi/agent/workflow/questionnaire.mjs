@@ -13,7 +13,7 @@ const markdownTheme = theme => ({
   strikethrough: text => theme.strikethrough(text), underline: text => theme.underline(text),
 });
 
-export const questionnaireSchema = Type.Object({
+const questionnaireSchema = Type.Object({
   questions: Type.Array(Type.Object({
     question: Type.String({ minLength: 1, description: "Complete question for the user." }),
     header: Type.String({ minLength: 1, maxLength: 16, description: "Short question tab." }),

@@ -11,7 +11,7 @@ const STATUS_ORDER = ["failed", "stopped", "paused", "partial", "detached", "com
 const SEP = " · ";
 const NAME_SEP = " › ";
 const TOK_FMT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1, minimumFractionDigits: 1 });
-export const VISIBLE_ROWS = 5;
+const VISIBLE_ROWS = 5;
 // The fleet DTO's `model` is the launch string (provider/model:thinking) and
 // `effort` repeats the thinking level, so the suffix is dropped before the
 // effort is appended once — the footer's own spelling.
@@ -126,7 +126,7 @@ export function launchesFromBranch(entries) {
 
 // pi-subagents 0.70.1 never fills the DTO's `goal`; the task comes from the
 // launch this session recorded against the run id.
-export function rowFor(state, entry) {
+function rowFor(state, entry) {
   return entry.goal ? entry : { ...entry, goal: state.launches.get(runIdFor(state, entry))?.task };
 }
 

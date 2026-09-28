@@ -1,21 +1,12 @@
 {{- $pi := .agents.pi -}}
 {{- $sandbox := includeTemplate "agent-sandbox" (dict "self" "pi" "root" .) | fromJson -}}
 {{- $agentDir := printf "%s/.pi/agent" .chezmoi.homeDir -}}
-{{- $source := .chezmoi.sourceDir -}}
 {{- $denyRead := concat $sandbox.denyRead (list (printf "%s/workflow.json" $agentDir)) | uniq | sortAlpha -}}
-{{- /* Only live-loaded code is write-protected: the applied agent dir, the
-       shell init that launches pi, and the pinned node_modules the running CLI
-       and its children import from. Repo source is fair game, as for the other
-       harnesses; chezmoi apply is the gate. */ -}}
-{{- $denyWrite := list
-      $agentDir
-      (printf "%s/.zshrc" .chezmoi.homeDir)
-      (printf "%s/node_modules" $source) -}}
-{{- /* Apple's /bin/bash 3.2 puts here-document temp files in the first writable
-       of /var/tmp, /tmp and the working directory, never $TMPDIR, so a
-       read-only role (or plan mode) lost every heredoc until /var/tmp was
-       writable. Claude Code gets by on the working directory; pi's read-only
-       roles have none. Verified 2026-09-11 under the SRT profile. */ -}}
+{{- /* Only live-loaded code is write-protected: the shared node_modules deny
+       plus the applied agent dir and the shell init that launches pi. Repo
+       source is fair game, as for the other harnesses; chezmoi apply is the gate. */ -}}
+{{- $denyWrite := concat $sandbox.denyWrite (list $agentDir (printf "%s/.zshrc" .chezmoi.homeDir)) -}}
+{{- /* bash 3.2 here-documents land in /var/tmp (docs/decisions.md, parity.pi_sandbox_paths) */ -}}
 {{- $allowWrite := append $sandbox.allowWrite "/var/tmp" -}}
 {{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
 {{- /* MCP servers run inside SRT here, so each server's own hosts join the allowlist */ -}}

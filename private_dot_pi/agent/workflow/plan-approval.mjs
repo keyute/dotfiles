@@ -25,7 +25,7 @@ export function planDecisionResult(decision, feedback = "") {
   };
 }
 
-export function updatePlanTask(userTask, { decision, plan, feedback }) {
+function updatePlanTask(userTask, { decision, plan, feedback }) {
   const addition = decision === PLAN_APPROVED
     ? `Approved plan: ${plan}`
     : decision === PLAN_REVISION && trimFeedback(feedback)
@@ -62,7 +62,7 @@ export function isolatePlanApproval(message) {
   return message;
 }
 
-export class PlanApprovalComponent extends Dialog {
+class PlanApprovalComponent extends Dialog {
   constructor(tui, theme, keybindings, done, signal) {
     super(tui, theme, keybindings, done, signal, { decision: PLAN_CANCELLED });
     this.selected = 0;

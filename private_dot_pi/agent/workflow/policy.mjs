@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "n
 import { dirname, join, matchesGlob, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 
-export const fileTools = ["read", "write", "edit", "grep", "find", "ls"];
+const fileTools = ["read", "write", "edit", "grep", "find", "ls"];
 export const workerTools = [...fileTools, "bash"];
 export const publicToolName = name => workerTools.includes(name) ? `workspace_${name}` : name;
 // The parent session's tool set; children get theirs from the roster config.
@@ -178,7 +178,7 @@ export class Policy {
   }
 
   role(name) {
-    if (name === "root") return { readonly: false, tools: rootTools };
+    if (name === "root") return { readonly: false, tools: rootTools, mcpTools: ["*"] };
     const role = this.config.agents[name];
     if (!role) throw new Error("Unknown child policy role");
     return role;
@@ -222,6 +222,8 @@ export class Policy {
   inspectMcp(role, server, tool, args = {}) {
     if (this.transitioning) throw new Error("Policy transition in progress");
     if (!this.role(role).tools.includes("mcp")) throw new Error("MCP unavailable to this role");
+    const grant = this.role(role).mcpTools ?? [];
+    if (!grant.includes("*") && !grant.includes(`${server}__${tool}`)) throw new Error("MCP tool outside the role's grant");
     const entry = this.config.mcp[server];
     if (!entry || entry.policy.denied_tools.includes(tool)) throw new Error("MCP tool denied by managed policy");
     const readOnly = entry.policy.readonly_tools?.includes(tool) ?? false;

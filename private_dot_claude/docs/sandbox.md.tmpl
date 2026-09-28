@@ -7,7 +7,9 @@ Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file
 ## The two enforcement layers
 
 1. **Bash sandbox** (`settings.json → sandbox`) governs shell commands: writes
-   only inside `allowWrite`, outbound network only to `allowedDomains`. Reads are
+   only inside `allowWrite` and never inside `denyWrite` (the repo's
+   `node_modules`, which Claude runs unsandboxed), outbound network only to
+   `allowedDomains`. Reads are
    allowed everywhere except the `Read(...)` permission denies, which the harness
    merges into the sandbox. Bash reads the agent's own home (`{{ $agent.home }}`)
    like any other path; the harness itself denies writes to most of it.
@@ -40,9 +42,8 @@ Denied to this agent even for the Read tool (privacy — narrow in agents.yaml i
 {{ end -}}
 Everything else under home is tool-readable — notably the per-project memory dirs
 (`{{ $agent.home }}/projects/<project>/memory/`), while transcripts
-(`projects/**/*.jsonl`) stay denied. Bash `allowWrite` adds
-{{ range $i, $p := $agent.extras.writable_paths }}{{ if $i }}, {{ end }}`{{ $p }}`{{ end }}; the harness's own write
-protections under home still win.
+(`projects/**/*.jsonl`) stay denied. The harness's own write protections under
+home win over `allowWrite`.
 
 ## Network
 

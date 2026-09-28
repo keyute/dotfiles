@@ -56,7 +56,7 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   let selected = args.model ?? child.model;
   // `inherit` is pi-subagents' own frontmatter value; resolving it here keeps
   // the launch contract check on a concrete tier-policy model.
-  if (selected === "inherit") selected = `${ctx.model.provider}/${ctx.model.id}`;
+  if (selected === "inherit") selected = args.model = `${ctx.model.provider}/${ctx.model.id}`;
   const [modelName, effort] = selected.split(":");
   // The frontier tier is the driver's alone: a child on it, requested or
   // inherited, is the measured quota failure the tier policy exists to stop.
@@ -71,7 +71,6 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
     const levels = getSupportedThinkingLevels(model);
     if (!levels.includes(effort)) throw new Error(`Child effort ${effort} is not supported by ${modelName} (supported: ${levels.join(", ")})`);
   }
-  if (child.model === "inherit") args.model = selected;
   // Always background: pi-subagents admits one foreground launch per turn, so
   // foreground children serialize; MCP provider extensions also require a
   // background child here.

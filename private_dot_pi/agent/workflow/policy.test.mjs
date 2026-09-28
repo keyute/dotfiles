@@ -179,6 +179,21 @@ test("MCP hard denial and plan scope precede approvals", t => {
   assert.throws(() => p.inspectMcp("reviewer", "docs", "search"), /unavailable/);
 });
 
+test("MCP tools stay within the role's grant", t => {
+  const p = fixture(t);
+  p.mode = "execute";
+  p.config.agents.researcher = { readonly: true, tools: ["mcp"], mcpTools: ["docs__search"] };
+  p.config.agents.general = { readonly: false, tools: ["mcp"], mcpTools: ["*"] };
+  assert.equal(p.inspectMcp("researcher", "docs", "search"), "allow");
+  assert.throws(() => p.inspectMcp("researcher", "docs", "fetch"), /outside the role's grant/);
+  assert.throws(() => p.inspectMcp("researcher", "other", "search"), /outside the role's grant/);
+  assert.equal(p.inspectMcp("general", "docs", "search"), "allow");
+  assert.equal(p.inspectMcp("general", "docs", "new_unknown_tool"), "review");
+  assert.throws(() => p.inspectMcp("general", "docs", "unsafe"), /denied/);
+  p.config.agents.researcher.mcpTools.push("docs__new_unknown_tool");
+  assert.throws(() => p.inspectMcp("researcher", "docs", "new_unknown_tool"), /read-only/);
+});
+
 test("MCP output arguments are writes even on a read-only tool", t => {
   const p = fixture(t);
   assert.equal(p.inspectMcp("root", "docs", "search", { query: "x" }), "allow");
