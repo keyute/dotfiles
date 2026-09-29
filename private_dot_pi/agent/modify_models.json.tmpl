@@ -1,0 +1,17 @@
+{{- $pi := .agents.pi -}}
+{{- $overrides := dict -}}
+{{- range $tier, $window := $pi.defaults.context_window -}}
+  {{- $_ := set $overrides (index $.subagent_tiers.pi $tier) (dict "contextWindow" $window) -}}
+{{- end -}}
+{{- $managed := dict "providers" (dict $pi.defaults.provider (dict "modelOverrides" $overrides)) -}}
+#!/usr/bin/env bash
+# models.json may hold user-added providers; jq's `*` keeps whatever this
+# declared subset does not name (objects merge recursively, scalars are
+# replaced). A re-pinned tier leaves the old pin's override behind: pi ignores
+# it once the id leaves its catalog, and applies it while the id is still listed.
+set -euo pipefail
+
+input=$(cat)
+[ -z "$input" ] && input='{}'
+
+printf '%s\n' "$input" | jq --argjson managed '{{ $managed | toJson }}' '. * $managed'

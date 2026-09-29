@@ -120,9 +120,10 @@ here.
   tasks; cleanup retains their outputs and failures. Cleanup cannot run after
   Pi receives SIGKILL, nor does it cover deliberately detached `setsid` daemons
   or external services/containers.
-- No `modelOverrides` `contextWindow` raise: the subscription route takes
-  272,000 input tokens, and a raise only defers compaction until the provider
-  rejects.
+- The top and frontier tiers get a raised `contextWindow` through
+  `modify_models.json.tmpl` from `agents.pi.defaults.context_window`;
+  compaction keeps pi's default reserve against it, and a provider rejection
+  falls back to pi's overflow compact-and-retry.
 - The workflow lists skills to the root model itself, naming `workspace_read`
   (`docs/pi-coupling.md`, Skill listing).
 - TypeSafe Jev is not adopted for the approval classifier: the

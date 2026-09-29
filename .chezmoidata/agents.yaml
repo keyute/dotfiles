@@ -74,6 +74,8 @@ agents:
       # approval classifier: one tier model for both stages; the filter answers
       # every reviewed action, anything but allow is re-judged
       classifier: { tier: top, filter_effort: "off", judge_effort: medium }
+      # contextWindow per tier in ~/.pi/agent/models.json; an unlisted tier keeps pi's catalog window
+      context_window: { top: 872000, frontier: 872000 }
     sensitive_subpaths:
       - "agent/auth.json"
       - "agent/sessions"

@@ -130,6 +130,12 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
   assert.match(piSettings.themes[0], /\/node_modules\/catppuccin-pi-theme\/themes$/);
   assert.equal(piSettings.enableInstallTelemetry, false);
+  const models = JSON.parse(run("cat", target(".pi/agent/models.json")));
+  const overrides = models.providers[data.agents.pi.defaults.provider].modelOverrides;
+  const windows = data.agents.pi.defaults.context_window;
+  for (const [tier, value] of Object.entries(windows)) assert.equal(overrides[data.subagent_tiers.pi[tier]].contextWindow, value, `${tier} contextWindow`);
+  const small = data.subagent_tiers.pi.small;
+  if (!Object.keys(windows).some(tier => data.subagent_tiers.pi[tier] === small)) assert.equal(overrides[small], undefined, "small tier keeps the catalog window");
 
   for (const role of Object.keys(workflow.agents)) {
     const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
@@ -462,6 +468,7 @@ test("docs/decisions.md has a row for every tier pin, driver, classifier, search
     ...Object.entries(data.subagent_tiers).flatMap(([h, tiers]) => Object.keys(tiers).map(tier => `subagent_tiers.${h}.${tier}`)),
     ...Object.keys(data.subagent_tiers).map(h => `agents.${h}.defaults.tier`),
     "agents.pi.defaults.classifier",
+    "agents.pi.defaults.context_window",
     "agents.pi.search_tier",
     "agent_mcp_servers.pi.args",
     "agents.claude.denied_tools.models",
@@ -550,6 +557,23 @@ test("model pins live only in agents.yaml", () => {
     return match ? [`${relative(source, file)}:${index + 1}: ${match[0]}`] : [];
   }));
   assert.deepEqual(hits, [], "literal model IDs belong in .chezmoidata/agents.yaml");
+});
+
+test("models.json keeps user entries and the managed contextWindow wins", (t) => {
+  const { run, target, data: load } = fixture(t);
+  const data = load();
+  const provider = data.agents.pi.defaults.provider;
+  const frontier = data.subagent_tiers.pi.frontier;
+  mkdirSync(target(".pi/agent"), { recursive: true });
+  writeFileSync(target(".pi/agent/models.json"), JSON.stringify({
+    providers: {
+      "user-provider": { baseUrl: "http://localhost:1234" },
+      [provider]: { modelOverrides: { [frontier]: { contextWindow: 1 } } },
+    },
+  }));
+  const models = JSON.parse(run("cat", target(".pi/agent/models.json")));
+  assert.deepEqual(models.providers["user-provider"], { baseUrl: "http://localhost:1234" });
+  assert.equal(models.providers[provider].modelOverrides[frontier].contextWindow, data.agents.pi.defaults.context_window.frontier);
 });
 
 // the whole tree, as CI applies it: every template (shared skill bodies included) and
