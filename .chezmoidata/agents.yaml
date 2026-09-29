@@ -12,7 +12,7 @@ agents:
       reasoning_effort: high
     # models with no effort knob: the render omits `effort:` for a role whose
     # tier resolves to one. Keyed by model: the property moves with the pin.
-    no_effort_models: [claude-haiku-4-5]
+    no_effort_models: []
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -54,7 +54,7 @@ agents:
       - "Agent(isolation:remote)"
       # Agent-tool aliases with no small/top pin; the frontier pin's alias is
       # rendered from subagent_tiers, so children run only tier pins
-      - "Agent(model:sonnet)"
+      - "Agent(model:haiku)"
       # a speed bump under the never-commit/push rule, not a boundary: prefix
       # rules miss `git -C x commit` and `sh -c` forms
       - "Bash(git push:*)"
@@ -167,7 +167,7 @@ subagents:
 # explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
 subagent_tiers:
   claude:
-    small: claude-haiku-4-5
+    small: claude-sonnet-5-5
     top: claude-opus-5-5
     # settings.json renders this pin's Agent(model:…) alias deny
     frontier: claude-fable-5-1

@@ -57,7 +57,7 @@ lacks; the owner picks its substitute.
 
 | key | why | revisit when |
 |---|---|---|
-| subagent_tiers.claude.small | vendor: the lineup's small model | successor or retirement (Events) → same-family successor |
+| subagent_tiers.claude.small | benchmark: AA low 36 vs Haiku 4.5's 17 at ~2× $/task (2026-09-29); Explore is ~0.4% of Claude spend | successor or retirement (Events); Haiku 5.5 ships → compare at matched $/task; the Claude pool binds with Explore's cost per dispatch above explore-deep's → Haiku |
 | subagent_tiers.claude.top | benchmark: AA $/task (2026-09-25) nominated it; no paired replay | successor or retirement (Events); an unattended text-only turn ends → the previous top pin |
 | subagent_tiers.claude.frontier | preference: escalation-only under its 50% weekly cap | the cap is lifted → re-open the driver; successor or retirement (Events) |
 | subagent_tiers.pi.small | benchmark: matches the previous small at 0.4× cost per task | successor or retirement (Events) |
