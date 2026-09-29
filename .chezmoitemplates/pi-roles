@@ -28,11 +28,12 @@
       {{- else if eq $sourceTool "Edit" -}}{{- $tools = append $tools "workspace_edit" -}}
       {{- else if eq $sourceTool "Write" -}}{{- $tools = append $tools "workspace_write" -}}
       {{- else if eq $sourceTool "WebSearch" -}}{{- $tools = append $tools "web_search" -}}
-      {{- end -}}
-      {{- /* Exa fetch stays behind the MCP proxy, as WebFetch's counterpart */ -}}
-      {{- if eq $sourceTool "WebFetch" -}}{{- $mcpTools = append $mcpTools "exa__web_fetch_exa" -}}
+      {{- else if eq $sourceTool "WebFetch" -}}
+        {{- /* Exa fetch stays behind the MCP proxy, as WebFetch's counterpart */ -}}
+        {{- $mcpTools = append $mcpTools "exa__web_fetch_exa" -}}
       {{- else if eq $sourceTool "mcp__*" -}}{{- $mcpTools = append $mcpTools "*" -}}
       {{- else if hasPrefix "mcp__" $sourceTool -}}{{- $mcpTools = append $mcpTools (trimPrefix "mcp__" $sourceTool) -}}
+      {{- else -}}{{- fail (printf "%s: no pi mapping for %s" $name $sourceTool) -}}
       {{- end -}}
     {{- end -}}
     {{- if has "*" $mcpTools -}}{{- $mcpTools = list "*" -}}{{- end -}}

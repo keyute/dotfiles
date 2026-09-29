@@ -3,7 +3,7 @@
 Env-specific facts; if behavior seems changed, verify against the source repo and
 update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's `docs/decisions.md`.
 
-## Launch and pins (last verified 2026-09-26)
+## Launch and pins
 
 - The managed `pi` zsh function runs the lockfile-pinned CLI (currently {{ index (fromJson (include "package.json")).dependencies "@earendil-works/pi-coding-agent" }}, one
   pin with the extensions and worker SDK) with native tools and ambient extensions
@@ -11,7 +11,7 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
   `~/.pi/agent`, so a source edit needs `chezmoi apply`. Sign in through Pi's
   OpenAI subscription login; do not import another harness's auth files.
 
-## Models (last verified 2026-09-25)
+## Models
 
 - Default: `{{ .agents.pi.defaults.provider }}/{{ index .subagent_tiers.pi .agents.pi.defaults.tier }}`, {{ .agents.pi.defaults.reasoning_effort }} reasoning.
 - The approval classifier (MCP calls, remote-mutating shell verbs, unsandboxed requests)
@@ -32,7 +32,7 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
 - Context window: the subscription route's input limit is below the model page's API figure
   and has moved without notice: trust the live readout (status line, `/session`; pi has no `/status`).
 
-## Specialists and skills (last verified 2026-09-22)
+## Specialists and skills
 
 - Specialists under `~/.pi/agent/agents` render from the shared roster with an
   explicit model, tool list and policy extension; read-only ones stay read-only in
@@ -47,7 +47,7 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
 - Skills are listed in the root's system prompt and load by `/skill:name` or on the model's own
   read. A child's MCP reach is its role's tool list; the policy refuses a tool outside it.
 
-## Web search (last verified 2026-09-23)
+## Web search
 
 - `web_search` is the pinned `pi-web-search` plugin: OpenAI's server-side search
   on the ChatGPT-subscription endpoint model calls use — no extra credential or
@@ -56,7 +56,7 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
   Roles with Claude's `WebSearch` get it; fetch
   with Exa or Playwright.
 
-## MCP and code intelligence (last verified 2026-09-22)
+## MCP and code intelligence
 
 - Context7 tools stay direct (e.g. `mcp__context7_query-docs`); Exa and Playwright
   stay behind the `mcp` proxy: `mcp({ search: "…" })` finds a tool in the cached

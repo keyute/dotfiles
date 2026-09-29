@@ -3,7 +3,7 @@
 Env-specific facts; decisions and their triggers live in the chezmoi repo's `docs/decisions.md`.
 If behavior seems changed, verify (claude-code-guide) and update.
 
-## Models (last verified 2026-09-25)
+## Models
 
 - Settings pin the driver (`model` key) to `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}`;
   effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned under `modelSettings` for every pin with an
@@ -38,7 +38,7 @@ If behavior seems changed, verify (claude-code-guide) and update.
   `~/.claude/CLAUDE.md`; all draw the same Max pools (5-hour
   window, shared weekly pool; the frontier model's weekly cap is shared, not reserved); check `/usage`.
 
-## Workflows (last verified 2026-09-26)
+## Workflows
 
 - The keyword `ultracode` opts one turn into a workflow at session effort; `/effort ultracode`
   is xhigh plus standing workflows, with no size warning and no 20-agent Agent-tool cap. Only the

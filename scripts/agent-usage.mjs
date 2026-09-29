@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 
 const i = process.argv.indexOf("--days");
 const days = i > 0 ? Number(process.argv[i + 1]) : 30;
@@ -30,7 +31,6 @@ const tally = (o, k) => { if (k) o[k] = (o[k] ?? 0) + 1; };
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : 0; };
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 const pct = (x, total) => `${(100 * x / total).toFixed(1)}%`;
-const mu = (x) => Number((x / 1e6).toFixed(2));
 const byDesc = (o, k) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1][k] - a[1][k]));
 // Sums metric k of "model|origin" rows per origin, with each origin's share of the total.
 const byOrigin = (o, k) => {
@@ -43,14 +43,17 @@ const byOrigin = (o, k) => {
   return byDesc(Object.fromEntries(Object.entries(t).map(([origin, v]) => [origin, { ...v, share: pct(v[k], total) }])), k);
 };
 
-// Weighted units: Anthropic's per-token price multiples relative to base input
-// within one model (cache write 5m 1.25x, 1h 2x, cache read 0.1x, output 5x) —
-// comparable across origins and roles of a model, not a cross-model price.
-const units = (u) => {
+// Cost in USD at the pinned pi-ai catalog's per-M-token prices (a 1h cache write
+// is 2x input, Anthropic's multiple). A model the catalog lacks falls back to M
+// weighted units — Anthropic's multiples of base input (cache write 5m 1.25x,
+// 1h 2x, cache read 0.1x, output 5x) — comparable only within that model.
+const unitRates = { input: 1, cacheWrite: 1.25, cacheRead: 0.1, output: 5 };
+const cost = (u, model) => {
+  const r = getBuiltinModel("anthropic", model)?.cost ?? unitRates;
   const cc = u.cache_creation;
   const w5m = cc ? cc.ephemeral_5m_input_tokens ?? 0 : u.cache_creation_input_tokens ?? 0;
   const w1h = cc?.ephemeral_1h_input_tokens ?? 0;
-  return (u.input_tokens ?? 0) + 1.25 * w5m + 2 * w1h + 0.1 * (u.cache_read_input_tokens ?? 0) + 5 * (u.output_tokens ?? 0);
+  return (r.input * ((u.input_tokens ?? 0) + 2 * w1h) + r.cacheWrite * w5m + r.cacheRead * (u.cache_read_input_tokens ?? 0) + r.output * (u.output_tokens ?? 0)) / 1e6;
 };
 const context = (u) => (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
 
@@ -61,16 +64,19 @@ const claudeOrigin = (f) => /\/workflows\//.test(f) ? "workflow" : /\/subagents\
 const calls = new Map(); // message.id -> call; a streamed message is logged repeatedly with partial output_tokens
 const toolRole = new Map(); // Agent tool_use id -> role
 const agentRole = new Map(); // subagent agentId -> role
+const span = new Map(); // child transcript -> [first, last] timestamp ms
 const claudeDispatches = {}, claudeSkills = {};
 for (const file of walk(path.join(home, ".claude/projects"))) {
   const root = claudeOrigin(file) === "root";
   for (const r of records(file)) {
     const m = r.message;
     const recent = inWindow(r);
+    const t = Date.parse(r.timestamp);
+    if (!root && t) span.set(file, [Math.min(span.get(file)?.[0] ?? t, t), Math.max(span.get(file)?.[1] ?? t, t)]);
     if (recent && r.type === "assistant" && m?.id && m.usage && m.model !== "<synthetic>") {
       const out = m.usage.output_tokens ?? 0;
       const prev = calls.get(m.id);
-      if (!prev || out > prev.out) calls.set(m.id, { file, model: m.model, out, units: units(m.usage), ctx: context(m.usage) });
+      if (!prev || out > prev.out) calls.set(m.id, { file, model: m.model, out, cost: cost(m.usage, m.model), ctx: context(m.usage) });
     }
     if (!root) continue;
     if (recent && typeof m?.content === "string") {
@@ -91,17 +97,17 @@ for (const file of walk(path.join(home, ".claude/projects"))) {
   }
 }
 
-const perFile = new Map(); // file -> { model, calls, ctx, units }
-// Units compare only within one model (see units), so shares are of the model's own total.
+const perFile = new Map(); // file -> { model, calls, ctx, cost }
+// Fallback units compare only within one model (see cost), so shares are of the model's own total.
 const modelOrigin = {}, modelTotal = {};
 for (const c of calls.values()) {
-  const f = perFile.get(c.file) ?? { model: c.model, calls: 0, ctx: 0, units: 0 };
-  f.calls++; f.ctx = Math.max(f.ctx, c.ctx); f.units += c.units;
+  const f = perFile.get(c.file) ?? { model: c.model, calls: 0, ctx: 0, cost: 0 };
+  f.calls++; f.ctx = Math.max(f.ctx, c.ctx); f.cost += c.cost;
   perFile.set(c.file, f);
   const k = `${c.model}|${claudeOrigin(c.file)}`;
-  modelOrigin[k] ??= { calls: 0, units: 0 };
-  modelOrigin[k].calls++; modelOrigin[k].units += c.units;
-  modelTotal[c.model] = (modelTotal[c.model] ?? 0) + c.units;
+  modelOrigin[k] ??= { calls: 0, cost: 0 };
+  modelOrigin[k].calls++; modelOrigin[k].cost += c.cost;
+  modelTotal[c.model] = (modelTotal[c.model] ?? 0) + c.cost;
 }
 
 const roles = {}, runs = {};
@@ -110,11 +116,12 @@ for (const [file, f] of perFile) {
   if (origin === "subagent") {
     const id = path.basename(file).match(/^agent-(\w+)\.jsonl$/)?.[1];
     const k = `${agentRole.get(id) ?? "(unknown)"}|${f.model}`;
-    (roles[k] ??= []).push(f);
+    (roles[k] ??= []).push({ ...f, seconds: (span.get(file)[1] - span.get(file)[0]) / 1e3 });
   } else if (origin === "workflow") {
-    const wf = file.match(/\/workflows\/(wf_[^/]+)\//)[1];
-    runs[wf] ??= { agents: 0, calls: 0, maxCtx: 0, units: 0 };
-    runs[wf].agents++; runs[wf].calls += f.calls; runs[wf].maxCtx = Math.max(runs[wf].maxCtx, f.ctx); runs[wf].units += f.units;
+    // Keyed per model like roles: a run's agents may mix USD and fallback units.
+    const k = `${file.match(/\/workflows\/(wf_[^/]+)\//)[1]}|${f.model}`;
+    runs[k] ??= { agents: 0, calls: 0, maxCtx: 0, cost: 0 };
+    runs[k].agents++; runs[k].calls += f.calls; runs[k].maxCtx = Math.max(runs[k].maxCtx, f.ctx); runs[k].cost += f.cost;
   }
 }
 
@@ -154,12 +161,12 @@ for (const { key, usage } of piCalls.values()) {
 const out = {
   days,
   claude: {
-    modelOrigin: byDesc(Object.fromEntries(Object.entries(modelOrigin).map(([k, v]) => [k, { ...v, share: pct(v.units, modelTotal[k.slice(0, k.lastIndexOf("|"))]) }])), "units"),
+    modelOrigin: byDesc(Object.fromEntries(Object.entries(modelOrigin).map(([k, v]) => [k, { ...v, share: pct(v.cost, modelTotal[k.slice(0, k.lastIndexOf("|"))]) }])), "cost"),
     roles: byDesc(Object.fromEntries(Object.entries(roles).map(([k, files]) => [k, {
-      dispatches: files.length, medianCalls: median(files.map((f) => f.calls)), medianMaxCtx: median(files.map((f) => f.ctx)),
-      unitsPerDispatch: Math.round(sum(files.map((f) => f.units)) / files.length),
+      dispatches: files.length, unit: getBuiltinModel("anthropic", k.slice(k.lastIndexOf("|") + 1))?.cost ? "USD" : "M units", medianCalls: median(files.map((f) => f.calls)), medianMaxCtx: median(files.map((f) => f.ctx)),
+      costPerDispatch: sum(files.map((f) => f.cost)) / files.length, medianSeconds: Math.round(median(files.map((f) => f.seconds))),
     }])), "dispatches"),
-    workflowRuns: byDesc(runs, "units"),
+    workflowRuns: byDesc(runs, "cost"),
     dispatches: claudeDispatches,
     skills: claudeSkills,
   },
@@ -176,10 +183,10 @@ fs.writeFileSync(outFile, JSON.stringify(out, null, 2), { flag: "wx" });
 
 const counts = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, { n }]));
 const show = (title, rows) => { console.log(`\n${title}, last ${days} days`); console.table(rows); };
-const inMu = (o, keys) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { ...v, ...Object.fromEntries(keys.map((x) => [x, mu(v[x])])) }]));
-show("claude — weighted units (M) by model|origin, share of that model", inMu(out.claude.modelOrigin, ["units"]));
-show("claude — subagent cost by role|model (units M per dispatch)", inMu(out.claude.roles, ["unitsPerDispatch"]));
-show("claude — workflow runs (units M)", inMu(out.claude.workflowRuns, ["units"]));
+const round2 = (o, keys) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { ...v, ...Object.fromEntries(keys.map((x) => [x, Number(v[x].toFixed(2))])) }]));
+show("claude — cost (USD; M units if unpriced) by model|origin, share of that model", round2(out.claude.modelOrigin, ["cost"]));
+show("claude — subagent cost by role|model (USD or M units per dispatch)", round2(out.claude.roles, ["costPerDispatch"]));
+show("claude — workflow runs by run|model (USD or M units)", round2(out.claude.workflowRuns, ["cost"]));
 show("claude — dispatches", counts(claudeDispatches));
 show("claude — skills and slash commands", counts(claudeSkills));
 show("pi — by model|origin (cost USD)", Object.fromEntries(Object.entries(out.pi.modelOrigin).map(([k, v]) => [k, { ...v, cost: Number(v.cost.toFixed(2)) }])));

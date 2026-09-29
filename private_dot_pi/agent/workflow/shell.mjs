@@ -3,7 +3,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "@earendil-wo
 import { PAD, appendVisible, closeFolds, defaultFolds, shadedBlock } from "./rows.mjs";
 
 // The `!`/`!!` round trip pi's native BashExecutionComponent used to own
-// (docs/pi-design.md rule 5, 2026-09-24 shell-block note, and rule 9's
+// (docs/pi-design.md rule 5's shell block, and rule 9's
 // background exception): this extension intercepts the composer submit, runs
 // the command itself and draws it in the transcript's own shape. Mirrors pi's
 // own parsing (interactive-mode.js ~2588-2591) and its bashExecutionToText

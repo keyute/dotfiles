@@ -15,7 +15,6 @@ const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, pi's subagent tool description
 const PROJECTION_MAX_BYTES = 5300;
 const ON_DEMAND_DOC_MAX_BYTES = 6000;
-const GENERATED_SANDBOX_DOC_MAX_BYTES = 4000;
 const REPO_AGENTS_MAX_BYTES = 4900;
 const SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES = 4000;
 // decisions.md is read on trigger reviews only, never per turn: a per-row cap bounds verbosity, and the file grows one row per decision
@@ -156,7 +155,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     [".pi/agent/docs/harness.md", piHarness, ON_DEMAND_DOC_MAX_BYTES],
     [".claude/docs/harness.md", claudeHarness, ON_DEMAND_DOC_MAX_BYTES],
     [".pi/agent/docs/sandbox.md", piSandboxDoc, ON_DEMAND_DOC_MAX_BYTES],
-    [".claude/docs/sandbox.md", claudeSandboxDoc, GENERATED_SANDBOX_DOC_MAX_BYTES],
+    [".claude/docs/sandbox.md", claudeSandboxDoc, ON_DEMAND_DOC_MAX_BYTES],
     [".pi/agent/subagent-tool-description.md", description, SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES],
     // chezmoi-ignored, so read from source: it loads in every session in this repo
     ["AGENTS.md", readSource("AGENTS.md"), REPO_AGENTS_MAX_BYTES],
@@ -373,6 +372,13 @@ test("missing or unknown role tier and effort fail rendering rather than inherit
   }
 });
 
+test("a Claude tool with no pi mapping fails the pi roles render", (t) => {
+  const { invoke } = fixture(t);
+  const result = invoke("execute-template", '{{ $role := index .subagents "implementer" }}{{ $_ := set $role "tools" "Read, NotebookEdit" }}{{ includeTemplate "pi-roles" (dict "root" .) }}');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /implementer: no pi mapping for NotebookEdit/);
+});
+
 test("every roster role and shared skill has its source stubs, and every stub a source", (t) => {
   const { data: load } = fixture(t);
   const data = load();
@@ -390,14 +396,15 @@ test("every roster role and shared skill has its source stubs, and every stub a 
     }
   }
   // subagent-{claude,pi}.md include subagents/<role>.md for each roster role; shared includes sit one level up
-  for (const file of readdirSync(join(source, ".chezmoitemplates/subagents")).filter(file => file.endsWith(".md"))) {
+  const roleBodies = readdirSync(join(source, ".chezmoitemplates/subagents")).filter(file => file.endsWith(".md"));
+  for (const file of roleBodies) {
     assert.ok(Object.hasOwn(data.subagents, file.slice(0, -".md".length)), `.chezmoitemplates/subagents/${file} names no role in the roster`);
   }
 
   const skills = readdirSync(join(source, ".chezmoitemplates/skills"))
     .filter(file => file.endsWith(".md"))
     .map(file => file.slice(0, -".md".length));
-  for (const dir of ["private_dot_claude/skills", "dot_agents/skills"]) {
+  for (const dir of ["private_dot_claude/exact_skills", "dot_agents/exact_skills"]) {
     for (const skill of skills) {
       const stub = join(source, dir, skill, "SKILL.md.tmpl");
       assert.ok(existsSync(stub), `missing stub ${dir}/${skill}/SKILL.md.tmpl`);
@@ -409,10 +416,15 @@ test("every roster role and shared skill has its source stubs, and every stub a 
       assert.ok(skills.includes(skill), `${dir}/${skill}/SKILL.md.tmpl has no .chezmoitemplates/skills/${skill}.md`);
     }
   }
-  // a skill dispatches roles by name; a rename or removal in the roster would otherwise break it silently
-  for (const skill of skills) {
-    for (const [, role] of readSource(`.chezmoitemplates/skills/${skill}.md`).matchAll(/`([a-z]+(?:-[a-z]+)*-(?:reviewer|researcher))`/g)) {
-      assert.ok(Object.hasOwn(data.subagents, role), `.chezmoitemplates/skills/${skill}.md dispatches ${role}, not a roster role`);
+  // skills, role bodies and descriptions name roles; a rename or removal in the roster would otherwise break them silently
+  const namers = [
+    ...skills.map(skill => [`.chezmoitemplates/skills/${skill}.md`, readSource(`.chezmoitemplates/skills/${skill}.md`)]),
+    ...roleBodies.map(file => [`.chezmoitemplates/subagents/${file}`, readSource(`.chezmoitemplates/subagents/${file}`)]),
+    ...Object.entries(data.subagents).map(([name, role]) => [`subagents.${name}.description`, role.description]),
+  ];
+  for (const [where, text] of namers) {
+    for (const [, role] of text.matchAll(/\b([a-z]+(?:-[a-z]+)*-(?:reviewer|researcher))\b/g)) {
+      assert.ok(Object.hasOwn(data.subagents, role), `${where} names ${role}, not a roster role`);
     }
   }
 });
@@ -540,33 +552,9 @@ test("model pins live only in agents.yaml", () => {
   assert.deepEqual(hits, [], "literal model IDs belong in .chezmoidata/agents.yaml");
 });
 
-// `cat` above is the template-error gate; this exercises the diff path itself
-// (modify_ scripts against a destination) and the plain files no `cat` reaches.
-test("diff exits clean for each affected harness target against an isolated destination", (t) => {
-  const { run, target, data: load } = fixture(t);
-  const data = load();
-  for (const relative of [
-    ...rolesFor(data, "pi").flatMap(role => [`.pi/agent/agents/${role}.md`, `.pi/agent/policy-roles/${role}.ts`]),
-    ...rolesFor(data, "claude").map(role => `.claude/agents/${role}.md`),
-    ".pi/agent/workflow.json",
-    ".pi/agent/settings.json",
-    ".pi/agent/web-search.json",
-    ".pi/agent/AGENTS.md",
-    ".pi/agent/docs/harness.md",
-    ".pi/agent/docs/sandbox.md",
-    ".pi/agent/subagent-tool-description.md",
-    ".pi/agent/extensions/subagent/config.json",
-    ".pi/agent/extensions/workflow.ts",
-    ".pi/agent/workflow/index.mjs",
-    ".pi/agent/workflow/footer.mjs",
-    ".pi/agent/workflow/questionnaire.mjs",
-    ".pi/agent/workflow/rows.mjs",
-    ".pi/agent/node_modules",
-    ".claude/settings.json",
-    ".claude/CLAUDE.md",
-    ".claude/docs/harness.md",
-    ".claude/skills/cross-model-review/SKILL.md",
-  ]) {
-    run("diff", target(relative), ["--pager", ""]);
-  }
+// the whole tree, as CI applies it: every template (shared skill bodies included) and
+// modify_ script renders against an isolated destination, so a template error fails here
+test("the whole tree applies into an isolated destination", (t) => {
+  const { run } = fixture(t);
+  run("apply", "--no-tty", ["--exclude", "scripts,externals"]);
 });

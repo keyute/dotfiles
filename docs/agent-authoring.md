@@ -9,8 +9,7 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   and its comment together. `native_coverage` in agents.yaml is only the
   per-harness list of principles the shared template skips.
 - A comment opens with `model:` when the line compensates a model default;
-  an untagged line is an owner contract. Only `model:` lines are re-judged
-  when a new model family is pinned (`docs/decisions.md`, Events).
+  an untagged line is an owner contract.
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`.
   Every subagent loads the projection too (bar the `omit_instructions`
   roles in agents.yaml), so driver-only rules sit under its one "session
@@ -26,8 +25,7 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   failure was observed; what varies only by path (the doc pointers) takes a
   per-harness value from agents.yaml inside the shared projection.
 - Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
-  from it, never hand-write what it already encodes. The why, evidence and
-  trigger behind a value go to `docs/decisions.md`.
+  from it, never hand-write what it already encodes.
 - Environment facts → on-demand docs; give every doc pointer an explicit
   trigger ("read X before Y") — discretionary loading under-triggers.
 - An on-demand doc loads whole at its trigger, so it carries only what that

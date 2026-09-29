@@ -8,7 +8,7 @@ import { WorkingRow } from "./footer.mjs";
 import { PROMPT, oneLine, pad, shade, shadedBlock, slotHeight } from "./rows.mjs";
 import { createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
-// The fleet's Enter peek (docs/pi-design.md rule 6, 2026-09-22): a rule-11
+// The fleet's Enter peek (docs/pi-design.md rule 6): a rule-11
 // dialog in the composer's slot over a background child's own events.jsonl,
 // replayed live through replay.mjs's row grammar, with a rule-5 composer that
 // steers the child.

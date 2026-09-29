@@ -22,25 +22,12 @@ Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file
 
 - A relative pattern like `.env` matches at any depth (`terraform/.env` too).
 - A directory entry covers everything beneath it.
-- Modes: `none` = deny read+write, `write` = allow write.
 
-## Filesystem policy
-
-| Path | Mode |
-|------|------|
-{{ range $path, $mode := .agent_sandbox.filesystem.paths -}}
-| `{{ $path }}` | {{ $mode }} |
-{{ end }}
 ## Own home ({{ $agent.home }})
 
-Denied to this agent even for the Read tool (privacy — narrow in agents.yaml if needed):
-{{ range $agent.sensitive_subpaths -}}
-- `{{ $agent.home }}/{{ . }}`
-{{ end -}}
-Everything else under home is tool-readable — notably the per-project memory dirs
-(`{{ $agent.home }}/projects/<project>/memory/`), while transcripts
-(`projects/**/*.jsonl`) stay denied. The harness's own write protections under
-home win over `allowWrite`.
+The per-project memory dirs (`{{ $agent.home }}/projects/<project>/memory/`) are
+tool-readable, while transcripts (`projects/**/*.jsonl`) stay denied. The
+harness's own write protections under home win over `allowWrite`.
 
 ## Network
 

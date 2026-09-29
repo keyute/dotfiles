@@ -142,10 +142,11 @@ jobs:
           [ "$missing" -eq 0 ]
 
       # Includes the render test, the roster/stub/pin drift gate. The live SRT
-      # tests stay off: they need a host Unix socket the local agent sandbox
-      # denies, so they have no green run yet; set PI_WORKFLOW_LIVE_TESTS=1
-      # here after one green run on the macOS runner.
+      # tests run only here: they need a host Unix socket the local agent
+      # sandbox denies.
       - name: Run pi and render tests
+        env:
+          PI_WORKFLOW_LIVE_TESTS: "1"
         run: npm run test:pi
 
   # One stable check name for branch protection, so the required-checks list

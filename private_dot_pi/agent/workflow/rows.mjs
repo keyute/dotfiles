@@ -71,7 +71,7 @@ export function shadedBlock(theme, lines, width, { prompt, promptColour = "accen
 }
 
 // The one rule every slot dialog frames itself with (docs/pi-design.md rule
-// 11), and the peek's fixed height (rule 6, 2026-09-23, slot): half the
+// 11), and the peek's fixed height (rule 6): half the
 // terminal's rows, whichever of the live dialog or the text-tail draws it.
 export const frameRule = (theme, width) => theme.fg("borderAccent", "─".repeat(Math.max(0, width)));
 export const slotHeight = rows => Math.max(12, Math.floor(rows / 2));
@@ -208,7 +208,7 @@ export function rowLines(name, result, { expanded = false, isError = false } = {
 // member ladder and ctrl+o restores full tool output. State is per process — a
 // resumed session renders its old rows and completions unfolded.
 //
-// The extent is derived, never edited (docs/pi-design.md rule 2, 2026-09-10).
+// The extent is derived, never edited (docs/pi-design.md rule 2).
 // The timeline holds ordered facts — one per tool row plus its outcome, one
 // boundary per line that stays visible — and a run is read back out of them on
 // demand. Three times the extent was maintained by hand and three times a

@@ -9,7 +9,7 @@ import {
 import { workerTools } from "./policy.mjs";
 
 // The fleet peek replays a background child's own events.jsonl through this
-// extension's row grammar (docs/pi-design.md rule 6, 2026-09-22). Pure: no fs,
+// extension's row grammar (docs/pi-design.md rule 6). Pure: no fs,
 // no timers, no pi context — the caller streams file chunks in and gets back
 // journal-order row facts plus a renderer.
 

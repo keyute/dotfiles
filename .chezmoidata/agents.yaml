@@ -102,6 +102,7 @@ subagents:
     tier: top
     effort: medium
     readonly: true
+    omit_instructions: true
     tools: "Read, Grep, Glob, Bash"
     description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself."
   infra-reviewer:
@@ -115,7 +116,7 @@ subagents:
     effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language (Kubernetes/Helm/ArgoCD manifests: infra-reviewer); read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them — a conformance pass over requirements-plus-artifact goes to spec-reviewer."
+    description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language (Kubernetes/Helm/ArgoCD manifests: infra-reviewer); read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them."
   spec-reviewer:
     # the projection's self-review rule names this role literally; render.test
     # fails on a rename
@@ -152,7 +153,7 @@ subagents:
     readonly: false
     nests: true
     tools: "Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
-    description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation. Runs the top worker tier; prefer a specialist when one fits."
+    description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation; prefer a specialist when one fits."
   # Claude only: overrides the built-in planner, which inherits the session model
   Plan:
     harnesses: [claude]

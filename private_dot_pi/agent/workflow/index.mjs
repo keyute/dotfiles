@@ -73,7 +73,7 @@ export function workflowPrompt({ mode, readonly, isRoot }) {
 
 // Plan mode keeps write/edit declared: the broker refuses the call, while a
 // retracted tool makes pi-ai resend the whole tool list and re-bill the
-// context on every later mode switch (docs/pi-implementation.md, 2026-09-26).
+// context on every later mode switch (docs/pi-implementation.md, Decisions).
 export function activeToolNames(tools, { ready, permitted, currentContext }) {
   if (!ready) return [];
   return tools.map(tool => tool.name).filter(name => permitted(name)

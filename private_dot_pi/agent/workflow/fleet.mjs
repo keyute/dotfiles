@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { CHILD, CURSOR, appendVisible, defaultFolds, doneEntryRenderer, frameRule, oneLine, shortTitle, slotHeight } from "./rows.mjs";
 
-// Rows hang under the status line as Claude Code's subagent statusline does
-// (docs/pi-design.md): `○ title · tokens · model` per child, the cursor row
-// marked `❭`. The title is cut at a word boundary.
+// The row format is docs/pi-design.md rule 6.
 // Worst child status wins a multi-result completion (single runs carry one).
 const STATUS_ORDER = ["failed", "stopped", "paused", "partial", "detached", "completed"];
 const SEP = " · ";
@@ -178,6 +176,7 @@ export function installFleet(pi, ctx, {
   // synchronously, so pi's composer slot is free before whatever comes next.
   const closePeek = () => { state.peek?.abort(); state.peek = undefined; };
 
+  // Must key every rendered segment, or the no-change check below freezes it.
   const shape = () => [state.totalActive, ...state.entries.map(entry => `${entry.agent}|${entry.status}|${entry.goal}|${entry.tokens?.total ?? entry.tokens}`)].join("\n");
   const show = (fleet, snapshot) => {
     const before = shape();
@@ -375,9 +374,9 @@ export function installFleet(pi, ctx, {
         controller.signal.addEventListener("abort", () => done(), { once: true });
         const body = new Text(reply.text, 2, 0);
         return {
-          // The live peek's frame and height (rule 11; rule 6, 2026-09-23,
-          // slot): the tail is cut to fit, since pi's dock clips an oversized
-          // slot from the bottom, hint and rule first.
+          // The live peek's frame and height (rules 11 and 6): the tail is cut
+          // to fit, since pi's dock clips an oversized slot from the bottom,
+          // hint and rule first.
           render: width => {
             const height = slotHeight(tui.terminal?.rows ?? 24);
             const rule = frameRule(theme, width);

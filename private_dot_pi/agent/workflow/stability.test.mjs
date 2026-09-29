@@ -210,10 +210,20 @@ for (const [claim, file, patterns] of pins) {
   });
 }
 
-// API calls that are not events: each must stay a declared member of the
-// exported extension declarations (method, generic method, or property).
-const declaredApis = ["sendMessage", "select", "getArgumentCompletions", "addAutocompleteProvider", "appendEntry", "registerEntryRenderer", "registerMessageRenderer", "registerMarkdownTransformer", "registerCommand", "setWidget", "setWorkingVisible", "setFooter", "setHeader", "setEditorComponent", "setStatus", "placement"];
-for (const api of declaredApis) {
+// API calls that are not events (pi.on is checked above): each `.ui.<member>` and
+// `pi.<member>(` in the sources must stay a declared member of the exported
+// extension declarations (method, generic method, or property). `this.ui` is
+// InteractiveMode's TUI inside patched host methods, not the extension UI.
+const usedApis = new Set(sourceFiles.flatMap(file => {
+  const text = readFileSync(join(dir, file), "utf8");
+  return [
+    ...[...text.matchAll(/(?<!\bthis)\.ui\.([A-Za-z_$][\w$]*)/g)].map(m => m[1]),
+    ...[...text.matchAll(/\bpi\.([A-Za-z_$][\w$]*)\(/g)].map(m => m[1]).filter(name => name !== "on"),
+  ];
+}));
+// option and object keys the scan cannot see
+for (const key of ["getArgumentCompletions", "placement"]) usedApis.add(key);
+for (const api of usedApis) {
   test(`${api} is a declared extension API`, () => {
     assert.match(extensionDeclarations(), new RegExp(`\\b${api}\\b\\s*[<(?:]`), `${api} is not declared`);
   });

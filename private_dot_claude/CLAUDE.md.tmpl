@@ -1,4 +1,4 @@
-{{ template "agent-instructions.md" (dict "self" "claude" "root" .) }}
+{{ includeTemplate "agent-instructions.md" (dict "self" "claude" "root" .) }}
 - As the driver, give each Workflow `agent()` its roster `agentType` (no model
-  or effort), a narrow file-bounded scope and distilled inputs; a repeat review
-  starts from the last findings, covering only changes.{{/* workflow_burn: cost is agent count x lifetime x read volume, mostly cache, which effort barely moves; agentType inherits the roster's tier and effort */}}
+  or effort); a repeat review starts from the last findings, covering only
+  changes.{{/* workflow_burn: cost is agent count x lifetime x read volume, mostly cache, which effort barely moves; agentType inherits the roster's tier and effort */}}

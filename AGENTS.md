@@ -19,9 +19,7 @@ file are chezmoi-ignored (repo-local only).
   config knob, a frontmatter key). Own the code when the need is specific to
   this repo's policy or layout, when adoption would need a wrapper, pin or
   workaround for the coupling register, or when only a sliver of it would be
-  used. Either way, record the trigger that reverses it with the decision: a
-  model, role, setting or asymmetry in `docs/decisions.md`, owned code in
-  `docs/pi-implementation.md` or the coupling register.
+  used. Either way, record the trigger that reverses it (One record, below).
   A dependency pin bump lands as its own change, so its cost stays measurable.
 - Keep vendor-templated files (oh-my-tmux, ghostty, gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
@@ -34,8 +32,9 @@ file are chezmoi-ignored (repo-local only).
 - Declare a subagent once in `.chezmoidata/agents.yaml`, scoped
   with `harnesses:` where it is not for every harness; a shared skill body
   lives once in `.chezmoitemplates/skills/` with a one-line stub per harness.
-  Every shared key (role flags, `agent_sandbox` values) is consumed by each
-  harness it applies to, or scoped. The parity test in
+  A shared key (role flags, `agent_sandbox` values) is rendered or
+  test-enforced on each harness it applies to; where it cannot be, a parity
+  row names why. The parity test in
   `private_dot_pi/agent/workflow/render.test.mjs` (`npm run test:pi`, CI) is
   the gate. *Why: copies drift from the data; a failing test catches it.*
 - Code the harness spawns outside the sandbox (MCP servers, the bridge, hooks)
@@ -54,10 +53,12 @@ For changing models, roles, settings or instruction lines. The record is
 holds every mechanical check.
 
 - **Children never run the frontier tier.**
-- **One record.** A model, role, setting or asymmetry decision's why and
-  reversal event live only in its `docs/decisions.md` row, edited in the same
-  change; a comment beside the key says what it does and carries no evidence,
-  date or trigger; hazards and constraints stay beside the code.
+- **One record.** Values live in agents.yaml. A model, role, setting or
+  asymmetry's why and reversal event live only in its `docs/decisions.md`
+  row, edited in the same change; owned code's design, seams and triggers live in
+  `docs/pi-design.md`, `docs/pi-implementation.md` and `docs/pi-coupling.md`. A comment beside a key says what it does, never
+  evidence or a date; a hazard comment may name the condition that breaks it.
+  Agent memory holds only session-side gotchas.
 - **Review on triggers only**: the events `docs/decisions.md` names, and only
   what the event touches. No scheduled or whole-harness sweeps.
 - **Parity by default.** Both harnesses get the same behaviour wherever each
@@ -68,10 +69,9 @@ holds every mechanical check.
   harness UI persists, or because owned code reads it; a one-line comment
   beside the key names the behaviour it changes. A cosmetic setting needs no
   row.
-- **An always-loaded instruction line** exists only for a diagnosed, recurring
-  failure that the harness prompt, the code or a check does not already
-  prevent; when `git log -p` shows a line oscillating, delete it or change its
-  intent, never reword it. Read `docs/agent-authoring.md` before editing an
-  instruction source.
-- A decision goes in `docs/decisions.md`; agent memory holds only
-  session-side gotchas.
+- **A line earns its place.** An always-loaded instruction line, or a rule in
+  this file, the `docs/decisions.md` header or `docs/agent-authoring.md`,
+  exists only for a diagnosed, recurring failure that the harness prompt, the
+  code or a check does not already prevent; when `git log -p` shows one
+  oscillating, delete it or change its intent, never reword it. Read
+  `docs/agent-authoring.md` before editing an instruction source.
