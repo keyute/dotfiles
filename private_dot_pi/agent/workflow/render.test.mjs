@@ -13,13 +13,15 @@ import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // byte budgets (single owner; docs/agent-authoring.md points here):
 // harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, pi's subagent tool description
-const PROJECTION_MAX_BYTES = 7000;
+const PROJECTION_MAX_BYTES = 5300;
 const ON_DEMAND_DOC_MAX_BYTES = 6000;
 const GENERATED_SANDBOX_DOC_MAX_BYTES = 4000;
-const REPO_AGENTS_MAX_BYTES = 6000;
-const SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES = 5000;
+const REPO_AGENTS_MAX_BYTES = 4900;
+const SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES = 4000;
 // decisions.md is read on trigger reviews only, never per turn: a per-row cap bounds verbosity, and the file grows one row per decision
-const DECISION_ROW_MAX_BYTES = 400;
+const DECISION_ROW_MAX_BYTES = 360;
+// a model id: pins live in agents.yaml, and a decisions row names its tier so a re-pin leaves it true
+const PIN_ID = /\bclaude-[a-z0-9]+-[0-9][a-z0-9-]*|\bgpt-[0-9][a-z0-9.-]*/;
 // roles take every documented level; the driver's settings effortLevel excludes `max`, which is session-only
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CLAUDE_DRIVER_EFFORTS = ["low", "medium", "high", "xhigh"];
@@ -165,16 +167,17 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.ok(claudeHarness.includes(data.subagent_tiers.claude.top));
   // family names age with the pins; the pin id (or its tier) is the one spelling
   const nouns = familyNouns(data);
-  for (const [name, text] of [
-    [".claude/CLAUDE.md", claudeInstructions],
-    [".pi/agent/AGENTS.md", piInstructions],
-    [".claude/docs/harness.md", claudeHarness],
-    [".pi/agent/docs/harness.md", piHarness],
-    [".claude/docs/sandbox.md", claudeSandboxDoc],
-    [".pi/agent/docs/sandbox.md", piSandboxDoc],
-    [".chezmoidata/agents.yaml comments", yamlComments(readSource(".chezmoidata/agents.yaml")).join("\n")],
+  for (const [name, text, flags] of [
+    [".claude/CLAUDE.md", claudeInstructions, ""],
+    [".pi/agent/AGENTS.md", piInstructions, ""],
+    [".claude/docs/harness.md", claudeHarness, ""],
+    [".pi/agent/docs/harness.md", piHarness, ""],
+    [".claude/docs/sandbox.md", claudeSandboxDoc, ""],
+    [".pi/agent/docs/sandbox.md", piSandboxDoc, ""],
+    // comments carry no pin ids, so a lowercase family name is caught too
+    [".chezmoidata/agents.yaml comments", yamlComments(readSource(".chezmoidata/agents.yaml")).join("\n"), "i"],
   ]) {
-    for (const noun of nouns) assert.doesNotMatch(text, new RegExp(`\\b${noun}\\b`), `${name} names the model family ${noun}: name the tier or the pin id`);
+    for (const noun of nouns) assert.doesNotMatch(text, new RegExp(`\\b${noun}\\b`, flags), `${name} names the model family ${noun}: name the tier or the pin id`);
   }
 
   const claudeSettingsText = run("cat", target(".claude/settings.json"));
@@ -225,7 +228,12 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const frontierPin = data.subagent_tiers.claude.frontier;
   // the native per-call deny must name the frontier pin's alias
   const frontierAliases = claudeSettings.permissions.deny.flatMap(rule => /^Agent\(model:(\w+)\)$/.exec(rule)?.[1] ?? []);
-  assert.ok(frontierAliases.some(alias => frontierPin.includes(alias)), `no Agent(model:...) deny covers ${frontierPin}`);
+  assert.ok(frontierAliases.some(alias => frontierPin.startsWith(`claude-${alias}-`)), `no Agent(model:...) deny covers ${frontierPin}`);
+  // the hand-listed denies are aliases with no tier: one naming a small/top pin's family would deny a rostered child's own tier
+  for (const rule of data.agents.claude.denied_tools.filter(rule => rule.startsWith("Agent(model:"))) {
+    const alias = /^Agent\(model:(\w+)\)$/.exec(rule)[1];
+    for (const [tier, pin] of Object.entries(data.subagent_tiers.claude)) assert.ok(!pin.includes(`-${alias}-`), `${rule} names the ${tier} pin's family; drop it (the frontier alias renders from its pin)`);
+  }
 
   assert.ok(piHarness.includes(data.subagent_tiers.pi.frontier));
   assert.match(run("cat", target(".pi/agent/extensions/workflow.ts")), /\/\.pi\/agent\/workflow\/index\.mjs/);
@@ -401,6 +409,12 @@ test("every roster role and shared skill has its source stubs, and every stub a 
       assert.ok(skills.includes(skill), `${dir}/${skill}/SKILL.md.tmpl has no .chezmoitemplates/skills/${skill}.md`);
     }
   }
+  // a skill dispatches roles by name; a rename or removal in the roster would otherwise break it silently
+  for (const skill of skills) {
+    for (const [, role] of readSource(`.chezmoitemplates/skills/${skill}.md`).matchAll(/`([a-z]+(?:-[a-z]+)*-(?:reviewer|researcher))`/g)) {
+      assert.ok(Object.hasOwn(data.subagents, role), `.chezmoitemplates/skills/${skill}.md dispatches ${role}, not a roster role`);
+    }
+  }
 });
 
 test("readonly roles grant no write tool and only read-only MCP tools; writers can write or nest", (t) => {
@@ -421,30 +435,30 @@ test("readonly roles grant no write tool and only read-only MCP tools; writers c
   }
 });
 
-test("docs/decisions.md records every tier pin and driver choice with a typed evidence cell", (t) => {
+test("docs/decisions.md has a row for every tier pin, driver, classifier, search, bridge and deny slot", (t) => {
   const { data: load } = fixture(t);
   const data = load();
+  const nouns = familyNouns(data);
   const cells = line => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
   const [header, , ...body] = readSource("docs/decisions.md").split("\n").filter(line => line.trim().startsWith("|")).map(cells);
-  assert.deepEqual(header, ["key", "value", "evidence", "since", "trigger"]);
+  assert.deepEqual(header, ["key", "why", "revisit when"]);
+  // a stray `|` in a cell shifts the columns and fails later asserts with a misleading message
+  for (const row of body) assert.equal(row.length, 3, `docs/decisions.md ${row[0]}: ${row.length} cells, not 3`);
   const rows = new Map(body.map(([key, ...rest]) => [key.replace(/^`(.*)`$/, "$1"), rest]));
-  for (const [h, tiers] of Object.entries(data.subagent_tiers)) {
-    for (const [tier, pin] of Object.entries(tiers)) {
-      const key = `subagent_tiers.${h}.${tier}`;
-      assert.ok(rows.has(key), `docs/decisions.md has no ${key} row`);
-      assert.ok(rows.get(key)[0].includes(pin), `docs/decisions.md ${key} does not name ${pin}`);
-    }
-  }
-  // value cells track the data, so a moved driver or classifier without a record edit fails here
-  for (const h of Object.keys(data.subagent_tiers)) {
-    const key = `agents.${h}.defaults.tier`;
-    assert.ok(rows.has(key), `docs/decisions.md has no ${key} row`);
-    const expected = `${data.agents[h].defaults.tier}, effort ${data.agents[h].defaults.reasoning_effort}`;
-    assert.ok(rows.get(key)[0].startsWith(expected), `docs/decisions.md ${key} value does not start with "${expected}"`);
-  }
+  assert.equal(rows.size, body.length, "docs/decisions.md has a duplicate key");
+  const slots = [
+    ...Object.entries(data.subagent_tiers).flatMap(([h, tiers]) => Object.keys(tiers).map(tier => `subagent_tiers.${h}.${tier}`)),
+    ...Object.keys(data.subagent_tiers).map(h => `agents.${h}.defaults.tier`),
+    "agents.pi.defaults.classifier",
+    "agents.pi.search_tier",
+    "agent_mcp_servers.pi.args",
+    "agents.claude.denied_tools.models",
+    "measure.role_matrix",
+  ];
+  for (const key of slots) assert.ok(rows.has(key), `docs/decisions.md has no ${key} row`);
   // a key is a namespace label or a live agents.yaml path; a list-valued path may carry one sub-label
   for (const key of rows.keys()) {
-    if (/^(parity|setting|measure|pin|instruction)\./.test(key)) continue;
+    if (/^(parity|setting|measure|instruction)\./.test(key)) continue;
     let node = data;
     const segments = key.split(".");
     for (const [i, segment] of segments.entries()) {
@@ -453,51 +467,19 @@ test("docs/decisions.md records every tier pin and driver choice with a typed ev
       node = node[segment];
     }
   }
-  // measure.role_tiers: "<t> for every role but <names> (<t>)"; measure.role_matrix: "effort <level>: <names>; <level>: the rest; ..."
-  assert.ok(rows.has("measure.role_tiers"), "docs/decisions.md has no measure.role_tiers row");
-  const tierClause = rows.get("measure.role_tiers")[0];
-  const [, defaultTier, tierExceptions, exceptionTier] = tierClause.match(/^(\w+) for every role but (.+) \((\w+)\)$/) ?? [];
-  assert.ok(defaultTier, `docs/decisions.md measure.role_tiers: ${tierClause}`);
-  const exceptions = tierExceptions.split(", ");
-  assert.ok(rows.has("measure.role_matrix"), "docs/decisions.md has no measure.role_matrix row");
-  const effortClauses = rows.get("measure.role_matrix")[0].split(";").map(clause => clause.trim());
-  const effortOf = new Map();
-  let restEffort;
-  for (const [i, clause] of effortClauses.entries()) {
-    const [, level, names] = (i === 0 ? clause.replace(/^effort /, "") : clause).match(/^(\w+): (.+)$/) ?? [];
-    assert.ok(level, `docs/decisions.md measure.role_matrix effort clause: ${clause}`);
-    if (names === "the rest") restEffort = level;
-    else for (const name of names.split(", ")) effortOf.set(name, level);
-  }
-  for (const name of exceptions) assert.ok(name in data.subagents, `docs/decisions.md measure.role_tiers: no subagents.${name}`);
-  for (const name of effortOf.keys()) assert.ok(name in data.subagents, `docs/decisions.md measure.role_matrix: no subagents.${name}`);
-  for (const [role, meta] of Object.entries(data.subagents)) {
-    assert.equal(meta.tier, exceptions.includes(role) ? exceptionTier : defaultTier, `docs/decisions.md measure.role_tiers: ${role} tier`);
-    assert.equal(meta.effort, effortOf.get(role) ?? restEffort, `docs/decisions.md measure.role_matrix: ${role} effort`);
-  }
-  assert.ok(rows.has("agents.pi.search_tier"), "docs/decisions.md has no agents.pi.search_tier row");
-  assert.ok(rows.get("agents.pi.search_tier")[0].startsWith(data.agents.pi.search_tier), `docs/decisions.md agents.pi.search_tier value does not start with "${data.agents.pi.search_tier}"`);
-  const bridgeArgs = data.agent_mcp_servers.pi.args;
-  const bridgeEffort = `--reasoning-effort ${bridgeArgs[bridgeArgs.indexOf("--reasoning-effort") + 1]}`;
-  assert.ok(rows.has("agent_mcp_servers.pi.args"), "docs/decisions.md has no agent_mcp_servers.pi.args row");
-  assert.ok(rows.get("agent_mcp_servers.pi.args")[0].includes(bridgeEffort), `docs/decisions.md agent_mcp_servers.pi.args value lacks "${bridgeEffort}"`);
-  const modelDenies = data.agents.claude.denied_tools.filter(rule => rule.startsWith("Agent(model:"));
-  assert.ok(rows.has("agents.claude.denied_tools.models"), "docs/decisions.md has no agents.claude.denied_tools.models row");
-  assert.equal(rows.get("agents.claude.denied_tools.models")[0], modelDenies.join(", "), "docs/decisions.md agents.claude.denied_tools.models value");
-  const cls = data.agents.pi.defaults.classifier;
-  assert.ok(rows.has("agents.pi.defaults.classifier"), "docs/decisions.md has no agents.pi.defaults.classifier row");
-  for (const part of [`tier ${cls.tier}`, `filter ${cls.filter_effort}`, `judge ${cls.judge_effort}`]) {
-    assert.ok(rows.get("agents.pi.defaults.classifier")[0].includes(part), `docs/decisions.md classifier value lacks "${part}"`);
-  }
-  assert.equal(rows.size, body.length, "docs/decisions.md has a duplicate key");
   for (const line of readSource("docs/decisions.md").split("\n").filter(line => line.trim().startsWith("|"))) {
     assert.ok(Buffer.byteLength(line) <= DECISION_ROW_MAX_BYTES, `docs/decisions.md row over ${DECISION_ROW_MAX_BYTES} bytes: ${line.slice(0, 60)}`);
   }
-  for (const [key, [, evidence, , trigger]] of rows) {
-    assert.match(evidence, /^(measured|vendor|benchmark|preference|forced):/, `docs/decisions.md ${key}: evidence type`);
-    // a trigger is an event or a threshold: it is never empty and never a calendar date
+  for (const [key, [why, trigger]] of rows) {
+    assert.match(why, /^(measured|vendor|benchmark|preference|forced):/, `docs/decisions.md ${key}: evidence kind`);
+    // a trigger is an event: never empty, never a calendar date
     assert.ok(trigger && trigger.length > 0, `docs/decisions.md ${key}: empty trigger`);
     assert.doesNotMatch(trigger, /\d{4}-\d{2}-\d{2}/, `docs/decisions.md ${key}: dated trigger`);
+    // every cell names the tier, never the pin, so a re-pin leaves the record true and is one agents.yaml edit
+    for (const cell of [why, trigger]) {
+      assert.doesNotMatch(cell, PIN_ID, `docs/decisions.md ${key}: names a pin id, name the tier`);
+      for (const noun of nouns) assert.doesNotMatch(cell, new RegExp(`\\b${noun}\\b`), `docs/decisions.md ${key}: names the model family ${noun}`);
+    }
   }
 });
 
@@ -535,7 +517,6 @@ test("shared subagent and skill bodies name no harness-specific file, tool prefi
 });
 
 test("model pins live only in agents.yaml", () => {
-  const pin = /\bclaude-[a-z0-9]+-[0-9][a-z0-9-]*|\bgpt-[0-9][a-z0-9.-]*/;
   // dot-named entries are tool caches; chezmoi ignores them too
   const walk = dir => readdirSync(dir, { withFileTypes: true }).filter(entry => !entry.name.startsWith(".")).flatMap(entry => {
     const path = join(dir, entry.name);
@@ -553,7 +534,7 @@ test("model pins live only in agents.yaml", () => {
     // this file: the literal role tables it used to carry are what the gate replaces
     fileURLToPath(import.meta.url),
   ].flatMap(file => readFileSync(file, "utf8").split("\n").flatMap((line, index) => {
-    const match = pin.exec(line);
+    const match = PIN_ID.exec(line);
     return match ? [`${relative(source, file)}:${index + 1}: ${match[0]}`] : [];
   }));
   assert.deepEqual(hits, [], "literal model IDs belong in .chezmoidata/agents.yaml");

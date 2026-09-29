@@ -869,8 +869,8 @@ test("answers, completion and turn lines format", () => {
   ]);
   assert.equal(completionLine({ agent: "explore-deep", task: "Audit the\n last commits", status: "completed", durationMs: 134_000 }, theme), "<success>• <toolTitle>explore-deep finished<muted> · Audit the last commits · 2m 14s");
   assert.equal(completionLine({ agent: "explore-deep", task: "Audit", status: "completed" }, theme), "<success>• <toolTitle>explore-deep finished<muted> · Audit");
-  assert.equal(completionLine({ agent: "ts-reviewer", task: "", status: "failed", durationMs: 4_000 }, theme), "<error>• <toolTitle>ts-reviewer failed<muted> · 4s");
-  assert.equal(completionLine({ agent: "ts-reviewer", task: "", status: "paused" }, theme), "<warning>• <toolTitle>ts-reviewer paused");
+  assert.equal(completionLine({ agent: "diff-reviewer", task: "", status: "failed", durationMs: 4_000 }, theme), "<error>• <toolTitle>diff-reviewer failed<muted> · 4s");
+  assert.equal(completionLine({ agent: "diff-reviewer", task: "", status: "paused" }, theme), "<warning>• <toolTitle>diff-reviewer paused");
   assert.equal(formatDuration(512_000), "8m 32s");
   assert.equal(formatDuration(45_000), "45s");
   assert.equal(formatDuration(3_720_000), "1h 02m");

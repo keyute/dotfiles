@@ -20,15 +20,17 @@ file are chezmoi-ignored (repo-local only).
   this repo's policy or layout, when adoption would need a wrapper, pin or
   workaround for the coupling register, or when only a sliver of it would be
   used. Either way, record the trigger that reverses it with the decision: a
-  model, role, setting or held-back package pin in `docs/decisions.md`, owned code in `docs/pi-implementation.md`
-  or the coupling register.
+  model, role, setting or asymmetry in `docs/decisions.md`, owned code in
+  `docs/pi-implementation.md` or the coupling register.
   A dependency pin bump lands as its own change, so its cost stays measurable.
 - Keep vendor-templated files (oh-my-tmux, ghostty, gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
 
-- Edit source state only; verify with `chezmoi diff` (it reports template
-  errors last, easy to miss) plus `chezmoi cat <target>` for every harness the
-  file renders to. Nested shared templates need `includeTemplate`.
+- Edit source state only; verify with `npm run test:pi` (inside the agent
+  sandbox: `TMPDIR=/tmp/claude/x`; its fixture renders every target into a
+  scratch destination with a stubbed `op` and reports template errors), plus
+  `chezmoi cat <target>` where the target is readable. Nested shared templates
+  need `includeTemplate`.
 - Declare a subagent once in `.chezmoidata/agents.yaml`, scoped
   with `harnesses:` where it is not for every harness; a shared skill body
   lives once in `.chezmoitemplates/skills/` with a one-line stub per harness.
@@ -47,44 +49,29 @@ file are chezmoi-ignored (repo-local only).
 
 ## Harness iteration
 
-Rules for changing models, roles, settings or instructions; the record and
-the owner's procedure are `docs/decisions.md`, and `npm run test:pi` holds
-every mechanical check.
+For changing models, roles, settings or instruction lines. The record is
+`docs/decisions.md` (its Events section is the procedure); `npm run test:pi`
+holds every mechanical check.
 
-- **One slot per change**, as a dated trial where `docs/decisions.md`
-  requires one: a pin, a role's tier or effort, a routing description, a
-  harness setting, an always-loaded instruction line — with its
-  `docs/decisions.md` row in the same change.
-- **Dwell** for the period `docs/decisions.md` sets before judging a trial
-  slot; earlier only when it is broken: rejected by the harness, withdrawn by
-  the vendor, a red test, a security finding.
-- **Never cite an unrun gate.** Label evidence by the kinds `docs/decisions.md`
-  defines; benchmarks and API prices nominate a candidate, the after reading
-  decides.
 - **Children never run the frontier tier.**
-- **One record.** The why, evidence and reversal trigger of a model, role,
-  setting or asymmetry decision live only in its `docs/decisions.md` row; a
-  trigger is an external event or a measured threshold, never a date. A
-  comment beside such a key says what it does and carries no evidence, date
-  or trigger; hazards and constraints stay beside the code; an instruction
-  line's why stays in its template comment.
-- **Review on triggers only** — a model release or retirement, a pin bump, a
-  pool binding, a trial's after reading due, an observed failure — and only
-  for what the trigger touches. No scheduled, post-update or whole-harness
-  sweeps; unused roles and skills are judged at those reviews.
+- **One record.** A model, role, setting or asymmetry decision's why and
+  reversal event live only in its `docs/decisions.md` row, edited in the same
+  change; a comment beside the key says what it does and carries no evidence,
+  date or trigger; hazards and constraints stay beside the code.
+- **Review on triggers only**: the events `docs/decisions.md` names, and only
+  what the event touches. No scheduled or whole-harness sweeps.
 - **Parity by default.** Both harnesses get the same behaviour wherever each
-  can express it; an asymmetry exists only as a `decisions.md` row naming the
-  harness limit, or the owner's preference and its reversal trigger, and a
-  side effect (a renamed tool, a disabled built-in) counts. Name the boundary
-  that enforces a restriction — sandbox, policy, tool list — never imply one.
-- **Set a vendor setting only to change its default** or to pin a value the
-  harness UI persists, with a one-line comment beside the key naming the
-  behaviour it changes.
+  can express it; an asymmetry (a side effect counts) exists only as a row
+  naming the harness limit or the owner's preference. Name the boundary that
+  enforces a restriction — sandbox, policy, tool list — never imply one.
+- **Set a vendor setting only to change its default**, to pin a value the
+  harness UI persists, or because owned code reads it; a one-line comment
+  beside the key names the behaviour it changes. A cosmetic setting needs no
+  row.
 - **An always-loaded instruction line** exists only for a diagnosed, recurring
   failure that the harness prompt, the code or a check does not already
   prevent; when `git log -p` shows a line oscillating, delete it or change its
   intent, never reword it. Read `docs/agent-authoring.md` before editing an
-  instruction source (shared or consumer templates, subagent and skill
-  bodies, on-demand docs).
+  instruction source.
 - A decision goes in `docs/decisions.md`; agent memory holds only
   session-side gotchas.

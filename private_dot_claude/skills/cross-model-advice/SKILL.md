@@ -1,6 +1,6 @@
 ---
 name: cross-model-advice
-description: "Get an independent second opinion from a second model (GPT via the pi bridge) on an architecture decision, approach trade-off, stuck bug, or judgment call. Use when asked for a second opinion, an outside take, or what another model thinks. Args: optional question; defaults to the open question in the conversation."
+description: "Independent second opinion from a second model (GPT via the pi bridge). As the session driver, run it unprompted before committing to an architecture or approach decision that is expensive to reverse (before presenting a plan for approval, not after) or when a bug resists a second diagnosis; also when asked for a second opinion or an outside take. Args: optional question; defaults to the open question in the conversation."
 ---
 
 Consult the advisor as an independent second opinion and return a synthesis, not a

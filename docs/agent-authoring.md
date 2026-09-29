@@ -1,6 +1,6 @@
 # Authoring agent instructions
 
-Gates for adding a line: `AGENTS.md` (Harness iteration).
+Gate for adding a line: `AGENTS.md` (Harness iteration).
 
 ## Placement
 
@@ -8,20 +8,23 @@ Gates for adding a line: `AGENTS.md` (Harness iteration).
   `{{/* <principle>: <why> */}}` comment. An intent change edits the bullet
   and its comment together. `native_coverage` in agents.yaml is only the
   per-harness list of principles the shared template skips.
+- A comment opens with `model:` when the line compensates a model default;
+  an untagged line is an owner contract. Only `model:` lines are re-judged
+  when a new model family is pinned (`docs/decisions.md`, Events).
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`.
   Every subagent loads the projection too (bar the `omit_instructions`
-  roles: Explore on both harnesses, Plan on Claude), so driver-only rules sit under its one "session
+  roles in agents.yaml), so driver-only rules sit under its one "session
   driver" bullet and read as the driver's, never the reader's.
 - Subagent and skill bodies render for every harness: keep harness-specific
   nouns — tool names, agent names, instruction filenames — out of them, and take
   what varies as a parameter, as `reviewer-common.md` does with
   `instructions_file`.
 - Harness-specific *intent* → a commented bullet in that harness's consumer
-  template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl`), adjudicated by the
-  trigger-scoped review (AGENTS.md, Harness iteration) like any principle. A
+  template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl`), judged on its
+  `docs/decisions.md` event like any principle. A
   tag encodes intent intrinsic to that harness, never the harness where a
-  failure was observed; only non-intent harness mechanics (doc pointers) live
-  solely in the consumer template.
+  failure was observed; what varies only by path (the doc pointers) takes a
+  per-harness value from agents.yaml inside the shared projection.
 - Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
   from it, never hand-write what it already encodes. The why, evidence and
   trigger behind a value go to `docs/decisions.md`.
@@ -32,7 +35,7 @@ Gates for adding a line: `AGENTS.md` (Harness iteration).
   workarounds go there too, where they expire cheaply.
 - A doc trigger names a question ("read X before changing tiers"), never a
   routine step — delegating, reviewing, starting a task — or the doc loads
-  into every session (pi's "delegating a lookup" did, 65 sessions in 30 days).
+  into every session.
 - Implementation mechanics a harness editor needs go to
   `docs/pi-implementation.md` (pi and the bridge), not the deployed doc;
   `render.test.mjs` budgets each rendered on-demand doc.

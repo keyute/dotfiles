@@ -126,7 +126,7 @@ test("the control notice row is built from the event pi-subagents puts in detail
   const notice = event => controlNotice({ content: "Subagent needs attention: researcher\nRun: …", details: { event } }, {}, theme)?.render(200)[0].trimEnd();
   assert.equal(notice({ agent: "researcher", message: "researcher is waiting for a supervisor reply", reason: "supervisor_request" }),
     "<warning>• <toolTitle>researcher needs attention<muted> · is waiting for a supervisor reply");
-  assert.equal(notice({ agent: "ts-reviewer", message: "ts-reviewer needs attention (no observed activity for 300s)", reason: "idle" }), "<warning>• <toolTitle>ts-reviewer needs attention<muted> · no observed activity for 300s");
+  assert.equal(notice({ agent: "diff-reviewer", message: "diff-reviewer needs attention (no observed activity for 300s)", reason: "idle" }), "<warning>• <toolTitle>diff-reviewer needs attention<muted> · no observed activity for 300s");
   // A payload the row cannot read is the plugin's to draw.
   assert.equal(controlNotice({ details: { event: { agent: "researcher" } } }, {}, theme), undefined);
   assert.equal(controlNotice({}, {}, theme), undefined);

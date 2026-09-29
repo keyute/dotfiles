@@ -57,7 +57,7 @@ here.
   `summary` because the owned rows (`rows.mjs`) draw subagent calls and fold
   under rule 2, and `intercomBridge` is off so children report only through
   their completion, as Claude Code's subagents do.
-  Own launch/status only if coupling rows grow across two consecutive bumps; re-judge when Pi ships native subagents.
+  Re-judge when Pi ships native subagents.
   Keep existing plugins and owned UI: catalog alternatives do not remove these policy/presentation seams; reconsider
   adoption when a public API covers them without a wrapper or workaround.
 - No agent LSP or semantic-navigation integration (decision 2026-09-17):
@@ -72,20 +72,19 @@ here.
   existing MCP gateway, while Context7 stays direct.
   These exposure changes leave broker enforcement and child permissions intact.
 - 2026-09-22: pi-subagents 0.70.1 removed the completion guard the roles were
-  tuned for on 2026-09-18; the driver's diff check is the gate. Roles carry
-  `acceptanceRole: read-only` or `acceptance: {"level":"none",…}` with
-  `mutationTools` (reasons in `docs/pi-coupling.md`). The subagent schema and
-  description expose managed keys/APIs only; executor and enforcement are
-  unchanged. Nesting children lack the native notifier and collect descendants
-  with blocking `bg_wait` before synthesis.
+  tuned for; the driver's diff check is the gate (`docs/pi-coupling.md`,
+  Acceptance and mutation names). The subagent schema and description expose
+  managed keys/APIs only; executor and enforcement are unchanged
+  (`docs/pi-coupling.md`, Plugin tool Proxy). Nesting children lack the native
+  notifier and collect descendants with blocking `bg_wait` before synthesis.
 - 2026-09-22: keep structured `workflow`/`contextFiles` prompt options, not a
   forced `systemPrompt`. Offline pinned request fixtures preserve initial
   instructions, input and tools across section patches and mode switches.
   These are request-shape guarantees, not live subscription cache/billing proof.
   No cache plugin or long-TTL override: this request builder does not request one.
-- 2026-09-22: MCP disables namespace proxies (gateway plus direct Context7 only) and sets `jev: false`; no TypeSafe-key-dependent semantic-search default. `freezeDirectTools: true` trades late direct-tool hot-loading for a stable surface after initialization. Remaining cache-isolation defects and their reversal trigger are in `docs/pi-coupling.md`.
+- 2026-09-22: MCP is the gateway plus direct Context7 only, with lexical search (no TypeSafe-key-dependent semantic-search default) and a frozen direct-tool surface, trading late hot-loading for stability (`docs/pi-coupling.md`, MCP settings).
 - 2026-09-22: nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The `timeoutMs` runtime backstop with its `checkpointBeforeDeadlineMs` checkpoint/stop steer (`extensions/subagent/config.json`) replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts: `bg_wait` window expiry is non-terminal, the separate headless `agent_end` auto-drain keeps its 30-minute limit, and a nesting child collects results during its turn, not through that drain.
-- 2026-09-22: no on-disk patches; two guarded prototype replacements (skill display, pending input), pinned in `stability.test.mjs`. The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. 2026-09-23: rather than wait, the extension owns the `!` round-trip through documented surfaces (composer submit, custom message/entry, its own renderer; `docs/pi-coupling.md`); when the hook ships, hand execution back to pi and keep only the renderer. 2026-09-23, later: the `!` command honours pi's `shellPath`/`shellCommandPrefix` (managed zsh sourcing `~/.zshrc`) through the SDK's `SettingsManager`, so the hand-back changes nothing the user sees.
+- 2026-09-22: no on-disk patches; two guarded prototype replacements (`docs/pi-coupling.md`, Skill display and Pending input). The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. Rather than wait, the extension owns the `!` round-trip, honouring pi's `shellPath`/`shellCommandPrefix` so the hand-back changes nothing the user sees; when the hook ships, hand execution back to pi and keep only the renderer (`docs/pi-coupling.md`, The owned `!` block).
 - 2026-09-24, maintainability survey: keep the owned UI and harness, adopt
   nothing. pi 0.87.1 (latest) has no user-message, pending-input, bash-block or
   prompt-prefix renderer hook (`user_bash` still draws pi's own block; the
@@ -125,12 +124,11 @@ here.
   tasks; cleanup retains their outputs and failures. Cleanup cannot run after
   Pi receives SIGKILL, nor does it cover deliberately detached `setsid` daemons
   or external services/containers.
-- No `modelOverrides` `contextWindow` raise (`docs/decisions.md`,
-  `setting.pi_contextWindow`).
-- The workflow's `before_agent_start` hook lists skills to the root model
-  through the SDK's `formatSkillsForPrompt`, naming `workspace_read`: pi's own
-  listing keys on a tool named `read` or `bash`, and the workflow exposes
-  `workspace_*`.
+- No `modelOverrides` `contextWindow` raise: the subscription route takes
+  272,000 input tokens, and a raise only defers compaction until the provider
+  rejects.
+- The workflow lists skills to the root model itself, naming `workspace_read`
+  (`docs/pi-coupling.md`, Skill listing).
 - 2026-09-18: TypeSafe Jev is not adopted for the approval classifier: the
   only slice an offline replay fast-allows safely is the sandboxed reviewed
   verbs, 11% of reviews, and escalations rarely clear the confidence bar.
@@ -156,7 +154,8 @@ here.
   secret-stubbed chezmoi projections; fixtures that need a Unix socket or SRT
   skip where the sandbox denies them.
 - `PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` on an unrestricted host
-  exercises actual sockets and SRT against disposable fixtures.
+  exercises actual sockets and SRT against disposable fixtures; it has not yet
+  had a green run.
 - After a pin bump, re-check live: subscription login, root and child model
   pins, auto approvals, cancellation, the fleet rows and peek, MCP queries.
 - Accepted residuals, each with its trigger: a timed-out approval leaves its

@@ -29,7 +29,7 @@ If behavior seems changed, verify (claude-code-guide) and update.
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
 {{- $bare := list }}{{ $scoped := list }}{{ $modelDeny := list }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
-- The `{{ $modelDeny | join "` and `" }}` deny rules keep per-call children on the tier pins;
+- The `Agent(model:…)` deny rules (the frontier pin's alias, plus `{{ $modelDeny | join "`, `" }}`) keep per-call children on the tier pins;
   they do not see a Workflow `agent()` opts.model, which does reach the frontier, or a
   third-party `model: inherit`, nor prove routing.
 {{- $omit := list }}
@@ -52,7 +52,7 @@ If behavior seems changed, verify (claude-code-guide) and update.
 - No claude.ai-product surface: account skill/plugin sync, claude.ai connectors and Remote
   Control are off in settings, the cron scheduler by env; `{{ $bare | join "`, `" }}` are
   bare-denied (gone from the tool list); `{{ $scoped | join "`, `" }}` block only the
-  matching call. Skill overrides and denies live in agents.yaml (plugin skills follow
+  matching call, as does the frontier alias deny rendered from its pin. Skill overrides and denies live in agents.yaml (plugin skills follow
   `enabledPlugins`). Web search, Exa, context7 and Playwright stay for research;
   `/code-review ultra` and `claude --cloud` have no disable knob, both user-invoked only.
 

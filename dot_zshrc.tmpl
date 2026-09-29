@@ -21,8 +21,9 @@ pi() {
   local -a pi_extensions=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts")
   [[ ! -f "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts" ]] ||
     pi_extensions+=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts")
-  # Fullscreen TUI enables mouse input (click-to-expand tool rows).
-  "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions --tui-mode fullscreen "${pi_extensions[@]}" "$@"
+  # Fullscreen TUI enables mouse input (click-to-expand tool rows); no pi.dev
+  # version check.
+  PI_SKIP_VERSION_CHECK=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions --tui-mode fullscreen "${pi_extensions[@]}" "$@"
 }
 
 # `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the

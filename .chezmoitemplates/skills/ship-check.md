@@ -29,8 +29,8 @@ synthesis.
 3. **Find — fan out to pinned reviewers only.** Dispatch in parallel, only to named
    pinned reviewer agents — an unpinned or built-in worker lacks the role's tool
    scope, pinned effort and return format:
-   - one primary correctness reviewer per group — the matching language specialist
-     where one exists, else `diff-reviewer`;
+   - one `diff-reviewer` correctness pass per group (`infra-reviewer` for
+     Kubernetes/Helm/ArgoCD manifests);
    - one `diff-reviewer` simplify pass on any nontrivial diff — quality coverage is
      this skill's job, not a separate command's;
    - one `diff-reviewer` test-coverage pass only where behavior changed or regression

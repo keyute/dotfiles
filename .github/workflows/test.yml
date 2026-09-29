@@ -118,6 +118,7 @@ jobs:
           home="$RUNNER_TEMP/home"
           jq empty "$home/.claude/settings.json"
           jq empty "$home/.claude.json"
+          jq empty "$home/.pi/agent/settings.json"
           # Rendered configs point MCP/statusline commands into the source
           # dir's node_modules/.bin; a missing binary renders fine but breaks
           # silently at runtime, so assert existence here.

@@ -10,10 +10,11 @@ ships: pi-subagents publishes compiled `src/**/*.js` plus `.d.ts` (its
 pi-mcp-adapter ship `.ts` (2026-09-22).
 
 An entry whose owned surface has a native pi or plugin equivalent names it
-under *Fallback:* with the behaviour lost (2026-09-26). When a pi bump breaks a
-pin on such a surface, the default is to delete the surface and fall back, not
-to repair it, unless the owner chooses repair. A new owned surface names its
-Fallback when it lands.
+under *Fallback:* with the behaviour lost. On a red pin, such an entry is
+deleted and falls back unless it is under **Repair**: rule 2's groups
+(`rows`), rule 5's composer and `!` block (`editor`, `shell`), rule 6's fleet
+and peek (`fleet`, `peek`, `replay`). An entry without a Fallback is repaired
+or its behaviour dropped. A new owned surface names its Fallback when it lands.
 
 - **Documented pi surfaces** (listed so a bump re-checks them): tool renderers
   (`renderShell: "self"`, `context.expanded/toolCallId/invalidate/state`),

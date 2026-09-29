@@ -8,7 +8,9 @@
     {{- $_ := set $modelSettings $pin (dict "effortLevel" $.agents.claude.defaults.reasoning_effort) -}}
   {{- end -}}
 {{- end -}}
-{{- $permDeny := .agents.claude.denied_tools -}}
+{{- /* the frontier pin's Agent-tool alias is its family segment (claude-<family>-…),
+       so the deny follows the pin; denied_tools hand-lists only aliases with no tier */}}
+{{- $permDeny := append .agents.claude.denied_tools (printf "Agent(model:%s)" (index (splitList "-" .subagent_tiers.claude.frontier) 1)) -}}
 {{- /* The harness merges Read()/Edit() denies into the Bash sandbox's deny
        lists. Relative names also get Edit() because they fall inside the
        writable cwd. Restore sandbox.filesystem.* if a release stops merging. */ -}}
@@ -48,8 +50,8 @@
          built-in `claude` type, plugin agents and workflow agents (it never
          reaches Explore or Plan; see agents.yaml subagents.Plan). A default,
          not a force: frontmatter and per-call overrides still win, and the
-         Agent(model:…) deny in agents.claude.denied_tools is what stops a
-         per-call frontier override. */}}
+         Agent(model:…) denies rendered above are what stop a per-call
+         frontier override. */}}
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
     {{- /* also disables the bundled `loop` skill; add `loop: "off"` to skill_overrides if this goes */}}
@@ -59,7 +61,9 @@
   },
   {{- /* Mirrors herdr's canonical SessionStart entry (structural JSON equality)
          so `herdr integration install claude` leaves this file untouched; the
-         script itself is herdr-generated and chezmoi-unmanaged. */}}
+         script itself is herdr-generated and chezmoi-unmanaged. Re-check it
+         against herdr's entry when run_onchange_after_zz-herdr-integrations
+         re-fires on a herdr upgrade. */}}
   "hooks": {
     "SessionStart": [
       {

@@ -16,4 +16,4 @@ lens, and skip the marginal:
 Review the exact base…head snapshot and file group named in your prompt; deletion-only
 defects count (cite the removed line).
 
-{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting handled by the language's own formatter") }}
+{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting handled by the language's own formatter" "conventions" "error handling, naming, module layout, where types and helpers live" "instructions_file" .instructions_file) }}

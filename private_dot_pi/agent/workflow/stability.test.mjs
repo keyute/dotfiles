@@ -212,7 +212,7 @@ for (const [claim, file, patterns] of pins) {
 
 // API calls that are not events: each must stay a declared member of the
 // exported extension declarations (method, generic method, or property).
-const declaredApis = ["sendMessage", "select", "getArgumentCompletions", "addAutocompleteProvider", "appendEntry", "registerEntryRenderer", "registerMessageRenderer", "setWidget", "setWorkingVisible", "placement"];
+const declaredApis = ["sendMessage", "select", "getArgumentCompletions", "addAutocompleteProvider", "appendEntry", "registerEntryRenderer", "registerMessageRenderer", "registerMarkdownTransformer", "registerCommand", "setWidget", "setWorkingVisible", "setFooter", "setHeader", "setEditorComponent", "setStatus", "placement"];
 for (const api of declaredApis) {
   test(`${api} is a declared extension API`, () => {
     assert.match(extensionDeclarations(), new RegExp(`\\b${api}\\b\\s*[<(?:]`), `${api} is not declared`);

@@ -22,7 +22,7 @@
 {{- $_ := set $managed "shellPath" "/bin/zsh" -}}
 {{- $_ := set $managed "shellCommandPrefix" "source ~/.zshrc" -}}
 {{- /* drops the subagent extension's built-in agents; the roster is the whole set */ -}}
-{{- $_ := set $managed "subagents" (dict "disableBuiltins" true "defaultProvider" $pi.defaults.provider) -}}
+{{- $_ := set $managed "subagents" (dict "disableBuiltins" true) -}}
 {{- /* keeps thinking blocks shown even after pi's UI toggle persists hide */ -}}
 {{- $_ := set $managed "hideThinkingBlock" false -}}
 {{- /* turns off pi's install ping to pi.dev */ -}}

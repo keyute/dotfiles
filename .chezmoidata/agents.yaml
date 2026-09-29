@@ -3,7 +3,9 @@ agents:
     home: "~/.claude"
     # lines this harness's own prompt surface already carries; the shared
     # projection skips them
-    native_coverage: [call_batching, docs_mcp, user_run_commands]
+    native_coverage: [call_batching, docs_mcp, user_run_commands, initiative]
+    # on-demand docs the shared doc-pointer line names
+    docs: "~/.claude/docs"
     defaults:
       # a subagent_tiers key, never a second copy of the pin
       tier: top
@@ -50,9 +52,8 @@ agents:
       - "RemoteTrigger"
       - "PushNotification"
       - "Agent(isolation:remote)"
-      # Agent-tool model aliases with no small/top pin: fable is the frontier,
-      # sonnet has no tier; children run only tier pins
-      - "Agent(model:fable)"
+      # Agent-tool aliases with no small/top pin; the frontier pin's alias is
+      # rendered from subagent_tiers, so children run only tier pins
       - "Agent(model:sonnet)"
       # a speed bump under the never-commit/push rule, not a boundary: prefix
       # rules miss `git -C x commit` and `sh -c` forms
@@ -63,6 +64,7 @@ agents:
     # lines this harness's own prompt surface already carries; the shared
     # projection skips them
     native_coverage: [specialist_pinning]
+    docs: "~/.pi/agent/docs"
     # model tier pi-web-search bills at (the plugin's ~/.pi/agent/web-search.json)
     search_tier: small
     defaults:
@@ -102,30 +104,6 @@ subagents:
     readonly: true
     tools: "Read, Grep, Glob, Bash"
     description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself."
-  go-reviewer:
-    tier: top
-    effort: medium
-    readonly: true
-    tools: "Read, Grep, Glob, Bash"
-    description: "Review Go code diffs for correctness and idiomatic style before merging."
-  python-reviewer:
-    tier: top
-    effort: medium
-    readonly: true
-    tools: "Read, Grep, Glob, Bash"
-    description: "Review Python diffs for correctness, type safety, and idiomatic style before merging."
-  ts-reviewer:
-    tier: top
-    effort: medium
-    readonly: true
-    tools: "Read, Grep, Glob, Bash"
-    description: "Review TS/JS (TypeScript/Node.js) diffs for type safety, async correctness, and idiomatic patterns."
-  shell-reviewer:
-    tier: top
-    effort: medium
-    readonly: true
-    tools: "Read, Grep, Glob, Bash"
-    description: "Review shell/dotfile diffs — shell scripts, zsh configs, chezmoi templates — for correctness and safety."
   infra-reviewer:
     tier: top
     effort: medium
@@ -137,7 +115,7 @@ subagents:
     effort: medium
     readonly: true
     tools: "Read, Grep, Glob, Bash"
-    description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language without a dedicated reviewer; read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them — a conformance pass over requirements-plus-artifact goes to spec-reviewer."
+    description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language (Kubernetes/Helm/ArgoCD manifests: infra-reviewer); read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them — a conformance pass over requirements-plus-artifact goes to spec-reviewer."
   spec-reviewer:
     # the projection's self-review rule names this role literally; render.test
     # fails on a rename
@@ -150,12 +128,14 @@ subagents:
     tier: top
     effort: medium
     readonly: true
+    omit_instructions: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
   researcher:
     tier: top
     effort: medium
     readonly: true
+    omit_instructions: true
     tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
   implementer:
@@ -188,8 +168,7 @@ subagent_tiers:
   claude:
     small: claude-haiku-4-5
     top: claude-opus-5-5
-    # render.test checks the Agent(model:…) deny in agents.claude.denied_tools
-    # against this pin
+    # settings.json renders this pin's Agent(model:…) alias deny
     frontier: claude-fable-5-1
   pi:
     small: gpt-6-luna

@@ -1,6 +1,6 @@
 ---
 name: cross-model-review
-description: "Adversarial cross-model review of a diff by a second model (GPT via the pi bridge). Use when asked for a cross-model review, a second-model review, or to pressure-test a diff before committing. Args: optional ref range, paths, or focus area; defaults to the working-tree diff."
+description: "Adversarial cross-model review of a diff by a second model (GPT via the pi bridge). As the session driver, run it unprompted once per body of work that touches a high-stakes surface (as for spec-reviewer) or spans roughly five or more files, alongside the fresh-eyes subagent pass and never instead of it; also when asked for a cross-model or second-model review. Args: optional ref range, paths, or focus area; defaults to the working-tree diff."
 ---
 
 Have a second model adversarially review a diff, verify its findings yourself, fix
