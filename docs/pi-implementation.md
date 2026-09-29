@@ -195,3 +195,5 @@ here.
 - `scripts/agent-usage.mjs` (owned usage report): reversal trigger — a
   maintained tool reports per-role and per-origin usage from both session
   stores → adopt it.
+  pi's `/usage` is the per-session view (context, cost incl. subagents);
+  the script stays the cross-session one.

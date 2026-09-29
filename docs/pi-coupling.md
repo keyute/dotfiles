@@ -167,6 +167,19 @@ pi-mcp-adapter `.ts`.
   response shape, not the parser. *Retire:* for `@hk_net/pi-usage-bars` if the
   endpoint breaks, losing the segments inside rule 3's single status line.
   *On red* (the credential field shape): repair. *Pin:* `stability.test.mjs`.
+- **Subagent cost receipts**: `/usage` (`usage.mjs` `sessionCost`) reads
+  pi-subagents' undocumented result `details` — `results[]`, `completions[]`
+  and `totalCost.costUsd` (nested descendants folded in for a foreground run)
+  on `subagent`/`bg_wait`
+  tool results and `subagent-slash-result` custom messages — deduped by run id,
+  and for an async run with no receipt its `<asyncDir>/status.json`
+  `totalCost`. The tool result's own `usage` is skipped: pi-subagents folds
+  the child's figure into it. *Why:* pi's `/session` misses async and nested
+  children, and `/subagent-cost` is text only. *Residual:* a run with neither
+  receipt nor status file counts as unavailable, and an async run's receipts
+  and status file hold only its own spend, not its nested descendants', so the
+  figure is a lower bound. *On red:* repair; lost meanwhile: only the Subagents row. *Pin:*
+  `stability.test.mjs`, `usage.test.mjs`.
 - **herdr blocked state** (outside the npm pin): herdr's bundled pi extension
   reports `blocked` only on the ref-counted `herdr:blocked` `{ active, label }`
   bus event, not pi's `ui_prompt_*`; `index.mjs` bridges the prompt span to it

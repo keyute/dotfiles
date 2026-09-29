@@ -21,6 +21,7 @@ import { registerQuestionnaire } from "./questionnaire.mjs";
 import { answerLines, appendVisible, blankReasoning, bulletMarkdown, doneEntryRenderer, hideStreamingReasoning, installFolding, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
+import { readUsage, usageComponent } from "./usage.mjs";
 import { CONTROL_NOTICE, SUBAGENT_NOTIFY, controlNotice, installMcpAdapter, mcpAdapterSettings, mcpGateway, mcpServerDefinitions, pluginApi } from "./plugin-api.mjs";
 
 // The classifier's only evidence source: a shell command's record (command,
@@ -403,6 +404,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       await setMode(broker.policy.mode, ctx);
       appendVisible(pi, "workflow-note", { text: `Removed ${dir} from the workspace` });
     } });
+    pi.registerCommand("usage", { description: "Show plan limits, context use and session cost", handler: async (_args, ctx) => appendVisible(pi, "workflow-usage", await readUsage(ctx)) });
+    pi.registerEntryRenderer("workflow-usage", (entry, _options, theme) => usageComponent(entry.data, theme));
     pi.registerEntryRenderer("workflow-note", (entry, _options, theme) => new Text(noteLine(entry.data.text, theme), 0, 0));
     // The questionnaire owns its invisible renderers; completed answers feed
     // the classifier's task context and one transcript entry.

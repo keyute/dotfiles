@@ -45,6 +45,8 @@ export function windowLabel(windowMins) {
   return `${Math.round(windowMins / 60)}h`;
 }
 
+export const longWindow = window => window.windowMins != null && window.windowMins >= 1440;
+
 export function formatReset(resetsAt, { weekday = false } = {}) {
   if (!resetsAt) return "";
   const date = new Date(resetsAt * 1000);
@@ -59,7 +61,7 @@ export function buildSegments({ modelId, thinkingLevel, contextPercent, limits, 
   if (modelId) segments.push({ text: thinkingLevel ? `${modelId} ${thinkingLevel}` : modelId, color: "accent" });
   if (contextPercent != null) segments.push({ text: `${contextPercent.toFixed(1)}%` });
   for (const window of limits ?? []) {
-    const weekday = window.windowMins != null && window.windowMins >= 1440;
+    const weekday = longWindow(window);
     const reset = formatReset(window.resetsAt, { weekday });
     segments.push({ text: `${windowLabel(window.windowMins)} ${window.usedPercent}%${reset ? ` ${reset}` : ""}`, color: "dim" });
   }
