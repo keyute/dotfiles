@@ -112,12 +112,12 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   // Only general-purpose delegates, as Claude Code's roster implies.
   assert.equal(workflow.agents.Explore.tools.includes("subagent"), false);
   assert.notEqual(workflow.models.tiers.top, workflow.models.tiers.frontier);
+  assert.equal(workflow.childLimit, data.agents.pi.child_limit);
   assert.equal(workflow.agents["general-purpose"].nests, true);
   assert.equal(workflow.agents["spec-reviewer"].readonly, true);
   assert.ok(["workspace_write", "mcp__exa__web_fetch_exa", "subagent", "bg_wait"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
   for (const role of Object.values(workflow.agents)) assert.equal(role.tools.includes("bg_wait"), role.nests);
   for (const [name, server] of Object.entries(workflow.mcp)) {
-    assert.equal(server.policy.direct_tools, data.agent_mcp_servers[name].direct_tools === true, `${name} direct_tools`);
     assert.equal(server.policy.unsandboxed, name === "playwright", `${name} unsandboxed`);
   }
   const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
@@ -311,8 +311,6 @@ test("each role renders its roster tier and effort on every harness it targets",
       const expectedMcp = claudeTools.flatMap(tool => tool === "mcp__*" ? named : tool.startsWith("mcp__") ? [tool] : []);
       assert.deepEqual(contract.tools.filter(tool => tool.startsWith("mcp__")).sort(), [...new Set(expectedMcp)].sort(), `${role}: MCP tools`);
       assert.equal(contract.tools.includes("web_fetch"), claudeTools.includes("WebFetch"), `${role}: web_fetch`);
-      assert.equal(contract.tools.includes("mcp"), false, `${role}: no mcp gateway`);
-      assert.equal("mcpTools" in contract, false, `${role}: no mcpTools`);
       const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: pi model ${model}`);
       assert.ok(agent.split("\n").includes(`thinking: ${meta.effort}`), `${role}: pi thinking ${meta.effort}`);

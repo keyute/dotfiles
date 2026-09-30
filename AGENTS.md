@@ -14,13 +14,13 @@ file are chezmoi-ignored (repo-local only).
   the same change. Judge the maintained and loaded surface—including generated
   configuration, startup work, and agent context—not just the diff.
   *Why: small additions can leave competing controls and recurring maintenance.*
-- Adopt a plugin or package when it is maintained and widely used and its
-  public API covers the need with at most a one-line seam (a renderer swap, a
-  config knob, a frontmatter key). Own the code when the need is specific to
-  this repo's policy or layout, when adoption would need a wrapper, pin or
-  workaround for the coupling register, or when only a sliver of it would be
-  used. Either way, record the trigger that reverses it (One record, below).
-  A dependency pin bump lands as its own change, so its cost stays measurable.
+- Prefer the harness's own API, then first-party capability the
+  subscription covers, then a plugin, then owned code; paid third-party
+  services only escalate. Adopt a plugin only if maintained, widely used and
+  its public API covers the need with at most a one-line seam; own it for
+  this repo's policy or layout, or when adoption needs a wrapper, pin or
+  coupling workaround, or uses only a sliver. Record its reversal trigger
+  (One record). A pin bump lands alone, so its cost stays measurable.
 - Keep vendor-templated files (oh-my-tmux, ghostty, gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
 
@@ -29,14 +29,14 @@ file are chezmoi-ignored (repo-local only).
   scratch destination with a stubbed `op` and reports template errors), plus
   `chezmoi cat <target>` where the target is readable. Nested shared templates
   need `includeTemplate`.
-- Declare a subagent once in `.chezmoidata/agents.yaml`, scoped
-  with `harnesses:` where it is not for every harness; a shared skill body
-  lives once in `.chezmoitemplates/skills/` with a one-line stub per harness.
+- Declare a subagent or MCP server once in `.chezmoidata/agents.yaml`,
+  scoped with `harnesses:` where not for every harness; a shared skill
+  body lives once in `.chezmoitemplates/skills/` with a one-line stub per
+  harness.
   A shared key (role flags, `agent_sandbox` values) is rendered or
   test-enforced on each harness it applies to; where it cannot be, a parity
-  row names why. The parity test in
-  `private_dot_pi/agent/workflow/render.test.mjs` (`npm run test:pi`, CI) is
-  the gate. *Why: copies drift from the data; a failing test catches it.*
+  row names why. The parity test in `render.test.mjs` (`npm run test:pi`,
+  CI) is the gate. *Why: copies drift from the data; a failing test catches it.*
 - Code the harness spawns outside the sandbox (MCP servers, the bridge, hooks)
   treats caller-supplied paths, repos and arguments as hostile: pin its config,
   refuse sandbox-writable roots, and ship a malicious-input test.
@@ -61,10 +61,11 @@ holds every mechanical check.
   Agent memory holds only session-side gotchas.
 - **Review on triggers only**: the events `docs/decisions.md` names, and only
   what the event touches. No scheduled or whole-harness sweeps.
-- **Parity by default.** Both harnesses get the same behaviour wherever each
-  can express it; an asymmetry (a side effect counts) exists only as a row
-  naming the harness limit or the owner's preference. Name the boundary that
-  enforces a restriction — sandbox, policy, tool list — never imply one.
+- **Rough parity by default.** Both harnesses reach roughly the same end
+  state where each can, not a faithful port; an asymmetry (a side effect
+  counts) exists only as a row naming the harness limit or the owner's
+  preference. Name the boundary that enforces a restriction — sandbox,
+  policy, tool list — never imply one.
 - **Set a vendor setting only to change its default**, to pin a value the
   harness UI persists, or because owned code reads it; a one-line comment
   beside the key names the behaviour it changes. A cosmetic setting needs no

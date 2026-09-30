@@ -1,9 +1,7 @@
 {
-  "globalConcurrencyLimit": 20,
   "timeoutMs": 7200000,
   "checkpointBeforeDeadlineMs": 300000,
   "toolDescriptionMode": "compact",
-  "inlineToolDisplay": "summary",
   "fleetView": false,
   "asyncWidget": false,
   "intercomBridge": {

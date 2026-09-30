@@ -53,7 +53,7 @@
 {{ end -}}
 - Web search and fetch: built-in by default (cost); escalate to the Exa MCP
   (search or fetch) when built-in results are sparse, stale, miss community
-  sources, when a fetch is refused, or when the harness has no built-in fetch.{{/* web_search: route by strength, meter by price; the built-in tools' misses are the tools', not the web's */}}
+  sources, or when a fetch is refused or empty.{{/* web_search: route by strength, meter by price; the built-in tools' misses are the tools', not the web's */}}
 - Keep implementations simple — the simplest thing that works: no features,
   refactors, or abstractions beyond the task, no helpers for one-shot
   operations, no speculative error handling, fallbacks, or validation without a

@@ -10,12 +10,11 @@ test("live SRT rejects source writes and sensitive symlinks, then permits approv
   const root = mkdtempSync(join(tmpdir(), "pi-live-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const work = join(root, "workspace");
-  mkdirSync(join(work, "extensions", "subagent"), { recursive: true });
-  writeFileSync(join(work, "extensions", "subagent", "config.json"), readFileSync(new URL("../extensions/subagent/config.json", import.meta.url)));
+  mkdirSync(work);
   const secret = join(root, "fixture-secret");
   writeFileSync(secret, "fixture only");
   symlinkSync(secret, join(work, "link"));
-  const config = { version: 1, agentDir: work, models: {}, filesystem: { denyRead: [secret], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: {}, mcp: {} };
+  const config = { version: 1, agentDir: work, models: {}, filesystem: { denyRead: [secret], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: {}, mcp: {}, childLimit: 1 };
   const broker = await startBroker(config, work, async () => true);
   t.after(() => broker.close());
   const call = async (tool, args, op, params, handlers) => {

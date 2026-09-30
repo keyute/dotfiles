@@ -65,8 +65,11 @@ agents:
     # projection skips them
     native_coverage: [specialist_pinning]
     docs: "~/.pi/agent/docs"
-    # model tier pi-web-search bills at (the plugin's ~/.pi/agent/web-search.json)
+    # model tier pi-web-search bills at (the plugin's ~/.pi/agent/web-search.json);
+    # web_fetch's answer model runs at it too
     search_tier: small
+    # most subagent sessions live at once, across the whole tree (broker lease cap)
+    child_limit: 20
     defaults:
       provider: &pi_provider openai-codex
       tier: frontier
@@ -81,7 +84,7 @@ agents:
       - "agent/sessions"
       - "agent/models.json"
       - "agent/mcp.json"
-      - "agent/mcp-oauth"
+      - "agent/mcp-auth.json"
       - "agent/workflow.json"
 # shared subagent definitions rendered for every harness; bodies live in
 # .chezmoitemplates/subagents/<name>.md. Each harness maps `tier` to a pin in
@@ -248,7 +251,6 @@ agent_mcp_servers:
       - claude
   context7:
     package_bin: context7-mcp
-    direct_tools: false
     args: []
     auto_approve_tools: true
     readonly_tools: [resolve-library-id, query-docs]
@@ -257,7 +259,6 @@ agent_mcp_servers:
         op: Personal/Context7/api key
   exa:
     package_bin: exa-mcp-server
-    direct_tools: false
     args: []
     # pi runs the server inside SRT, so its API host joins that sandbox's allowlist
     domains: [api.exa.ai]

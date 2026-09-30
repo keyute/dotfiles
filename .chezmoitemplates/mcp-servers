@@ -8,12 +8,9 @@
                              command node_modules/.bin/<package_bin>, or
                              `node scripts/<script>` for repo-local bridges
                  policy:     {auto_approve_tools, denied_tools, readonly_tools,
-                             direct_tools, unsandboxed, domains} — always
-                             all keys, normalized to false/[] so consumers can
-                             index them unguarded (direct_tools: true declares
-                             all the server's tools to pi's root session, false
-                             leaves them to load through tool_search;
-                             Claude ignores it; unsandboxed: pi's broker leases
+                             unsandboxed, domains} — always all keys,
+                             normalized to false/[] so consumers can index
+                             them unguarded (unsandboxed: pi's broker leases
                              the server process without an srt profile; domains: hosts a
                              sandboxed server process must reach)
        policyOnly omits `connection` entirely (and resolves no secrets), so a
@@ -35,7 +32,6 @@
         "auto_approve_tools" (default false (get $cfg "auto_approve_tools"))
         "denied_tools" (default (list) (get $cfg "denied_tools"))
         "readonly_tools" (default (list) (get $cfg "readonly_tools"))
-        "direct_tools" (default false (get $cfg "direct_tools"))
         "unsandboxed" (default false (get $cfg "unsandboxed"))
         "domains" (default (list) (get $cfg "domains"))) -}}
   {{- if not $policyOnly -}}

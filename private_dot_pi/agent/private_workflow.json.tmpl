@@ -22,6 +22,7 @@
 {{- dict
       "version" 1
       "agentDir" $agentDir
+      "childLimit" $pi.child_limit
       "models" (dict
           "provider" $pi.defaults.provider
           "classifierFilter" (dict "model" $clsModel "reasoningEffort" $cls.filter_effort)

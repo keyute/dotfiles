@@ -45,7 +45,13 @@ lacks; the owner picks its substitute.
   conditions and `docs/pi-implementation.md` triggers the changelog touches; a renamed config path moves in the same
   PR. After apply, re-check live: subscription login, root and child model
   pins, auto approvals, cancellation, the fleet rows and peek, MCP queries.
-  A herdr upgrade re-checks its coupling entry.
+  Then, as its own change after the bump lands, take for each owned
+  module, coupling entry and plugin the changelog touches whichever of
+  native, plugin or owned code leaves the least owned code and coupling at a
+  roughly equal end state, deleting the superseded code, rows, pins and docs
+  with it; a `docs/pi-design.md` rule is the end state, so a replacement that
+  breaks one changes the rule first. A herdr upgrade re-checks its coupling
+  entry.
 - **The pool binds** (a harness blocks a session on its weekly limit). The
   owner runs `! node scripts/agent-usage.mjs` (the stores are sandbox-denied):
   a recent re-pin whose rows cost more than its predecessor's (Claude
@@ -85,8 +91,8 @@ lacks; the owner picks its substitute.
 | parity.pi_sandbox_paths | forced: bash 3.2 heredocs need a writable /var/tmp and pi read-only roles have no writable cwd; the agent dir and ~/.zshrc are write-denied as live code | pi read-only roles gain a writable cwd, or /bin/bash ≥ 4 |
 | parity.git_metadata | preference: pi write-denies all of .git (policy.mjs), Claude protects hooks, config and worktree metadata only; the owner stages and commits | a pi task fails for want of git add or branch creation → narrow to Claude's list |
 | parity.model_shell | preference: pi's model shell is bash -c without rc (zsh would load the interactive rc into every sandboxed call); Claude runs the user's zsh | a model command fails for want of a zsh function or PATH entry |
-| parity.web_tools | preference: web_fetch is owned as WebFetch's counterpart (pi-implementation.md); Exa is the escalation where a role has it; Claude Bash alone reaches *.anthropic.com and code.claude.com | a maintained plugin's fetch fits with a one-line seam → adopt it, delete web_fetch and its three packages |
-| setting.pi_mcp_exposure | measured: declarations cost context7 ~1,150, exa ~460, playwright ~4,400 tokens (2026-09-30); Claude defers all MCP tools, so pi's root declares only direct_tools (none today) and searches for the rest; children declare theirs | the root pays the tool_search hop for one server most turns → direct_tools for it |
+| parity.web_tools | preference: first-party before paid third-party; web_fetch is WebFetch's counterpart on the subscription (pi-implementation.md); Exa escalates where a role has it; only Claude Bash reaches *.anthropic.com and code.claude.com | a maintained plugin's fetch fits with a one-line seam → adopt it, delete web_fetch and its three packages |
+| setting.pi_mcp_exposure | measured: declarations cost context7 ~1,150, exa ~460, playwright ~4,400 tokens (2026-09-30); the root defers every MCP server to tool_search as Claude does; children declare the tools their role names | the root pays the tool_search hop for one server most turns → a direct exposure for that server in mcpConfig |
 | agents.claude.plugins | preference: frontend-design is a Claude plugin; UI work happens in Claude | a pi UI task → shared skill stub |
 | setting.local_only_surface | preference: Claude's claude.ai, remote, cron and telemetry surfaces off; pi's install telemetry and version check off (the dependabot pi group signals releases) | a surface is wanted → reverse per entry; a release renames a key |
 | agents.claude.skill_overrides | preference: ship-check covers simplify and code-review; init, keybindings-help, update-config are user-driven; fewer-permission-prompts needs denied transcripts; chrome, schedule, design-sync are remote; no dataviz | an observed need → reverse per entry |

@@ -411,7 +411,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       await setMode(broker.policy.mode, ctx);
       appendVisible(pi, "workflow-note", { text: `Removed ${dir} from the workspace` });
     } });
-    pi.registerCommand("usage", { description: "Show plan limits, context use and session cost", handler: async (_args, ctx) => appendVisible(pi, "workflow-usage", await readUsage(ctx)) });
+    pi.registerCommand("usage", { description: "Show plan limits, context use and session cost", handler: async (_args, ctx) => appendVisible(pi, "workflow-usage", await readUsage(pi, ctx)) });
     pi.registerEntryRenderer("workflow-usage", (entry, _options, theme) => usageComponent(entry.data, theme));
     pi.registerEntryRenderer("workflow-note", (entry, _options, theme) => new Text(noteLine(entry.data.text, theme), 0, 0));
     // The questionnaire owns its invisible renderers; completed answers feed

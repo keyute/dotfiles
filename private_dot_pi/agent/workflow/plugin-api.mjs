@@ -6,16 +6,15 @@ import { mayReachServer } from "./policy.mjs";
 // pi's MCP extension config for the servers a role may reach: all at the root,
 // for a child those its roster names a tool of. The runner takes the broker
 // socket and token from the inherited process environment, never from here.
-// A child's allowlist is its filter, so its servers are direct; the root
-// declares a server's tools only where direct_tools is true and loads the rest
-// through tool_search.
+// A child's allowlist is its filter, so its servers are direct; the root, as
+// on Claude, loads every server's tools through tool_search.
 export const mcpConfig = (config, role) => ({
   servers: Object.entries(config.mcp).filter(([name]) => mayReachServer(config, role, name)).map(([name, { policy }]) => {
     const toolExposure = {};
     for (const tool of policy.denied_tools) toolExposure[tool] = "hidden";
     return { name, source: runnerPath, scope: "extension", config: {
       command: process.execPath, args: [runnerPath, "server", name], env: { PI_WORKFLOW_ROLE: role },
-      exposure: role !== "root" || policy.direct_tools === true ? "direct" : "deferred", toolExposure,
+      exposure: role === "root" ? "deferred" : "direct", toolExposure,
     } };
   }),
   errors: [], autoEnableCodemode: false,

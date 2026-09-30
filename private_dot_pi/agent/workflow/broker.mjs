@@ -1,5 +1,5 @@
 import { createConnection, createServer } from "node:net";
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -8,17 +8,8 @@ import { endLine, readLines, sendLine } from "./lines.mjs";
 
 const equal = (a, b) => typeof a === "string" && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
-function childConcurrencyLimit(agentDir) {
-  const path = join(agentDir, "extensions", "subagent", "config.json");
-  let limit;
-  try { limit = JSON.parse(readFileSync(path, "utf8")).globalConcurrencyLimit; }
-  catch (error) { throw new Error(`Cannot read the child concurrency limit from ${path}: ${error.message}`); }
-  if (typeof limit !== "number") throw new Error(`${path} must set a numeric globalConcurrencyLimit`);
-  return limit;
-}
-
 export async function startBroker(config, cwd, review) {
-  const childLimit = childConcurrencyLimit(config.agentDir);
+  if (!Number.isInteger(config.childLimit)) throw new Error("workflow.json must set an integer childLimit");
   const control = mkdtempSync(join(tmpdir(), "pi-control-"));
   const scratch = mkdtempSync(join(tmpdir(), "pi-work-"));
   const socketPath = join(control, "policy.sock");
@@ -93,7 +84,7 @@ export async function startBroker(config, cwd, review) {
           // The epoch travels through the launching parent's environment, so a
           // child spawned before a mode/approval change cannot connect after it
           // and inherit the newer, possibly wider policy.
-          if (request.role === "root" || children.size >= childLimit || policy.transitioning || request.epoch !== policy.epoch) throw new Error("Child capacity unavailable");
+          if (request.role === "root" || children.size >= config.childLimit || policy.transitioning || request.epoch !== policy.epoch) throw new Error("Child capacity unavailable");
           children.add(socket);
           leases.add(socket);
           return sendLine(socket, { ok: true });

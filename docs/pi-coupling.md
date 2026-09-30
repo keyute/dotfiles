@@ -35,11 +35,13 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   The MCP gate takes a call's server and tool from the definition's
   `server/tool` label recorded at registration, never from the sanitised name,
   and the three resource tools are registered hidden. The gate checks the
-  server by name, resting on a supplied `loadConfig` replacing pi's `mcp.json`
-  read and on `/mcp` not writing extension-scoped servers back. *Why:*
-  `docs/pi-implementation.md`, Decisions. *Residual:* a child whose named MCP
-  tool has not registered by `agent_start` fails its launch. *On red:* repair. *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
-  `integration.test.mjs`.
+  server by name, resting on the supplied `loadConfig` replacing pi's
+  `mcp.json` read; that and `/mcp` saving no extension-scoped server are typed,
+  documented options. *Why:* `docs/pi-implementation.md`, Decisions.
+  *Residual:* a child whose named MCP tool has not registered by `agent_start`
+  fails its launch; another loaded extension calling `pi.registerMcpServer()`
+  adds a server outside the managed config. *On red:* repair. *Pin:*
+  `stability.test.mjs`, `plugin-api.test.mjs`, `integration.test.mjs`.
 - **Acceptance and mutation names**: read-only roles declare
   `acceptanceRole: read-only`, write roles `acceptance: {"level":"none",…}`,
   with `mutationTools` naming the `workspace_*` mutators (plus `subagent` where
@@ -121,16 +123,20 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   ambiguous or missing matches get no control ID and never rebind to a sibling.
   Completion lines read the `subagent:async-complete` payload and take the task
   from the launch's own tool events, since `async-started` redacts it. *Why:*
-  rules 4 and 6. *On red:* repair. *Retire:* the heuristic when upstream
-  supplies the run ID in the fleet DTO. *Pin:* `fleet.test.mjs`,
+  rules 4 and 6. *On red:* repair. *Retire:* none upstream — pi-subagents'
+  fleet status DTO never exposes run, async or tool IDs by design
+  (`docs/extension-api.md`, Fleet status DTO). *Pin:* `fleet.test.mjs`,
   `stability.test.mjs`.
-- **Fleet peek replay**: replays `<asyncDir>/events.jsonl`, whose `subagent*`
-  record annotations, truncation marker and steer receipts are undocumented;
-  after a resume `asyncDir` is read back from the branch's `subagent` results.
-  Peek's native editor is shaped at its bottom-border callback. *Why:* rule 6's
-  peek. *On red:* repair. *Retire:* each record seam when pi-subagents
-  documents the shape or serves it over RPC; the render-shape seam when Editor
-  offers a borderless, height-bounded render API. *Pin:* `stability.test.mjs`.
+- **Fleet peek replay**: replays `<asyncDir>/events.jsonl`, whose event
+  names, lifecycle record names and mirroring rule (`message_update` dropped)
+  pi-subagents now documents (`docs/observability.md`); still undocumented are
+  the `subagent.events.truncated` marker, the steer receipt's `requestId` and
+  error fields, the steer message's prefix and trailer text, `observedAt`, and
+  `asyncDir` read back from the branch's `subagent` results after a resume.
+  Peek's native editor is shaped at its bottom-border callback (undocumented).
+  *Why:* rule 6's peek. *On red:* repair. *Retire:* each record seam when
+  pi-subagents documents the shape or serves it over RPC; the render-shape seam
+  when Editor offers a borderless, height-bounded render API. *Pin:* `stability.test.mjs`.
 - **srt `CLAUDE_CODE_TMPDIR`**: names the `TMPDIR` srt exports into a wrapped
   command, documented only in srt's source; `sandbox-runner.mjs` sets it to the
   lease's scratch path. *On red:* repair. *Pin:* `sandbox-runner.test.mjs`,
@@ -162,20 +168,6 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   response shape, not the parser. *Retire:* for `@hk_net/pi-usage-bars` if the
   endpoint breaks, losing the segments inside rule 3's single status line.
   *On red* (the credential field shape): repair. *Pin:* `stability.test.mjs`.
-- **Subagent cost receipts**: `/usage` (`usage.mjs` `sessionCost`) reads
-  pi-subagents' undocumented result `details` — `results[]`, `completions[]`
-  and `totalCost.costUsd` (nested descendants folded in for a foreground run)
-  on `subagent`/`bg_wait`
-  tool results and `subagent-slash-result` custom messages — deduped by run id,
-  and for an async run with no receipt its `<asyncDir>/status.json`
-  `totalCost`. The tool result's own `usage` is skipped: pi-subagents folds
-  the child's figure into it. *Why:* pi's `/session` misses async and nested
-  children, and pi-subagents' documented RPC `cost` walks only the current
-  branch and drops a foreground run's nested spend. *Residual:* a run with neither
-  receipt nor status file counts as unavailable, and an async run's receipts
-  and status file hold only its own spend, not its nested descendants', so the
-  figure is a lower bound. *On red:* repair; lost meanwhile: only the Subagents row. *Pin:*
-  `stability.test.mjs`, `usage.test.mjs`.
 - **herdr blocked state** (outside the npm pin): herdr's bundled pi extension
   reports `blocked` only on the ref-counted `herdr:blocked` `{ active, label }`
   bus event, not pi's `ui_prompt_*`; `index.mjs` bridges the prompt span to it

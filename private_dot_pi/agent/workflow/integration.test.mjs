@@ -46,7 +46,7 @@ function fixture(t) {
   writeFileSync(role.agentPath, `---\nname: fixture-reader\ndescription: Fixture\nmodel: ${role.model}\nthinking: low\ntools: workspace_read\nextensions: ${role.extensionPath}\n---\nRead only.\n`);
   writeFileSync(writer.extensionPath, "export default function () {}\n");
   writeFileSync(writer.agentPath, `---\nname: fixture-writer\ndescription: Fixture\nmodel: ${writer.model}\nthinking: low\ntools: workspace_read\nextensions: ${writer.extensionPath}\n---\nWrite enabled.\n`);
-  const config = { version: 1, agentDir, models: { provider: "openai-codex", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {} };
+  const config = { version: 1, agentDir, models: { provider: "openai-codex", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {}, childLimit: 3 };
   return { root, config };
 }
 
@@ -213,7 +213,7 @@ test("pinned upstream packages register against the managed extension and prefli
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, getMcpServers() { return []; },
   };
   const { installWorkflow } = await import("./index.mjs");
-  config.mcp = Object.fromEntries(["context7", "exa", "playwright"].map(name => [name, { policy: { denied_tools: [], direct_tools: name === "context7" } }]));
+  config.mcp = Object.fromEntries(["context7", "exa", "playwright"].map(name => [name, { policy: { denied_tools: [] } }]));
   config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__context7__query-docs"] };
   writeFileSync(configPath, JSON.stringify(config));
   const jiti = createJiti(import.meta.url);
@@ -237,7 +237,7 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.doesNotMatch(tools.get("subagent").description, /workflowScript|runs\.|SAFETY-CRITICAL/);
   // pi's MCP tools register once their servers connect; deferred ones load through tool_search.
   assert.ok(tools.has("tool_search"));
-  for (const name of ["mcp", "codemode", "mcpScript"]) assert.equal(tools.has(name), false, name);
+  assert.equal(tools.has("codemode"), false);
   assert.ok(tools.has("submit_plan"));
   assert.equal(tools.get("submit_plan").executionMode, "sequential");
   assert.equal(tools.get("submit_plan").description, "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.");
@@ -419,7 +419,7 @@ test("every MCP call is resolved to its server and tool and put to the broker; u
   const { config } = fixture(t);
   config.models.classifierFilter = { model: "gpt-5.6-luna", reasoningEffort: "low" };
   config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
-  config.mcp = { docs: { policy: { denied_tools: [], direct_tools: false } } };
+  config.mcp = { docs: { policy: { denied_tools: [] } } };
   config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__docs__search"] };
   const configPath = join(config.agentDir, "workflow.json");
   writeFileSync(configPath, JSON.stringify(config));
@@ -499,7 +499,7 @@ test("a child's MCP calls reach the broker only for the tools its roster names",
   const { root, config } = fixture(t);
   config.models.classifierFilter = { model: "gpt-5.6-luna", reasoningEffort: "low" };
   config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
-  config.mcp = { docs: { policy: { denied_tools: [], direct_tools: false } } };
+  config.mcp = { docs: { policy: { denied_tools: [] } } };
   config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__docs__search"] };
   const configPath = join(config.agentDir, "workflow.json");
   writeFileSync(configPath, JSON.stringify(config));
@@ -564,13 +564,13 @@ test("child sessions share one capacity ceiling and acknowledge revocation befor
   const childEnv = () => ({ ...broker.env, PI_WORKFLOW_EPOCH: String(broker.policy.epoch) });
   let stopped = 0;
   const staleEnv = childEnv();
-  for (let i = 0; i < 20; i++) await acquireChild(childEnv(), "fixture-reader", release => { stopped++; release(); });
+  for (let i = 0; i < config.childLimit; i++) await acquireChild(childEnv(), "fixture-reader", release => { stopped++; release(); });
   await assert.rejects(acquireChild(childEnv(), "fixture-reader", () => {}), /capacity/);
   await broker.setMode("plan");
   // A child launched under an earlier epoch cannot connect after the change.
   await assert.rejects(acquireChild(staleEnv, "fixture-reader", () => {}), /capacity/);
   await assert.rejects(acquireChild({ ...broker.env }, "fixture-reader", () => {}), /capacity/);
-  assert.equal(stopped, 20);
+  assert.equal(stopped, config.childLimit);
   assert.equal(broker.policy.mode, "plan");
   assert.equal(broker.policy.transitioning, false);
 });
@@ -679,13 +679,12 @@ test("only a server the config marks unsandboxed receives the managed null-profi
   assert.equal((await leaseServer("docs", "fixture-browser")).ok, false);
 });
 
-test("the broker refuses to start without a numeric child concurrency limit", async t => {
+test("the broker refuses to start without an integer child limit", async t => {
   const { root, config } = fixture(t);
-  const limitPath = join(config.agentDir, "extensions", "subagent", "config.json");
-  writeFileSync(limitPath, "{}");
-  await assert.rejects(startBroker(config, root, async () => true), /numeric globalConcurrencyLimit/);
-  rmSync(limitPath);
-  await assert.rejects(startBroker(config, root, async () => true), /Cannot read the child concurrency limit/);
+  delete config.childLimit;
+  await assert.rejects(startBroker(config, root, async () => true), /integer childLimit/);
+  config.childLimit = "20";
+  await assert.rejects(startBroker(config, root, async () => true), /integer childLimit/);
 });
 
 test("an inherit-model child resolves to the parent's model before the tier check", async t => {

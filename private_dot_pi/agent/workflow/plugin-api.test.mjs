@@ -66,9 +66,9 @@ test("the plugin API narrows only the subagent definition and preserves its exec
 
 const mcpFixture = () => ({
   mcp: {
-    context7: { policy: { denied_tools: [], direct_tools: false } },
-    exa: { policy: { denied_tools: ["agent_run"], direct_tools: false } },
-    playwright: { policy: { denied_tools: ["browser_run_code_unsafe"], direct_tools: true } },
+    context7: { policy: { denied_tools: [] } },
+    exa: { policy: { denied_tools: ["agent_run"] } },
+    playwright: { policy: { denied_tools: ["browser_run_code_unsafe"] } },
   },
   agents: {
     researcher: { tools: ["workspace_read", "mcp__exa__web_fetch_exa", "mcp__context7__query-docs"] },
@@ -76,7 +76,7 @@ const mcpFixture = () => ({
   },
 });
 
-test("the root's MCP config declares direct_tools, defers the rest and hides denied tools", () => {
+test("the root's MCP config defers every server and hides denied tools", () => {
   const { servers, errors, autoEnableCodemode } = mcpConfig(mcpFixture(), "root");
   assert.deepEqual(errors, []);
   assert.equal(autoEnableCodemode, false);
@@ -85,9 +85,8 @@ test("the root's MCP config declares direct_tools, defers the rest and hides den
   assert.deepEqual(context7, { name: "context7", source: runnerPath, scope: "extension", config: {
     command: process.execPath, args: [runnerPath, "server", "context7"], env: { PI_WORKFLOW_ROLE: "root" }, exposure: "deferred", toolExposure: {},
   } });
-  assert.equal(exa.config.exposure, "deferred");
+  assert.deepEqual(servers.map(server => server.config.exposure), ["deferred", "deferred", "deferred"]);
   assert.deepEqual(exa.config.toolExposure, { agent_run: "hidden" });
-  assert.equal(playwright.config.exposure, "direct");
   assert.deepEqual(playwright.config.toolExposure, { browser_run_code_unsafe: "hidden" });
 });
 

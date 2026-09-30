@@ -38,8 +38,8 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
   explicit model, tool list and policy extension; read-only ones stay read-only in
   execution. Only `general-purpose` may launch children, to Claude Code's depth.
 {{- $sub := include "private_dot_pi/agent/extensions/subagent/config.json" | fromJson }}
-- Children run in the background, sharing the root policy, up to {{ $sub.globalConcurrencyLimit }} at once
-  (`extensions/subagent/config.json`); they start fresh with no channel back (intercom off);
+- Children run in the background, sharing the root policy, up to {{ .agents.pi.child_limit }} at once
+  across the tree; they start fresh with no channel back (intercom off);
   batch independent launches.
 - Scripts/chains, role overrides, revival and mutating management are refused; status, stop,
   interrupt and steer work. Runs stop after {{ div $sub.timeoutMs 60000 }} minutes, with a checkpoint steer
@@ -57,15 +57,14 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
 - Read a page with `web_fetch`: fetched in-process (public hosts only; a redirect to
   another host comes back to fetch again), converted to markdown, and the {{ .agents.pi.search_tier }} tier
   answers the prompt from it. Roles with Claude's `WebFetch` get it.
-- Use Exa (through `tool_search`) when search results are thin or a fetch is refused
-  or empty; Playwright for pages that need JavaScript.
+- Use Playwright for pages that need JavaScript.
 
 ## MCP and code intelligence
 
 - MCP tools are pi's native `mcp__<server>__<tool>` (e.g. `mcp__context7__query-docs`),
-  called directly. The root's Context7, Exa and Playwright tools are deferred:
-  `tool_search` finds and loads them for the calls that follow. A child is declared
-  exactly the MCP tools its role lists.
+  called directly. The root's MCP tools are all deferred: `tool_search` finds and
+  loads them for the calls that follow. A child is declared exactly the MCP tools
+  its role lists.
 - MCP servers other than Playwright (see `sandbox.md`) run inside SRT; Node servers
   use `NODE_USE_ENV_PROXY=1` so fetch follows the sandbox proxy. If every call
   fails with `fetch failed`, check that setting, then the allowed domains.

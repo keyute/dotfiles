@@ -1,10 +1,9 @@
-import { readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth as truncate } from "@earendil-works/pi-tui";
 import { formatReset, longWindow, readRateLimits, windowLabel } from "./footer.mjs";
-import { formatTokens, launchesFromBranch, modelLabel } from "./fleet.mjs";
+import { formatTokens, modelLabel, rpcCall } from "./fleet.mjs";
 import { PAD, TURN_GLYPH, formatDuration, pad } from "./rows.mjs";
 
 // The shape is docs/pi-design.md's /usage bullet: plan limits, context and
@@ -78,26 +77,10 @@ const addUsage = (totals, usage) => {
 };
 const emptyUsage = () => ({ cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
-// pi-subagents' result details, from a subagent/bg_wait tool result or a
-// /subagent slash result (its detailsFromSessionEntry reads the same places).
-function subagentDetails(entry) {
-  if (entry.type === "custom_message" && entry.customType === "subagent-slash-result") return entry.details?.result?.details;
-  const message = entry.type === "message" ? entry.message : null;
-  return message?.role === "toolResult" && (message.toolName === "subagent" || message.toolName === "bg_wait") ? message.details : null;
-}
-
-const resultCost = results => results.reduce((sum, result) => sum + (result.totalCost?.costUsd ?? result.usage?.cost ?? 0), 0);
-
-// Every entry, not just the branch: money spent on an abandoned branch was
-// spent, as pi's own /session counts it. A subagent/bg_wait tool result's own
-// `usage` is pi-subagents folding the child's figure into the parent, so the
-// parent side never reads it; children are counted once, by run id, from
-// their receipts. A foreground run's `totalCost` holds its nested
-// descendants; an async run's receipt and status file hold only the child's
-// own spend, so there the figure is a lower bound. An async run whose receipt
-// never reached the session is read from its status file; with none there it
-// counts as unavailable, and the figure reads as a lower bound.
-export function sessionCost(entries, { readStatus = asyncDir => JSON.parse(readFileSync(join(asyncDir, "status.json"), "utf8")) } = {}) {
+// Main is pi's own assistant usage over every entry, not just the branch: money
+// spent on an abandoned branch was spent, as pi's own /session counts it.
+// Subagents come from pi-subagents' cost report (null when it gave none).
+export function sessionCost(entries, report) {
   const main = emptyUsage();
   const models = new Map();
   const byModel = (key, usage) => {
@@ -105,64 +88,36 @@ export function sessionCost(entries, { readStatus = asyncDir => JSON.parse(readF
     addUsage(models.get(key), usage);
     addUsage(main, usage);
   };
-  // A later receipt for the same run replaces an earlier one: the final
-  // completion outranks a status snapshot taken while it ran.
-  const runs = new Map();
-  // Async launches by run id, from a subagent tool result or a /subagent --bg
-  // slash result alike; the latter carries no agent name.
-  const pending = new Map();
-  let anonymous = 0;
-  const record = (id, cost, agents) => runs.set(id ?? `anonymous:${anonymous++}`, { cost, agents });
   for (const entry of entries) {
     const message = entry.type === "message" ? entry.message : null;
     if (message?.role === "assistant" && message.usage) byModel(modelLabel(message.responseModel ?? message.model) ?? "other", message.usage);
     else if (entry.type === "usage") byModel(modelLabel(entry.model) ?? "other", entry.usage);
     else if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) byModel("summaries", entry.usage);
-    const details = subagentDetails(entry);
-    if (!details) continue;
-    if (typeof details.asyncDir === "string" && (details.runId ?? details.asyncId)) pending.set(details.runId ?? details.asyncId, details.asyncDir);
-    if (details.results?.length) record(details.runId, details.totalCost?.costUsd ?? resultCost(details.results), details.results.map(result => result.agent));
-    for (const completion of details.completions ?? []) {
-      const results = completion.results ?? [];
-      record(completion.runId, resultCost(results), results.length ? results.map(result => result.agent ?? completion.agent) : [completion.agent]);
-    }
-  }
-  let unavailable = 0;
-  const launches = launchesFromBranch(entries);
-  for (const [id, asyncDir] of pending) {
-    if (runs.has(id)) continue;
-    const agent = launches.get(id)?.agent;
-    let cost;
-    try {
-      cost = readStatus(asyncDir)?.totalCost?.costUsd;
-    } catch {}
-    if (typeof cost === "number") record(id, cost, [agent]);
-    else {
-      unavailable++;
-      record(id, 0, [agent]);
-    }
   }
   const agents = new Map();
-  let subagentCost = 0;
-  for (const run of runs.values()) {
-    subagentCost += run.cost;
-    for (const agent of run.agents) agents.set(agent ?? "unknown", (agents.get(agent ?? "unknown") ?? 0) + 1);
-  }
-  const runCount = [...agents.values()].reduce((sum, n) => sum + n, 0);
+  for (const child of report?.children ?? []) agents.set(child.agent ?? "unknown", (agents.get(child.agent ?? "unknown") ?? 0) + 1);
+  const unavailable = report?.unresolvedAsyncChildren ?? 0;
   return {
-    total: main.cost + subagentCost,
+    total: main.cost + (report?.childTotal.cost ?? 0),
     main,
     models: models.size > 1 ? [...models].map(([model, usage]) => ({ model, ...usage })) : [],
-    subagents: { cost: subagentCost, runs: runCount, agents: [...agents], unavailable },
+    subagents: report && { cost: report.childTotal.cost, runs: report.children.length + unavailable, agents: [...agents], unavailable },
   };
 }
 
-export async function readUsage(ctx, { readLimits = readRateLimits, now = Date.now() } = {}) {
+// pi-subagents' documented `cost` RPC (docs/extension-api.md): it walks the
+// current branch only, and its childTotal is a lower bound for nested spend.
+async function subagentCost(events) {
+  const ping = await rpcCall(events, "ping");
+  return ping?.capabilities?.cost?.version === 1 ? rpcCall(events, "cost") : null;
+}
+
+export async function readUsage(pi, ctx, { readLimits = readRateLimits, now = Date.now() } = {}) {
   return {
     at: now,
     limits: await readLimits(),
     context: contextUsage(ctx),
-    cost: sessionCost(ctx.sessionManager.getEntries()),
+    cost: sessionCost(ctx.sessionManager.getEntries(), await subagentCost(pi.events)),
   };
 }
 
@@ -208,7 +163,8 @@ function costLines({ total, main, models, subagents }, theme, width) {
   const lines = [fit(head("Cost", formatMoney(total), theme), width), row("Main", main.cost, tokens(main))];
   // Indented under Main: the per-model lines are its parts, not further spend.
   for (const usage of models) lines.push(row(`  ${usage.model}`, usage.cost, tokens(usage)));
-  if (subagents.runs) {
+  if (!subagents) lines.push(fit(`${PAD}${pad("Subagents", 12)}${theme.fg("muted", "unavailable")}`, width));
+  else if (subagents.runs) {
     // The unavailable count leads the tail so truncation never takes it: it
     // is what marks the figure as a lower bound.
     const runs = `${subagents.runs} run${subagents.runs === 1 ? "" : "s"}${subagents.unavailable ? ` (${subagents.unavailable} unavailable)` : ""}`;
