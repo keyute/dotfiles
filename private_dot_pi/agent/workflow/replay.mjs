@@ -82,7 +82,7 @@ function handleRecord(state, record) {
       return;
     }
     case "tool_execution_end": {
-      // The adapter reports some failures in `details.error` without `isError`,
+      // pi-web-search reports failures in `details.error` without `isError`,
       // same as `installFolding`; `settleFold` reads the uncapped result so its
       // summary matches the main chat before the row keeps only the capped one.
       const isError = Boolean(record.isError || record.result?.details?.error);

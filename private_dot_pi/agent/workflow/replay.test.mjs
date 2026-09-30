@@ -216,7 +216,7 @@ test("workspace_task titles its own row", () => {
 });
 
 test("an mcp__ tool takes pluginTitle", () => {
-  const state = feed({ type: "tool_execution_start", toolCallId: "c1", toolName: "mcp__server_tool", args: { query: "hi" } });
+  const state = feed({ type: "tool_execution_start", toolCallId: "c1", toolName: "mcp__server__tool", args: { query: "hi" } });
   const lines = render(state);
   assert.match(lines[0], /server › tool/);
 });

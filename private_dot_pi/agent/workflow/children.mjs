@@ -70,8 +70,7 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   const model = ctx.modelRegistry.find(config.models.provider, modelId);
   if (!model || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error(`Subscription model unavailable: ${modelName}`);
   // Always background: pi-subagents admits one foreground launch per turn, so
-  // foreground children serialize; MCP provider extensions also require a
-  // background child here.
+  // foreground children serialize.
   args.async = true;
   const result = await resolveContract({ ...args, cwd: ctx.cwd, availableModels: ctx.modelRegistry.getAvailable() });
   if (!result.ok) throw new Error(`Child preflight failed: ${result.message}`);

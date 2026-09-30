@@ -8,8 +8,10 @@ seam, or **fall back** to the named native surface, deleting the owned one and
 accepting the named loss), *Retire:* where known, and its *Pin:* tests. An
 entry's part outside the npm pin cannot go red and carries *Re-verify:*; a new
 owned surface states its *On red:* when it lands. Source pins name shipped
-files: pi-subagents compiled `src/**/*.js` plus `.d.ts`, pi-web-search and
-pi-mcp-adapter `.ts`.
+files: pi-subagents compiled `src/**/*.js` plus `.d.ts`, pi-web-search `.ts`,
+and pi's modular `dist/**` — the CLI runs `dist/bundle/cli.js` built from the
+same source, so a bundle-only change passes the pins; the bundled-entry test
+in `skill-display.test.mjs` is the one check on the code the TUI executes.
 
 - **Shutdown ordering**: detached-run cleanup assumes the root shutdown hook
   precedes pi-subagents' RPC disposal, headless included, and counts only
@@ -18,33 +20,26 @@ pi-mcp-adapter `.ts`.
   `integration.test.mjs` (ordering, evidence); `stability.test.mjs` (imports,
   `on()` overloads and API members in the shipped declarations).
 - **Plugin tool Proxy** (`plugin-api.mjs` `pluginApi`): pi-subagents,
-  pi-mcp-adapter and pi-web-search get a Proxy of the extension API whose
+  pi-web-search and pi's own MCP factory get a Proxy of the extension API whose
   `registerTool` swaps the renderers of `subagent`, `bg_wait`, the supervisor
-  channel, `mcp`, `mcp__*` and `web_search`, and replaces the schema and
-  description of `subagent` and `mcp`; executors are kept. *Why:* rules 2 and 10
-  for plugin tools, and the model sees only calls the `tool_call` hook and
-  `scriptMode: false` admit. *On red:* repair — the TUI's plugin rows and the
-  quiet completion notice ride it. *Retire:* the `subagent` override when the
-  plugin exposes a description option that can omit disabled workflow APIs and
-  their guidance; the `mcp` override when the adapter exposes an option that
-  omits install/auth/UI actions. *Pin:* `stability.test.mjs`,
+  channel, `mcp__*` and `web_search`, and replaces the schema and description
+  of `subagent`; executors are kept. *Why:* rules 2 and 10 for plugin tools,
+  and the model sees only calls the `tool_call` hook admits. *On red:* repair —
+  the TUI's plugin rows and the quiet completion notice ride it. *Retire:* the
+  `subagent` override when the plugin exposes a description option that can
+  omit disabled workflow APIs and their guidance. *Pin:* `stability.test.mjs`,
   `plugin-api.test.mjs`, `integration.test.mjs`, `render.test.mjs`.
-- **MCP settings**: public `namespaceProxyTools: false`, `jev: false`,
-  `freezeDirectTools: true` (`docs/pi-implementation.md`, Decisions).
-  *Residual:* the initial sync may still notify, including on a deferred first
-  connection, and proxy metadata stays live; the adapter's shared name-keyed
-  cache races and hashes the wrapper rather than the resolved broker
-  connection; the adapter's optional `@earendil-works/pi-ai` peer range lags
-  the pinned pi-ai. *On red:* repair. *Retire:* when upstream supports
-  connection- or instance-scoped metadata storage; re-check the peer lag when
-  the adapter widens its range or a pi-ai bump breaks it. *Pin:*
-  `mcp-lifecycle.test.mjs` (its cache schema/hash helpers are test-only
-  internals).
-- **MCP logging**: the adapter's internal `logger.ts` singleton, loaded through
-  its own Jiti instance and set to `warn` before installation. *Why:* its `info`
-  output drew over the live composer (rule 5). *On red:* repair. *Retire:* when
-  the adapter exposes a public logging setting or stops routine terminal
-  output. *Pin:* `mcp-lifecycle.test.mjs`, source pins.
+- **Native MCP wiring**: `createMcpExtension` and `createToolSearchExtension`
+  are exported and documented for SDK resource loaders; the workflow calls them
+  inside its own factory, on the Proxy, in the root and in every child shim.
+  The MCP gate takes a call's server and tool from the definition's
+  `server/tool` label recorded at registration, never from the sanitised name,
+  and the three resource tools are registered hidden. The gate checks the
+  server by name, resting on a supplied `loadConfig` replacing pi's `mcp.json`
+  read and on `/mcp` not writing extension-scoped servers back. *Why:*
+  `docs/pi-implementation.md`, Decisions. *Residual:* a child whose named MCP
+  tool has not registered by `agent_start` fails its launch. *On red:* repair. *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
+  `integration.test.mjs`.
 - **Acceptance and mutation names**: read-only roles declare
   `acceptanceRole: read-only`, write roles `acceptance: {"level":"none",…}`,
   with `mutationTools` naming the `workspace_*` mutators (plus `subagent` where
@@ -175,7 +170,8 @@ pi-mcp-adapter `.ts`.
   and for an async run with no receipt its `<asyncDir>/status.json`
   `totalCost`. The tool result's own `usage` is skipped: pi-subagents folds
   the child's figure into it. *Why:* pi's `/session` misses async and nested
-  children, and `/subagent-cost` is text only. *Residual:* a run with neither
+  children, and pi-subagents' documented RPC `cost` walks only the current
+  branch and drops a foreground run's nested spend. *Residual:* a run with neither
   receipt nor status file counts as unavailable, and an async run's receipts
   and status file hold only its own spend, not its nested descendants', so the
   figure is a lower bound. *On red:* repair; lost meanwhile: only the Subagents row. *Pin:*

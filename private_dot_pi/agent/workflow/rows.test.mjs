@@ -24,17 +24,20 @@ test("row titles name the action and the target", () => {
 });
 
 test("plugin titles name the server and tool, or the child and its task", () => {
-  assert.equal(pluginTitle("mcp__exa_web_search_exa", { query: "pi tui MouseRegion", numResults: 5 }, ["exa"]), 'exa › web_search_exa "pi tui MouseRegion"');
-  assert.equal(pluginTitle("mcp__my_srv_do_it", {}, ["my", "my_srv"]), "my_srv › do_it");
-  assert.equal(pluginTitle("mcp__ctx_q", {}, []), "ctx › q");
-  assert.equal(pluginTitle("mcp", { tool: "playwright_browser_click", args: { ref: "e1" } }, ["playwright"]), 'playwright › browser_click "e1"');
-  assert.equal(pluginTitle("mcp", { search: "click" }), 'mcp search "click"');
+  assert.equal(pluginTitle("mcp__exa__web_search_exa", { query: "pi tui MouseRegion", numResults: 5 }, ["exa"]), 'exa › web_search_exa "pi tui MouseRegion"');
+  // A configured server name wins over the first separator, the longest first.
+  assert.equal(pluginTitle("mcp__my__srv__do_it", {}, ["my", "my__srv"]), "my__srv › do_it");
+  assert.equal(pluginTitle("mcp__ctx__q__x", {}, []), "ctx › q__x");
+  assert.equal(pluginTitle("mcp__playwright__browser_click", { ref: "e1" }, ["playwright"]), 'playwright › browser_click "e1"');
   assert.equal(pluginTitle("subagent", { agent: "explore-deep", task: "Audit the\n last commits" }), "explore-deep › Audit the last commits");
   assert.equal(pluginTitle("subagent", { action: "status", id: "r1" }), "subagent status r1");
   assert.equal(pluginTitle("subagent", {}), "subagent");
   assert.equal(pluginTitle("bg_wait", { id: "eeeb8e9f", timeoutMs: 30000 }), 'bg wait "eeeb8e9f"');
   assert.equal(pluginTitle("contact_supervisor", {}), "contact supervisor");
   assert.equal(pluginTitle("web_search", { query: "pi tui MouseRegion" }), 'Searched "pi tui MouseRegion"');
+  assert.equal(pluginTitle("web_fetch", { url: "https://pi.dev/docs?x=1", prompt: "What is it?" }), "Fetched pi.dev");
+  // A streaming call's partial URL still draws a title.
+  assert.equal(pluginTitle("web_fetch", { url: "htt" }), "Fetched ");
 });
 
 test("background-task summaries", () => {
@@ -239,7 +242,7 @@ test("grouping closes on assistant text and visible rows; MCP, discovery, launch
   const ok = toolCallId => handlers.tool_execution_end({ toolCallId, isError: false, result: { details: {} } });
   const says = text => ({ message: { role: "assistant", content: [{ type: "text", text }] } });
   start("workspace_read", "r1");
-  start("mcp__exa_web_search_exa", "m1");
+  start("mcp__exa__web_search_exa", "m1");
   ok("r1");
   ok("m1");
   // Neither thinking, whitespace, nor the user's own message is a boundary.
@@ -439,7 +442,7 @@ test("two subagent launches alone seal into a run, a failed launch is never a me
   fstart("subagent", "g2", { agent: "reviewer", task: "y" });
   fstart("subagent", "g3", { agent: "planner", task: "z" });
   failedHandlers.tool_execution_end({ toolCallId: "g1", isError: false, result: { details: {} } });
-  // isError and the adapter's own details.error both mark a launch as failed.
+  // isError and a plugin's own details.error both mark a launch as failed.
   failedHandlers.tool_execution_end({ toolCallId: "g2", isError: false, result: { details: { error: "timeout" } } });
   failedHandlers.tool_execution_end({ toolCallId: "g3", isError: false, result: { details: {} } });
   failedHandlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } });
@@ -470,7 +473,8 @@ test("successful calls, discovery, launches, and completions share one chronolog
   const calls = [
     ["r1", "workspace_read", { path: "a.mjs" }],
     ["w1", "web_search", { query: "pi tui" }],
-    ["m1", "mcp", { search: "mouse region" }],
+    ["f1", "web_fetch", { url: "https://pi.dev", prompt: "What is it?" }],
+    ["m1", "mcp__context7__query-docs", { query: "mouse region" }],
     ["d1", "subagent", { action: "list" }],
     ["a1", "subagent", { agent: "researcher", task: "Audit rows" }],
   ];
@@ -486,9 +490,9 @@ test("successful calls, discovery, launches, and completions share one chronolog
   const group = foldGroup(folds, "r1");
   assert.equal(doneGroup(folds, child.seq), group);
   assert.equal(doneGroup(folds, task.seq), group);
-  assert.deepEqual(group.entries.map(entry => entry.id), ["r1", "w1", "m1", "d1", "a1", child.seq, task.seq]);
-  assert.deepEqual(group.counts, { read: 1, web: 1, mcp: 1, discovery: 1, agent: 1, agentDone: 1, taskDone: 1 });
-  assert.equal(summarise(group.counts), "Read 1 file, called 1 MCP tool, ran 1 web search, ran 1 agent discovery, launched 1 agent, finished 1 agent, finished 1 background task");
+  assert.deepEqual(group.entries.map(entry => entry.id), ["r1", "w1", "f1", "m1", "d1", "a1", child.seq, task.seq]);
+  assert.deepEqual(group.counts, { read: 1, web: 1, fetch: 1, mcp: 1, discovery: 1, agent: 1, agentDone: 1, taskDone: 1 });
+  assert.equal(summarise(group.counts), "Read 1 file, called 1 MCP tool, ran 1 web search, fetched 1 page, ran 1 agent discovery, launched 1 agent, finished 1 agent, finished 1 background task");
 });
 
 test("a failed row separates the runs on either side of it, whatever order the batch settles in", () => {
@@ -566,12 +570,12 @@ test("ctrl+o drives every group both ways, including the two a failed row split 
   assert.deepEqual(draw("r1"), ["<muted>▸ Read 2 files"]);
 });
 
-test("the adapter's details.error is a failure too, and a lone failure leaves no handle behind", () => {
+test("a plugin's details.error is a failure too, and a lone failure leaves no handle behind", () => {
   const folds = createFolds();
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
-  handlers.tool_execution_start({ toolName: "mcp__exa_web_search_exa", toolCallId: "m2" });
-  handlers.tool_execution_end({ toolCallId: "m2", isError: false, result: { details: { error: "auth_required" } } });
+  handlers.tool_execution_start({ toolName: "web_search", toolCallId: "m2" });
+  handlers.tool_execution_end({ toolCallId: "m2", isError: false, result: { details: { error: true } } });
   handlers.message_end({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } });
   assert.equal(foldGroup(folds, "m2"), null);
 });
@@ -759,8 +763,8 @@ test("appendVisible is the boundary: appending the entry is what draws the line"
   assert.deepEqual(foldGroup(folds, "v1").counts, { read: 2 });
 });
 
-test("plugin rows: MCP failures reported in details turn the row red after the render; a launch reads as launched", async () => {
-  const mcp = pluginRenderers("mcp__exa_web_search_exa", { servers: ["exa"], folds: createFolds() });
+test("plugin rows: failures reported in details turn the row red after the render; a launch reads as launched", async () => {
+  const mcp = pluginRenderers("mcp__exa__web_search_exa", { servers: ["exa"], folds: createFolds() });
   assert.equal(mcp.renderShell, "self");
   assert.deepEqual(rendered(mcp.renderCall({ query: "npm pi" }, theme, context())), ['<success>• <toolTitle>exa › web_search_exa "npm pi"']);
   assert.deepEqual(rendered(mcp.renderResult(result("a\nb\nc"), { expanded: false }, theme, context())), ["  <muted>↳ 3 lines"]);

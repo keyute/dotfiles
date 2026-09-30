@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { Policy, workerTools, publicToolName, unsandboxed } from "./policy.mjs";
+import { Policy, workerTools, publicToolName, unsandboxed, mayReachServer } from "./policy.mjs";
 import { endLine, readLines, sendLine } from "./lines.mjs";
 
 const equal = (a, b) => typeof a === "string" && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -114,7 +114,7 @@ export async function startBroker(config, cwd, review) {
           if (!workerTools.includes(request.name) || !policy.role(request.role).tools.includes(publicToolName(request.name))) throw new Error("Tool process denied");
           sandbox = issued.sandbox;
         } else if (request.kind === "server") {
-          if (!policy.role(request.role).tools.includes("mcp")) throw new Error("MCP process denied");
+          if (!mayReachServer(config, request.role, request.name)) throw new Error("MCP process denied");
           const connection = config.mcp[request.name]?.connection;
           if (!connection || connection.type !== "stdio") throw new Error("Unconfigured server process");
           command = connection.command;

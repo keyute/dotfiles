@@ -53,20 +53,25 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
   on the ChatGPT-subscription endpoint model calls use — no extra credential or
   network path, and the provider's own terms grey zone. Each search is one extra
   request on the usage windows, at the {{ .agents.pi.search_tier }} tier set in `~/.pi/agent/web-search.json`.
-  Roles with Claude's `WebSearch` get it; fetch
-  with Exa or Playwright.
+  Roles with Claude's `WebSearch` get it.
+- Read a page with `web_fetch`: fetched in-process (public hosts only; a redirect to
+  another host comes back to fetch again), converted to markdown, and the {{ .agents.pi.search_tier }} tier
+  answers the prompt from it. Roles with Claude's `WebFetch` get it.
+- Use Exa (through `tool_search`) when search results are thin or a fetch is refused
+  or empty; Playwright for pages that need JavaScript.
 
 ## MCP and code intelligence
 
-- Context7 tools stay direct (e.g. `mcp__context7_query-docs`); Exa and Playwright
-  stay behind the `mcp` proxy: `mcp({ search: "…" })` finds a tool in the cached
-  catalog, `mcp({ describe: "<name>" })` shows its schema, `mcp({ tool: "<name>",
-  args: { … } })` calls it; a server shown as not connected connects on first call.
+- MCP tools are pi's native `mcp__<server>__<tool>` (e.g. `mcp__context7__query-docs`),
+  called directly. The root's Context7, Exa and Playwright tools are deferred:
+  `tool_search` finds and loads them for the calls that follow. A child is declared
+  exactly the MCP tools its role lists.
 - MCP servers other than Playwright (see `sandbox.md`) run inside SRT; Node servers
   use `NODE_USE_ENV_PROXY=1` so fetch follows the sandbox proxy. If every call
   fails with `fetch failed`, check that setting, then the allowed domains.
-- Config is explicit, not imported from other harnesses. MCP scripting, namespace
-  proxies, semantic search, sampling and OAuth discovery are off; tools a server
-  adds after startup are reachable only via `mcp`. Approval checks the resolved call.
+- Config is explicit, not imported from other harnesses: no `mcp.json` is read,
+  codemode is off, and `/mcp` shows only the managed servers. Every MCP call,
+  including to tools a server adds later, goes through policy review; denied tools
+  are hidden.
 - No LSP: diagnostics come from project toolchains via `workspace_bash` (`tsc --noEmit`,
   `go vet`, pyright, linters). Claude's proprietary plugins and cloud services: use Claude.

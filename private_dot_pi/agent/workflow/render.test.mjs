@@ -114,7 +114,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.notEqual(workflow.models.tiers.top, workflow.models.tiers.frontier);
   assert.equal(workflow.agents["general-purpose"].nests, true);
   assert.equal(workflow.agents["spec-reviewer"].readonly, true);
-  assert.ok(["workspace_write", "mcp", "subagent", "bg_wait"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
+  assert.ok(["workspace_write", "mcp__exa__web_fetch_exa", "subagent", "bg_wait"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
   for (const role of Object.values(workflow.agents)) assert.equal(role.tools.includes("bg_wait"), role.nests);
   for (const [name, server] of Object.entries(workflow.mcp)) {
     assert.equal(server.policy.direct_tools, data.agent_mcp_servers[name].direct_tools === true, `${name} direct_tools`);
@@ -230,6 +230,8 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   // the search plugin's config resolves its tier or fails the render
   const webSearch = JSON.parse(run("cat", target(".pi/agent/web-search.json")));
   assert.deepEqual(webSearch, { provider: data.agents.pi.defaults.provider, model: data.subagent_tiers.pi[data.agents.pi.search_tier] });
+  // web_fetch answers on the same search tier
+  assert.equal(workflow.models.search, webSearch.model);
   const frontierPin = data.subagent_tiers.claude.frontier;
   // the native per-call deny must name the frontier pin's alias
   const frontierAliases = claudeSettings.permissions.deny.flatMap(rule => /^Agent\(model:(\w+)\)$/.exec(rule)?.[1] ?? []);
@@ -302,12 +304,15 @@ test("each role renders its roster tier and effort on every harness it targets",
       );
       if (!meta.readonly) assert.ok(contract.mutationTools.length > 0, role);
       else assert.deepEqual(contract.mutationTools, [], role);
-      // pi's MCP reach is the Claude tools list: each mcp__<server>__<tool> by name, mcp__* as everything,
-      // and WebFetch's counterpart (policy.inspectMcp refuses a tool outside the list)
+      // pi's MCP reach is the Claude tools list: each mcp__<server>__<tool> by name, and mcp__* as
+      // every tool the pi roster names (policy.inspectMcp refuses the rest); WebFetch is the owned web_fetch
       const claudeTools = meta.tools.split(",").map(tool => tool.trim());
-      const expectedMcp = claudeTools.flatMap(tool => tool === "mcp__*" ? ["*"] : tool.startsWith("mcp__") ? [tool.slice("mcp__".length)] : tool === "WebFetch" ? ["exa__web_fetch_exa"] : []);
-      assert.deepEqual([...contract.mcpTools].sort(), expectedMcp.includes("*") ? ["*"] : [...new Set(expectedMcp)].sort(), `${role}: mcpTools`);
-      assert.equal(contract.tools.includes("mcp"), expectedMcp.length > 0, `${role}: mcp grant`);
+      const named = rolesFor(data, "pi").flatMap(name => data.subagents[name].tools.split(",").map(tool => tool.trim()).filter(tool => tool.startsWith("mcp__") && tool !== "mcp__*"));
+      const expectedMcp = claudeTools.flatMap(tool => tool === "mcp__*" ? named : tool.startsWith("mcp__") ? [tool] : []);
+      assert.deepEqual(contract.tools.filter(tool => tool.startsWith("mcp__")).sort(), [...new Set(expectedMcp)].sort(), `${role}: MCP tools`);
+      assert.equal(contract.tools.includes("web_fetch"), claudeTools.includes("WebFetch"), `${role}: web_fetch`);
+      assert.equal(contract.tools.includes("mcp"), false, `${role}: no mcp gateway`);
+      assert.equal("mcpTools" in contract, false, `${role}: no mcpTools`);
       const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: pi model ${model}`);
       assert.ok(agent.split("\n").includes(`thinking: ${meta.effort}`), `${role}: pi thinking ${meta.effort}`);

@@ -1,52 +1,27 @@
 import { Text } from "@earendil-works/pi-tui";
 import { noticeLine } from "./rows.mjs";
 import { runnerPath } from "./operations.mjs";
+import { mayReachServer } from "./policy.mjs";
 
-// Definitions stay stable across sessions of the same role: pi-mcp-adapter keys its
-// metadata cache on them, env included, and a cold cache costs a connect and
-// describe round trip per server per session. The runner takes the broker
+// pi's MCP extension config for the servers a role may reach: all at the root,
+// for a child those its roster names a tool of. The runner takes the broker
 // socket and token from the inherited process environment, never from here.
-export const mcpServerDefinitions = (config, role) => Object.fromEntries(Object.entries(config.mcp).map(([name, entry]) => [name, {
-  command: process.execPath, args: [runnerPath, "server", name], env: { PI_WORKFLOW_ROLE: role },
-  excludeTools: entry.policy.denied_tools, approveTools: true,
-  directTools: entry.policy.direct_tools === true,
-}]));
-// The gateway as exposed here: upstream's description, snippet and schema
-// (the `server` parameter's text included) also advertise install, auth and UI
-// actions and mcpScript, which the tool_call hook and scriptMode:false refuse. A pure function of config, as upstream's
-// is, so the adapter's re-registration never rewrites the prompt prefix.
-const MCP_REFUSED_PARAMS = new Set(["action", "url", "target", "searchMode"]);
-export const mcpGateway = servers => ({
-  description: [
-    "MCP gateway — server status, tool search/describe, and single MCP tool calls. Non-MCP Pi tools should be called directly, not through mcp.",
-    "",
-    `Servers: ${servers.join(", ")}`,
-    "",
-    "Usage:",
-    "  mcp({ })                              → Show server status and tool counts",
-    '  mcp({ server: "name" })               → List tools from server',
-    '  mcp({ search: "query" })              → Search MCP tools by name/description',
-    '  mcp({ describe: "tool_name" })        → Show tool details and parameters',
-    '  mcp({ instructions: "name" })         → Show full server usage instructions',
-    '  mcp({ connect: "server-name" })       → Connect to a server and refresh metadata',
-    '  mcp({ tool: "name", args: { key: "value" } })         → Call a tool (object args; JSON string also accepted)',
-    "",
-    "Mode: tool (call) > connect > describe > instructions > search > server (list) > nothing (status)",
-  ].join("\n"),
-  promptSnippet: "MCP gateway — status, search, describe, and single MCP tool calls",
-  narrow: schema => {
-    const properties = Object.fromEntries(Object.entries(schema.properties).filter(([key]) => !MCP_REFUSED_PARAMS.has(key)));
-    return { ...schema, properties: { ...properties, server: { ...properties.server, description: "Server name: filters searches and disambiguates calls and describe operations" } } };
-  },
+// A child's allowlist is its filter, so its servers are direct; the root
+// declares a server's tools only where direct_tools is true and loads the rest
+// through tool_search.
+export const mcpConfig = (config, role) => ({
+  servers: Object.entries(config.mcp).filter(([name]) => mayReachServer(config, role, name)).map(([name, { policy }]) => {
+    const toolExposure = {};
+    for (const tool of policy.denied_tools) toolExposure[tool] = "hidden";
+    return { name, source: runnerPath, scope: "extension", config: {
+      command: process.execPath, args: [runnerPath, "server", name], env: { PI_WORKFLOW_ROLE: role },
+      exposure: role !== "root" || policy.direct_tools === true ? "direct" : "deferred", toolExposure,
+    } };
+  }),
+  errors: [], autoEnableCodemode: false,
 });
-export const mcpAdapterSettings = { hostConfigDiscovery: "off", directTools: false, freezeDirectTools: true, toolPrefix: "mcp", namespaceProxyTools: false, scriptMode: false, jev: false, approveTools: true, autoAuth: false, sampling: false, elicitation: false };
-export async function installMcpAdapter(pi, config, jiti) {
-  const { logger } = await jiti.import(new URL("logger.ts", import.meta.resolve("pi-mcp-adapter")).pathname);
-  // Routine info would draw over the live composer; an explicit MCP_UI_DEBUG request keeps its level.
-  if (!["1", "true"].includes(process.env.MCP_UI_DEBUG)) logger.setLevel("warn");
-  const { createMcpAdapter } = await jiti.import("pi-mcp-adapter");
-  await createMcpAdapter({ config })(pi);
-}
+// pi's MCP resource tools reach every server outside the broker's per-tool gate.
+const MCP_RESOURCE_TOOLS = new Set(["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]);
 
 // pi-subagents' control notice: a message whose content is the model's
 // instructions (run id, four subagent({…}) calls) and whose own renderer draws
@@ -75,25 +50,30 @@ export const controlNotice = (message, _options, theme) => {
 // API they are handed and pi keeps what they pass, so a Proxy that decorates
 // every registration gives their rows the transcript's shape without touching
 // execution or message content. The subagent schema and description reflect
-// only the managed launch/control surface, and the mcp gateway's only the
-// calls this workflow admits (mcpGateway). A message renderer we own is composed
+// only the managed launch/control surface. Each MCP tool's server and tool name
+// are recorded in mcpTools from its `<server>/<tool>` label, since its name may
+// be sanitised or hash-shortened. A message renderer we own is composed
 // over the plugin's, which stays as the fallback: ours answers undefined for a
 // payload it does not recognise, so a plugin that changes its details shape
 // renders its own way again rather than losing its notice. A customType in
 // quietMessages is sent with display off — in the session and the model's
 // context, never drawn. Everything else
 // (events included) is the original, and the raw function is called on the raw
-// API because the adapter extracts it.
-export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = [], narrowSchema, isShuttingDown = () => false, subagentDescription, mcp) {
+// API because a plugin may extract it.
+export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = [], narrowSchema, isShuttingDown = () => false, subagentDescription, mcpTools = new Map()) {
   return new Proxy(pi, {
     get(target, key, receiver) {
-      if (key === "registerTool") return tool => target.registerTool({
-        ...tool,
-        ...(tool.name === "subagent" && narrowSchema ? { parameters: narrowSchema(tool.parameters) } : {}),
-        ...(tool.name === "subagent" && subagentDescription !== undefined ? { description: subagentDescription } : {}),
-        ...(tool.name === "mcp" && mcp ? { parameters: mcp.narrow(tool.parameters), description: mcp.description, promptSnippet: mcp.promptSnippet } : {}),
-        ...renderersFor(tool.name),
-      });
+      if (key === "registerTool") return tool => {
+        const split = tool.name.startsWith("mcp__") ? tool.label?.indexOf("/") ?? -1 : -1;
+        if (split > 0) mcpTools.set(tool.name, { server: tool.label.slice(0, split), tool: tool.label.slice(split + 1) });
+        return target.registerTool({
+          ...tool,
+          ...(tool.name === "subagent" && narrowSchema ? { parameters: narrowSchema(tool.parameters) } : {}),
+          ...(tool.name === "subagent" && subagentDescription !== undefined ? { description: subagentDescription } : {}),
+          ...(MCP_RESOURCE_TOOLS.has(tool.name) ? { exposure: "hidden" } : {}),
+          ...renderersFor(tool.name),
+        });
+      };
       if (key === "sendMessage") return (message, options) => {
         if (!quietMessages.includes(message?.customType)) return target.sendMessage(message, options);
         return target.sendMessage({ ...message, display: false }, isShuttingDown() ? { ...options, triggerTurn: false } : options);

@@ -10,6 +10,8 @@
       "enabledModels" ($enabledModels | uniq | sortAlpha)
       "theme" "catppuccin-latte/catppuccin-mocha"
       "themes" (list (printf "%s/node_modules/catppuccin-pi-theme/themes" .chezmoi.sourceDir)) -}}
+{{- /* fullscreen TUI enables mouse input (click-to-expand tool rows) */ -}}
+{{- $_ := set $managed "tuiMode" "fullscreen" -}}
 {{- /* fullscreen exit prints a resume hint, not the whole transcript */ -}}
 {{- $_ := set $managed "fullscreenExitOutput" "resume-hint" -}}
 {{- /* hides the startup header */ -}}

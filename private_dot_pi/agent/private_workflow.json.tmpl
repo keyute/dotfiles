@@ -17,6 +17,8 @@
 {{- $cls := $pi.defaults.classifier -}}
 {{- $clsModel := get .subagent_tiers.pi $cls.tier -}}
 {{- if not $clsModel -}}{{- fail (printf "classifier: unknown tier %s" $cls.tier) -}}{{- end -}}
+{{- $searchModel := get .subagent_tiers.pi $pi.search_tier -}}
+{{- if not $searchModel -}}{{- fail (printf "agents.pi.search_tier: unknown tier %s" $pi.search_tier) -}}{{- end -}}
 {{- dict
       "version" 1
       "agentDir" $agentDir
@@ -24,6 +26,7 @@
           "provider" $pi.defaults.provider
           "classifierFilter" (dict "model" $clsModel "reasoningEffort" $cls.filter_effort)
           "classifierJudge" (dict "model" $clsModel "reasoningEffort" $cls.judge_effort)
+          "search" $searchModel
           "tiers" .subagent_tiers.pi)
       "filesystem" (dict
           "denyRead" $denyRead

@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
-import { controlNotice, mcpGateway, pluginApi } from "./plugin-api.mjs";
+import { controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
+import { runnerPath } from "./operations.mjs";
 import { narrowSubagentSchema } from "./children.mjs";
 
 test("the plugin API decorates every registration and forwards everything else untouched", () => {
@@ -9,7 +10,7 @@ test("the plugin API decorates every registration and forwards everything else u
   const events = { on() {} };
   const pi = { events, on: () => "on", registerTool(tool) { tools.set(tool.name, tool); } };
   const styled = pluginApi(pi, name => ({ renderShell: "self", renderCall: `ours:${name}`, renderResult: "ours" }));
-  const { registerTool } = styled; // the adapter extracts the function
+  const { registerTool } = styled; // a plugin may extract the function
   const execute = () => {};
   registerTool({ name: "subagent", execute, parameters: { a: 1 }, renderCall: "theirs", renderResult: "theirs" });
   registerTool({ name: "mcp__docs_q", execute, renderCall: "theirs" });
@@ -63,23 +64,60 @@ test("the plugin API narrows only the subagent definition and preserves its exec
   assert.equal("cwd" in tools.get("subagent").parameters.properties, false);
 });
 
-test("the plugin API gives the mcp gateway the managed surface and keeps its executor", () => {
+const mcpFixture = () => ({
+  mcp: {
+    context7: { policy: { denied_tools: [], direct_tools: false } },
+    exa: { policy: { denied_tools: ["agent_run"], direct_tools: false } },
+    playwright: { policy: { denied_tools: ["browser_run_code_unsafe"], direct_tools: true } },
+  },
+  agents: {
+    researcher: { tools: ["workspace_read", "mcp__exa__web_fetch_exa", "mcp__context7__query-docs"] },
+    reviewer: { tools: ["workspace_read"] },
+  },
+});
+
+test("the root's MCP config declares direct_tools, defers the rest and hides denied tools", () => {
+  const { servers, errors, autoEnableCodemode } = mcpConfig(mcpFixture(), "root");
+  assert.deepEqual(errors, []);
+  assert.equal(autoEnableCodemode, false);
+  assert.deepEqual(servers.map(server => server.name), ["context7", "exa", "playwright"]);
+  const [context7, exa, playwright] = servers;
+  assert.deepEqual(context7, { name: "context7", source: runnerPath, scope: "extension", config: {
+    command: process.execPath, args: [runnerPath, "server", "context7"], env: { PI_WORKFLOW_ROLE: "root" }, exposure: "deferred", toolExposure: {},
+  } });
+  assert.equal(exa.config.exposure, "deferred");
+  assert.deepEqual(exa.config.toolExposure, { agent_run: "hidden" });
+  assert.equal(playwright.config.exposure, "direct");
+  assert.deepEqual(playwright.config.toolExposure, { browser_run_code_unsafe: "hidden" });
+});
+
+test("a child's MCP config holds only the servers its roster names a tool of, direct, with denied tools hidden", () => {
+  const { servers } = mcpConfig(mcpFixture(), "researcher");
+  assert.deepEqual(servers.map(server => server.name), ["context7", "exa"]);
+  assert.deepEqual(servers.map(server => server.config.exposure), ["direct", "direct"]);
+  assert.deepEqual(servers[1].config.toolExposure, { agent_run: "hidden" });
+  assert.deepEqual(servers[1].config.env, { PI_WORKFLOW_ROLE: "researcher" });
+  assert.deepEqual(mcpConfig(mcpFixture(), "reviewer").servers, []);
+});
+
+test("the plugin API records each MCP tool's identity from its label and hides the resource tools", () => {
   const tools = new Map();
+  const identities = new Map();
+  const styled = pluginApi({ registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, [], undefined, undefined, undefined, identities);
   const execute = () => {};
-  const parameters = { type: "object", properties: Object.fromEntries(["tool", "args", "search", "server", "action", "url", "target", "searchMode"].map(name => [name, {}])) };
-  const gateway = mcpGateway(["context7", "exa"]);
-  const styled = pluginApi({ registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, [], undefined, undefined, undefined, gateway);
-  styled.registerTool({ name: "mcp", description: "install by URL", promptSnippet: "install, auth", parameters, execute });
-  styled.registerTool({ name: "other", description: "other upstream", parameters, execute });
-  const mcp = tools.get("mcp");
-  assert.deepEqual(Object.keys(mcp.parameters.properties), ["tool", "args", "search", "server"]);
-  assert.equal(mcp.execute, execute);
-  assert.equal(mcp.promptSnippet, gateway.promptSnippet);
-  assert.match(mcp.description, /^Servers: context7, exa$/m);
-  assert.doesNotMatch(mcp.description + mcp.promptSnippet + mcp.parameters.properties.server.description, /install|auth|mcpScript|ui-messages/);
-  // Byte-stable per config, so re-registration never rewrites the prompt prefix.
-  assert.equal(mcpGateway(["context7", "exa"]).description, mcp.description);
-  assert.equal(tools.get("other").parameters, parameters);
+  styled.registerTool({ name: "mcp__context7__query-docs", label: "context7/query-docs", exposure: "deferred", execute });
+  // A hash-shortened name keeps its identity in the label only.
+  styled.registerTool({ name: "mcp__exa__a_very_long_name_1a2b3c4d", label: "exa/a.very/long/name", exposure: "direct", execute });
+  styled.registerTool({ name: "mcp__nolabel__x", label: "mcp__nolabel__x", execute });
+  styled.registerTool({ name: "bg_wait", label: "bg/wait", execute });
+  for (const name of ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]) styled.registerTool({ name, label: name, exposure: "direct", execute });
+  assert.deepEqual([...identities], [
+    ["mcp__context7__query-docs", { server: "context7", tool: "query-docs" }],
+    ["mcp__exa__a_very_long_name_1a2b3c4d", { server: "exa", tool: "a.very/long/name" }],
+  ]);
+  assert.equal(tools.get("mcp__context7__query-docs").exposure, "deferred");
+  assert.equal(tools.get("mcp__context7__query-docs").execute, execute);
+  for (const name of ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]) assert.equal(tools.get(name).exposure, "hidden", name);
 });
 
 test("a message renderer we own is composed over the plugin's, which stays as the fallback", () => {
@@ -100,7 +138,7 @@ test("a quiet customType is sent with display off, everything else untouched", (
   const sent = [];
   const pi = { sendMessage(message, options) { sent.push([message, options]); } };
   const styled = pluginApi(pi, () => ({}), {}, ["subagent-notify"]);
-  const { sendMessage } = styled; // the adapter extracts the function
+  const { sendMessage } = styled; // a plugin may extract the function
   sendMessage({ customType: "subagent-notify", content: "Background task failed: **x**", display: true }, { triggerTurn: true });
   sendMessage({ customType: "other", content: "c", display: true });
   assert.deepEqual(sent[0], [{ customType: "subagent-notify", content: "Background task failed: **x**", display: false }, { triggerTurn: true }]);

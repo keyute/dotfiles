@@ -105,13 +105,14 @@ export function callTitle(name, args = {}) {
   }
 }
 
-// Plugin rows: pi-mcp-adapter's direct tools are `mcp__<server>_<tool>` and its
-// proxy takes the same server-prefixed name in `tool`; pi-subagents' launch
-// carries `agent` and `task`, its other actions an `action`. Any other plugin
-// tool (bg_wait, the supervisor channel) is its name and first string argument.
+// Plugin rows: pi's MCP tools are `mcp__<server>__<tool>`, and a configured
+// server name (which may itself hold `__`) wins over the first separator;
+// pi-subagents' launch carries `agent` and `task`, its other actions an
+// `action`. Any other plugin tool (bg_wait, the supervisor channel) is its
+// name and first string argument.
 const mcpName = (raw, servers) => {
-  const server = servers.filter(s => raw.startsWith(`${s}_`)).sort((a, b) => b.length - a.length)[0];
-  return server ? `${server} › ${raw.slice(server.length + 1)}` : raw.replace("_", " › ");
+  const server = servers.filter(s => raw.startsWith(`${s}__`)).sort((a, b) => b.length - a.length)[0];
+  return server ? `${server} › ${raw.slice(server.length + 2)}` : raw.replace("__", " › ");
 };
 const preview = args => {
   const value = Object.values(args ?? {}).find(v => typeof v === "string" && v.trim());
@@ -124,14 +125,9 @@ export function pluginTitle(name, args = {}, servers = []) {
     const task = shortTitle(args.task, PREVIEW_WIDTH);
     return `${args.agent ?? "subagent"}${task ? ` › ${task}` : ""}`;
   }
-  if (name === "mcp") {
-    if (args.tool) return `${mcpName(args.tool, servers)}${preview(args.args)}`;
-    if (args.search) return `mcp search "${shortTitle(args.search, PREVIEW_WIDTH)}"`;
-    if (args.describe) return `mcp describe ${args.describe}`;
-    return "mcp";
-  }
   if (name.startsWith("mcp__")) return `${mcpName(name.slice("mcp__".length), servers)}${preview(args)}`;
   if (name === "web_search") return `Searched "${shortTitle(args.query ?? "", PREVIEW_WIDTH)}"`;
+  if (name === "web_fetch") return `Fetched ${URL.parse(args.url ?? "")?.hostname ?? ""}`;
   return `${name.replaceAll("_", " ")}${preview(args)}`;
 }
 
@@ -224,6 +220,7 @@ const WORDS = {
   list: ["listed", "path"],
   mcp: ["called", "MCP tool"],
   web: ["ran", "web search", "web searches"],
+  fetch: ["fetched", "page"],
   discovery: ["ran", "agent discovery", "agent discoveries"],
   agent: ["launched", "agent"],
   steer: ["steered", "agent"],
@@ -235,7 +232,7 @@ const WORDS = {
   taskDone: ["finished", "background task"],
 };
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
-export const isMcp = name => name === "mcp" || name.startsWith("mcp__");
+export const isMcp = name => name.startsWith("mcp__");
 // Subagent management calls are transcript housekeeping and group like any
 // other activity fact: launch, list discovery, steer, status check, stop and
 // interrupt. `workspace_task` and `bg_wait` stay out as visible boundary
@@ -250,6 +247,7 @@ export const foldKey = (name, args = {}) => {
     return SUBAGENT_ACTIONS[args.action] ?? null;
   }
   if (name === "web_search") return "web";
+  if (name === "web_fetch") return "fetch";
   return name.startsWith("workspace_") && name !== "workspace_task" ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null;
 };
 
@@ -463,7 +461,7 @@ export function installFolding(pi, ctx, folds = defaultFolds) {
     if (key) addFold(folds, event.toolCallId, key);
     else closeFolds(folds);
   });
-  // The adapter reports some failures in `details.error` without `isError`.
+  // pi-web-search reports failures in `details.error` without `isError`.
   pi.on("tool_execution_end", event => settleFold(folds, event.toolCallId, Boolean(event.isError || event.result?.details?.error), event.result));
   pi.on("agent_start", () => closeFolds(folds));
   pi.on("input", event => {
@@ -633,9 +631,8 @@ export function toolRenderers(name, folds = defaultFolds) {
   return rowRenderers({ name, title: args => callTitle(name, args), folds });
 }
 
-// pi-mcp-adapter reports init, auth and server failures in details.error
-// without isError; a subagent launch answers with its run id and finishes
-// later.
+// pi-web-search reports failures in details.error without isError; a
+// subagent launch answers with its run id and finishes later.
 export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {}) {
   const subagent = name === "subagent";
   const renderers = rowRenderers({

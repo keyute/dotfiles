@@ -54,6 +54,9 @@ here.
   `summary` because the owned rows (`rows.mjs`) draw subagent calls and fold
   under rule 2, and `intercomBridge` is off so children report only through
   their completion, as Claude Code's subagents do.
+  The managed launch passes `--exclude-tools subagents_enable`: the plugin's
+  lazy loader re-adds itself to the active tools every turn, the managed tool
+  refresh removes it, and pi-ai resends the full tool list after any removal.
   Re-judge when Pi ships native subagents.
   Keep existing plugins and owned UI: catalog alternatives do not remove these policy/presentation seams; reconsider
   adoption when a public API covers them without a wrapper or workaround.
@@ -61,13 +64,11 @@ here.
   Serena's startup and language-server provisioning add maintenance without a
   demonstrated need. Navigation uses file/search tools; diagnostics use project
   toolchains in `workspace_bash`. Reintroduce only on measured pain.
-- No root `@earendil-works/pi-client` pin: pi-subagents 0.70.1 resolves runner
+- No root `@earendil-works/pi-client` pin: pi-subagents resolves runner
   imports through the host's packages (`runner-aliases.js`).
 - An owned questionnaire replaces RPIV and its dependencies using
   public TUI primitives. Completed decisions keep the question text for the
-  classifier; model results omit presentation data. Exa moves behind the
-  existing MCP gateway, while Context7 stays direct.
-  These exposure changes leave broker enforcement and child permissions intact.
+  classifier; model results omit presentation data.
 - pi-subagents ships no completion guard for the roles; the driver's diff
   check is the gate (`docs/pi-coupling.md`,
   Acceptance and mutation names). The subagent schema and description expose
@@ -79,13 +80,14 @@ here.
   instructions, input and tools across section patches and mode switches.
   These are request-shape guarantees, not live subscription cache/billing proof.
   No cache plugin or long-TTL override: this request builder does not request one.
-- MCP is the gateway plus direct Context7 only, with lexical search (no TypeSafe-key-dependent semantic-search default) and a frozen direct-tool surface, trading late hot-loading for stability (`docs/pi-coupling.md`, MCP settings).
+- MCP is pi's own: the workflow calls the exported MCP and tool-search factories with the servers rendered into `workflow.json`, so tools carry Claude Code's `mcp__server__tool` names and the broker reviews each call in `tool_call` (`docs/pi-coupling.md`, Native MCP wiring). No `mcp.json` and no `-e builtin:mcp`: children load no built-ins, and a trusted project's `mcp.json` would outrank a sandboxed server of the same name. pi-mcp-adapter is dropped: its pi-ai peer range stops short of the pinned pi, so installing it needs a peer override. The root declares a server's tools only where `direct_tools` says so and reaches the rest through `tool_search` (`docs/decisions.md`, `setting.pi_mcp_exposure`); children get their named tools declared. Accepted: a connect per server per session and per child. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
+- `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), returns a cross-host redirect instead of following it, and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt (`docs/decisions.md`, `parity.web_tools`).
 - Nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The `timeoutMs` runtime backstop with its `checkpointBeforeDeadlineMs` checkpoint/stop steer (`extensions/subagent/config.json`) replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts: `bg_wait` window expiry is non-terminal, the separate headless `agent_end` auto-drain keeps its 30-minute limit, and a nesting child collects results during its turn, not through that drain.
 - No on-disk patches; two guarded prototype replacements (`docs/pi-coupling.md`, Skill display and Pending input). The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. Rather than wait, the extension owns the `!` round-trip, honouring pi's `shellPath`/`shellCommandPrefix` so the hand-back changes nothing the user sees; when the hook ships, hand execution back to pi and keep only the renderer (`docs/pi-coupling.md`, The owned `!` block).
 - Keep the owned UI and harness, adopt nothing: pi has no user-message,
   pending-input, bash-block or prompt-prefix renderer hook (`user_bash` still
   draws pi's own block; the editor-border spinner breaks rule 3; pi#8154 closed
-  not-planned); pi-mcp-adapter has no log-level setting; pi-subagents keeps
+  not-planned); pi-subagents keeps
   run ids out of the fleet DTO and appends its safety guidance only in
   `custom` description mode, so `toolDescriptionMode` is `compact` and the
   managed description replaces that fixed text.

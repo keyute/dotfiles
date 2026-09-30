@@ -62,7 +62,7 @@ for (const file of sourceFiles) {
     ...[...text.matchAll(/\bimport\(\s*["']([^"']+)["']/g)].map(m => m[1]),
   ];
   for (const specifier of specifiers) {
-    if (!/^(@earendil-works\/|pi-subagents|pi-mcp-adapter)/.test(specifier)) continue;
+    if (!/^(@earendil-works\/|pi-subagents)/.test(specifier)) continue;
     test(`${file}: "${specifier}" does not reach into dist/ or src/`, () => {
       assert.ok(!specifier.includes("/dist/") && !specifier.includes("/src/"), `${specifier} imported in ${file} reaches into an internal package path`);
     });
@@ -85,12 +85,9 @@ for (const file of sourceFiles) {
   for (const match of text.matchAll(/\bpi\.events\.(?:on|emit)\(\s*["']([^"']+)["']/g)) {
     const name = match[1];
     test(`${file}: pi.events event "${name}" is documented`, () => {
-      const candidates = [
-        ...readdirSync(join(nodeModules, "pi-subagents", "docs")).map(f => join(nodeModules, "pi-subagents", "docs", f)),
-        join(nodeModules, "pi-mcp-adapter", "README.md"),
-      ];
+      const candidates = readdirSync(join(nodeModules, "pi-subagents", "docs")).map(f => join(nodeModules, "pi-subagents", "docs", f));
       const found = candidates.some(path => existsSync(path) && new RegExp(`(\`${name}\`|"${name}")`).test(readFileSync(path, "utf8")));
-      assert.ok(found, `pi.events event "${name}" used in ${file} is not documented in pi-subagents/docs or pi-mcp-adapter/README.md`);
+      assert.ok(found, `pi.events event "${name}" used in ${file} is not documented in pi-subagents/docs`);
     });
   }
 }
@@ -107,7 +104,6 @@ for (const name of ["detectSupportedImageMimeTypeFromFile", "truncateHead", "tru
 // that rewrites it fails here before the row does on screen.
 const pins = [
   ["bundled extension loading supplies host virtual modules through Jiti", "@earendil-works/pi-coding-agent/dist/core/extensions/loader.js", [/usesEmbeddedModules = isBunBinary \|\| isNodeSeaBinary \|\| isBundledNode/, /virtualModules: await getVirtualModules\(\), tryNative: false/, /moduleCache: false/, /await jiti\.import\(extensionPath, \{ default: true \}\)/]],
-  ["MCP's internal singleton filters console output and handlers by its configured level", "pi-mcp-adapter/logger.ts", [/export const logger = new Logger\(\)/, /setLevel\(level: LogLevel\): void \{\s*this\.minLevel = level;/, /if \(!this\.shouldLog\(level\)\) return;/, /LEVEL_PRIORITY\[level\] >= LEVEL_PRIORITY\[this\.minLevel\]/, /console\.log\(fullMessage\)/, /console\.warn\(fullMessage\)/, /console\.error\(fullMessage, error \?\? ""\)/]],
   ["pending input is rebuilt from Pi's combined session/compaction queues and actual dequeue binding", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/updatePendingMessagesDisplay\(\) \{\s*this\.pendingMessagesContainer\.clear\(\);/, /const \{ steering: steeringMessages, followUp: followUpMessages \} = this\.getAllQueuedMessages\(\);/, /this\.session\.getSteeringMessages\(\)/, /this\.session\.getFollowUpMessages\(\)/, /this\.compactionQueuedMessages\.filter\(\(msg\) => msg\.mode === "steer"\)/, /this\.compactionQueuedMessages\.filter\(\(msg\) => msg\.mode === "followUp"\)/, /this\.getAppKeyDisplay\("app\.message\.dequeue"\)/]],
   ["custom editors inherit the native app-action handlers, including streaming follow-up submission", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/for \(const \[action, handler\] of this\.defaultEditor\.actionHandlers\) \{\s*customEditor\.actionHandlers\.set\(action, handler\);/, /this\.defaultEditor\.onAction\("app\.message\.followUp",/, /await this\.session\.prompt\(text, \{ streamingBehavior: "followUp" \}\);/]],
   ["shell follow-up submission can reuse native paste expansion, autocomplete cleanup and editor clearing", "@earendil-works/pi-tui/dist/components/editor.js", [/submitValue\(\) \{\s*this\.cancelAutocomplete\(\);\s*const result = this\.expandPasteMarkers\(this\.state\.lines\.join\("\\n"\)\)\.trim\(\);/, /getExpandedText\(\) \{\s*return this\.expandPasteMarkers\(this\.state\.lines\.join\("\\n"\)\);/]],
@@ -123,8 +119,12 @@ const pins = [
   ["native slash-menu Enter accepts then submits, whereas Tab only accepts", "@earendil-works/pi-tui/dist/components/editor.js", [/if \(this\.autocompletePrefix\.startsWith\("\/"\)\) \{\s*this\.cancelAutocomplete\(\);\s*\/\/ Fall through to submit/, /kb\.matches\(data, "tui\.input\.tab"\)\) \{[\s\S]{0,800}?return;/]],
   ["shell layout and navigation use the same native editor state without changing submission or undo", "@earendil-works/pi-tui/dist/components/editor.js", [/layoutText\(contentWidth\)/, /buildVisualLineMap\(width\)/, /this\.state\.lines\[i\]/, /logicalLine: i,/, /startCol: chunk\.startIndex/, /handleBackspace\(\)/, /this\.state\.cursorCol === 0/, /navigateHistory\(direction\)/, /pushUndoSnapshot\(\)/, /this\.undoStack\.push\(\{ state: this\.state,/, /this\.expandPasteMarkers\(this\.state\.lines\.join\("\\n"\)\)\.trim\(\)/]],
   ["pi-subagents registers `subagent` with its own renderers through the API it is handed", "pi-subagents/src/extension/index.js", [/name: "subagent"/, /renderCall\(args, theme\)/, /renderResult\(result, options, theme, context\)/, /pi\.registerTool\(tool\)/]],
-  ["pi-mcp-adapter registers direct tools with its own renderers through the API it is handed", "pi-mcp-adapter/index.ts", [/name: spec\.prefixedName/, /renderCall: createMcpDirectToolCallRenderer\(/, /renderResult: renderMcpToolResult/]],
-  ["pi-mcp-adapter reports failures in details.error without isError", "pi-mcp-adapter/direct-tools.ts", [/details: \{ error: "auth_required"/, /details: \{ error: "server_unavailable"/]],
+  ["pi's MCP and tool_search extension factories are public exports", "@earendil-works/pi-coding-agent/dist/index.d.ts", [/export \{ createMcpExtension, /, /export \{ createToolSearchExtension \}/]],
+  ["an MCP tool is named mcp__<server>__<tool> (sanitised, hash-shortened) and labelled <server>/<tool>, the identity plugin-api reads", "@earendil-works/pi-coding-agent/dist/extensions/mcp/tools.js", [/const name = `mcp__\$\{server\}__\$\{tool\}`\.replace\(/, /const label = `\$\{server\}\/\$\{tool\.name\}`;\s*return \{\s*name: options\.name,\s*label,/]],
+  ["pi's MCP resource tools, which plugin-api hides", "@earendil-works/pi-coding-agent/dist/extensions/mcp/resources.js", [/LIST_MCP_RESOURCES_TOOL = "list_mcp_resources"/, /LIST_MCP_RESOURCE_TEMPLATES_TOOL = "list_mcp_resource_templates"/, /name: READ_MCP_RESOURCE_TOOL,/]],
+  ["the resource reader's name", "@earendil-works/pi-coding-agent/dist/extensions/mcp/tools.js", [/READ_MCP_RESOURCE_TOOL = "read_mcp_resource"/]],
+  // The MCP gate checks a server by name only, so the managed config must be the sole source of servers.
+  ["a supplied loadConfig replaces pi's mcp.json read, and /mcp never writes an extension-scoped server back", "@earendil-works/pi-coding-agent/dist/extensions/mcp/index.js", [/const loaded = \(options\.loadConfig \?\? defaultLoadConfig\)\(ctx\);/, /const saveConfig = \(server, patch\) => \{\s*if \(server\.entry\.scope !== "extension"\) \{/]],
   ["pi keeps the definition object handed to registerTool", "@earendil-works/pi-coding-agent/dist/core/extensions/loader.js", [/registerTool\(tool\) \{[\s\S]{0,600}definition: tool,/]],
   ["the bash tool's empty-output stand-in and exit-status trailer", "@earendil-works/pi-coding-agent/dist/core/tools/bash.js", [/"\(no output\)"/, /`Command exited with code \$\{exitCode\}`/]],
   ["a click toggles one row's own expanded flag, after the rendered component has declined it", "@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js", [/createResultRegion\(/, /this\.setExpanded\(!this\.expanded\)/, /y: event\.y - 1,/]],
@@ -185,8 +185,10 @@ const pins = [
   ["the foreground single run's details hold sumResultsCost as totalCost", "pi-subagents/src/runs/foreground/subagent-executor.js", [/const totalCost = sumResultsCost\(\[r\]\);[\s\S]{0,800}?totalCost,/]],
   ["bg_wait folds its completions' usage into the tool result's own usage and keeps them in details", "pi-subagents/src/runs/background/subagent-wait.js", [/\.\.\.\(usage \? \{ usage: toAgentToolUsage\(usage\) \} : \{\}\),\s*details: \{\s*mode: "management",\s*results: \[\],\s*\.\.\.\(completions && completions\.length > 0 \? \{ completions \} : \{\}\),/]],
   ["an async run's status file carries its final totalCost", "pi-subagents/src/runs/background/subagent-runner.js", [/setOptionalProperty\(statusPayload, "totalCost", finalTotalCost\);/]],
-  ["a /subagent slash result is a subagent-slash-result custom message whose details.result.details are the run's", "pi-subagents/src/slash/slash-commands.js", [/record\.type === "custom_message" && record\.customType === SLASH_RESULT_TYPE[\s\S]{0,100}?resolveSlashMessageDetails\(record\.details\)\?\.result\.details;/]],
+  ["a /subagent slash result is a subagent-slash-result custom message whose details.result.details are the run's", "pi-subagents/src/slash/subagent-cost.js", [/record\.type === "custom_message" && record\.customType === SLASH_RESULT_TYPE[\s\S]{0,100}?resolveSlashMessageDetails\(record\.details\)\?\.result\.details;/]],
   ["the slash result type literal", "pi-subagents/src/shared/types.js", [/SLASH_RESULT_TYPE = "subagent-slash-result"/]],
+  // The managed launch excludes the loader (dot_zshrc.tmpl); these guards are what make that leave `subagent` alone.
+  ["pi-subagents' lazy loader stands down when the loader tool is excluded", "pi-subagents/src/extension/tool-activation.js", [/const LOADER_NAME = "subagents_enable";/, /pi\.on\("before_agent_start", \(event\) => \{\s*const available = pi\.getAllTools\(\);\s*if \(!Array\.isArray\(available\) \|\| !available\.some\(\(tool\) => tool\.name === LOADER_NAME\)\)\s*return;/]],
   ["a container dispatches a mouse event to whichever child sits under event.y", "@earendil-works/pi-tui/dist/tui.js", [/for \(const \{ component: child, height: childHeight \} of mouseChildren\) \{\s*if \(event\.y >= childY && event\.y < childY \+ childHeight\) \{\s*const result = dispatchMouseEvent\(child, \{/]],
   ["pi wires the custom editor's submit callback to its own default editor's, so a subclass has to intercept the property itself", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/newEditor\.onSubmit = this\.defaultEditor\.onSubmit;/]],
   ["pi's ! branch strips one or two leading characters before this extension ever sees the text", "@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js", [/const isExcluded = text\.startsWith\("!!"\);/, /const command = isExcluded \? text\.slice\(2\)\.trim\(\) : text\.slice\(1\)\.trim\(\);/]],

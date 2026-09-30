@@ -248,7 +248,7 @@ agent_mcp_servers:
       - claude
   context7:
     package_bin: context7-mcp
-    direct_tools: true
+    direct_tools: false
     args: []
     auto_approve_tools: true
     readonly_tools: [resolve-library-id, query-docs]

@@ -60,6 +60,16 @@ test("active tool exposure follows permission and UI, never mode", () => {
   assert.deepEqual(root({ permitted: name => name === "workspace_read" }), ["workspace_read"]);
 });
 
+test("a refresh never declares a deferred or hidden tool and keeps one tool_search already loaded", () => {
+  const tools = [{ name: "workspace_read" }, { name: "tool_search", exposure: "model-only" }, { name: "mcp__exa__web_fetch_exa", exposure: "direct" }, { name: "mcp__context7__query-docs", exposure: "deferred" }, { name: "mcp__exa__agent_run", exposure: "hidden" }, { name: "mcp__playwright__browser_click", exposure: "deferred" }];
+  const names = active => activeToolNames(tools, { ready: true, permitted: () => true, currentContext: { mode: "tui", hasUI: true }, active });
+  assert.deepEqual(names([]), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa"]);
+  assert.deepEqual(names(["workspace_read", "mcp__context7__query-docs"]), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa", "mcp__context7__query-docs"]);
+  // Permission still decides first: a loaded tool outside the scope is retracted.
+  assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name !== "mcp__context7__query-docs", currentContext: { mode: "tui", hasUI: true }, active: ["mcp__context7__query-docs"] }), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa"]);
+  assert.deepEqual(activeToolNames(tools, { ready: false, permitted: () => true, currentContext: { mode: "tui", hasUI: true }, active: ["mcp__context7__query-docs"] }), []);
+});
+
 test("Subscription Responses payloads retain distinct workflow and project-context patches across mode switches", async () => {
   const found = openaiCodexProvider().getModels().find(model => model.reasoning && model.compat?.supportsMidConvoSystemMessages);
   assert.ok(found);
@@ -200,18 +210,13 @@ test("pinned upstream packages register against the managed extension and prefli
     registerTool(tool) { tools.set(tool.name, tool); },
     registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
     getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
-    getActiveTools() { return [...tools.keys()]; }, setActiveTools() {},
+    getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, getMcpServers() { return []; },
   };
   const { installWorkflow } = await import("./index.mjs");
-  const { mcpGateway, mcpServerDefinitions } = await import("./plugin-api.mjs");
   config.mcp = Object.fromEntries(["context7", "exa", "playwright"].map(name => [name, { policy: { denied_tools: [], direct_tools: name === "context7" } }]));
+  config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__context7__query-docs"] };
   writeFileSync(configPath, JSON.stringify(config));
   const jiti = createJiti(import.meta.url);
-  const { computeServerHash } = await jiti.import(new URL("metadata-cache.ts", import.meta.resolve("pi-mcp-adapter")).pathname);
-  writeFileSync(join(config.agentDir, "mcp-cache.json"), JSON.stringify({ version: 1, servers: Object.fromEntries(Object.entries(mcpServerDefinitions(config, "root")).map(([name, definition]) => [name, {
-    configHash: computeServerHash(definition), cachedAt: Date.now(), resources: [],
-    tools: [{ name: "fixture_search", description: "Fixture search", inputSchema: { type: "object", properties: {} } }],
-  }])) }));
   const runtime = {
     startBroker: async () => ({ env: {}, policy: { mode: "plan", epoch: 1 }, async close() {} }),
     requestBroker: async () => ({ mode: "plan" }),
@@ -230,15 +235,9 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.deepEqual(subagentSchema.properties.agentScope.enum, ["user"]);
   assert.equal(tools.get("subagent").description, "Managed fixture: named asynchronous children only.");
   assert.doesNotMatch(tools.get("subagent").description, /workflowScript|runs\.|SAFETY-CRITICAL/);
-  assert.ok(tools.has("mcp"));
-  // The pinned adapter's own gateway registration reaches the managed surface.
-  const gateway = mcpGateway(["context7", "exa", "playwright"]);
-  assert.equal(tools.get("mcp").description, gateway.description);
-  assert.equal(tools.get("mcp").promptSnippet, gateway.promptSnippet);
-  assert.deepEqual(Object.keys(tools.get("mcp").parameters.properties).sort(), ["args", "connect", "describe", "includeSchemas", "instructions", "limit", "offset", "regex", "search", "server", "tool"]);
-  assert.doesNotMatch(tools.get("mcp").parameters.properties.server.description, /install/);
-  assert.ok(tools.has("mcp__context7_fixture_search"));
-  for (const name of ["mcp__context7", "mcp__exa", "mcp__playwright", "mcpScript"]) assert.equal(tools.has(name), false, name);
+  // pi's MCP tools register once their servers connect; deferred ones load through tool_search.
+  assert.ok(tools.has("tool_search"));
+  for (const name of ["mcp", "codemode", "mcpScript"]) assert.equal(tools.has(name), false, name);
   assert.ok(tools.has("submit_plan"));
   assert.equal(tools.get("submit_plan").executionMode, "sequential");
   assert.equal(tools.get("submit_plan").description, "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.");
@@ -258,6 +257,13 @@ test("pinned upstream packages register against the managed extension and prefli
   await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); }, registerTool(tool) { childTools.set(tool.name, tool); } }, configPath, "fixture-shell", runtime);
   assert.equal(childTools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox, undefined);
   await childHandlers.get("session_shutdown").at(-1)();
+  // A child reaching MCP gets pi's MCP extension, without tool_search: its allowlist names its tools.
+  const docsTools = new Map();
+  const docsHandlers = new Map();
+  await installWorkflow({ ...pi, on(name, fn) { const list = docsHandlers.get(name) ?? []; list.push(fn); docsHandlers.set(name, list); }, registerTool(tool) { docsTools.set(tool.name, tool); } }, configPath, "fixture-docs", runtime);
+  assert.equal(docsTools.has("tool_search"), false);
+  assert.ok(docsHandlers.get("mcp_servers_change"), "pi's MCP extension is installed for the child");
+  await docsHandlers.get("session_shutdown").find(handler => handler.name === "shutdown")();
   const { resolveSubagentLaunchContract } = await jiti.import("pi-subagents/preflight");
   const ctx = { cwd: process.cwd(), modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [{ provider: "openai-codex", id: "gpt-5.6-luna" }] } };
   const args = { agent: "fixture-reader", task: "Inspect fixture" };
@@ -280,8 +286,6 @@ test("pinned upstream packages register against the managed extension and prefli
   await checkChildLaunch(transcript, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(transcript.steeringRecovery, false);
   await assert.rejects(checkChildLaunch({ action: "status", id: "run", view: "events" }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
-  // Session-varying values would change pi-mcp-adapter's cache key every launch.
-  assert.deepEqual(mcpServerDefinitions({ mcp: { docs: { policy: { denied_tools: ["x"] } } } }, "root").docs.env, { PI_WORKFLOW_ROLE: "root" });
   const list = { action: "list", capabilities: true };
   await checkChildLaunch(list, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(list.agentScope, "user");
@@ -369,7 +373,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
   assert.match(promptEvent.systemPromptOptions.sections.skills, /Use the workspace_read tool[^]*<name>fixture-skill<\/name>/);
   assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
-  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "submit_plan", "subagent", "web_search", "mcp"]);
+  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "submit_plan", "subagent", "web_search", "web_fetch"]);
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
   for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);
   const completed = {
@@ -409,6 +413,147 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   }
   assert.match(cleanupError?.message ?? "", /owned-run: stop request failed/);
   assert.deepEqual(log, ["stop:owned-run", "broker:close", "rpc:teardown"]);
+});
+
+test("every MCP call is resolved to its server and tool and put to the broker; unknown or unconfigured MCP tools are blocked", async t => {
+  const { config } = fixture(t);
+  config.models.classifierFilter = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  config.mcp = { docs: { policy: { denied_tools: [], direct_tools: false } } };
+  config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__docs__search"] };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const handlers = new Map();
+  const tools = new Map();
+  const activeTools = [];
+  const events = new EventEmitter();
+  const pi = {
+    events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
+    // Only the workflow's own hooks are kept: plugins register through the
+    // styled proxy (`this` is not pi), and pi's MCP session_start would spawn
+    // the configured servers.
+    on(name, fn) { if (this !== pi) return; const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool(tool) { tools.set(tool.name, tool); },
+    registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return activeTools.at(-1) ?? []; }, setActiveTools(names) { activeTools.push(names); }, getMcpServers() { return []; },
+  };
+  const broker = {
+    env: { PI_WORKFLOW_SOCKET: "fake-socket", PI_WORKFLOW_TOKEN: "fake-token" },
+    policy: { mode: "plan", approval: "auto", epoch: 1, roots: new Map(), addableDirs: () => [] },
+    async setMode(mode) { this.policy.mode = mode; },
+    async close() {},
+  };
+  const asked = [];
+  let refusal;
+  const requestBroker = async (_env, role, request) => {
+    if (request.action !== "mcp") return { mode: broker.policy.mode, readonly: true };
+    asked.push({ role, ...request });
+    if (refusal) throw new Error(refusal);
+    return { ok: true };
+  };
+  const execute = async () => {};
+  const installSubagents = async styled => {
+    styled.registerTool({ name: "subagent", label: "subagent", description: "fake", parameters: Type.Object({}), execute });
+    // Registered as pi's MCP extension does: the identity is the label.
+    styled.registerTool({ name: "mcp__docs__search", label: "docs/search", exposure: "deferred", parameters: Type.Object({}), execute });
+    styled.registerTool({ name: "mcp__other__search", label: "other/search", exposure: "direct", parameters: Type.Object({}), execute });
+    for (const name of ["read_mcp_resource", "list_mcp_resources", "list_mcp_resource_templates"]) styled.registerTool({ name, label: name, parameters: Type.Object({}), execute });
+    styled.events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
+      ? { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } }
+      : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [] } } }));
+  };
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker, installSubagents });
+  const ctx = {
+    cwd: process.cwd(), mode: "rpc", hasUI: false, model: { provider: "openai-codex", id: "gpt-5.6-sol" },
+    sessionManager: { getSessionId: () => "mcp-gate-root", getSessionFile: () => null },
+    modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
+    ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
+  };
+  for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
+  t.after(async () => { for (const handler of handlers.get("session_shutdown")) await handler({ reason: "quit" }, ctx); });
+  const jiti = createJiti(import.meta.url);
+  const { resolveCurrentSubagentCapabilityCeiling } = await jiti.import("pi-subagents/capability-ceiling");
+  // pi-subagents drops a child's tool the ceiling does not name.
+  assert.ok(resolveCurrentSubagentCapabilityCeiling("mcp-gate-root")?.allowedTools.includes("mcp__docs__search"));
+  // tool_search is declared; the deferred tool waits for it, and the unconfigured server's tool is out of scope.
+  assert.ok(activeTools.at(-1).includes("tool_search"));
+  assert.equal(activeTools.at(-1).includes("mcp__docs__search"), false);
+  assert.equal(activeTools.at(-1).includes("mcp__other__search"), false);
+  const call = async (toolName, input = {}) => {
+    let verdict;
+    for (const handler of handlers.get("tool_call")) verdict ??= await handler({ toolName, input }, ctx);
+    return verdict;
+  };
+  assert.equal(await call("mcp__docs__search", { query: "hooks" }), undefined);
+  assert.deepEqual(asked, [{ role: "root", action: "mcp", server: "docs", tool: "search", args: { query: "hooks" } }]);
+  refusal = "Action not approved";
+  assert.deepEqual(await call("mcp__docs__search", { query: "again" }), { block: true, reason: "Action not approved" });
+  assert.equal(asked.length, 2);
+  refusal = undefined;
+  for (const name of ["mcp__docs__ghost", "mcp__other__search", "read_mcp_resource", "list_mcp_resources", "list_mcp_resource_templates"]) assert.equal((await call(name))?.block, true, name);
+  assert.equal(asked.length, 2, "a blocked name never reaches the broker");
+});
+
+test("a child's MCP calls reach the broker only for the tools its roster names", { skip }, async t => {
+  const { root, config } = fixture(t);
+  config.models.classifierFilter = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  config.mcp = { docs: { policy: { denied_tools: [], direct_tools: false } } };
+  config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__docs__search"] };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  // Stands in for the parent's broker at the child handshake only; every other request is the fake requestBroker's.
+  const socketPath = join(root, "broker.sock");
+  // resume(): an unread socket never sees the child's end, so the pair would outlive the test.
+  const server = createServer(socket => { socket.on("error", () => {}); socket.resume(); socket.write(`${JSON.stringify({ ok: true })}\n`); });
+  await new Promise(resolve => server.listen(socketPath, resolve));
+  // Not awaited: the child's handshake socket stays open until its session_shutdown hook below.
+  t.after(() => server.close());
+  const saved = { ...process.env };
+  Object.assign(process.env, { PI_WORKFLOW_SOCKET: socketPath, PI_WORKFLOW_TOKEN: "fake-token", PI_WORKFLOW_EPOCH: "1" });
+  t.after(() => { for (const key of ["PI_WORKFLOW_SOCKET", "PI_WORKFLOW_TOKEN", "PI_WORKFLOW_EPOCH"]) if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; });
+  const handlers = new Map();
+  const tools = new Map();
+  const activeTools = [];
+  let styled;
+  const pi = {
+    events: { on() { return () => {}; }, emit() {} },
+    // pi's MCP extension registers through the styled proxy (`this`), which is
+    // kept to register its tools; its hooks would spawn the configured server.
+    on(name, fn) { if (this !== pi) { styled = this; return; } const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool(tool) { tools.set(tool.name, tool); },
+    registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return activeTools.at(-1) ?? []; }, setActiveTools(names) { activeTools.push(names); }, getMcpServers() { return []; },
+  };
+  const asked = [];
+  const requestBroker = async (_env, role, request) => {
+    if (request.action !== "mcp") return { mode: "plan", readonly: true };
+    asked.push({ role, ...request });
+    return { ok: true };
+  };
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "fixture-docs", { requestBroker });
+  // Registered as pi's MCP extension does: the identity is the label.
+  for (const name of ["search", "other"]) styled.registerTool({ name: `mcp__docs__${name}`, label: `docs/${name}`, exposure: "direct", parameters: Type.Object({}), async execute() {} });
+  const ctx = {
+    cwd: process.cwd(), mode: "rpc", hasUI: false, abort() {}, isIdle: () => true,
+    sessionManager: { getSessionId: () => "mcp-gate-child", getSessionFile: () => null },
+    modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
+    ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
+  };
+  for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
+  t.after(async () => { for (const handler of handlers.get("session_shutdown")) await handler({ reason: "quit" }, ctx); });
+  assert.deepEqual(activeTools.at(-1).filter(name => name.startsWith("mcp__")), ["mcp__docs__search"]);
+  const call = async (toolName, input = {}) => {
+    let verdict;
+    for (const handler of handlers.get("tool_call")) verdict ??= await handler({ toolName, input }, ctx);
+    return verdict;
+  };
+  assert.equal((await call("mcp__docs__other"))?.block, true);
+  assert.deepEqual(asked, [], "an unrostered tool never reaches the broker");
+  assert.equal(await call("mcp__docs__search", { query: "hooks" }), undefined);
+  assert.deepEqual(asked, [{ role: "fixture-docs", action: "mcp", server: "docs", tool: "search", args: { query: "hooks" } }]);
 });
 
 test("child sessions share one capacity ceiling and acknowledge revocation before plan becomes active", { skip }, async t => {
@@ -499,6 +644,7 @@ test("only a server the config marks unsandboxed receives the managed null-profi
     playwright: { connection: { type: "stdio", command: "managed-playwright", args: ["--stdio"], env: { SERVER_TOKEN: "configured" } }, policy: { denied_tools: [], unsandboxed: true } },
     docs: { connection: { type: "stdio", command: "managed-docs", args: ["--stdio"], env: {} }, policy: { denied_tools: [], unsandboxed: false } },
   };
+  config.agents["fixture-browser"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__playwright__browser_navigate"] };
   const broker = await startBroker(config, root, async () => true);
   t.after(() => broker.close());
   const leaseServer = (name, role = "root") => new Promise(resolve => {
@@ -528,6 +674,9 @@ test("only a server the config marks unsandboxed receives the managed null-profi
   assert.deepEqual(docs.args, ["--stdio"]);
   assert.equal((await leaseServer("unconfigured")).ok, false);
   assert.equal((await leaseServer("playwright", "fixture-reader")).ok, false);
+  // A child's server lease follows the MCP tools its role names.
+  assert.equal((await leaseServer("playwright", "fixture-browser")).ok, true);
+  assert.equal((await leaseServer("docs", "fixture-browser")).ok, false);
 });
 
 test("the broker refuses to start without a numeric child concurrency limit", async t => {

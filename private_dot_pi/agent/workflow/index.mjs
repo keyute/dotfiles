@@ -22,7 +22,8 @@ import { answerLines, appendVisible, blankReasoning, bulletMarkdown, doneEntryRe
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
-import { CONTROL_NOTICE, SUBAGENT_NOTIFY, controlNotice, installMcpAdapter, mcpAdapterSettings, mcpGateway, mcpServerDefinitions, pluginApi } from "./plugin-api.mjs";
+import { webFetchTool } from "./web-fetch.mjs";
+import { CONTROL_NOTICE, SUBAGENT_NOTIFY, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
 
 // The classifier's only evidence source: a shell command's record (command,
 // sandboxed, exit code; never output) is taken where the worker returns it. A
@@ -59,10 +60,6 @@ const GUIDELINES = {
   ],
 };
 
-// Direct MCP tools carry the adapter's mcp__<server> prefix; the proxy stays
-// for servers left behind it (playwright).
-const isDirectMcpTool = name => name.startsWith("mcp__");
-
 // `readonly` is also every read-only role's state in execute mode, so the
 // planning workflow is gated on the root in plan mode: a child has neither
 // submit_plan nor ask_user_question (policy.mjs rootTools).
@@ -75,10 +72,13 @@ export function workflowPrompt({ mode, readonly, isRoot }) {
 // Plan mode keeps write/edit declared: the broker refuses the call, while a
 // retracted tool makes pi-ai resend the whole tool list and re-bill the
 // context on every later mode switch (docs/pi-implementation.md, Decisions).
-export function activeToolNames(tools, { ready, permitted, currentContext }) {
+// A deferred or hidden tool is left as it stands: a refresh neither declares
+// it nor retracts one tool_search loaded.
+export function activeToolNames(tools, { ready, permitted, currentContext, active }) {
   if (!ready) return [];
-  return tools.map(tool => tool.name).filter(name => permitted(name)
-    && !(name === "ask_user_question" && (currentContext?.mode !== "tui" || !currentContext?.hasUI)));
+  return tools.filter(({ name, exposure }) => permitted(name)
+    && !(name === "ask_user_question" && (currentContext?.mode !== "tui" || !currentContext?.hasUI))
+    && (!["deferred", "hidden"].includes(exposure) || active.includes(name))).map(tool => tool.name);
 }
 
 export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "workflow.json"), role = "root", runtime = {}) {
@@ -124,8 +124,20 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     await requestBroker(env, role, { action: "state" });
   }
   const permittedTools = isRoot ? rootTools : config.agents[role].tools;
-  const permitted = name => permittedTools.includes(name) || (permittedTools.includes("mcp") && isDirectMcpTool(name));
-  const refreshActiveTools = () => pi.setActiveTools(activeToolNames(pi.getAllTools(), { ready, permitted, currentContext }));
+  // Server and tool of every registered MCP tool, by pi tool name (pluginApi).
+  const mcpTools = new Map();
+  const configuredMcp = name => mcpTools.has(name) && Object.hasOwn(config.mcp, mcpTools.get(name).server);
+  const permitted = name => permittedTools.includes(name) || (isRoot && configuredMcp(name));
+  // pi-subagents drops a child's tool that the ceiling does not name; a
+  // nesting child's descendants stay bounded by its own tools.
+  const ceilingTools = isRoot ? [...new Set([...rootTools, ...Object.values(config.agents).flatMap(agent => agent.tools)])] : permittedTools;
+  // A mode change refreshes through an empty set, so the tools tool_search
+  // loaded earlier in the session are remembered and come back with it.
+  const loadedTools = new Set();
+  const refreshActiveTools = () => {
+    for (const name of pi.getActiveTools()) loadedTools.add(name);
+    pi.setActiveTools(activeToolNames(pi.getAllTools(), { ready, permitted, currentContext, active: [...loadedTools] }));
+  };
 
   async function authorize(tool, args) {
     if (!ready) throw new Error("Managed workflow is not ready");
@@ -208,22 +220,16 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("tool_call", async (event, ctx) => {
     try {
       if (!ready || !permitted(event.toolName)) throw new Error("Tool not available in this managed scope");
-      if (event.toolName === "mcp" && event.input.action) throw new Error("MCP authentication/UI actions are user-operated, not model tools");
       if (event.toolName === "subagent") {
         const mode = isRoot ? broker.policy.mode : (await requestBroker(env, role, { action: "state" })).mode;
         await checkChildLaunch(event.input, config, role, ctx, resolveSubagentLaunchContract, mode);
       }
-      // The adapter's broker handles resolved MCP operations, not proxy arguments.
+      if (mcpTools.has(event.toolName)) {
+        const { server, tool } = mcpTools.get(event.toolName);
+        if (!configuredMcp(event.toolName)) throw new Error("MCP server outside the managed config");
+        await requestBroker(env, role, { action: "mcp", server, tool, args: event.input });
+      } else if (event.toolName.startsWith("mcp__")) throw new Error("Unknown MCP tool");
     } catch (error) { return { block: true, reason: error.message }; }
-  });
-  pi.events.on("pi-mcp-adapter:tool-approval-request", request => {
-    request.claim(async () => {
-      if (!ready) return "deny";
-      try {
-        await requestBroker(env, role, { action: "mcp", server: request.serverName, tool: request.originalToolName, args: request.args });
-        return request.signal?.aborted ? "deny" : "allow_once";
-      } catch { return "deny"; }
-    });
   });
 
   // herdr's pi extension reports `blocked` only on this bus event; pi's prompt
@@ -248,7 +254,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     }
     await broker.setMode(mode);
     publishEpoch();
-    ceiling?.update({ allowedAgents: allowedChildAgents(config, role, broker.policy.mode), allowedTools: permittedTools });
+    ceiling?.update({ allowedAgents: allowedChildAgents(config, role, broker.policy.mode), allowedTools: ceilingTools });
     ready = true;
     refreshActiveTools();
     publishStatus(ctx);
@@ -281,9 +287,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     currentContext = ctx;
     shuttingDown = false;
+    loadedTools.clear();
     const mode = isRoot ? broker.policy.mode : (await requestBroker(env, role, { action: "state" })).mode;
     ceiling?.dispose();
-    ceiling = registerSubagentCapabilityCeiling({ sessionId: ctx.sessionManager.getSessionId(), source: "managed-workflow", ceiling: { allowedAgents: allowedChildAgents(config, role, mode), allowedTools: permittedTools } });
+    ceiling = registerSubagentCapabilityCeiling({ sessionId: ctx.sessionManager.getSessionId(), source: "managed-workflow", ceiling: { allowedAgents: allowedChildAgents(config, role, mode), allowedTools: ceilingTools } });
     fleet?.attachContext(ctx);
     if (broker) await setMode("plan", ctx, { cleanup: false });
     else {
@@ -360,7 +367,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
-  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY], narrowSubagentSchema, () => shuttingDown, subagentDescription, mcpGateway(Object.keys(config.mcp)));
+  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY], narrowSubagentSchema, () => shuttingDown, subagentDescription, mcpTools);
   // Fleet owns detached-run lifecycle for every root, including headless roots;
   // only its footer rendering is conditional on UI. Register our shutdown
   // before pi-subagents installs its hook, which disposes the RPC bridge.
@@ -460,8 +467,14 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     const webSearch = await jiti.import("pi-web-search", { default: true });
     webSearch(styled);
   }
-  if (permittedTools.includes("mcp")) {
-    await installMcpAdapter(styled, { mcpServers: mcpServerDefinitions(config, role), settings: mcpAdapterSettings }, jiti);
+  // Read-only and effect-free on the host (no file, process or policy
+  // state), so the tool_call hook's `permitted` check is its only gate.
+  if (permittedTools.includes("web_fetch")) pi.registerTool({ ...webFetchTool(config), ...pluginRenderers("web_fetch") });
+  // pi's built-in MCP, fed the managed servers only (no mcp.json is read);
+  // every call is gated by the tool_call hook above.
+  if (mcpConfig(config, role).servers.length) {
+    if (isRoot) await sdk.createToolSearchExtension()(styled);
+    await sdk.createMcpExtension({ loadConfig: () => mcpConfig(config, role) })(styled);
   }
   // Plugin session hooks may refresh their own registrations, so ours runs
   // last and restores the managed exposure after every startup or resume.
