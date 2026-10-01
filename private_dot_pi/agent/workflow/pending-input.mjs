@@ -20,6 +20,7 @@ export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode
       const theme = state.theme();
       const lines = [];
       for (const [text, label] of messages) {
+        lines.push("");
         lines.push(truncateToWidth(theme.fg("dim", `${TURN_GLYPH} ${label}`), width));
         const wrapped = text.split("\n").flatMap(line => wrapTextWithAnsi(line, Math.max(1, width - 2)));
         lines.push(...shadedBlock(theme, wrapped.map(line => theme.fg("userMessageText", line)), width, { prompt: PROMPT, fit: padRow }));

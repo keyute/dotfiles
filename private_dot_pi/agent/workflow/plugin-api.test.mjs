@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
-import { controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
+import { DRAWN_ENTRIES, NOTICE_RENDERERS, QUIET_MESSAGES, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
+import { addFold, appendVisible, closeFolds, createFolds } from "./rows.mjs";
 import { runnerPath } from "./operations.mjs";
 import { narrowSubagentSchema } from "./children.mjs";
 
@@ -27,7 +28,7 @@ test("the plugin API replaces only the subagent description without changing its
   const execute = () => {};
   const parameters = { type: "object", properties: { agent: {} } };
   const managed = "Managed subagent description.";
-  const styled = pluginApi({ registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, [], undefined, undefined, managed);
+  const styled = pluginApi({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, {}, undefined, undefined, managed);
   styled.registerTool({ name: "subagent", description: "upstream", parameters, execute });
   styled.registerTool({ name: "other", description: "other upstream", parameters, execute });
   assert.equal(tools.get("subagent").description, managed);
@@ -52,10 +53,10 @@ test("the subagent schema exposes only the managed launch and control surface", 
 
 test("the plugin API narrows only the subagent definition and preserves its executor", () => {
   const tools = new Map();
-  const pi = { registerTool(tool) { tools.set(tool.name, tool); } };
+  const pi = { on() {}, registerTool(tool) { tools.set(tool.name, tool); } };
   const execute = () => {};
   const schema = { type: "object", properties: { agent: {}, task: {}, async: {}, model: {}, context: {}, agentScope: {}, action: {}, id: {}, runId: {}, index: {}, message: {}, mode: {}, view: {}, lines: {}, steeringRecovery: {}, capabilities: {}, cwd: {} } };
-  const styled = pluginApi(pi, () => ({}), {}, [], narrowSubagentSchema);
+  const styled = pluginApi(pi, () => ({}), {}, {}, narrowSubagentSchema);
   styled.registerTool({ name: "subagent", parameters: schema, execute });
   styled.registerTool({ name: "other", parameters: schema, execute });
   assert.equal(tools.get("subagent").execute, execute);
@@ -101,7 +102,7 @@ test("a child's MCP config holds only the servers its roster names a tool of, di
 test("the plugin API records each MCP tool's identity from its label", () => {
   const tools = new Map();
   const identities = new Map();
-  const styled = pluginApi({ registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, [], undefined, undefined, undefined, identities);
+  const styled = pluginApi({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, {}, undefined, undefined, undefined, identities);
   const execute = () => {};
   styled.registerTool({ name: "mcp__context7__query-docs", label: "context7/query-docs", exposure: "deferred", execute });
   // A hash-shortened name keeps its identity in the label only.
@@ -118,7 +119,7 @@ test("the plugin API records each MCP tool's identity from its label", () => {
 
 test("a message renderer we own is composed over the plugin's, which stays as the fallback", () => {
   const registered = new Map();
-  const pi = { registerMessageRenderer(type, renderer) { registered.set(type, renderer); } };
+  const pi = { on() {}, registerMessageRenderer(type, renderer) { registered.set(type, renderer); } };
   const styled = pluginApi(pi, () => ({}), { ours: message => (message.details ? "row" : undefined) });
   const { registerMessageRenderer } = styled;
   registerMessageRenderer("ours", () => "box");
@@ -132,19 +133,119 @@ test("a message renderer we own is composed over the plugin's, which stays as th
 
 test("a quiet customType is sent with display off, everything else untouched", () => {
   const sent = [];
-  const pi = { sendMessage(message, options) { sent.push([message, options]); } };
-  const styled = pluginApi(pi, () => ({}), {}, ["subagent-notify"]);
+  const pi = { on() {}, sendMessage(message, options) { sent.push([message, options]); } };
+  const styled = pluginApi(pi, () => ({}), {}, QUIET_MESSAGES);
   const { sendMessage } = styled; // a plugin may extract the function
   sendMessage({ customType: "subagent-notify", content: "Background task failed: **x**", display: true }, { triggerTurn: true });
   sendMessage({ customType: "other", content: "c", display: true });
   assert.deepEqual(sent[0], [{ customType: "subagent-notify", content: "Background task failed: **x**", display: false }, { triggerTurn: true }]);
   assert.deepEqual(sent[1], [{ customType: "other", content: "c", display: true }, undefined]);
+  // A wait subscription is quiet only when it repeats the fleet's completion line.
+  const wait = outcome => ({ customType: "subagent-wait-subscription", content: `Wait subscription w1 fired for run r1: ${outcome}. Detail.`, display: true, details: { token: "w1", runId: "r1", outcome } });
+  sendMessage(wait("completed"), { triggerTurn: true });
+  sendMessage(wait("timed out"), { triggerTurn: true });
+  assert.equal(sent[2][0].display, false);
+  assert.equal(sent[3][0].display, true);
+  // A customType that names an Object prototype member is not a quiet check.
+  sendMessage({ customType: "constructor", content: "c", display: true });
+  assert.equal(sent[4][0].display, true);
+});
+
+test("a displayed message pi appends outside the agent stream ends the group where it draws", () => {
+  const handlers = new Map();
+  const folds = createFolds();
+  let idle = true;
+  const pi = { on: (name, fn) => handlers.set(name, fn), sendMessage() {} };
+  const styled = pluginApi(pi, () => ({}), {}, QUIET_MESSAGES, undefined, undefined, undefined, undefined, () => idle, folds);
+  const closedAfter = (message, options) => {
+    addFold(folds, `t${folds.timeline.length}`, "read");
+    styled.sendMessage(message, options);
+    return folds.timeline.at(-1).kind === "boundary";
+  };
+  const shown = { customType: "subagents-admin", content: "c", display: true };
+  // Idle without a turn: appended at once, so the group closes before it.
+  assert.equal(closedAfter(shown), true);
+  // Drawn later through the agent stream, which closes it itself.
+  assert.equal(closedAfter(shown, { triggerTurn: true }), false);
+  assert.equal(closedAfter(shown, { deliverAs: "nextTurn" }), false);
+  // Never drawn.
+  assert.equal(closedAfter({ ...shown, display: false }), false);
+  assert.equal(closedAfter({ customType: "subagent-notify", content: "c", display: true }), false);
+  idle = false;
+  // A steer or follow-up reaches message_end.
+  assert.equal(closedAfter(shown, { deliverAs: "steer" }), false);
+  // Deferred to the turn_end flush: the group closes at the first event after it, once.
+  assert.equal(closedAfter(shown, { triggerTurn: false }), false);
+  handlers.get("turn_start")();
+  assert.equal(folds.timeline.at(-1).kind, "boundary");
+  addFold(folds, "later", "read");
+  handlers.get("agent_settled")();
+  assert.equal(folds.timeline.at(-1).kind, "activity", "a drained count does not close again");
+  assert.deepEqual([...handlers.keys()].sort(), ["agent_end", "agent_settled", "turn_start"]);
+});
+
+test("a plugin entry ends the group only when its renderer would draw it", () => {
+  const appended = [];
+  const folds = createFolds();
+  const pi = { on() {}, appendEntry(type, data) { appended.push([this, type, data]); } };
+  const styled = pluginApi(pi, () => ({}), {}, {}, undefined, undefined, undefined, undefined, undefined, folds);
+  const { appendEntry } = styled; // pi-subagents extracts it and calls it with its own receiver
+  const closedAfter = (type, data) => {
+    addFold(folds, `t${folds.timeline.length}`, "read");
+    appendEntry.call({}, type, data);
+    return folds.timeline.at(-1).kind === "boundary";
+  };
+  const warning = { summary: "s", evidence: "e", recommendedAction: "a" };
+  const reply = { requestId: "q", runId: "r", agent: "worker", message: "m", childIndex: 0, createdAt: 1 };
+  assert.equal(closedAfter("subagent_watchdog_warning", warning), true);
+  assert.equal(closedAfter("subagent_watchdog_warning", { summary: "s" }), false);
+  assert.equal(closedAfter("subagent_supervisor_reply", reply), true);
+  assert.equal(closedAfter("subagent_supervisor_reply", { ...reply, childIndex: undefined }), false);
+  assert.equal(closedAfter("other", warning), false);
+  assert.equal(closedAfter("constructor", warning), false);
+  assert.ok(appended.every(([receiver]) => receiver === pi), "the raw function is called on the raw API");
+  assert.equal(appended.length, 6);
+  assert.deepEqual(Object.keys(DRAWN_ENTRIES), ["subagent_watchdog_warning", "subagent_supervisor_reply"]);
+});
+
+test("a plugin entry that lands while a reply streams ends the group above the reply, where pi mounts it", () => {
+  const folds = createFolds();
+  const styled = pluginApi({ on() {}, appendEntry() {} }, () => ({}), {}, {}, undefined, undefined, undefined, undefined, undefined, folds);
+  addFold(folds, "a", "read");
+  addFold(folds, "b", "read");
+  closeFolds(folds);
+  folds.streamBoundary = folds.timeline.at(-1);
+  styled.appendEntry("subagent_watchdog_warning", { summary: "s", evidence: "e", recommendedAction: "a" });
+  const done = { agent: "x", status: "completed", durationMs: 1000 };
+  appendVisible({ appendEntry() {} }, "workflow-child", done, folds);
+  const kinds = folds.timeline.map(fact => fact.kind === "boundary" ? (fact === folds.streamBoundary ? "reply" : "|") : fact.id);
+  assert.deepEqual(kinds, ["a", "b", "|", done.seq, "reply"], "the completion folds below the warning, not into the reads");
+});
+
+test("pi-subagents' default-box notices draw as unshaded rows, and an unknown payload stays the plugin's", () => {
+  const theme = { fg: (color, text) => `<${color}>${text}` };
+  const render = (type, message) => NOTICE_RENDERERS[type](message, {}, theme)?.render(200).map(line => line.trimEnd());
+  assert.deepEqual(render("subagent-incremental-child-notify", { content: "Workflow child paused (needs attention): **review**\nWorkflow run: w1\nStatus: workflow still running" }),
+    ["<warning>• <toolTitle>review paused", "  <muted>Workflow run: w1", "  <muted>Status: workflow still running"]);
+  assert.deepEqual(render("subagent-incremental-child-notify", { content: [{ type: "text", text: "Workflow child failed: **build**" }] }), ["<error>• <toolTitle>build failed"]);
+  assert.equal(render("subagent-incremental-child-notify", { content: "Something else" }), undefined);
+  assert.deepEqual(render("subagent-workflow-result-write-failed", { content: "Failed to write async workflow result /r.json: EACCES" }),
+    ["<error>• <toolTitle>workflow result write failed", "  <muted>Failed to write async workflow result /r.json: EACCES"]);
+  assert.equal(render("subagent-workflow-result-write-failed", { content: "" }), undefined);
+  assert.deepEqual(render("subagent_watchdog_clarification", { content: "Main watchdog clarification:\nWhich branch?\nEvidence: two remotes" }),
+    ["<accent>π <muted>Main watchdog clarification:", "  <muted>Which branch?", "  <muted>Evidence: two remotes"]);
+  assert.equal(render("subagent_watchdog_clarification", { content: [] }), undefined);
+  assert.deepEqual(render("subagent-wait-subscription", { content: "Wait subscription w1 fired for run r1: timed out. The targeted run may still be active.", details: { token: "w1", runId: "r1", outcome: "timed out" } }),
+    ["<warning>• <toolTitle>run r1 timed out", "  <muted>The targeted run may still be active."]);
+  assert.deepEqual(render("subagent-wait-subscription", { content: "Wait subscription w1 fired for run r1: failed. Inspect it.", details: { runId: "r1", outcome: "failed" } }),
+    ["<error>• <toolTitle>run r1 failed", "  <muted>Inspect it."]);
+  assert.equal(render("subagent-wait-subscription", { content: "c", details: { token: "w1" } }), undefined);
 });
 
 test("shutdown retains child results without requesting a new model turn", () => {
   const sent = [];
   let shuttingDown = false;
-  const styled = pluginApi({ sendMessage: (message, options) => sent.push([message, options]) }, () => ({}), {}, ["subagent-notify"], undefined, () => shuttingDown);
+  const styled = pluginApi({ on() {}, sendMessage: (message, options) => sent.push([message, options]) }, () => ({}), {}, QUIET_MESSAGES, undefined, () => shuttingDown);
   const message = { customType: "subagent-notify", content: "Child stopped", display: true };
   styled.sendMessage(message, { triggerTurn: true });
   shuttingDown = true;

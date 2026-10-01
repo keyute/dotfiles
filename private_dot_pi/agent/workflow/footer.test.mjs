@@ -254,6 +254,7 @@ test("a waiting snapshot survives prompts and compaction without restarting anim
   const snapshot = h.widget.row.render(80);
   assert.match(snapshot[0], /π Iterated for/);
   h.fire("ui_prompt_start");
+  assert.match(h.widget.row.render(80)[0], /Waiting for you…/, "a confirm outranks the frozen snapshot");
   h.fire("ui_prompt_end");
   assert.deepEqual(h.widget.row.render(80), snapshot);
   h.fire("session_before_compact");

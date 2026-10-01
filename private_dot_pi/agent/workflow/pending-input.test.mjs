@@ -37,6 +37,11 @@ test("display reads native queues, retains order, and clears only the view on de
   assert.match(output, /π Follow-up · after current task/);
   assert.equal(output.match(/alt\+up/g)?.length, 1);
   assert.equal(output.match(/❯ /g)?.length, 3);
+  const lines = render(60).map(plain);
+  const labels = lines.flatMap((line, index) => line.startsWith("π ") ? [index] : []);
+  assert.equal(labels.length, 3);
+  assert.ok(labels.every(index => lines[index - 1] === ""), "one unshaded blank above every queued block, the first included");
+  assert.equal(lines.filter(line => line === "").length, 3);
   assert.match(render(60).join("\n"), /\x1b\[36mfirst steering/);
   const shaded = render(60).filter(line => line.startsWith("\x1b[41m"));
   assert.equal(shaded.length, 9, "each queued input has a content row and two shaded blank rows");

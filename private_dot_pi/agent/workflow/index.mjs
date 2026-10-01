@@ -18,12 +18,12 @@ import { installPendingInput } from "./pending-input.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { answerLines, appendVisible, bulletMarkdown, doneEntryRenderer, installFolding, installReasoningHide, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installFolding, installReasoningHide, isMcp, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
 import { webFetchTool } from "./web-fetch.mjs";
-import { CONTROL_NOTICE, SUBAGENT_NOTIFY, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
+import { CONTROL_NOTICE, NOTICE_RENDERERS, QUIET_MESSAGES, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
 
 // The classifier's only evidence source: a shell command's record (command,
 // sandboxed, exit code; never output) is taken where the worker returns it. A
@@ -70,6 +70,24 @@ export function activeToolNames(tools, { ready, permitted, currentContext, activ
     && (!["deferred", "hidden"].includes(exposure) || active.includes(name))).map(tool => tool.name);
 }
 
+// Every mcp__ name a root UI session in this process has met. pi builds each
+// resumed tool row with the definition registered when it renders, and MCP
+// registers its tools only once its servers connect, after that render: a
+// resumed MCP call would draw pi's shaded fallback card. A hidden placeholder
+// carrying the row renderers stands in until MCP's own registration of the
+// name replaces it (same extension, keyed by name); its execute throws, and the
+// tool_call hook refuses it as an unrecorded MCP tool. Startup renders after
+// session_start, so the branch scan there covers it; an in-process switch
+// (/resume, /new, /fork) renders before session_start, so the placeholders
+// for names met earlier are registered at load. A name first met in a session
+// never live in this process keeps pi's card.
+const seenMcp = new Set();
+const mcpPlaceholder = (name, servers) => ({
+  name, label: name, description: "MCP server not connected", exposure: "hidden", parameters: { type: "object", properties: {} },
+  execute() { throw new Error("MCP server not connected"); },
+  ...pluginRenderers(name, { servers }),
+});
+
 // Every agent run passes through _runAgentPrompt, but only prompt() emits
 // before_agent_start first, and pi swallows a handler's throw: an idle
 // triggerTurn ran without the workflow sections and past the model guard
@@ -95,7 +113,15 @@ function installManagedRun(AgentSession, guard) {
     // The original records the caller's messages via agent.prompt; a run that
     // never reaches it appends them without a turn, as a non-triggering
     // sendCustomMessage would, so an idle notice is not lost.
-    const keep = () => { for (const message of caller) if (message.role === "custom") this._appendCustomMessage(message); };
+    // `_appendCustomMessage` reaches no extension event, so a displayed one
+    // ends the activity group here.
+    const keep = () => {
+      for (const message of caller) {
+        if (message.role !== "custom") continue;
+        if (message.display) closeFolds(defaultFolds);
+        this._appendCustomMessage(message);
+      }
+    };
     try { state.guard(this._extensionRunner.createContext()); }
     catch (error) { this._runSystemPromptOptions = undefined; keep(); throw error; }
     if (!this._runSystemPromptOptions) {
@@ -301,6 +327,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   async function shutdown() {
+    if (isRoot && currentContext?.hasUI) for (const name of mcpTools.keys()) seenMcp.add(name);
     ready = false;
     refreshActiveTools();
     shuttingDown = true;
@@ -349,6 +376,14 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       installSkillDisplay(runtime.InteractiveMode);
       installReasoningHide(runtime.AssistantMessageComponent);
       installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
+      const registered = new Set(pi.getAllTools().map(tool => tool.name));
+      for (const entry of ctx.sessionManager.getBranch()) {
+        for (const part of entry.message?.content ?? []) {
+          if (part.type !== "toolCall" || !isMcp(part.name)) continue;
+          seenMcp.add(part.name);
+          if (!registered.has(part.name)) { registered.add(part.name); pi.registerTool(mcpPlaceholder(part.name, Object.keys(config.mcp))); }
+        }
+      }
       if (!surfaces) {
         installFolding(pi, ctx);
         const footer = installFooter(pi, ctx, { fleet, tasks });
@@ -407,7 +442,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
-  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice }, [SUBAGENT_NOTIFY], narrowSubagentSchema, () => shuttingDown, subagentDescription, mcpTools);
+  const styled = pluginApi(pi, name => pluginRenderers(name, { servers: Object.keys(config.mcp) }), { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, narrowSubagentSchema, () => shuttingDown, subagentDescription, mcpTools, () => currentContext.isIdle());
   // Fleet owns detached-run lifecycle for every root, including headless roots;
   // only its footer rendering is conditional on UI. Register our shutdown
   // before pi-subagents installs its hook, which disposes the RPC bridge.
@@ -484,6 +519,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         abort: () => ctx.abort(),
       });
     } });
+    // pi-subagents registers no renderer for these, so ours are registered
+    // directly; the map above still composes ours over one it adds later.
+    for (const [type, renderer] of Object.entries(NOTICE_RENDERERS)) pi.registerMessageRenderer(type, renderer);
+    for (const name of seenMcp) pi.registerTool(mcpPlaceholder(name, Object.keys(config.mcp)));
     // Registered as documented; model-originated launches are validated (and
     // their args patched) by the blocking tool_call hook, the capability
     // ceiling bounds every launch path, and the broker's child leases enforce

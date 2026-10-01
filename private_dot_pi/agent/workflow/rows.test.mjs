@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, toolRenderers } from "./rows.mjs";
+import { addFold, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, taskTitle, toolRenderers } from "./rows.mjs";
 import { createShellRunner } from "./shell.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
@@ -234,7 +234,7 @@ test("summary wording", () => {
   assert.equal(summarise({}), "");
 });
 
-test("grouping closes on assistant text and visible rows; MCP, discovery, launches, and subagent management group; background-task rows do not", () => {
+test("grouping closes on assistant text and visible rows; MCP, discovery, launches, and subagent and background-task management group", () => {
   const folds = createFolds();
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
@@ -272,14 +272,18 @@ test("grouping closes on assistant text and visible rows; MCP, discovery, launch
   closeFolds(folds);
   assert.equal(foldGroup(folds, "w1"), null);
   assert.equal(foldGroup(folds, "r8"), null);
-  // A background task is running work, not housekeeping: its row stays visible too.
+  // Reading, stopping or listing a background task returns at once: housekeeping, like a status check.
   start("workspace_read", "r6");
   start("workspace_read", "r7");
   ok("r6");
   ok("r7");
-  start("workspace_task", "t1");
-  assert.equal(foldGroup(folds, "t1"), null);
-  assert.deepEqual(foldGroup(folds, "r6").counts, { read: 2 });
+  start("workspace_task", "t1", { action: "output", id: "t1" });
+  start("workspace_task", "t2", { action: "stop", id: "t1" });
+  start("workspace_task", "t3", { action: "list" });
+  for (const id of ["t1", "t2", "t3"]) ok(id);
+  closeFolds(folds);
+  assert.deepEqual(foldGroup(folds, "t1").counts, { read: 2, taskCheck: 1, taskStop: 1, taskList: 1 });
+  assert.equal(foldGroup(folds, "r6"), foldGroup(folds, "t3"));
   assert.notEqual(foldGroup(folds, "r6"), foldGroup(folds, "r4"));
   // A visible custom message — pi-subagents' control notice — is a line like
   // any other, and pi appends it at message_end.
@@ -289,12 +293,14 @@ test("grouping closes on assistant text and visible rows; MCP, discovery, launch
   ok("b2");
   handlers.message_end({ message: { customType: "subagent_control_notice", display: true, content: "researcher needs attention" } });
   assert.deepEqual(foldGroup(folds, "b1").counts, { bash: 2 });
-  // A new run closes whatever is open; a non-streaming reply closes at its end.
+  // A new run draws nothing and closes nothing; a non-streaming reply closes at its end.
   start("workspace_read", "r2");
   start("workspace_read", "r3");
   ok("r2");
   ok("r3");
-  handlers.agent_start({});
+  assert.equal(handlers.agent_start, undefined);
+  assert.ok(liveGroup(folds, "r2"));
+  handlers.message_end(says("Ok"));
   assert.deepEqual(foldGroup(folds, "r2").counts, { read: 2 });
   start("workspace_edit", "d1");
   start("workspace_edit", "d2");
@@ -464,6 +470,162 @@ test("two subagent launches alone seal into a run, a failed launch is never a me
 
 test("summarise names launches and background commands", () => {
   assert.equal(summarise({ read: 2, agent: 3, task: 1 }), "Read 2 files, launched 3 agents, started 1 background command");
+});
+
+test("a sealed sentence keeps each clause's unsandboxed count, a background escalation under the task clause", () => {
+  const folds = createFolds(() => false);
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "b1", args: { command: "npm test" } });
+  handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "b2", args: { command: "brew install x", dangerouslyDisableSandbox: true } });
+  handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "t1", args: { command: "npm run watch", run_in_background: true, dangerouslyDisableSandbox: true } });
+  // The policy's own predicate: only a literal true escalates.
+  handlers.tool_execution_start({ toolName: "workspace_bash", toolCallId: "b3", args: { command: "ls", dangerouslyDisableSandbox: "yes" } });
+  for (const id of ["b1", "b2", "b3"]) handlers.tool_execution_end({ toolCallId: id, result: { content: [], details: {} } });
+  handlers.tool_execution_end({ toolCallId: "t1", result: { content: [], details: { taskId: "t1" } } });
+  closeFolds(folds);
+  assert.equal(summarise(foldGroup(folds, "b1").counts), "Ran 3 shell commands (1 unsandboxed), started 1 background command (1 unsandboxed)");
+});
+
+test("tool search and background-task management join the group; their member lines keep the row's own words", () => {
+  const folds = createFolds(() => false);
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  const calls = [
+    ["r1", "workspace_read", { path: "a.mjs" }, ""],
+    ["q1", "tool_search", { query: "slack" }, "Loaded 2 tools. They are available from your next call:\n- slack_post"],
+    ["w1", "web_search", { query: "pi tui" }, "Answer line one\nmore"],
+    ["f1", "web_fetch", { url: "https://pi.dev/docs" }, "It is pi.\nmore"],
+    ["k1", "workspace_task", { action: "output", id: "t1" }, "running\npartial output"],
+    ["k2", "workspace_task", { action: "stop", id: "t1" }, "Stopping task t1"],
+    ["k3", "workspace_task", { action: "list" }, "t1 · running · npm test"],
+  ];
+  for (const [toolCallId, toolName, args] of calls) handlers.tool_execution_start({ toolName, toolCallId, args });
+  for (const [toolCallId, , , text] of calls) handlers.tool_execution_end({ toolCallId, result: result(text, {}) });
+  closeFolds(folds);
+  const group = foldGroup(folds, "r1");
+  assert.deepEqual(group.entries.map(entry => entry.id), calls.map(([id]) => id));
+  assert.equal(summarise(group.counts), "Read 1 file, ran 1 tool search, ran 1 web search, fetched 1 page, checked on 1 background task, stopped 1 background task, listed background tasks");
+  assert.deepEqual(group.entries.map(entry => entry.summary), ["", "Loaded 2 tools. They are available from your next call:", "Answer line one", "It is pi.", "running", "Stopping task t1", "t1 · running · npm test"]);
+  assert.equal(taskTitle({ action: "list" }), "Listed background tasks");
+  assert.equal(taskTitle({ action: "output", id: "t1" }), "Task t1 output");
+  assert.equal(taskTitle({ action: "stop", id: "t1" }), "Stopped task t1");
+});
+
+test("a background bash call answered inside its grace period reads as the foreground call it was, on its row and as a member", async () => {
+  const folds = createFolds(() => false);
+  const bash = toolRenderers("bash", folds);
+  const args = id => ({ command: `npm run ${id}`, run_in_background: true });
+  const states = {};
+  const ctx = id => context({ toolCallId: id, args: args(id), state: (states[id] ??= {}) });
+  for (const id of ["ok", "fail", "task", "pending"]) {
+    bash.renderCall(args(id), theme, ctx(id));
+    addFold(folds, id, "bash", args(id));
+  }
+  // Still running inside the grace period, it is what it asked to be.
+  assert.deepEqual(rendered(bash.renderCall(args("pending"), theme, ctx("pending"))), ["<success>• <toolTitle>Started npm run pending in background"]);
+  settleFold(folds, "ok", false, result("done", { settled: "t9" }));
+  settleFold(folds, "fail", true, result("boom\nCommand exited with code 1"));
+  settleFold(folds, "task", false, result("Started background task t1", { taskId: "t1" }));
+  assert.deepEqual(["ok", "fail", "task"].map(id => folds.facts.get(id).key), ["bash", "bash", "task"]);
+  assert.deepEqual(["ok", "fail", "task"].map(id => folds.titles.get(id)), ["Ran npm run ok", "Ran npm run fail", "Started npm run task in background"]);
+  assert.deepEqual(rendered(bash.renderCall(args("ok"), theme, ctx("ok"))), ["<success>• <toolTitle>Ran npm run ok"]);
+
+  // A resumed row has no fact: its own result tells it, and it redraws after that render.
+  const resumed = toolRenderers("bash", createFolds(() => false));
+  let invalidated = 0;
+  const shared = context({ toolCallId: "r1", args: args("r1"), invalidate: () => invalidated++ });
+  resumed.renderResult(result("done", { settled: "t9" }), { expanded: false }, theme, shared);
+  await Promise.resolve();
+  assert.equal(invalidated, 1);
+  assert.deepEqual(rendered(resumed.renderCall(args("r1"), theme, shared)), ["<success>• <toolTitle>Ran npm run r1"]);
+  const launched = context({ toolCallId: "r2", args: args("r2") });
+  resumed.renderResult(result("Started background task t2", { taskId: "t2" }), { expanded: false }, theme, launched);
+  assert.deepEqual(rendered(resumed.renderCall(args("r2"), theme, launched)), ["<success>• <toolTitle>Started npm run r2 in background"]);
+});
+
+test("the question row neither joins nor closes a group, and a user message closes the live group where it lands", () => {
+  const folds = createFolds(() => false);
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  const read = id => {
+    handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id, args: { path: id } });
+    handlers.tool_execution_end({ toolCallId: id, result: { details: {} } });
+  };
+  read("r1");
+  read("r2");
+  handlers.tool_execution_start({ toolName: "ask_user_question", toolCallId: "q1", args: {} });
+  handlers.tool_execution_end({ toolCallId: "q1", result: { content: [], details: { cancelled: true } } });
+  read("r3");
+  read("r4");
+  assert.deepEqual(liveGroup(folds, "r1").entries.map(entry => entry.id), ["r1", "r2", "r3", "r4"]);
+
+  // A steer delivered mid-run: only the successful prefix seals, the pending row stays outside it.
+  handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: "p1", args: { path: "p1" } });
+  handlers.message_start({ message: { role: "assistant", content: [] } });
+  assert.ok(liveGroup(folds, "r1"));
+  handlers.message_start({ message: { role: "user", content: [{ type: "text", text: "steer" }] } });
+  assert.deepEqual(folds.timeline.map(fact => fact.kind === "boundary" ? fact.kind : fact.id), ["r1", "r2", "r3", "r4", "boundary", "p1"]);
+  assert.deepEqual(foldGroup(folds, "r1").counts, { read: 4 });
+});
+
+test("pi's red tail under an assistant message is a boundary on exactly the conditions pi draws it", () => {
+  const cases = [
+    [{ stopReason: "error", content: [] }, true],
+    [{ stopReason: "aborted", content: [{ type: "thinking", thinking: "hm" }] }, true],
+    [{ stopReason: "length", content: [{ type: "toolCall", id: "t", name: "read", arguments: {} }] }, true],
+    // A tool row reports an error or abort that carried a call; pi draws no tail.
+    [{ stopReason: "error", content: [{ type: "toolCall", id: "t", name: "read", arguments: {} }] }, false],
+    [{ stopReason: "toolUse", content: [] }, false],
+  ];
+  for (const [message, closes] of cases) {
+    const folds = createFolds(() => false);
+    const handlers = {};
+    installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+    for (const id of ["r1", "r2"]) handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id });
+    for (const id of ["r1", "r2"]) handlers.tool_execution_end({ toolCallId: id, result: { details: {} } });
+    handlers.message_end({ message: { role: "assistant", ...message } });
+    // A completion landing after the tail, with no run start or turn line between, must not join the group above it.
+    const done = { agent: "researcher", task: "x", status: "completed", durationMs: 1_000 };
+    appendVisible(fakePi(), "workflow-child", done, folds);
+    assert.equal(doneGroup(folds, done.seq) === null, closes, JSON.stringify(message));
+  }
+});
+
+test("a compaction that cuts a group leaves its kept members a group of their own, and its summary closes it", () => {
+  const folds = createFolds(() => false);
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  const read = id => {
+    handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id, args: { path: id } });
+    handlers.tool_execution_end({ toolCallId: id, result: { details: {} } });
+  };
+  const done = agent => {
+    const data = { agent, status: "completed", durationMs: 1_000 };
+    appendVisible(fakePi(), "workflow-child", data, folds);
+    return data;
+  };
+  read("r1");
+  const dropped = done("early");
+  read("r2");
+  read("r3");
+  const keptDone = done("late");
+  read("r4");
+  const message = ids => ({ type: "message", message: { role: "assistant", content: ids.map(id => ({ type: "toolCall", id, name: "workspace_read", arguments: {} })) } });
+  const entries = [{ type: "compaction" }, message(["r3"]), { type: "custom", customType: "workflow-child", data: keptDone }, message(["r4"])];
+  // A threshold compaction mid-run: no run start or turn line follows it.
+  handlers.session_compact({ type: "session_compact", reason: "threshold" }, { sessionManager: { buildContextEntries: () => entries } });
+
+  const group = foldGroup(folds, "r3");
+  assert.deepEqual(group.entries.map(entry => entry.id), ["r3", keptDone.seq, "r4"]);
+  assert.equal(summarise(group.counts), "Read 2 files, finished 1 agent");
+  assert.equal(doneGroup(folds, keptDone.seq), group);
+  for (const id of ["r1", "r2", dropped.seq]) assert.equal(folds.facts.has(id), false, id);
+
+  read("r5");
+  read("r6");
+  assert.deepEqual(liveGroup(folds, "r5").entries.map(entry => entry.id), ["r5", "r6"]);
+  assert.deepEqual(foldGroup(folds, "r3").entries.map(entry => entry.id), ["r3", keptDone.seq, "r4"]);
 });
 
 test("successful calls, discovery, launches, and completions share one chronological activity group", () => {
@@ -1073,13 +1235,15 @@ test("ctrl+o shows a sealed completion-led group's members and its own toggle is
   closeFolds(folds);
   const component = doneEntryRenderer(childMapper, folds)({ data: a }, {}, theme);
   toolsExpanded = true;
-  const memberLines = [
-    "  <muted>↳ <toolTitle>researcher finished › x<muted> · 1s",
-    "  <muted>↳ <toolTitle>reviewer finished › y<muted> · 2s",
+  // Each member is its own full row, the first on the handle and every later one a blank line below the last.
+  const rows = [
+    "<success>• <toolTitle>researcher finished<muted> · x · 1s",
+    "",
+    "<success>• <toolTitle>reviewer finished<muted> · y · 2s",
   ];
-  assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...memberLines]);
+  assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...rows]);
   assert.equal(component.handleMouse({ type: "click", button: "left", x: 0, y: 0 }), undefined);
-  assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...memberLines]);
+  assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...rows]);
 });
 
 test("resumed completions whose seqs this process does not know all render as plain lines", () => {

@@ -817,3 +817,67 @@ test("an inherit-model child resolves to the parent's model before the tier chec
   await assert.rejects(checkChildLaunch({ ...launch(), model: "openai-codex/gpt-6-astra" }, config, "root", ctxFor("gpt-5.6-sol"), resolve, "execute"), /frontier/);
   await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-6-astra"), resolve, "execute"), /frontier/);
 });
+
+// Last in the file: the names a UI root met stay known for the process.
+test("a resumed MCP call finds a hidden row placeholder before its server connects, at startup and after an in-process switch", async t => {
+  const { config } = fixture(t);
+  config.models.classifierFilter = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  config.mcp = { docs: { policy: { denied_tools: [] } } };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const broker = { env: {}, policy: { mode: "plan", approval: "auto", epoch: 1, roots: new Map(), addableDirs: () => [] }, async setMode(mode) { this.policy.mode = mode; }, async close() {} };
+  const host = () => {
+    const handlers = new Map();
+    const tools = new Map();
+    const activeTools = [];
+    const events = new EventEmitter();
+    const pi = {
+      events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
+      // Only the workflow's own hooks: pi's MCP session_start would spawn the server.
+      on(name, fn) { if (this !== pi) return; const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+      registerTool(tool) { tools.set(tool.name, tool); },
+      registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+      getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return activeTools.at(-1) ?? []; }, setActiveTools(names) { activeTools.push(names); }, getMcpServers() { return []; },
+    };
+    let styled;
+    const installSubagents = async api => {
+      styled = api;
+      api.events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
+        ? { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } }
+        : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [] } } }));
+    };
+    return { pi, handlers, tools, activeTools, installSubagents, styled: () => styled };
+  };
+  const branch = [{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "Looking." }, { type: "toolCall", id: "c1", name: "mcp__docs__search", arguments: { query: "hooks" } }] } }];
+  const ctx = {
+    cwd: process.cwd(), mode: "tui", hasUI: true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, isIdle: () => true, abort() {},
+    sessionManager: { getSessionId: () => "mcp-resume-root", getSessionFile: () => null, getBranch: () => branch, getEntries: () => branch },
+    modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
+    ui: { theme: { fg: (_color, text) => text, bg: (_color, text) => text, bold: text => text }, getToolsExpanded: () => false, setStatus() {}, setToolsExpanded() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {}, notify() {} },
+  };
+  const { installWorkflow } = await import("./index.mjs");
+  const first = host();
+  await installWorkflow(first.pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: broker.policy.mode, readonly: true }), installSubagents: first.installSubagents });
+  assert.equal(first.tools.has("mcp__docs__search"), false);
+  for (const handler of first.handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
+  const placeholder = first.tools.get("mcp__docs__search");
+  assert.equal(placeholder.exposure, "hidden");
+  assert.equal(typeof placeholder.renderCall, "function");
+  assert.equal(placeholder.renderCall({ query: "hooks" }, ctx.ui.theme, { toolCallId: "c1", lastComponent: undefined, isPartial: false, executionStarted: true, state: {}, invalidate() {}, expanded: false, argsComplete: true, showImages: false, isError: false }).render(80)[0].trim(), "• docs › search \"hooks\"");
+  assert.throws(() => placeholder.execute("c2", {}), /not connected/);
+  assert.equal(first.activeTools.at(-1).includes("mcp__docs__search"), false);
+  let verdict;
+  for (const handler of first.handlers.get("tool_call")) verdict ??= await handler({ toolName: "mcp__docs__search", input: {} }, ctx);
+  assert.equal(verdict?.block, true, "the placeholder is no recorded MCP tool");
+  // pi's MCP extension registers the same name through the styled API once connected, replacing it.
+  const live = { name: "mcp__docs__search", label: "docs/search", exposure: "deferred", parameters: Type.Object({}), async execute() {} };
+  first.styled().registerTool(live);
+  assert.equal(first.tools.get("mcp__docs__search").execute, live.execute);
+  for (const handler of first.handlers.get("session_shutdown")) await handler({ reason: "resume" }, ctx);
+  // An in-process /resume renders before session_start: the placeholder is there from load.
+  const second = host();
+  await installWorkflow(second.pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: broker.policy.mode, readonly: true }), installSubagents: second.installSubagents });
+  t.after(async () => { for (const handler of second.handlers.get("session_shutdown")) await handler({ reason: "quit" }, ctx); });
+  assert.equal(second.tools.get("mcp__docs__search")?.exposure, "hidden");
+});

@@ -1,4 +1,4 @@
-import { Markdown } from "@earendil-works/pi-tui";
+import { Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import {
   PAD, TURN_VERBS,
@@ -53,6 +53,17 @@ function steerBody(text) {
 
 const messageText = message => (message.content ?? []).filter(part => part.type === "text").map(part => part.text ?? "").join("\n");
 
+// pi's red line under an assistant message (assistant-message.js), drawn on the
+// conditions rows.mjs's `tails` closes a group for: a length stop always, an
+// error or abort only when no tool row reports it instead.
+function tailText({ stopReason, errorMessage, content = [] }) {
+  if (stopReason === "length") return "Response was truncated before completion.";
+  if (content.some(part => part.type === "toolCall")) return "";
+  if (stopReason === "aborted") return errorMessage && errorMessage !== "Request was aborted" ? errorMessage : "Operation aborted";
+  if (stopReason === "error") return `Error: ${errorMessage || "Unknown error"}`;
+  return "";
+}
+
 const STEER_NOTE = { "subagent.steer.delivered": "steer delivered", "subagent.steer.queued": "steer queued" };
 
 // The row's title and body kind, exactly as the main chat's tool rows
@@ -77,11 +88,13 @@ function handleRecord(state, record) {
       state.toolRowsById.set(record.toolCallId, row);
       state.folds.titles.set(record.toolCallId, toolRowMeta(record.toolName, args).title);
       const key = foldKey(record.toolName, args);
-      if (key) addFold(state.folds, record.toolCallId, key);
+      if (key) addFold(state.folds, record.toolCallId, key, args);
       else closeFolds(state.folds);
       return;
     }
     case "tool_execution_end": {
+      // Its start fell off the window still running; the earlier-activity note stands for both.
+      if (state.trimmedPending.delete(record.toolCallId)) return;
       // pi-web-search reports failures in `details.error` without `isError`,
       // same as `installFolding`; `settleFold` reads the uncapped result so its
       // summary matches the main chat before the row keeps only the capped one.
@@ -98,21 +111,25 @@ function handleRecord(state, record) {
         const row = { kind: "tool", id: record.toolCallId, name: record.toolName, args: {}, pending: false, isError, result, version: 0 };
         state.rows.push(row);
         state.toolRowsById.set(record.toolCallId, row);
+        // A foreign or partial log's end with no start: a visible non-member closes the run above it.
+        closeFolds(state.folds);
       }
       return;
     }
     case "message_end": {
       const message = record.message;
       if (message?.role === "assistant") {
-        const text = messageText(message);
-        if (text.trim()) {
-          state.rows.push({ kind: "assistant", text });
-          closeFolds(state.folds);
-        }
+        // One row per text block, trimmed as pi draws each (assistant-message.js).
+        const texts = (message.content ?? []).filter(part => part.type === "text" && part.text?.trim()).map(part => part.text.trim());
+        for (const text of texts) state.rows.push({ kind: "assistant", text });
+        const tail = tailText(message);
+        if (tail) state.rows.push({ kind: "error", text: tail });
+        if (texts.length || tail) closeFolds(state.folds);
       } else if (message?.role === "user") {
         const text = messageText(message);
         const body = steerBody(text);
-        state.rows.push(body === null ? { kind: "user", text } : { kind: "user", steer: true, text: body });
+        // pi draws no box for a message with no text (an image-only prompt), but the turn still closes the group.
+        if ((body ?? text).trim()) state.rows.push(body === null ? { kind: "user", text } : { kind: "user", steer: true, text: body });
         // A pending tool must stay outside the group that closes here (rows.mjs's `input` handler).
         closeLive(state.folds);
       }
@@ -147,7 +164,6 @@ function handleRecord(state, record) {
       return;
     }
     case "agent_start": {
-      closeFolds(state.folds);
       state.clock.start(record.observedAt ?? Date.now());
       return;
     }
@@ -185,6 +201,8 @@ export function createReplay({ pick } = {}) {
     rows: [],
     partial: "",
     toolRowsById: new Map(),
+    // Tool rows trimmed while pending, so their late end draws nothing; each id leaves when its end arrives.
+    trimmedPending: new Set(),
     noteRowsByRequestId: new Map(),
     // Quiet: a bulk replay has no rendered components to invalidate, so the
     // before/after diff `refold` otherwise does is dead weight here.
@@ -205,7 +223,11 @@ export function trimRows(state, max) {
   const trimmed = state.rows.splice(0, excess);
   const trimmedIds = new Set();
   for (const row of trimmed) {
-    if (row.kind === "tool") { state.toolRowsById.delete(row.id); trimmedIds.add(row.id); }
+    if (row.kind === "tool") {
+      state.toolRowsById.delete(row.id);
+      trimmedIds.add(row.id);
+      if (row.pending) state.trimmedPending.add(row.id);
+    }
     else if (row.kind === "note" && row.requestId !== undefined) state.noteRowsByRequestId.delete(row.requestId);
   }
   // A dropped row's fact would otherwise still count toward a sentence that
@@ -255,7 +277,9 @@ function cached(row, key, compute) {
 // group's sentence or member line.
 function toolRowLines(row, theme, { width, expanded } = {}) {
   return cached(row, `${width}|${expanded}|${row.version ?? 0}`, () => {
-    const { title, bodyName } = toolRowMeta(row.name, row.args);
+    // A backgrounded call answered inside its grace period reads as the foreground call it was (rows.mjs's `settleFold`).
+    const inline = row.name === "workspace_bash" && !row.pending && row.args.run_in_background && !row.result?.details?.taskId;
+    const { title, bodyName } = toolRowMeta(row.name, inline ? { ...row.args, run_in_background: false } : row.args);
     const titleLine = `${glyph(theme, { isPartial: row.pending, isError: row.isError })} ${theme.fg("toolTitle", title)}`;
     return row.pending ? [titleLine] : [titleLine, ...rowLines(bodyName, row.result, { expanded, isError: row.isError }, theme)];
   });
@@ -279,43 +303,42 @@ function renderRow(row, width, theme) {
         return [`${PAD}${theme.fg("muted", `↳ ${row.text}`)}`];
       case "turn":
         return [formatTurn(row, theme)];
+      case "error":
+        return row.text.split("\n").flatMap(line => wrapTextWithAnsi(theme.fg("error", line), width));
       default:
         return [];
     }
   });
 }
 
-// A tool row's lines and the id of the group it belongs to, if any — rule 2's
-// three levels (docs/pi-design.md) through the main chat's own `groupLines`.
+// A tool row's lines — rule 2's three levels (docs/pi-design.md) through the
+// main chat's own `groupLines`.
 // Only group-dependent lines (the sentence, member lines) are recomputed every
 // render; `toolRowLines` caches the row's own full rendering.
 function renderTool(row, folds, width, theme, expanded) {
   const own = toolRowLines(row, theme, { width, expanded });
   const group = foldGroup(folds, row.id) ?? liveGroup(folds, row.id);
-  if (!group) return { lines: own, groupId: undefined };
-  const lines = groupLines(folds, group, { first: group.entries[0].id === row.id, expanded, state: { open: expanded }, own }, theme);
-  return { lines, groupId: group.boundaryId };
+  if (!group) return own;
+  return groupLines(folds, group, { first: group.entries[0].id === row.id, expanded, state: { open: expanded }, own }, theme);
 }
 
 // The blank-line rhythm (docs/pi-design.md rules 2 and 8 applied to the
-// peek): one blank above every block that draws at least one line, none
-// between a group's own members (a member that draws nothing contributes no
-// blank either), and none between a note and the user block it answers.
+// peek), the main chat's: one blank above every block that draws at least one
+// line. A group's later members draw nothing, so a group is one block; under
+// ctrl+o each full row is its own block again, the handle riding the first.
+// No blank between a note and the user block it answers.
 export function renderRows(state, width, theme, { expanded = false } = {}) {
   const output = [];
-  let prevGroupId;
   let prevRow;
   for (const row of state.rows) {
-    const { lines, groupId } = row.kind === "tool" ? renderTool(row, state.folds, width, theme, expanded) : { lines: renderRow(row, width, theme), groupId: undefined };
+    const lines = row.kind === "tool" ? renderTool(row, state.folds, width, theme, expanded) : renderRow(row, width, theme);
     if (!lines.length) {
       prevRow = row;
       continue;
     }
-    const sameGroup = groupId !== undefined && groupId === prevGroupId;
     const notePair = row.kind === "note" && prevRow?.kind === "user";
-    if (output.length && !sameGroup && !notePair) output.push("");
+    if (output.length && !notePair) output.push("");
     output.push(...lines);
-    prevGroupId = groupId;
     prevRow = row;
   }
   return output;

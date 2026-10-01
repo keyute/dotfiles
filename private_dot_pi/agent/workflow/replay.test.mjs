@@ -36,9 +36,10 @@ test("trimRows keeps the newest rows behind one note and forgets what fell off",
   assert.equal(state.toolRowsById.has("t3"), true);
   trimRows(state, 2);
   assert.equal(state.rows.filter(row => row.text === EARLIER_NOTE).length, 1);
-  // A late end for a dropped start appends a settled row instead of touching the gone one.
+  // A late end for a start dropped while pending draws nothing: the note stands for both.
   replayEvents(state, JSON.stringify({ type: "tool_execution_end", toolCallId: "t1", toolName: "workspace_read", result: { content: [{ type: "text", text: "x" }] }, isError: false }) + "\n");
-  assert.equal(state.rows.at(-1).id, "t1");
+  assert.equal(state.rows.at(-1).id, "t3");
+  assert.equal(state.trimmedPending.has("t1"), false);
 });
 
 test("a start/end pair settles into one row with a summary and no body", () => {
@@ -326,4 +327,80 @@ test("trimRows dropping the first row of a group leaves its sentence counting on
   trimRows(state, 4);
   assert.equal(state.toolRowsById.has("r1"), false);
   assert.deepEqual(foldGroup(state.folds, "r2")?.counts, { read: 3 });
+});
+
+// Rows as drawn, without the test theme's tags or Markdown's trailing padding.
+const plain = lines => lines.map(l => l.replace(/<[a-zA-Z]+>|\x1b\[[\d;]*m/g, "").trimEnd());
+
+test("each text block is its own trimmed bullet, one blank apart, as the main thread draws them", () => {
+  const state = feed(
+    { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "First.\n\n" }, { type: "thinking", thinking: "hmm" }, { type: "text", text: "\n\nSecond." }] } },
+    { type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "hmm" }] } },
+    says("Third."),
+  );
+  assert.deepEqual(plain(render(state)), ["• First.", "", "• Second.", "", "• Third."]);
+});
+
+test("a length stop, an error and an abort draw pi's red tail and close the group; an error beside tool calls does not", () => {
+  const ended = (stopReason, extra = {}) => ({ type: "message_end", message: { role: "assistant", stopReason, content: [], ...extra } });
+  const state = feedDeterministic(
+    ...readOk("r1", "a"), ...readOk("r2", "b"),
+    ended("error", { errorMessage: "overloaded", content: [{ type: "text", text: "Partial." }] }),
+    ...readOk("r3", "c"), ...readOk("r4", "d"),
+    ended("length", { content: [{ type: "toolCall", id: "x", name: "workspace_read" }] }),
+    ended("error", { content: [{ type: "toolCall", id: "y", name: "workspace_read" }] }),
+    ended("aborted", { errorMessage: "Request was aborted" }),
+  );
+  assert.deepEqual(plain(render(state)), [
+    "▸ Read 2 files", "", "• Partial.", "", "Error: overloaded", "", "▸ Read 2 files", "", "Response was truncated before completion.", "", "Operation aborted",
+  ]);
+  assert.deepEqual(plain(render(feed(ended("error")))), ["Error: Unknown error"]);
+  // Wrapped to the width as pi's Text wraps it, one line per array element.
+  const lines = renderRows(feed(ended("error", { errorMessage: "first line\nsecond line is long enough to wrap" })), 24, { ...theme, fg: (_c, t) => t });
+  assert.deepEqual(plain(lines), ["Error: first line", "second line is long", "enough to wrap"]);
+});
+
+test("a user message with no text draws no box but still splits the groups around it", () => {
+  const steer = "Mid-run steering from the parent orchestrator:\n\nIncorporate this guidance at the next safe point. Do not restart the task unless the guidance explicitly asks you to.";
+  for (const content of [[], [{ type: "image", data: "x", mimeType: "image/png" }], [{ type: "text", text: "  " }], [{ type: "text", text: steer }]]) {
+    const state = feedDeterministic(...readOk("r1", "a"), ...readOk("r2", "b"), { type: "message_end", message: { role: "user", content } }, ...readOk("r3", "c"), ...readOk("r4", "d"), says("Done"));
+    assert.equal(state.rows.filter(row => row.kind === "user").length, 0);
+    assert.deepEqual(plain(render(state)), ["▸ Read 2 files", "", "▸ Read 2 files", "", "• Done"]);
+  }
+});
+
+test("under ctrl+o a sealed group's handle rides its first row and every later row has one blank above, as in the main thread", () => {
+  const state = feedDeterministic(...readOk("r1", "a"), ...readOk("r2", "b"), says("Done"));
+  assert.deepEqual(plain(render(state, { expanded: true })), ["▾ Read 2 files", "• Read a", "  ↳ 1 line", "  hi", "", "• Read b", "  ↳ 1 line", "  hi", "", "• Done"]);
+  const live = feedDeterministic(...readOk("r1", "a"), ...readOk("r2", "b"));
+  assert.deepEqual(plain(render(live, { expanded: true })), ["• Read a", "  ↳ 1 line", "  hi", "", "• Read b", "  ↳ 1 line", "  hi"]);
+});
+
+test("a run start draws nothing and leaves the group above it open", () => {
+  const state = feedDeterministic(...readOk("r1", "a"), { type: "agent_start", observedAt: 1000 }, ...readOk("r2", "b"), says("Done"));
+  assert.deepEqual(foldGroup(state.folds, "r1")?.counts, { read: 2 });
+});
+
+test("a foreign end with no start stays visible and splits the run around it", () => {
+  const state = feedDeterministic(
+    ...readOk("r1", "a"), ...readOk("r2", "b"),
+    { type: "tool_execution_end", toolCallId: "o", toolName: "workspace_ls", isError: false, result: { content: [{ type: "text", text: "x" }] } },
+    ...readOk("r3", "c"), ...readOk("r4", "d"), says("Done"),
+  );
+  assert.deepEqual(foldGroup(state.folds, "r1")?.counts, { read: 2 });
+  assert.deepEqual(foldGroup(state.folds, "r3")?.counts, { read: 2 });
+});
+
+test("a backgrounded bash answered inside its grace period reads as the foreground call; one that outlived it stays a launch", () => {
+  const bash = (id, command, details) => [
+    { type: "tool_execution_start", toolCallId: id, toolName: "workspace_bash", args: { command, run_in_background: true, dangerouslyDisableSandbox: true } },
+    { type: "tool_execution_end", toolCallId: id, toolName: "workspace_bash", isError: false, result: { content: [{ type: "text", text: "ok" }], details } },
+  ];
+  const state = feedDeterministic(...bash("b1", "make", undefined), ...bash("b2", "serve", { taskId: "t1" }), says("Done"));
+  assert.deepEqual(plain(render(state, { expanded: true })).filter(l => l.startsWith("•") || l.startsWith("▾")), [
+    "▾ Ran 1 shell command (1 unsandboxed), started 1 background command (1 unsandboxed)",
+    "• Ran make · unsandboxed",
+    "• Started serve in background · unsandboxed",
+    "• Done",
+  ]);
 });

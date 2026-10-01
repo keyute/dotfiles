@@ -5,7 +5,7 @@ import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth } from "@earendil-
 import { Dialog, editorTheme } from "./dialog.mjs";
 import { formatTokens, modelLabel } from "./fleet.mjs";
 import { WorkingRow } from "./footer.mjs";
-import { PROMPT, oneLine, pad, shade, shadedBlock, slotHeight } from "./rows.mjs";
+import { PAD, PROMPT, oneLine, pad, shade, shadedBlock, slotHeight } from "./rows.mjs";
 import { createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 // The fleet's Enter peek (docs/pi-design.md rule 6): a rule-11
@@ -340,10 +340,10 @@ export class PeekDialog extends Dialog {
       : this.editor.render(usable, available);
     const windowHeight = height - chrome - composer.length;
     const bodyLines = !this.loaded
-      ? [this.theme.fg("dim", "loading history…")]
+      ? [`${PAD}${this.theme.fg("dim", "loading history…")}`]
       : this.replay.rows.length
         ? renderRows(this.replay, usable, this.theme, { expanded: this.expanded })
-        : [this.theme.fg("dim", "no activity recorded yet")];
+        : [`${PAD}${this.theme.fg("dim", "no activity recorded yet")}`];
     const maxScroll = Math.max(0, bodyLines.length - windowHeight);
     this.maxScroll = maxScroll;
     this.windowHeight = windowHeight;

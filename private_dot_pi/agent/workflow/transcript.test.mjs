@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Container } from "@earendil-works/pi-tui";
+import { Container, Spacer } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, installFolding, installReasoningHide, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
+import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, doneGroup, installFolding, installReasoningHide, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -167,18 +167,20 @@ test("ctrl+o keeps interleaved completions after their preceding tool output, li
   finish("second");
   const launch = tool("subagent", "s1", { agent: "reviewer", task: "Audit" }, "agent", { content: [], details: { asyncId: "run" } });
   finish("third");
+  // Every row in full, the completions included, each a blank line below the
+  // last; the live group draws its rows alone, the sealed one under its handle.
+  const rows = [
+    "• first finished · 1s",
+    "", "• Read a", "  ↳ 1 line", "  alpha",
+    "", "• second finished · 1s",
+    "", "• reviewer › Audit", "  ↳ launched",
+    "", "• third finished · 1s",
+  ];
   for (const sealed of [false, true]) {
     if (sealed) closeFolds(folds);
     read.invalidate();
     launch.invalidate();
-    const lines = container.render(120).map(strip).filter(Boolean);
-    assert.deepEqual(lines.slice(1), [
-      "  ↳ first finished · 1s",
-      "• Read a", "  ↳ 1 line", "  alpha",
-      "  ↳ second finished · 1s",
-      "• reviewer › Audit", "  ↳ launched",
-      "  ↳ third finished · 1s",
-    ]);
+    assert.deepEqual(container.render(120).map(strip), sealed ? ["▾ Read 1 file, launched 1 agent, finished 3 agents", ...rows] : rows);
   }
 });
 
@@ -231,7 +233,8 @@ test("a tool-led mixed group keeps one blank line, hides completion host spacers
     "• Read b",
     "  ↳ 1 line",
     "  beta",
-    "  ↳ researcher finished › Audit rows · 45s",
+    "",
+    "• researcher finished · Audit rows · 45s",
   ]);
 });
 
@@ -293,4 +296,120 @@ test("a streaming reply with reasoning draws exactly as the reply alone, reasoni
   assert.deepEqual(stream([partial, settled]), ["", "• Done."]);
   assert.deepEqual(settled.content, [thinking, reply]);
   assert.equal(thinking.thinking, "weighing it up");
+});
+
+// pi spaces two text blocks of one message only after a thinking run between
+// them; the hide removes the run, so it puts that one blank line back for
+// every shape a second text block arrives in.
+test("two text blocks in one message are two bullets one blank line apart, however the message is shaped", () => {
+  installReasoningHide();
+  const draw = content => new AssistantMessageComponent({ role: "assistant", api: "openai-responses", content }, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]).render(40).map(strip);
+  const first = { type: "text", text: "First." };
+  const second = { type: "text", text: "Second." };
+  const thinking = { type: "thinking", thinking: "weighing it up" };
+  const call = { type: "toolCall", id: "t1", name: "read", arguments: {} };
+  for (const content of [[first, thinking, second], [first, second], [first, call, second]]) {
+    assert.deepEqual(draw(content), ["", "• First.", "", "• Second."], JSON.stringify(content.map(block => block.type)));
+  }
+  assert.deepEqual(draw([first]), ["", "• First."]);
+  // pi's own tail keeps its one spacer.
+  const truncated = new AssistantMessageComponent({ role: "assistant", api: "openai-responses", content: [first, second], stopReason: "length" }, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]).render(80).map(strip);
+  assert.deepEqual(truncated, ["", "• First.", "", "• Second.", "", "Response was truncated before completion."]);
+});
+
+// pi mounts an entry that lands while a reply streams above that reply, and
+// asks its renderer for a component only then (stability.test.mjs pins both),
+// so this host does the same; a real mount adds the spacer it adds here.
+test("entries that land while a reply streams fold where pi mounts them, above it, and only a mounted completion ever leads a group", () => {
+  installReasoningHide();
+  const folds = createFolds(() => false);
+  const handlers = {};
+  installFolding({ on: (name, handler) => { handlers[name] = handler; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  const plainTheme = { fg: (_color, text) => text, bold: text => text };
+  const chat = new Container();
+  const draw = () => chat.render(120).map(strip);
+  let streaming = null;
+  const mounted = new Set();
+  const render = doneEntryRenderer("workflow-child", folds);
+  const pi = {
+    appendEntry(_type, data) {
+      const component = render({ data }, {}, plainTheme);
+      if (!component) return;
+      if (data.seq) mounted.add(data.seq);
+      const entry = new Container();
+      entry.addChild(new Spacer(1));
+      entry.addChild(component);
+      const at = streaming ? chat.children.indexOf(streaming) : -1;
+      if (at >= 0) chat.children.splice(at, 0, entry);
+      else chat.addChild(entry);
+    },
+  };
+  const finish = (agent, status = "completed") => appendVisible(pi, "workflow-child", { agent, status, durationMs: 1000 }, folds);
+  const rows = ["a", "b"].map(id => {
+    const component = new ToolExecutionComponent("read", id, { path: id }, {}, toolRenderers("read", folds), { requestRender() {} }, "/repo");
+    component.markExecutionStarted();
+    chat.addChild(component);
+    handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id, args: { path: id } });
+    const result = { content: [{ type: "text", text: id }], details: {} };
+    component.updateResult(result);
+    handlers.tool_execution_end({ toolCallId: id, result });
+    return component;
+  });
+
+  const reply = { role: "assistant", api: "openai-responses", content: [{ type: "text", text: "Reply." }] };
+  handlers.message_start({ message: { ...reply, content: [] } });
+  streaming = new AssistantMessageComponent(undefined, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
+  chat.addChild(streaming);
+  streaming.updateContent(reply, true);
+  handlers.message_update({ message: reply });
+  finish("first");
+  assert.deepEqual(draw(), ["", "▸ Read 2 files, finished 1 agent", "", "• Reply."]);
+  // The group keeps its key, so a click survives the entries that land below it.
+  rows[0].handleMouse({ type: "click", button: "left", x: 0, y: 1, height: 10 });
+  finish("broken", "failed");
+  finish("second");
+  handlers.message_update({ message: reply });
+  finish("third");
+  handlers.message_end({ message: { ...reply, stopReason: "stop" } });
+  streaming = null;
+  finish("fourth");
+  assert.deepEqual(draw(), [
+    "", "▾ Read 2 files, finished 1 agent", "  ↳ Read a · 1 line", "  ↳ Read b · 1 line", "  ↳ first finished · 1s",
+    "", "• broken failed · 1s",
+    "", "▸ Finished 2 agents",
+    "", "• Reply.",
+    "", "• fourth finished · 1s",
+  ]);
+  for (const fact of folds.facts.values()) {
+    if (fact.source !== "completion") continue;
+    const group = doneGroup(folds, fact.id);
+    assert.equal(mounted.has(fact.id), !group || group.entries[0].id === fact.id, fact.data.agent);
+  }
+});
+
+test("a run a quiet notice starts, opening with a tool-only message, continues the group above it", () => {
+  const folds = createFolds(() => false);
+  const handlers = {};
+  installFolding({ on: (name, handler) => { handlers[name] = handler; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  const container = new Container();
+  const read = id => {
+    const component = new ToolExecutionComponent("read", id, { path: id }, {}, toolRenderers("read", folds), { requestRender() {} }, "/repo");
+    component.markExecutionStarted();
+    container.addChild(component);
+    handlers.tool_execution_start({ toolName: "workspace_read", toolCallId: id, args: { path: id } });
+    const result = { content: [{ type: "text", text: id }], details: {} };
+    component.updateResult(result);
+    handlers.tool_execution_end({ toolCallId: id, result });
+  };
+  read("a");
+  read("b");
+  handlers.agent_start?.({});
+  const notice = { role: "custom", customType: "subagent-notify", display: false, content: "researcher finished" };
+  handlers.message_start({ message: notice });
+  handlers.message_end({ message: notice });
+  const toolOnly = { role: "assistant", content: [{ type: "toolCall", id: "c", name: "workspace_read", arguments: { path: "c" } }], stopReason: "toolUse" };
+  handlers.message_start({ message: toolOnly });
+  handlers.message_end({ message: toolOnly });
+  read("c");
+  assert.deepEqual(container.render(80).map(strip), ["", "• Read 3 files", "  ↳ Read a · 1 line", "  ↳ Read b · 1 line", "  ↳ Read c · 1 line"]);
 });

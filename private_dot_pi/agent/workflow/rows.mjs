@@ -1,5 +1,6 @@
-import { Container, Markdown, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
+import { unsandboxed } from "./policy.mjs";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
 // line under a row, π for anything the harness says in its own voice, the
@@ -218,6 +219,7 @@ const WORDS = {
   edit: ["edited", "file"],
   write: ["wrote", "file"],
   list: ["listed", "path"],
+  toolSearch: ["ran", "tool search", "tool searches"],
   mcp: ["called", "MCP tool"],
   web: ["ran", "web search", "web searches"],
   fetch: ["fetched", "page"],
@@ -228,17 +230,22 @@ const WORDS = {
   stop: ["stopped", "agent"],
   interrupt: ["interrupted", "agent"],
   task: ["started", "background command"],
+  taskCheck: ["checked on", "background task"],
+  taskStop: ["stopped", "background task"],
+  // Listing has no object to count, so the clause is the verb alone.
+  taskList: ["listed background tasks"],
   agentDone: ["finished", "agent"],
   taskDone: ["finished", "background task"],
 };
 const countKey = tool => (tool === "find" || tool === "ls" ? "list" : tool);
 export const isMcp = name => name.startsWith("mcp__");
-// Subagent management calls are transcript housekeeping and group like any
-// other activity fact: launch, list discovery, steer, status check, stop and
-// interrupt. `workspace_task` and `bg_wait` stay out as visible boundary
-// rows: each is a blocking wait on running work whose own sentence is the
-// information.
+// Subagent and background-task management calls are transcript housekeeping
+// and group like any other activity fact: launch, list discovery, steer,
+// status check, stop and interrupt; a task's output, stop and list. `bg_wait`
+// stays out as a visible boundary row: it is a blocking wait on running work
+// whose own sentence is the information.
 const SUBAGENT_ACTIONS = { list: "discovery", steer: "steer", status: "check", stop: "stop", interrupt: "interrupt" };
+const TASK_ACTIONS = { output: "taskCheck", stop: "taskStop", list: "taskList" };
 // Every subagent fold but discovery carries no summary worth a member line.
 const NO_SUMMARY = new Set(["agent", ...Object.values(SUBAGENT_ACTIONS).filter(key => key !== "discovery")]);
 export const foldKey = (name, args = {}) => {
@@ -246,10 +253,15 @@ export const foldKey = (name, args = {}) => {
     if (args.agent && args.task) return "agent";
     return SUBAGENT_ACTIONS[args.action] ?? null;
   }
+  if (name === "workspace_task") return TASK_ACTIONS[args.action] ?? null;
   if (name === "web_search") return "web";
   if (name === "web_fetch") return "fetch";
-  return name.startsWith("workspace_") && name !== "workspace_task" ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null;
+  if (name === "tool_search") return "toolSearch";
+  return name.startsWith("workspace_") ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null;
 };
+// The name a member's summary is computed under, where its fold key differs
+// from the name its plain row renders with (`pluginRenderers`, `taskRenderers`).
+const SUMMARY_NAME = { web: "plugin", fetch: "plugin", toolSearch: "plugin", taskCheck: "plugin", taskStop: "plugin", taskList: "plugin" };
 
 // One row behind one header line hides nothing and draws a caret over content
 // that is not there, so a run needs two rows to be worth a handle.
@@ -261,9 +273,10 @@ const MIN_RUN = 2;
 // session file (rule 4); `repaint` is unset until `setRepaint` wires it to
 // the TUI, since completion rows have no per-entry invalidate of their own.
 // `quiet` skips the before/after diff a bulk replay has no components to
-// invalidate for (the fleet peek, see `refold`).
+// invalidate for (the fleet peek, see `refold`). `streamBoundary` is the
+// boundary standing for the reply pi is streaming (see `appendVisible`).
 export function createFolds(toolsExpanded = () => undefined, { quiet = false } = {}) {
-  return { timeline: [], facts: new Map(), invalidate: new Map(), titles: new Map(), views: new Map(), revision: 0, derived: null, boundaries: 0, toolsExpanded, repaint: () => {}, nonce: Math.random().toString(36).slice(2, 8), doneSeq: 0, quiet };
+  return { timeline: [], facts: new Map(), invalidate: new Map(), titles: new Map(), views: new Map(), revision: 0, derived: null, boundaries: 0, toolsExpanded, repaint: () => {}, nonce: Math.random().toString(36).slice(2, 8), doneSeq: 0, quiet, streamBoundary: null };
 }
 export const defaultFolds = createFolds();
 export function setRepaint(folds, repaint) {
@@ -271,17 +284,18 @@ export function setRepaint(folds, repaint) {
 }
 // `facts` indexes the timeline's activity facts by id; the first fact under an
 // id keeps it, as a search of the timeline would find it.
-function addFact(folds, fact) {
-  folds.timeline.push(fact);
+function addFact(folds, fact, index = folds.timeline.length) {
+  folds.timeline.splice(index, 0, fact);
   if (!folds.facts.has(fact.id)) folds.facts.set(fact.id, fact);
 }
 const nextSeq = folds => `${folds.nonce}-${++folds.doneSeq}`;
 
-// `tool` is the fact's own name before `countKey` folds `find`/`ls` into
-// `list` — `settleFold` needs that name back to compute the fact's summary.
-export function addFold(folds, id, tool) {
+// `tool` is the fold key before `countKey` folds `find`/`ls` into `list` —
+// `settleFold` needs it back to compute the fact's summary. `args` are kept
+// for the escalation count and a backgrounded bash call's settled title.
+export function addFold(folds, id, tool, args = {}) {
   refold(folds, () => {
-    addFact(folds, { kind: "activity", source: "tool", id, key: countKey(tool), tool, outcome: "pending" });
+    addFact(folds, { kind: "activity", source: "tool", id, key: countKey(tool), tool, args, unsandboxed: unsandboxed(tool, args), outcome: "pending" });
     folds.revision += 1;
   });
 }
@@ -290,15 +304,22 @@ export function addFold(folds, id, tool) {
 // whether it will finish inside its grace period; a result carrying
 // `details.taskId` means it outlived that period and became a running task, so
 // the fact re-keys to `task` here. Re-keying before the run can seal is safe: a
-// pending fact already holds its whole run back (see `derive`). A success also
-// records its summary for the group's member line.
+// pending fact already holds its whole run back (see `derive`). One answered
+// inside the period, either way, was a foreground call after all and takes its
+// title (`inline`); the title is rewritten here because the group's first row
+// repaints from `folds.titles` before this row's own render can. A success
+// also records its summary for the group's member line.
 export function settleFold(folds, id, failed, result) {
   const fact = folds.facts.get(id);
   if (fact?.source !== "tool" || fact.outcome !== "pending") return;
   refold(folds, () => {
     fact.outcome = failed ? "failed" : "success";
     if (fact.key === "bash" && result?.details?.taskId) fact.key = "task";
-    if (!failed) fact.summary = NO_SUMMARY.has(fact.key) ? "" : resultSummary(fact.tool, result);
+    else if (fact.key === "bash" && fact.args.run_in_background) {
+      fact.inline = true;
+      folds.titles.set(id, callTitle("bash", { ...fact.args, run_in_background: false }));
+    }
+    if (!failed) fact.summary = NO_SUMMARY.has(fact.key) ? "" : resultSummary(SUMMARY_NAME[fact.key] ?? fact.tool, result);
     folds.revision += 1;
   });
 }
@@ -314,9 +335,14 @@ export function closeFolds(folds, index = folds.timeline.length) {
   });
 }
 
+// An unsandboxed call is counted under its own clause's key, so a bash call
+// re-keyed to `task` carries its escalation with it.
 const tally = entries => {
   const counts = {};
-  for (const entry of entries) counts[entry.key] = (counts[entry.key] ?? 0) + 1;
+  for (const entry of entries) {
+    counts[entry.key] = (counts[entry.key] ?? 0) + 1;
+    if (entry.unsandboxed) counts[`${entry.key}:unsandboxed`] = (counts[`${entry.key}:unsandboxed`] ?? 0) + 1;
+  }
   return counts;
 };
 
@@ -410,8 +436,8 @@ function refold(folds, mutate) {
 // otherwise turn a hidden completion into a standalone row. Preserve the old
 // boundary at that unresolved event-order edge; once the pending call settles,
 // later successes can form the next group without ever dropping the completion.
-const tailHasPending = folds => {
-  for (let i = folds.timeline.length - 1; i >= 0; i--) {
+const tailHasPending = (folds, end) => {
+  for (let i = end - 1; i >= 0; i--) {
     const fact = folds.timeline[i];
     if (fact.kind === "boundary" || fact.outcome === "failed") return false;
     if (fact.outcome === "pending") return true;
@@ -419,31 +445,59 @@ const tailHasPending = folds => {
   return false;
 };
 
+// While a reply streams, pi mounts an entry above the reply rather than below
+// it, so the entry's fact or boundary goes in before the reply's boundary to
+// keep fold order equal to screen order. A spliced completion only ever ends
+// the run before that boundary, so it never displaces the group's first entry,
+// which alone owns a component (`doneEntryRenderer`): pi asks an entry for one
+// once, at mount, and never again.
 export function appendVisible(pi, type, data, folds = defaultFolds) {
   const done = data.status === "completed" && DONE[type];
+  const streaming = () => (folds.streamBoundary ? folds.timeline.indexOf(folds.streamBoundary) : -1);
+  const end = () => (streaming() < 0 ? folds.timeline.length : streaming());
   if (done) {
-    if (tailHasPending(folds)) closeFolds(folds);
+    if (tailHasPending(folds, end())) closeFolds(folds, end());
     data.seq = nextSeq(folds);
     refold(folds, () => {
-      addFact(folds, { kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) });
+      addFact(folds, { kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) }, end());
       folds.revision += 1;
     });
+  } else if (streaming() >= 0) {
+    // The reply's boundary stays where it is and now closes the run above this
+    // entry, so that group keeps its key (and its click/ctrl+o state); a new
+    // one below the entry stands for the reply.
+    const boundary = { kind: "boundary", id: `b${(folds.boundaries += 1)}` };
+    folds.timeline.splice(streaming() + 1, 0, boundary);
+    folds.streamBoundary = boundary;
+    folds.revision += 1;
   } else closeFolds(folds);
   pi.appendEntry(type, data);
 }
 
 export function summarise(counts) {
-  const text = Object.entries(WORDS).filter(([key]) => counts[key]).map(([key, [verb, noun, nouns]]) => `${verb} ${plural(counts[key], noun, nouns)}`).join(", ");
+  const clause = (key, [verb, noun, nouns]) => {
+    const escalated = counts[`${key}:unsandboxed`];
+    return `${noun ? `${verb} ${plural(counts[key], noun, nouns)}` : verb}${escalated ? ` (${escalated} unsandboxed)` : ""}`;
+  };
+  const text = Object.entries(WORDS).filter(([key]) => counts[key]).map(([key, words]) => clause(key, words)).join(", ");
   return text ? text[0].toUpperCase() + text.slice(1) : "";
 }
 
 const speaks = event => event.message?.role === "assistant" && (event.message.content ?? []).some(c => c.type === "text" && c.text?.trim());
-// A visible custom message — pi-subagents' control notice, and anything else a
-// plugin displays — is a transcript line like any other. `message_end` is where
-// the session appends it (`_appendCustomMessage`, which the deferred flush also
-// goes through), so the boundary lands at its position rather than at the
-// enqueue that can precede it.
+// A visible custom message the agent loop delivers — pi-subagents' control
+// notice, and anything else a plugin sends into a run — is a transcript line
+// like any other, and its `message_end` is where it lands, so the boundary sits
+// at its position rather than at the enqueue that can precede it. One the
+// session appends outside the stream (`_appendCustomMessage`: idle without a
+// turn, the deferred flush) emits no `message_end`; plugin-api closes for those.
 const displays = event => Boolean(event.message?.customType) && Boolean(event.message.display);
+// pi's red tail under an assistant message (assistant-message.js): a length
+// stop always, an error or abort only when no tool row reports it instead.
+const tails = event => {
+  const { role, stopReason, content = [] } = event.message ?? {};
+  if (role !== "assistant") return false;
+  return stopReason === "length" || ((stopReason === "error" || stopReason === "aborted") && !content.some(c => c.type === "toolCall"));
+};
 
 // A pending tool must stay outside the collapsed success group; a boundary
 // after it would hold the whole group open until it settles. Shared by
@@ -457,20 +511,64 @@ export function closeLive(folds) {
 export function installFolding(pi, ctx, folds = defaultFolds) {
   folds.toolsExpanded = () => ctx.ui.getToolsExpanded();
   pi.on("tool_execution_start", event => {
+    // The question row draws nothing (questionnaire.mjs); its answers entry, when there is one, is the boundary.
+    if (event.toolName === "ask_user_question") return;
     const key = foldKey(event.toolName, event.args);
-    if (key) addFold(folds, event.toolCallId, key);
+    if (key) addFold(folds, event.toolCallId, key, event.args);
     else closeFolds(folds);
   });
   // pi-web-search reports failures in `details.error` without `isError`.
   pi.on("tool_execution_end", event => settleFold(folds, event.toolCallId, Boolean(event.isError || event.result?.details?.error), event.result));
-  pi.on("agent_start", () => closeFolds(folds));
+  // A run's start draws nothing, so it closes nothing: a run a quiet notice
+  // starts continues the group above it.
   pi.on("input", event => {
     if (event.source !== "extension") closeLive(folds);
     return { action: "continue" };
   });
-  // Streaming replies announce their text in updates; non-streaming ones only at the end.
-  pi.on("message_update", event => { if (speaks(event)) closeFolds(folds); });
-  pi.on("message_end", event => { if (speaks(event) || displays(event)) closeFolds(folds); });
+  // Input closes at submission; a user box closes again where it lands, which
+  // for a queued steer or extension input is later, mid-run.
+  pi.on("message_start", event => { if (event.message?.role === "user") closeLive(folds); });
+  // Streaming replies announce their text in updates; non-streaming ones only
+  // at the end. The first boundary a streaming reply adds stands for it until
+  // pi drops its streaming component, at the assistant's message_end or at
+  // agent_end after an abort; one that follows another visible line adds none,
+  // and entries pushed after that line already sit above the reply.
+  pi.on("message_update", event => {
+    if (!speaks(event) || folds.streamBoundary) return;
+    const tail = folds.timeline.at(-1);
+    closeFolds(folds);
+    if (folds.timeline.at(-1) !== tail) folds.streamBoundary = folds.timeline.at(-1);
+  });
+  pi.on("message_end", event => {
+    if (speaks(event) || displays(event) || tails(event)) closeFolds(folds);
+    if (event.message?.role === "assistant") folds.streamBoundary = null;
+  });
+  pi.on("agent_end", () => { folds.streamBoundary = null; });
+  // pi rebuilds the chat from the kept entries after this event (compaction_end),
+  // so facts for entries it no longer draws go, and the group's first kept
+  // member draws the sentence for what remains. The summary pi appends below
+  // them is visible, so it closes the group; this also covers a threshold
+  // compaction mid-run, which no run start or turn line follows.
+  pi.on("session_compact", (_event, eventCtx) => {
+    const kept = new Set();
+    for (const entry of eventCtx.sessionManager.buildContextEntries()) {
+      if (entry.type === "custom" && entry.data?.seq != null) kept.add(entry.data.seq);
+      if (entry.type === "message" && entry.message.role === "assistant") {
+        for (const block of entry.message.content ?? []) if (block.type === "toolCall") kept.add(block.id);
+      }
+    }
+    refold(folds, () => {
+      folds.timeline = folds.timeline.filter(fact => fact.kind !== "activity" || kept.has(fact.id));
+      for (const id of [...folds.facts.keys()]) {
+        if (kept.has(id)) continue;
+        folds.facts.delete(id);
+        folds.titles.delete(id);
+        folds.invalidate.delete(id);
+      }
+      folds.revision += 1;
+    });
+    closeFolds(folds);
+  });
 }
 
 // The group's first row draws the summary line whether the group is open or
@@ -544,19 +642,22 @@ function memberLine(folds, entry, theme) {
 // Under ctrl+o, each tool result carries only the completions immediately
 // after it; a completion-led group carries only its leading completions.
 // Hidden custom entries cannot reappear, so these existing slots preserve order.
-function completionMemberLines(group, theme, after) {
+// Expanded, each completion is its own full row with the one blank line pi
+// gives every tool row; a leading one sits on the handle as a tool row does.
+function completionMemberLines(group, theme, after, expanded = false) {
   const lines = [];
   const start = after === undefined ? 0 : group.entries.findIndex(entry => entry.id === after) + 1;
   for (const entry of group.entries.slice(start)) {
     if (entry.source !== "completion") break;
-    lines.push(completionMemberLine(entry, theme));
+    if (expanded) lines.push("", completionLine(entry.data, theme));
+    else lines.push(completionMemberLine(entry, theme));
   }
-  return lines;
+  return expanded && after === undefined ? lines.slice(1) : lines;
 }
 
 function withFollowingCompletions(body, folds, id, theme) {
   const group = folds.toolsExpanded() && (foldGroup(folds, id) ?? liveGroup(folds, id));
-  const lines = group ? completionMemberLines(group, theme, id) : [];
+  const lines = group ? completionMemberLines(group, theme, id, true) : [];
   if (!lines.length) return body;
   const block = new Container();
   block.addChild(body);
@@ -595,7 +696,7 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
       const id = rawContext.toolCallId;
       folds.invalidate.set(id, rawContext.invalidate);
       const context = status(rawContext);
-      const rowTitle = title(args);
+      const rowTitle = title(args, { inline: Boolean(rawContext.state?.inline || folds.facts.get(id)?.inline) });
       folds.titles.set(id, rowTitle);
       const line = `${glyph(theme, context)} ${theme.fg("toolTitle", rowTitle)}`;
       const group = foldGroup(folds, id) ?? liveGroup(folds, id);
@@ -620,6 +721,12 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
         rawContext.state.failed = true;
         queueMicrotask(() => rawContext.invalidate?.());
       }
+      // A backgrounded call answered inside its grace period reads as the
+      // foreground call it was; a resumed row has no fact to say so.
+      if (name === "bash" && rawContext.state && !rawContext.state.inline && rawContext.args?.run_in_background && !rawContext.isPartial && !result?.details?.taskId) {
+        rawContext.state.inline = true;
+        queueMicrotask(() => rawContext.invalidate?.());
+      }
       const context = status(rawContext);
       if (hidden(folds, context.toolCallId)) return new Text("", 0, 0);
       return withFollowingCompletions(new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError }, theme).join("\n"), 0, 0), folds, context.toolCallId, theme);
@@ -628,7 +735,7 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
 }
 
 export function toolRenderers(name, folds = defaultFolds) {
-  return rowRenderers({ name, title: args => callTitle(name, args), folds });
+  return rowRenderers({ name, title: (args, { inline }) => callTitle(name, inline ? { ...args, run_in_background: false } : args), folds });
 }
 
 // pi-web-search reports failures in details.error without isError; a
@@ -653,7 +760,7 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 }
 
 // The background-task tool: its result is a status line and the task's output.
-export const taskTitle = args => (args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`);
+export const taskTitle = args => (args.action === "list" ? "Listed background tasks" : args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`);
 export const taskRenderers = rowRenderers({ name: "plugin", title: taskTitle });
 
 // The plan reads as chat, not as a dialog: pi's `confirm` folds its second
@@ -724,14 +831,21 @@ export function bulletMarkdown(markdown, { messageType }, palette) {
 // and spaces the message from it, so every draw — construction, streaming,
 // history and invalidate all pass through updateContent — takes a copy without
 // the thinking blocks. The message itself, and so model context and the
-// session file, keep them.
+// session file, keep them. pi spaces two text blocks of one message apart only
+// after a thinking run between them, so with the run gone each text block that
+// follows another gets that blank line back (rule 8; docs/pi-coupling.md).
 const REASONING_HIDDEN = Symbol.for("pi-workflow:reasoning-hidden");
 export function installReasoningHide(AssistantMessage = AssistantMessageComponent) {
   const prototype = AssistantMessage.prototype;
   if (prototype.updateContent[REASONING_HIDDEN]) return;
   const original = prototype.updateContent;
   const hidden = function (message, ...rest) {
-    return original.call(this, { ...message, content: message.content.filter(block => block.type !== "thinking") }, ...rest);
+    const drawn = original.call(this, { ...message, content: message.content.filter(block => block.type !== "thinking") }, ...rest);
+    // By class name: pi-coding-agent may resolve its own pi-tui copy, so `instanceof` can miss.
+    const text = child => child?.constructor.name === "Markdown";
+    const children = this.contentContainer.children;
+    for (let i = children.length - 1; i > 0; i--) if (text(children[i]) && text(children[i - 1])) children.splice(i, 0, new Spacer(1));
+    return drawn;
   };
   hidden[REASONING_HIDDEN] = true;
   prototype.updateContent = hidden;
@@ -768,8 +882,8 @@ const DONE = {
 // A completion can own a mixed group when it is the first fact. Entry renderers
 // have no invalidate handle, so the component re-reads the shared timeline on
 // every paint and whole-TUI repaint wakes it when later activity joins. Under
-// ctrl+o it keeps leading completion members visible; later completions ride
-// the preceding tool's result, after its full output, in chronological order.
+// ctrl+o it draws its leading completions as rows; later completions ride the
+// preceding tool's result, after its full output, in chronological order.
 // Residual: a branch lacking the group's first entry drops its later members; completions split by a text chunk stay ungrouped.
 class ActivityEntryComponent extends Text {
   constructor(folds, seq, mapped, theme) {
@@ -788,9 +902,8 @@ class ActivityEntryComponent extends Text {
       state.expandedAt = toolsExpanded;
       state.open = toolsExpanded;
     }
-    // Unlike a tool row, a live completion-led group keeps its sentence under ctrl+o.
-    const own = completionMemberLines(group, this.theme);
-    return groupLines(this.folds, group, { first: true, expanded: toolsExpanded, state, own: state ? own : [liveLine(group, this.theme), ...own] }, this.theme);
+    const own = completionMemberLines(group, this.theme, undefined, true);
+    return groupLines(this.folds, group, { first: true, expanded: toolsExpanded, state, own }, this.theme);
   }
   render(width) {
     this.text = this.lines().join("\n");

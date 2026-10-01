@@ -1,5 +1,5 @@
 import { Text } from "@earendil-works/pi-tui";
-import { noticeLine } from "./rows.mjs";
+import { PAD, appendVisible, closeFolds, completionLine, defaultFolds, noteLine, noticeLine } from "./rows.mjs";
 import { runnerPath } from "./operations.mjs";
 import { mayReachServer } from "./policy.mjs";
 
@@ -39,6 +39,61 @@ export const controlNotice = (message, _options, theme) => {
   return new Text(noticeLine({ agent: event.agent, message: event.message }, theme), 0, 0);
 };
 
+// pi-subagents' notices that register no renderer, so pi draws them in its
+// shaded default box (rule 9). Each takes the transcript's shape — a rule 4
+// status line or a π line, the rest two in — and answers undefined for a
+// payload it does not recognise, leaving pi's box as the fallback. The
+// incremental child notice carries no details, so its status is read from the
+// first line formatIncrementalChildCompletion writes.
+export const INCREMENTAL_CHILD = "subagent-incremental-child-notify";
+export const RESULT_WRITE_FAILED = "subagent-workflow-result-write-failed";
+export const WATCHDOG_CLARIFICATION = "subagent_watchdog_clarification";
+// bg_wait's non-blocking subscription firing. A completed outcome repeats the
+// completion line the fleet draws, so it is sent quiet; any other outcome
+// (timed out, needs attention, unreconciled, failed) is the only record of why
+// the agent woke.
+export const WAIT_SUBSCRIPTION = "subagent-wait-subscription";
+export const QUIET_MESSAGES = {
+  [SUBAGENT_NOTIFY]: () => true,
+  [WAIT_SUBSCRIPTION]: message => message.details?.outcome === "completed",
+};
+const textOf = content => typeof content === "string" ? content
+  : Array.isArray(content) ? content.filter(part => part?.type === "text").map(part => part.text).join("\n") : "";
+const notice = (head, rest, theme) => new Text([head, ...rest.filter(line => line.trim()).map(line => `${PAD}${theme.fg("muted", line)}`)].join("\n"), 0, 0);
+export const NOTICE_RENDERERS = {
+  [INCREMENTAL_CHILD]: (message, _options, theme) => {
+    const [first, ...rest] = textOf(message?.content).split("\n");
+    const match = first.match(/^Workflow child (completed|failed|paused \(needs attention\)|stopped): \*\*(.+)\*\*$/);
+    return match ? notice(completionLine({ agent: match[2], status: match[1].split(" ")[0] }, theme), rest, theme) : undefined;
+  },
+  [RESULT_WRITE_FAILED]: (message, _options, theme) => {
+    const text = textOf(message?.content).trim();
+    return text ? notice(completionLine({ agent: "workflow result write", status: "failed" }, theme), text.split("\n"), theme) : undefined;
+  },
+  [WATCHDOG_CLARIFICATION]: (message, _options, theme) => {
+    const [first, ...rest] = textOf(message?.content).trim().split("\n");
+    return first ? notice(noteLine(first, theme), rest, theme) : undefined;
+  },
+  [WAIT_SUBSCRIPTION]: (message, _options, theme) => {
+    const { runId, outcome } = message?.details ?? {};
+    if (typeof runId !== "string" || typeof outcome !== "string") return undefined;
+    const text = textOf(message.content);
+    const marker = `: ${outcome}. `;
+    const detail = text.includes(marker) ? text.slice(text.indexOf(marker) + marker.length) : "";
+    return notice(completionLine({ agent: `run ${runId}`, status: outcome }, theme), detail.split("\n"), theme);
+  },
+};
+
+// Entries pi-subagents appends straight to the session, outside the agent
+// stream, keyed by type to the guard its own entry renderer applies before it
+// draws (watchdog/register-main.js, intercom/supervisor-ui.js replyData). Only
+// an entry that draws ends the group above it.
+const finite = value => typeof value === "number" && Number.isFinite(value);
+export const DRAWN_ENTRIES = {
+  subagent_watchdog_warning: data => Boolean(data?.summary && data.evidence && data.recommendedAction),
+  subagent_supervisor_reply: data => ["requestId", "runId", "agent", "message"].every(key => typeof data?.[key] === "string") && finite(data.childIndex) && finite(data.createdAt),
+};
+
 // Plugins register their tools and their custom message renderers through the
 // API they are handed and pi keeps what they pass, so a Proxy that decorates
 // every registration gives their rows the transcript's shape without touching
@@ -48,12 +103,27 @@ export const controlNotice = (message, _options, theme) => {
 // be sanitised or hash-shortened. A message renderer we own is composed
 // over the plugin's, which stays as the fallback: ours answers undefined for a
 // payload it does not recognise, so a plugin that changes its details shape
-// renders its own way again rather than losing its notice. A customType in
-// quietMessages is sent with display off — in the session and the model's
-// context, never drawn. Everything else
+// renders its own way again rather than losing its notice. A message whose
+// quietMessages check holds is sent with display off — in the session and the
+// model's context, never drawn. Everything else
 // (events included) is the original, and the raw function is called on the raw
 // API because a plugin may extract it.
-export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = [], narrowSchema, isShuttingDown = () => false, subagentDescription, mcpTools = new Map()) {
+//
+// A displayed message or drawn entry pi appends outside the agent stream never
+// reaches the extension's message_end (`_appendCustomMessage` emits only to
+// pi's own listeners), so it ends the group here, mirroring sendCustomMessage's
+// branches: an idle send without a turn appends synchronously, so the group
+// closes just before it; a streaming send with triggerTurn false is flushed
+// after the turn_end handlers or at run end, so the group closes at the first
+// event after that flush. Every other branch draws through the agent stream.
+export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages = {}, narrowSchema, isShuttingDown = () => false, subagentDescription, mcpTools = new Map(), isIdle = () => true, folds = defaultFolds) {
+  let deferred = 0;
+  const drain = () => {
+    if (!deferred) return;
+    deferred = 0;
+    closeFolds(folds);
+  };
+  for (const event of ["turn_start", "agent_end", "agent_settled"]) pi.on(event, drain);
   return new Proxy(pi, {
     get(target, key, receiver) {
       if (key === "registerTool") return tool => {
@@ -67,9 +137,19 @@ export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages
         });
       };
       if (key === "sendMessage") return (message, options) => {
-        if (!quietMessages.includes(message?.customType)) return target.sendMessage(message, options);
-        return target.sendMessage({ ...message, display: false }, isShuttingDown() ? { ...options, triggerTurn: false } : options);
+        if (Object.hasOwn(quietMessages, message?.customType) && quietMessages[message.customType](message)) {
+          return target.sendMessage({ ...message, display: false }, isShuttingDown() ? { ...options, triggerTurn: false } : options);
+        }
+        if (message?.display && options?.deliverAs !== "nextTurn") {
+          if (isIdle()) { if (!options?.triggerTurn) closeFolds(folds); }
+          else if (options?.triggerTurn === false) deferred += 1;
+        }
+        return target.sendMessage(message, options);
       };
+      // appendVisible places the boundary where pi mounts the entry, above a reply still streaming.
+      if (key === "appendEntry") return (type, data) => Object.hasOwn(DRAWN_ENTRIES, type) && DRAWN_ENTRIES[type](data)
+        ? appendVisible(target, type, data, folds)
+        : target.appendEntry(type, data);
       if (key !== "registerMessageRenderer") return Reflect.get(target, key, receiver);
       return (type, renderer) => target.registerMessageRenderer(type, Object.hasOwn(messageRenderers, type)
         ? (message, options, theme) => messageRenderers[type](message, options, theme) ?? renderer(message, options, theme)

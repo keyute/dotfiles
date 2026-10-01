@@ -187,7 +187,7 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     if (state.compacting) state.working?.setMessage("");
     else if (state.shell) state.working?.setMessage(`Running ${shortTitle(firstLine(state.shell.command))}… ${formatDuration(Date.now() - state.shell.startedAt)}`);
     else if (!clock.running()) state.working?.setMessage("");
-    else if (state.waiting) state.working?.snapshot(state.waiting);
+    else if (state.waiting && !state.prompting) state.working?.snapshot(state.waiting);
     else state.working?.setMessage(label());
   };
   const stopWorking = () => {

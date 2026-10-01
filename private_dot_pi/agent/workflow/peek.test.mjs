@@ -428,6 +428,17 @@ test("the composer is a shaded block: a blank shaded row sits above and below th
   assert.equal(bare(lines[idx + 1]), "");
 });
 
+test("the loading and empty placeholders sit two columns in", async () => {
+  const dir = makeDir();
+  fs.writeFileSync(path.join(dir, "events.jsonl"), "");
+  const { dialog } = makeDialog({ dir });
+  const placeholder = text => dialog.render(160).find(l => l.includes(text));
+  assert.ok(placeholder("loading history…").startsWith("  \x1b"));
+  await dialog.ready;
+  assert.ok(placeholder("no activity recorded yet").startsWith("  \x1b"));
+  dialog.dispose();
+});
+
 test("ctrl+o expands a tool body without moving the scroll", async () => {
   const dir = makeDir();
   fs.writeFileSync(path.join(dir, "events.jsonl"),

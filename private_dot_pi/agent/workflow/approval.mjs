@@ -48,8 +48,10 @@ export async function reviewAction(ctx, config, task, request, beforeConfirm) {
   // The dialog is the only gate left on an unsandboxed command and shows at
   // most 12k characters of it; a command it cannot show in full is not approvable.
   if (escalated && action.length > 12_000) return false;
-  // The dialog can sit behind an unattended terminal; make the pending state visible.
-  ctx.ui.notify?.(`Awaiting approval${escalated ? " (unsandboxed)" : ""}: ${action.slice(0, 80)}`, "warning");
+  // The dialog can sit behind an unattended terminal; make the pending state
+  // visible. In the TUI the dialog and herdr's blocked flag carry it, and pi's
+  // warning would be a stale, unfolded line in the transcript.
+  if (ctx.mode !== "tui") ctx.ui.notify?.(`Awaiting approval${escalated ? " (unsandboxed)" : ""}: ${action.slice(0, 80)}`, "warning");
   // pi's confirm takes the composer slot; whatever holds it (the fleet peek) must close first.
   beforeConfirm?.();
   return ctx.ui.confirm(`Approve this ${escalated ? "unsandboxed " : ""}action once?`, action.slice(0, 12_000));

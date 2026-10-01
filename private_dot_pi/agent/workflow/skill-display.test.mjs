@@ -89,6 +89,9 @@ test("bundled extension entry installs skill, pending-input and reasoning displa
   assert.notEqual(host.InteractiveMode, InteractiveMode, "bundled Pi does not use the native SDK prototype");
   for (const handler of [...handlers.get("session_start")]) await handler({ reason: "startup" }, ctx);
   assert.ok(host.AssistantMessageComponent.prototype.updateContent[Symbol.for("pi-workflow:reasoning-hidden")], "bundled assistant rows hide reasoning");
+  // The hide spaces text blocks it finds by class name, which the bundler could rename.
+  const reply = new host.AssistantMessageComponent({ role: "assistant", content: [{ type: "text", text: "First." }, { type: "thinking", thinking: "hm" }, { type: "text", text: "Second." }] }, false, host.getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
+  assert.deepEqual(reply.render(40).map(strip), ["", "• First.", "", "• Second."], "bundled text blocks keep one blank between them");
   assert.deepEqual(notices.filter(([message]) => message.includes("unavailable")),
     [["gpt-6-sol is pinned but unavailable on subscription OAuth in this Pi model catalog; no fallback will be used.", "warning"]]);
   const raw = skill("ship-check", "first line\nsecond line");

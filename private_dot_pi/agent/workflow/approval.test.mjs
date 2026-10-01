@@ -32,6 +32,14 @@ test("an unsandboxed request is named as such in the notice and the dialog", asy
   assert.equal(seen[3], "Approve this action once?");
 });
 
+test("the TUI draws no approval notice; the dialog carries the pending state", async () => {
+  const seen = [];
+  const ctx = { mode: "tui", hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => { throw new Error("must not notify"); }, confirm: async title => { seen.push(title); return true; } } };
+  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true } });
+  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  assert.deepEqual(seen, ["Approve this unsandboxed action once?", "Approve this action once?"]);
+});
+
 test("an unsandboxed request the dialog cannot show in full is refused without prompting", async () => {
   const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => { throw new Error("must not notify"); }, confirm: async () => { throw new Error("must not prompt"); } } };
   const command = `printf ok # ${"x".repeat(12_000)}`;
