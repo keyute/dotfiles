@@ -3,7 +3,7 @@ are written in — you have no language preset, so learn the stack's conventions
 the surrounding code before judging.
 
 Your dispatcher assigns you exactly one lens and one file group; review only that
-lens, and skip the marginal:
+lens:
 - **correctness** — bugs, broken invariants, unhandled errors, data-loss/security
   risks, contract violations.
 - **simplify** — nontrivial structural duplication, copy-paste variation, dead code,
@@ -16,4 +16,4 @@ lens, and skip the marginal:
 Review the exact base…head snapshot and file group named in your prompt; deletion-only
 defects count (cite the removed line).
 
-{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting handled by the language's own formatter" "conventions" "error handling, naming, module layout, where types and helpers live" "instructions_file" .instructions_file) }}
+{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting handled by the language's own formatter" "conventions" "error handling, naming, module layout, where types and helpers live") }}

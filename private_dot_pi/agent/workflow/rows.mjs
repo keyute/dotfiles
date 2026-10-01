@@ -770,6 +770,7 @@ const DONE = {
 // every paint and whole-TUI repaint wakes it when later activity joins. Under
 // ctrl+o it keeps leading completion members visible; later completions ride
 // the preceding tool's result, after its full output, in chronological order.
+// Residual: a branch lacking the group's first entry drops its later members; completions split by a text chunk stay ungrouped.
 class ActivityEntryComponent extends Text {
   constructor(folds, seq, mapped, theme) {
     super("", 0, 0);

@@ -1,13 +1,13 @@
 # Claude Code workflow reference
 
 Env-specific facts; decisions and their triggers live in the chezmoi repo's `docs/decisions.md`.
-If behavior seems changed, verify (claude-code-guide) and update.
+If behavior seems changed, verify (claude-code-guide) and update its template in the chezmoi repo.
 
 ## Models
 
 - Settings pin the driver (`model` key) to `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}`;
-  effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned under `modelSettings` for every pin with an
-  effort knob, so a `/model` escalation keeps it.
+  effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned under `modelSettings` for every pin,
+  so a `/model` escalation keeps it.
 - Escalate effort first: `/effort xhigh` keeps the prompt cache. `{{ .subagent_tiers.claude.frontier }}`
   is escalation-only: for an ambiguous root-cause or architecture problem
   where the driver at higher effort fell short, start a fresh session with
@@ -40,9 +40,10 @@ If behavior seems changed, verify (claude-code-guide) and update.
 
 ## Workflows
 
-- The keyword `ultracode` opts one turn into a workflow at session effort; `/effort ultracode`
-  is xhigh plus standing workflows, with no size warning and no 20-agent Agent-tool cap. Only the
-  driver can start one; concurrency is min(16, CPUs−2). A bare `agent()` gets the
+- The keyword `ultracode` opts one turn into a workflow at session effort; `/effort ultracode [on|off]`
+  toggles standing workflows for the session and keeps the current effort, with no size
+  warning and no 20-agent Agent-tool cap. Only the driver can start one; concurrency is
+  min(16, CPUs−2). A bare `agent()` gets the
   `CLAUDE_CODE_SUBAGENT_MODEL` pin at session effort; `agent({agentType})` the role's pin and effort.
 - Fan-out size and per-agent scope drive workflow burn; effort barely does.
 
@@ -56,16 +57,12 @@ If behavior seems changed, verify (claude-code-guide) and update.
   Control are off in settings, the cron scheduler by env; `{{ $bare | join "`, `" }}` are
   bare-denied (gone from the tool list); `{{ $scoped | join "`, `" }}` block only the
   matching call, as does the frontier alias deny rendered from its pin. Skill overrides and denies live in agents.yaml (plugin skills follow
-  `enabledPlugins`). Web search, Exa, context7 and Playwright stay for research;
-  `/code-review ultra` and `claude --cloud` have no disable knob, both user-invoked only.
+  `enabledPlugins`). `/code-review ultra` and `claude --cloud` have no disable knob, both
+  user-invoked only.
 
 ## Cross-model bridge on pi
 
-- `cross-model-review` / `cross-model-advice` are read-only GPT consultations;
-  decisions stay in Claude, triggered by risk or breadth.
-  They call the `pi` MCP server (`scripts/pi-bridge.mjs` in the chezmoi repo):
-  tools `review`, `advise`, `reply` run pi read-only at the model and effort
-  pinned by `agent_mcp_servers.pi`, so callers pick scope only; `review` embeds
-  the git diff (git read-only under srt), and the three tools are allow-listed so they
-  run prompt-free in plan mode. It refuses a cwd under a sandbox-writable scratch root
-  or whose `.git` is not its own: review a real checkout.
+- `cross-model-review` / `cross-model-advice` call the Claude-only `pi` MCP bridge
+  (`scripts/pi-bridge.mjs`: read-only, model and effort pinned in `agent_mcp_servers.pi`,
+  allow-listed for plan mode). It runs from the applied copy in `~/.claude/pi-bridge`, so an edit
+  takes effect after `chezmoi apply`, and refuses scratch dirs and linked worktrees: review a real checkout.

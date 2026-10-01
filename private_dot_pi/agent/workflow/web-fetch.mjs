@@ -160,7 +160,7 @@ async function answer(ctx, config, url, text, prompt, signal) {
     messages: [{ role: "user", content, timestamp: Date.now() }],
   }, { signal, sessionId: ctx.sessionManager?.getSessionId?.(), transport: "sse" });
   if (message.stopReason === "error" || message.stopReason === "aborted") throw new Error(`The answering model failed: ${message.errorMessage ?? message.stopReason}`);
-  return message.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
+  return { text: message.content.filter(part => part.type === "text").map(part => part.text).join("").trim(), usage: message.usage };
 }
 
 // `request` and `lookup` are node's http(s).request and dns.lookup unless a test injects them.
@@ -168,7 +168,7 @@ export function webFetchTool(config, { request, lookup } = {}) {
   return {
     name: "web_fetch",
     label: "Web fetch",
-    description: `Read one public web page and answer a prompt from it: the page (http or https, public hosts only) is fetched, converted to markdown and a small model answers the prompt using only its content. A redirect to another host is returned for you to fetch again. ${FALLBACK.replace("cannot be read this way", "is refused or comes back empty")}`,
+    description: `Read one public web page and answer a prompt from it: the page (http or https, public hosts only) is fetched, converted to markdown and a small model answers the prompt using only its content. A redirect to another host is returned for you to fetch again.`,
     parameters: Type.Object({ url: Type.String({ description: "The http or https URL to read" }), prompt: Type.String({ description: "What to extract or answer from the page" }) }),
     async execute(_id, args, signal, _onUpdate, ctx) {
       try {
@@ -181,7 +181,7 @@ export function webFetchTool(config, { request, lookup } = {}) {
         const text = toText(page.type, page.body);
         if (!text) throw new Error(`No readable text at ${page.url.href}`);
         const reply = await answer(ctx, config, page.url.href, text, args.prompt, signal);
-        return { content: [{ type: "text", text: `${page.url.href}\n${reply}` }], details: { url: page.url.href, status: page.status, chars: text.length } };
+        return { content: [{ type: "text", text: `${page.url.href}\n${reply.text}` }], details: { url: page.url.href, status: page.status, chars: text.length }, usage: reply.usage };
       } catch (error) { throw new Error(`${error.message}. ${FALLBACK}`); }
     },
   };

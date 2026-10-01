@@ -6,9 +6,12 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    # pi pins typebox and jiti exactly; a pi bump that moves them fails stability.test
+    ignore:
+      - dependency-name: "typebox"
+      - dependency-name: "jiti"
     groups:
-      # pi's family moves as one PR, typebox and jiti included because pi pins
-      # them exactly; first matching group wins, keeping it out of non-breaking
+      # pi's family moves as one PR; first matching group wins, keeping it out of non-breaking
       pi:
         applies-to: "version-updates"
         patterns:
@@ -16,8 +19,6 @@ updates:
           - "pi-*"
           - "catppuccin-pi-theme"
           - "@anthropic-ai/sandbox-runtime"
-          - "typebox"
-          - "jiti"
       non-breaking:
         applies-to: "version-updates"
         patterns:

@@ -84,7 +84,7 @@ function canonicalPattern(pattern) {
 
 export class Policy {
   constructor(config, cwd, scratch, controlDir) {
-    if (config.version !== 1 || !config.models || !config.filesystem || !config.agents || !config.mcp) {
+    if (!config.models || !config.filesystem || !config.agents || !config.mcp) {
       throw new Error("Invalid managed Pi policy");
     }
     this.config = config;

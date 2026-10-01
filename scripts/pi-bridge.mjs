@@ -50,7 +50,7 @@ const canonical = (p) => (existsSync(p) ? realpathSync(p) : p);
 function sandboxWritableRoots(settings, home) {
   const allowWrite = settings.sandbox?.filesystem?.allowWrite;
   if (!Array.isArray(allowWrite)) throw new Error("no sandbox.filesystem.allowWrite in Claude settings");
-  const scratch = [tmpdir(), process.env.TMPDIR, "/tmp/claude", `/tmp/claude-${process.getuid()}`, join(home, ".claude", "debug")];
+  const scratch = [tmpdir(), process.env.TMPDIR, "/tmp/claude", `/tmp/claude-${process.getuid()}`, join(home, ".claude", "debug"), join(home, ".npm", "_logs")];
   return [...allowWrite.map((p) => expandHome(p, home)), ...scratch]
     .filter(Boolean)
     .map(canonical);
@@ -60,7 +60,8 @@ function sandboxWritableRoots(settings, home) {
 // --no-optional-locks: status must not try to refresh the index under the
 // no-write profile.
 const GIT_OVERRIDES = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "diff.external=", "-c", "core.pager=cat"];
-// git runs read-only and offline under srt as a second layer for any repo
+// git runs with no writes beyond srt's own default paths (/tmp/claude,
+// ~/.npm/_logs) and offline under srt as a second layer for any repo
 // hook the overrides miss — a repo-local filter.<x>.clean still runs under
 // status/diff — so it also gets Claude's read-deny list: the Read() rules in
 // the rendered settings, which settings.json.tmpl makes the one list. Missing
@@ -96,9 +97,7 @@ export function gitSandboxProfile(policy, cwd) {
   };
 }
 const ROLE_NOTE =
-  "You are a read-only reviewer/advisor consulted by another agent. You have " +
-  "only the read, grep, find, and ls tools, confined to the repository at your " +
-  "working directory. Answer in full in one message.";
+  "You are a read-only reviewer/advisor consulted by another agent. Answer in full in one message.";
 
 // provider, reasoning effort and model are fixed by the rendered MCP config,
 // not by caller input, so a tool call can never drift the pinned worker tier

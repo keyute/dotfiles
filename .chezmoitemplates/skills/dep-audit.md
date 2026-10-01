@@ -9,14 +9,15 @@ Audit dependency version bumps for breaking changes and produce a risk matrix.
 
 1. **Enumerate bumps.** From args, the current branch diff, or open Dependabot PRs
    (`gh pr list --author 'app/dependabot'`). Record per bump: dependency,
-   ecosystem (npm / go / python / helm / action), from → to, and whether it
-   crosses a major.
+   ecosystem (npm / go / python / helm / action), from → to, whether it
+   crosses a major, and its manifest and usage files (grep the repo).
 
 2. **Research each bump.** Patch bumps of well-behaved deps get a changelog skim;
    majors and infrastructure charts get full treatment. Fan out one pinned
    `dep-researcher` per dependency — never an unpinned or built-in worker, which
    lacks the role's tool scope, pinned effort and return format. Give each one
-   dependency and its from → to; it owns the sources and the return format.
+   dependency, its from → to, and the manifest and usage files you found; it
+   owns the sources and the return format.
 
 3. **Check against this repo's usage.** A breaking change matters only if the repo
    touches that surface — spot-check each reported breaking change against the

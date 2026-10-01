@@ -10,7 +10,8 @@
 //   "name › description · <compact> tokens · model"
 // mirroring the stock workflow row (name › description · <compact> tokens · N
 // tools) but with the model in place of the tool count, which the stock row
-// never surfaces. Tasks we omit keep their default rendering.
+// never surfaces; delete this script and the subagentStatusLine key once it
+// does. Tasks we omit keep their default rendering.
 // `name` is the registry name — a workflow task's or a typed agent name — and is
 // absent otherwise; `type` is the generic execution kind "local_agent" (Claude
 // Code exposes no agent-type field here), so with no name the head is the

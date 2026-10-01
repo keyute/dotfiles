@@ -36,7 +36,7 @@ export async function reviewAction(ctx, config, task, request, beforeConfirm) {
   if (request.approval === "auto") {
     const { history = [], ...action } = request;
     const content = JSON.stringify({ task: task.slice(-TASK_CHARS), history, action });
-    // Anthropic's classifier shape: a no-reasoning filter answers the common
+    // Anthropic's classifier shape: a low-effort filter answers the common
     // allow and only a block pays for reasoning, on the same prompt.
     decision = await classify(ctx, config, config.models.classifierFilter, content);
     if (decision !== "allow") decision = await classify(ctx, config, config.models.classifierJudge, content);

@@ -19,8 +19,6 @@ export const mcpConfig = (config, role) => ({
   }),
   errors: [], autoEnableCodemode: false,
 });
-// pi's MCP resource tools reach every server outside the broker's per-tool gate.
-const MCP_RESOURCE_TOOLS = new Set(["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]);
 
 // pi-subagents' control notice: a message whose content is the model's
 // instructions (run id, four subagent({…}) calls) and whose own renderer draws
@@ -39,9 +37,6 @@ export const SUBAGENT_NOTIFY = "subagent-notify";
 export const controlNotice = (message, _options, theme) => {
   const event = message?.details?.event;
   if (!event?.agent || !event.message) return undefined;
-  // A goal mission's body is several lines opening "Goal mission needs attention:",
-  // which the row's "<agent> <state>" strip cannot read; the plugin's box draws it.
-  if (message.details.source === "goal") return undefined;
   return new Text(noticeLine({ agent: event.agent, message: event.message }, theme), 0, 0);
 };
 
@@ -69,7 +64,6 @@ export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages
           ...tool,
           ...(tool.name === "subagent" && narrowSchema ? { parameters: narrowSchema(tool.parameters) } : {}),
           ...(tool.name === "subagent" && subagentDescription !== undefined ? { description: subagentDescription } : {}),
-          ...(MCP_RESOURCE_TOOLS.has(tool.name) ? { exposure: "hidden" } : {}),
           ...renderersFor(tool.name),
         });
       };

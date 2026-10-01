@@ -167,7 +167,7 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
       truncated: truncation.truncated || dropped,
     };
     appendVisible(pi, "workflow-shell", details, folds);
-    if (!excludeFromContext) pi.sendMessage({ customType: "workflow-shell", content: contextText(details), display: false, details }, { triggerTurn: false });
+    if (!excludeFromContext) pi.sendMessage({ customType: "workflow-shell", content: contextText(details), display: false, details }, details.cancelled ? { triggerTurn: false } : { triggerTurn: true, deliverAs: "followUp" });
   }
 
   function submit(text) {

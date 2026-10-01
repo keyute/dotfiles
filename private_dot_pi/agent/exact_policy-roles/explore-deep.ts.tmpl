@@ -1,3 +1,4 @@
+import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { installWorkflow } from {{ printf "%s/.pi/agent/workflow/index.mjs" .chezmoi.homeDir | toJson }};
 
-export default (pi) => installWorkflow(pi, {{ printf "%s/.pi/agent/workflow.json" .chezmoi.homeDir | toJson }}, "explore-deep");
+export default (pi) => installWorkflow(pi, {{ printf "%s/.pi/agent/workflow.json" .chezmoi.homeDir | toJson }}, "explore-deep", { AgentSession });

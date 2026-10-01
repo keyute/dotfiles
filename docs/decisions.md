@@ -18,18 +18,20 @@ lacks; the owner picks its substitute. A tier is added only when a role
 misses at one tier, the next catches it, and a model is priced between them;
 a tier nothing uses is dropped.
 
-- **Successor or retirement.** Confirm the model is live: `claude --model
-  <id> -p 'reply OK' --output-format json` via `!` (sandboxed Bash has no
-  API host), or listed in
+- **Successor or retirement.** A successor replaces its pin when the vendor
+  or a benchmark rates it at least as good at no more total cost per task;
+  the pool-binds reading confirms or reverts it. Confirm the model is live:
+  `claude --model <id> -p 'reply OK' --output-format json` via `!`
+  (sandboxed Bash has no API host), or listed in
   `node_modules/@earendil-works/pi-ai/dist/providers/data/<provider>.json`;
   else bump the SDK first, alone. Edit the tier in `subagent_tiers`; on
-  Claude, `no_effort_models` if the pin has no effort knob, and an
-  `Agent(model:<family>)` deny if the old family is left untiered. Rewrite
-  every row whose evidence was about the old pin (the tier row; on pi top,
-  also `agents.pi.defaults.classifier`); a family-level why stays. A driver or
-  projection-loading re-pin re-checks native_coverage as a Claude Code
-  release does; a top or frontier re-pin re-checks that tier's efforts as its
-  own change. `npm run test:pi`, `chezmoi diff`; re-confirm live after apply.
+  Claude, an `Agent(model:<family>)` deny if the old family is left
+  untiered. Rewrite
+  every row whose evidence was about the old pin (on Claude, the tier row); a
+  family-level why stays. A driver or projection-loading re-pin re-checks
+  native_coverage as a Claude Code release does; a top or frontier re-pin
+  re-checks that tier's efforts as its own change. `npm run test:pi`,
+  `chezmoi diff`; re-confirm live after apply.
 - **New family.** As above; then read the vendor's prompting guide for the
   pin and delete a `model:`-tagged line in
   `.chezmoitemplates/agent-instructions.md` when every pin that loads it
@@ -54,8 +56,7 @@ a tier nothing uses is dropped.
   native, plugin or owned code leaves the least owned code and coupling at a
   roughly equal end state, deleting the superseded code, rows, pins and docs
   with it; a `docs/pi-design.md` rule is the end state, so a replacement that
-  breaks one changes the rule first. A herdr upgrade re-checks its coupling
-  entry.
+  breaks one changes the rule first.
 - **The pool binds** (a harness blocks a session on its weekly limit). The
   owner runs `! node scripts/agent-usage.mjs` (the stores are sandbox-denied):
   a recent re-pin whose rows cost more than its predecessor's (Claude
@@ -67,29 +68,21 @@ a tier nothing uses is dropped.
 
 | key | why | revisit when |
 |---|---|---|
-| subagent_tiers.claude.small | benchmark: AA low 36 vs Haiku 4.5's 17 at ~2× $/task; Explore is ~0.4% of Claude spend | successor or retirement (Events); Haiku 5.5 ships → compare at matched $/task; the Claude pool binds with Explore's cost per dispatch above explore-deep's → Haiku |
+| subagent_tiers.claude.small | benchmark: AA low 36 vs Haiku 4.5's 17 at ~2× $/task; Explore is ~0.4% of Claude spend | successor or retirement (Events); a newer Haiku ships → compare at matched $/task; the Claude pool binds with Explore's cost per dispatch above explore-deep's → Haiku |
 | subagent_tiers.claude.top | benchmark: AA $/task nominated it; no paired replay | successor or retirement (Events); an unattended text-only turn ends → the previous top pin |
 | subagent_tiers.claude.frontier | preference: escalation-only under its 50% weekly cap | the cap is lifted → re-open the driver; successor or retirement (Events) |
-| subagent_tiers.pi.small | benchmark: matches the previous small at 0.4× cost per task | successor or retirement (Events) |
-| subagent_tiers.pi.top | benchmark: beats the previous top with fewer tokens | successor or retirement (Events) |
-| subagent_tiers.pi.frontier | vendor: OpenAI rates it at low effort above the top pin at high | successor or retirement (Events) |
-| agents.claude.defaults.tier | preference: top at effort high; the frontier tier stays escalation-only under its weekly cap | the Claude pool binds → lower effort, then tier |
+| agents.claude.defaults.tier | preference: top at effort high | the Claude pool binds → lower effort, then tier |
 | agents.pi.defaults.tier | preference: frontier drives while the pi pool is slack; effort high per AA Terminal-Bench (cheaper per task than lower effort) | the pi pool binds → lower effort, then tier |
-| agents.pi.defaults.classifier | vendor: top tier for both stages on its system card's injection defence, filter off, judge medium | an observed false allow, or false denies blocking work → re-judge; the pi pool binds → judge low, then a cheaper tier |
-| agents.pi.defaults.context_window | measured: an 838,180-input-token request accepted on the frontier and top tiers via the subscription route (2026-09-29); small tier unprobed | a re-pin, or context_length_exceeded below the window → re-probe that tier at ~840k input tokens, drop it if rejected; the pi pool binds on long turns → a larger reserve |
+| agents.pi.defaults.classifier | vendor: top tier for both stages on its system card's injection defence, judge medium; preference: filter low, the pin having no off level | an observed false allow, or false denies blocking work → re-judge; the pi pool binds → judge low, then a cheaper tier |
+| agents.pi.defaults.context_window | measured: an 838,180-input-token request accepted on the frontier tier via the subscription route (2026-09-29); small and top tiers unprobed | a re-pin, or context_length_exceeded below the window → re-probe that tier at ~840k input tokens, drop it if rejected; the pi pool binds on long turns → a larger reserve |
 | agents.claude.denied_tools.models | measured: the Agent enum has one alias with no tier; the frontier alias renders from its pin; pi refuses non-tier children (children.mjs); Workflow agent() opts.model is instruction-guarded | a Claude Code release (Events) adds an untiered alias, or permission rules see Workflow agents → extend the deny |
 | agents.pi.search_tier | preference: each search is one extra request on the pool, so the small tier | an observed search miss the top tier catches → top |
-| setting.native_coverage | measured: each covered line is in the Claude Code driver prompt and its subagent prompt, or pi's subagent-tool-description; initiative is driver-prompt only, and a child cannot check back anyway | a Claude Code release (Events) whose prompt lacks a covered line → unshave that key |
+| setting.native_coverage | measured: each covered line is in the Claude Code driver prompt and its subagent prompt, or pi's subagent-tool-description; initiative is driver-prompt only, and a child cannot check back anyway | a Claude Code release (Events) whose prompt lacks a covered line → unshave that key; a context7 bump → re-check docs_mcp |
 | agent_mcp_servers.pi.args | preference: review and advice are recall-critical, so `--reasoning-effort high` | the pi pool binds with the bridge origin a visible share in agent-usage → medium |
 | measure.role_matrix | preference: top/medium default; lookups lower, recall-critical roles higher (values in agents.yaml) | an observed Explore miss → medium; a lens miss a later review catches → high; a small re-pin → probe a role at small |
 | parity.researcher_no_bash | forced: upstream release-note hosts are off the shared Bash allowlist, so curl there fails confusingly; WebFetch/WebSearch reach them without widening every role's Bash | the allowlist covers upstream hosts, or a fetch tool fails on them → Bash |
 | subagents.infra-reviewer | preference: chart/CRD/GitOps hazards are not inferable from surrounding manifests | a manifest review where diff-reviewer's lens finds the same hazards → fold in |
 | subagents.diff-reviewer | preference: one any-language reviewer; the go/python/ts/shell presets were generic checklists dispatched only by ship-check | a shipped language-specific defect the correctness lens missed → restore that preset |
-| parity.commit_push | forced: Claude prefix-denies commit/push (prefix rules cannot express pi's gh read-shape exception); pi classifier + confirm (policy.mjs REVIEWED/GH_READ) | an unreviewed Claude remote mutation → ask rules for unambiguous verbs |
-| parity.cross_model | preference: review/advice Claude→pi only (the reverse would spend the Anthropic pool); rostered children lose the bridge by tool list or disallowedTools; pi has no bridge | the pi pool binds while the Claude pool does not → reverse |
-| parity.workflow_scripts | preference: one deterministic orchestration surface (Claude Workflow, worktree isolation); pi refuses scripts, chains and worktree children (children.mjs), as fleet/peek model only named launches | fleet/peek can show script children in pi-design rule 6's grammar, or a pi task needs batched fan-out → port |
-| parity.git_metadata | preference: pi write-denies all of .git (policy.mjs), Claude protects hooks, config and worktree metadata only; the owner stages and commits | a pi task fails for want of git add or branch creation → narrow to Claude's list |
-| parity.web_tools | preference: first-party before paid third-party; web_fetch is WebFetch's counterpart on the subscription (pi-implementation.md); Exa escalates where a role has it (web-search.md); only Claude Bash reaches code.claude.com | a maintained plugin's fetch fits with a one-line seam → adopt it, delete web_fetch and its three packages |
 | setting.pi_mcp_exposure | measured: declarations cost context7 ~1,150, exa ~460, playwright ~4,400 tokens (2026-09-30); the root defers every MCP server to tool_search as Claude does; children declare the tools their role names | the root pays the tool_search hop for one server most turns → a direct exposure for that server in mcpConfig |
 | setting.workflowSizeGuideline | measured: workflows were 62.3% of top-tier units (30 days to 2026-09-28) with unguided runs of 11, 3, 8 agents → small | a workflow stops short of work it needed → unset |
 | setting.explore_routing | measured: Explore:explore-deep dispatches 37:99 Claude (its 30-day transcript window), 25:120 pi → the descriptions steer lookups to Explore | an observed Explore miss on a question routed to it → revert the descriptions |
@@ -99,6 +92,6 @@ a tier nothing uses is dropped.
 | instruction.scope_of_extras | measured: pi-side replay arms shipped 2.8–3.5× the tests; no reversible-change test ban yet | a shipped diff carries unrequested tests after a model release → the vendor's no-tests-for-reversible-changes line |
 | measure.single_writer | measured: implementer median 17 calls per dispatch (2026-09-26); the only write-capable specialist | implementer dispatches run out of turns or deadline on bounded slices → a second write-capable specialist |
 | measure.pi_second_vendor | measured: children 25% of root+child pi spend; a weaker substitute repays its saving through repairs | the pi pool binds with children ≥30% of spend → OpenCode Go for explore-deep |
-| parity.env_scrub | forced: pi strips secret-named and pre-sandbox-hook env vars from sandboxed commands (sandbox-runner.mjs); Claude Bash keeps the env, as CLAUDE_CODE_SUBPROCESS_ENV_SCRUB forces default permission mode over plan; MCP servers get an allowlisted env (CLAUDE_CODE_MCP_ALLOWLIST_ENV) | the scrub stops forcing default mode → set it |
-| parity.cli_versioning | preference: Claude runs the brew @latest cask, which cannot pin; pi is lockfile-pinned because it breaks extension APIs across 0.x | a release breaks a key the Claude Code release event cannot fix → the stable cask |
+| parity.env_scrub | forced: pi strips secret-named and pre-sandbox-hook env vars from sandboxed commands (sandbox-runner.mjs); Claude Bash keeps the env, as CLAUDE_CODE_SUBPROCESS_ENV_SCRUB forces default permission mode over plan | the scrub stops forcing default mode → set it |
+| parity.cli_versioning | preference: Claude runs the unpinned brew @latest cask | a release breaks a key the Claude Code release event cannot fix → the stable cask |
 | instruction.self_review | measured: 13 spec-reviewer runs, 4–5 zero-finding, every catch on a high-stakes surface → the skip and fix-scoped re-review; fresh-context review beats same-session (F1 28.6 vs 24.6, arXiv 2603.12123); repeat rounds cut precision 0.30→0.20 (2603.16244) | zero-finding runs dominate an agent-usage reading → narrow the rule |

@@ -183,7 +183,7 @@ test("native host entry owns one spacer and forwards clicks across resize, theme
   initTheme("dark");
 });
 
-test("native in-memory safe boundary retains one visible entry and delays ! context until after the tool result; !! stays out", async () => {
+test("native in-memory safe boundary retains one visible entry and delays a cancelled !'s context until after the tool result; !! stays out", async () => {
   const manager = SessionManager.inMemory("/work");
   const events = [];
   const session = Object.create(AgentSession.prototype);
@@ -199,9 +199,11 @@ test("native in-memory safe boundary retains one visible entry and delays ! cont
     appendEntry: (type, data) => manager.appendCustomEntry(type, data),
     sendMessage: (message, options) => session.sendCustomMessage(message, options),
   };
-  const runner = createShellRunner({ pi, folds: createFolds(), working() {}, cwd: () => "/work", notify() {}, env: () => ({}), exec: async () => ({ exitCode: 0 }) });
+  let exec = (_command, _cwd, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+  const runner = createShellRunner({ pi, folds: createFolds(), working() {}, cwd: () => "/work", notify() {}, env: () => ({}), exec: (...args) => exec(...args) });
   manager.appendMessage({ role: "assistant", content: [{ type: "toolCall", id: "t1", name: "bash", arguments: {} }], timestamp: Date.now() });
   runner.submit("!pwd");
+  runner.abort();
   await runner.pending;
   assert.equal(manager.getEntries().filter(entry => entry.type === "custom").length, 1);
   assert.equal(manager.getEntries().filter(entry => entry.type === "custom_message").length, 0);
@@ -214,6 +216,7 @@ test("native in-memory safe boundary retains one visible entry and delays ! cont
   session._flushPendingCustomMessages();
   assert.equal(events.filter(event => event.type === "message_start").length, 1);
   session._isAgentRunActive = false;
+  exec = async () => ({ exitCode: 0 });
   runner.submit("!!pwd");
   await runner.pending;
   assert.equal(manager.getEntries().filter(entry => entry.type === "custom").length, 2);
@@ -247,14 +250,14 @@ test("a run of exactly four newline-terminated lines shows all four with no more
 });
 
 // The runner: dependencies are injected, so no real shell ever spawns.
-function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds(), prefix } = {}) {
+function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds(), prefix, idle } = {}) {
   const sent = [];
   const appended = [];
   const notices = [];
   const workingCalls = [];
   const pi = { sendMessage: (message, options) => sent.push({ message, options }), appendEntry: (type, data) => appended.push({ type, data }) };
   const runner = createShellRunner({
-    pi, folds, exec, prefix,
+    pi, folds, exec, prefix, idle,
     cwd: () => "/work",
     notify: (text, level) => notices.push({ text, level }),
     env: () => ({ PATH: "/bin" }),
@@ -322,23 +325,33 @@ test("! immediately appends a visible entry and defers only its hidden context",
   assert.equal(h.appended[0].type, "workflow-shell");
   assert.equal(h.sent.length, 1);
   assert.equal(h.sent[0].message.display, false);
-  assert.equal(h.sent[0].options.triggerTurn, false);
   assert.deepEqual(h.sent[0].message.details, h.appended[0].data);
   assert.equal(h.sent[0].message.content, contextText(h.appended[0].data));
 });
 
-test("! sends a hidden custom message with the mirrored context text and no turn trigger", async () => {
+test("! sends a hidden custom message with the mirrored context text", async () => {
   const h = harness({ exec: async (_command, _cwd, { onData }) => { onData(Buffer.from("hi\n")); return { exitCode: 0 }; } });
   assert.equal(h.runner.submit("!echo hi"), true);
   await h.runner.pending;
   assert.equal(h.sent.length, 1);
-  const { message, options } = h.sent[0];
+  const { message } = h.sent[0];
   assert.equal(message.customType, "workflow-shell");
   assert.equal(message.display, false);
-  assert.equal(options.triggerTurn, false);
   assert.equal(message.content, contextText(message.details));
   assert.equal(message.details.output, "hi");
   assert.equal(h.appended.length, 1);
+});
+
+test("! starts one turn, as a follow-up when the agent is busy; a cancelled ! starts none; !! sends nothing", async () => {
+  const hang = (_command, _cwd, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+  const turn = { triggerTurn: true, deliverAs: "followUp" };
+  for (const [input, idle, cancel, expected] of [["!pwd", true, false, turn], ["!pwd", false, false, turn], ["!pwd", true, true, { triggerTurn: false }], ["!!pwd", true, false, undefined]]) {
+    const h = harness({ exec: cancel ? hang : undefined, idle: () => idle });
+    h.runner.submit(input);
+    if (cancel) h.runner.abort();
+    await h.runner.pending;
+    assert.deepEqual(h.sent[0]?.options, expected, `${input} idle=${idle} cancelled=${cancel}`);
+  }
 });
 
 test("!! records a visible custom entry instead of a message", async () => {

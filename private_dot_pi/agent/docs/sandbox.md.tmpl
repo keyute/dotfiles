@@ -1,7 +1,7 @@
 # Pi sandbox and permissions
 
 Env-specific facts; decisions and their triggers live in the chezmoi repo's `docs/decisions.md`.
-If behavior seems changed, verify against the source and update this file.
+If behavior seems changed, verify against the source and update its template in the chezmoi repo.
 
 ## Planning and permissions
 
@@ -15,16 +15,13 @@ If behavior seems changed, verify against the source and update this file.
   switch (`/plan`, `/execute`, plan approval) first revokes child sessions and
   sandbox processes, so a child still running when the plan is approved ends
   aborted. An approval is single-use: a mode change before its call runs voids it.
-- Root `workspace_write`/`workspace_edit` stay listed in plan mode, as in Claude
-  Code, and are refused (`Writes are disabled in this scope`) until execution is
-  approved; `ask_user_question` works in either mode.
+- `ask_user_question` works in either mode.
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
-  Dialogs are once-only; MCP approvals are never cached across a mode change.
 - Shell commands execute inside the SRT profile, as sandboxed commands do in Claude
   Code, and run without review; the profile is the boundary. Only remote-mutating
-  commands it cannot judge — pushes, publishes, non-read `gh` calls, data-sending
-  `curl`/`wget`, remote shells and copies; `workflow/policy.mjs` owns the list — and
+  commands it cannot judge (pushes, publishes, non-read `gh` calls, data-sending
+  `curl`/`wget`, remote shells and copies; `workflow/policy.mjs` owns the list) and
   `git commit` (the user commits) go to the classifier, then a confirm dialog on `ask`.
   Workspace file edits run without review once execution is approved.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
@@ -49,7 +46,7 @@ If behavior seems changed, verify against the source and update this file.
   A longer one returns its task id; at exit the model hears the
   status and last twenty lines (with its next tool result, or as a new turn).
   `workspace_task` `{ id, action: "output" | "stop" }` reads or stops it, `{ action:
-  "list" }` lists tasks; output is tail-capped at 256 KiB. `/plan`, `/remove-dir`
+  "list" }` lists tasks. `/plan`, `/remove-dir`
   and exiting pi stop tasks; detached `setsid` daemons and containers outlive that.
   If a mode change is blocked on unverified cleanup, kill orphans and restart.
 - `/add-dir <path>` adds an editable directory and loads its `AGENTS.md`/`CLAUDE.md`
@@ -68,12 +65,9 @@ no review, in any mode.
 
 Sensitive paths come from the shared denylist. File tools resolve symlinks and
 confine edits to the workspace; git metadata and live-loaded code (`~/.pi/agent`,
-the repository `node_modules`, `~/.zshrc`) are write-protected in every mode, the
+the repository `node_modules`) are write-protected in every mode, the
 repository source editable once execution is approved. A refusal names its reason
 (`Writes are disabled in this scope`, `Path denied by managed policy`, `File edits
 must remain inside the workspace`); report it rather than re-submit the plan. The
 denylist does not cover unknown credential locations: add new ones to shared
 policy before exposing them to a session.
-
-Extensions are trusted host code; per-tool SRT is not containment against a
-malicious one. macOS needs sandbox-exec.

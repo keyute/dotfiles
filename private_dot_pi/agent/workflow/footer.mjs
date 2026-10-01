@@ -251,7 +251,7 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   // pi draws its own indicator while it compacts, in the status container just
   // above this row; rule 3 allows one, so the row stands down and comes back
   // with the turn. Its auto-retry countdown has no documented event and keeps
-  // its own indicator alongside this one — the recorded residual.
+  // its own indicator alongside this one.
   pi.on("session_before_compact", () => { state.compacting = true; stopWorking(); });
   pi.on("session_compact", () => { startWorking(); if (state.shell) armShell(); });
   pi.on("session_compact_failed", () => { startWorking(); if (state.shell) armShell(); });

@@ -4,10 +4,9 @@
        input: dict "name" <subagent name> "root" <template data> */ -}}
 {{- $name := .name -}}
 {{- $root := .root -}}
-{{- $meta := get $root.subagents $name -}}
-{{- if not $meta -}}{{- fail (printf "%s: not in the subagents roster" $name) -}}{{- end -}}
+{{- $meta := index $root.subagents $name -}}
 {{- $role := get (includeTemplate "claude-roles" (dict "root" $root) | fromJson) $name -}}
-{{- if not $role -}}{{- fail (printf "%s: scoped to %v, not claude" $name $meta.harnesses) -}}{{- end -}}
+{{- if not $role -}}{{- fail (printf "%s: not in the roster, or scoped to another harness" $name) -}}{{- end -}}
 ---
 name: {{ $name }}
 description: {{ $meta.description | toJson }}
@@ -26,12 +25,10 @@ disallowedTools: {{ join ", " $driverOnly }}
 {{- end }}
 {{- end }}
 model: {{ $role.model }}
-{{- if $role.effort }}
 effort: {{ $role.effort }}
-{{- end }}
 {{- if get $meta "omit_instructions" }}
 omitClaudeMd: true
 {{- end }}
 ---
 
-{{ includeTemplate (printf "subagents/%s.md" $name) (dict "instructions_file" "CLAUDE.md") -}}
+{{ includeTemplate (printf "subagents/%s.md" $name) (dict) -}}

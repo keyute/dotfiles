@@ -17,8 +17,8 @@
 {{- $_ := set $managed "fullscreenExitOutput" "resume-hint" -}}
 {{- /* hides the startup header */ -}}
 {{- $_ := set $managed "quietStartup" true -}}
-{{- /* no inline images in the terminal */ -}}
-{{- $_ := set $managed "terminal" (dict "showImages" false) -}}
+{{- /* no inline images in the terminal; shows turn progress in the terminal tab */ -}}
+{{- $_ := set $managed "terminal" (dict "showImages" false "showTerminalProgress" true) -}}
 {{- /* no horizontal transcript padding */ -}}
 {{- $_ := set $managed "outputPad" 0 -}}
 {{- /* ! commands run in zsh with the interactive config. The model's workspace_bash
@@ -32,8 +32,9 @@
 {{- $_ := set $managed "enableInstallTelemetry" false -}}
 {{- /* shows a condensed changelog after an update */ -}}
 {{- $_ := set $managed "collapseChangelog" true -}}
-{{- /* delivers queued steering messages together, not one per turn */ -}}
+{{- /* delivers queued steering and follow-up messages together, not one per turn */ -}}
 {{- $_ := set $managed "steeringMode" "all" -}}
+{{- $_ := set $managed "followUpMode" "all" -}}
 #!/usr/bin/env bash
 # pi's settings setters write UI state (theme, thinking level, changelog version)
 # to settings.json; jq's `*` keeps whatever this declared subset does not name

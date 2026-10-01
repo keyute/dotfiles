@@ -250,8 +250,9 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
       if (state.terminal) throw fail();
 
       // srt exports its own TMPDIR (/tmp/claude, or CLAUDE_CODE_TMPDIR) into
-      // the wrapped command, over the lease's; the profile never allows that
-      // path, so `$TMPDIR` users failed until it was pointed at the scratch dir.
+      // the wrapped command, over the lease's; /tmp/claude is writable but srt
+      // never creates it and every sandbox shares it, so point it at the
+      // lease's scratch dir, which exists, is per-session and is cleaned up.
       if (typeof response.env?.TMPDIR === "string") process.env.CLAUDE_CODE_TMPDIR = response.env.TMPDIR;
       try {
         command = await sandboxManager.wrapWithSandbox(command, "bash");

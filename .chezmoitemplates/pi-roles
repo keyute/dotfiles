@@ -19,9 +19,7 @@
 {{- $allMcp = $allMcp | uniq | sortAlpha -}}
 {{- range $name, $meta := $root.subagents -}}
   {{- $harnesses := get $meta "harnesses" -}}
-  {{- $scoped := true -}}
-  {{- if $harnesses -}}{{- if not (has "pi" $harnesses) -}}{{- $scoped = false -}}{{- end -}}{{- end -}}
-  {{- if $scoped -}}
+  {{- if or (not $harnesses) (has "pi" $harnesses) -}}
     {{- $tier := get $meta "tier" -}}
     {{- if not $tier -}}{{- fail (printf "%s: missing tier" $name) -}}{{- end -}}
     {{- $effort := get $meta "effort" -}}

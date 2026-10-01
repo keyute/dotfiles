@@ -16,8 +16,7 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   driver" bullet and read as the driver's, never the reader's.
 - Subagent and skill bodies render for every harness: keep harness-specific
   nouns — tool names, agent names, instruction filenames — out of them, and take
-  what varies as a parameter, as `reviewer-common.md` does with
-  `instructions_file`.
+  what varies as a parameter.
 - Harness-specific *intent* → a commented bullet in that harness's consumer
   template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl`), judged on its
   `docs/decisions.md` event like any principle. A
@@ -26,14 +25,13 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   per-harness value from agents.yaml inside the shared projection.
 - Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
   from it, never hand-write what it already encodes.
-- Environment facts → on-demand docs; give every doc pointer an explicit
-  trigger ("read X before Y") — discretionary loading under-triggers.
+- Environment facts → on-demand docs; every pointer carries an explicit
+  trigger that names a question ("read X before changing tiers"), never a
+  routine step — delegating, reviewing, starting a task — or the doc loads
+  into every session; discretionary loading under-triggers.
 - An on-demand doc loads whole at its trigger, so it carries only what that
   trigger's question needs, each fact at its current state. Quirk
   workarounds go there too, where they expire cheaply.
-- A doc trigger names a question ("read X before changing tiers"), never a
-  routine step — delegating, reviewing, starting a task — or the doc loads
-  into every session.
 - Implementation mechanics a harness editor needs go to
   `docs/pi-implementation.md` (pi and the bridge), not the deployed doc;
   `render.test.mjs` budgets each rendered on-demand doc.

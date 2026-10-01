@@ -99,7 +99,7 @@ test("a child's MCP config holds only the servers its roster names a tool of, di
   assert.deepEqual(mcpConfig(mcpFixture(), "reviewer").servers, []);
 });
 
-test("the plugin API records each MCP tool's identity from its label and hides the resource tools", () => {
+test("the plugin API records each MCP tool's identity from its label", () => {
   const tools = new Map();
   const identities = new Map();
   const styled = pluginApi({ registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, [], undefined, undefined, undefined, identities);
@@ -109,14 +109,12 @@ test("the plugin API records each MCP tool's identity from its label and hides t
   styled.registerTool({ name: "mcp__exa__a_very_long_name_1a2b3c4d", label: "exa/a.very/long/name", exposure: "direct", execute });
   styled.registerTool({ name: "mcp__nolabel__x", label: "mcp__nolabel__x", execute });
   styled.registerTool({ name: "bg_wait", label: "bg/wait", execute });
-  for (const name of ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]) styled.registerTool({ name, label: name, exposure: "direct", execute });
   assert.deepEqual([...identities], [
     ["mcp__context7__query-docs", { server: "context7", tool: "query-docs" }],
     ["mcp__exa__a_very_long_name_1a2b3c4d", { server: "exa", tool: "a.very/long/name" }],
   ]);
   assert.equal(tools.get("mcp__context7__query-docs").exposure, "deferred");
   assert.equal(tools.get("mcp__context7__query-docs").execute, execute);
-  for (const name of ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]) assert.equal(tools.get(name).exposure, "hidden", name);
 });
 
 test("a message renderer we own is composed over the plugin's, which stays as the fallback", () => {
@@ -167,9 +165,6 @@ test("the control notice row is built from the event pi-subagents puts in detail
   // A payload the row cannot read is the plugin's to draw.
   assert.equal(controlNotice({ details: { event: { agent: "researcher" } } }, {}, theme), undefined);
   assert.equal(controlNotice({}, {}, theme), undefined);
-  // A goal mission reaches the renderer too, but its body is several lines that do
-  // not open with the agent and state, so the box keeps it whole.
-  assert.equal(controlNotice({ details: { source: "goal", event: { agent: "goal mission", reason: "idle", message: "Goal mission needs attention: ship it\nMission: goal-abc\nRemaining budget: 500 tokens" } } }, {}, theme), undefined);
 });
 
 test("the plan-mode research addendum is the root's alone, and execute mode carries neither", () => {

@@ -10,6 +10,7 @@ import { Type } from "typebox";
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-codex-responses";
+import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { activeToolNames } from "./index.mjs";
@@ -351,7 +352,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     styled.on("session_shutdown", () => { log.push("rpc:teardown"); rpcReady = false; });
   };
   const { installWorkflow } = await import("./index.mjs");
-  await installWorkflow(pi, configPath, "root", { startBroker: async (_config, _cwd, callback) => { review = callback; return broker; }, requestBroker: async () => ({ mode: broker.policy.mode, readonly: false }), installSubagents });
+  await installWorkflow(pi, configPath, "root", { startBroker: async (_config, _cwd, callback) => { review = callback; return broker; }, requestBroker: async () => ({ mode: broker.policy.mode, readonly: false }), installSubagents, AgentSession });
   assert.ok(tools.has("workspace_task"));
   assert.deepEqual(tools.get("workspace_task").parameters.properties.action.anyOf.map(entry => entry.const), ["list", "output", "stop"]);
   assert.equal(tools.get("workspace_task").parameters.required.includes("id"), false);
@@ -374,6 +375,59 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
   assert.match(promptEvent.systemPromptOptions.sections.skills, /Use the workspace_read tool[^]*<name>fixture-skill<\/name>/);
   assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
+  // An idle triggerTurn reaches _runAgentPrompt without prompt(); the wrapper
+  // emits before_agent_start and guards the model itself.
+  const session = Object.create(AgentSession.prototype);
+  const prompted = [];
+  const appended = [];
+  Object.assign(session, {
+    _pendingNextTurnMessages: [], _baseSystemPromptOptions: { ...promptEvent.systemPromptOptions, sections: {}, selectedTools: [] },
+    _extensionRunner: {
+      createContext: () => ctx,
+      async emitBeforeAgentStart(prompt, _images, base) {
+        const options = structuredClone(base);
+        for (const handler of handlers.get("before_agent_start")) await handler({ prompt, systemPromptOptions: options }, ctx);
+        if (prompt === "abort me") session._agentRunAbortRequested = true;
+        return { messages: [], systemPromptOptions: options };
+      },
+    },
+    agent: { prompt: async messages => prompted.push({ messages, options: session._runSystemPromptOptions }) },
+    getActiveToolNames: () => ["workspace_read"], _preparePromptAndToolLoadout: () => undefined,
+    _recordSelection() {}, _handlePostAgentRun: async () => false, _runBeforeSettleBoundary: async () => false,
+    _flushPendingBashMessages() {}, _flushPendingCustomMessages() {}, _emitAgentSettled: async () => {}, _appendCustomMessage: message => appended.push(message.content),
+  });
+  await session.sendCustomMessage({ customType: "workflow-shell", content: "Ran `pwd`", display: false }, { triggerTurn: true });
+  assert.equal(prompted.length, 1);
+  assert.match(prompted[0].options.sections.workflow, /Workflow mode: plan/);
+  assert.match(prompted[0].options.sections.skills, /<name>fixture-skill<\/name>/);
+  assert.equal(session._runSystemPromptOptions, undefined);
+  session._isAgentRunActive = false;
+  // A second idle trigger while the first is still preparing queues behind it.
+  const queued = [];
+  session.agent.followUp = message => queued.push(message);
+  await Promise.all([1, 2].map(n => session.sendCustomMessage({ customType: "workflow-shell", content: `Ran ${n}`, display: false }, { triggerTurn: true, deliverAs: "followUp" })));
+  assert.equal(prompted.length, 2);
+  assert.deepEqual(queued.map(message => message.content), ["Ran 2"]);
+  session._isAgentRunActive = false;
+  // An abort while the run is being prepared settles it without a model call.
+  let settled = 0;
+  session._emitAgentSettled = async () => { settled++; session._isAgentRunActive = false; };
+  // The caller's notice is kept without a turn, and next-turn messages wait for a run that starts.
+  session._pendingNextTurnMessages = [{ role: "custom", customType: "workflow-shell", content: "next turn" }];
+  await session.sendCustomMessage({ customType: "workflow-shell", content: "abort me", display: false }, { triggerTurn: true });
+  assert.equal(prompted.length, 2);
+  assert.deepEqual(appended, ["abort me"]);
+  assert.deepEqual(session._pendingNextTurnMessages.map(message => message.content), ["next turn"]);
+  session._pendingNextTurnMessages = [];
+  assert.equal(settled, 1);
+  assert.equal(session._agentRunAbortRequested, false);
+  assert.equal(session._runSystemPromptOptions, undefined);
+  ctx.model = { provider: "openai-codex", id: "unmanaged" };
+  await assert.rejects(session.sendCustomMessage({ customType: "workflow-shell", content: "Ran `pwd`", display: false }, { triggerTurn: true }), /Select an available managed OpenAI subscription model/);
+  assert.equal(prompted.length, 2, "a refused run never reaches agent.prompt");
+  assert.deepEqual(appended, ["abort me", "Ran `pwd`"]);
+  assert.equal(session._runSystemPromptOptions, undefined);
+  ctx.model = { provider: "openai-codex", id: "gpt-5.6-sol" };
   assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "submit_plan", "subagent", "web_search", "web_fetch"]);
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
   for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);
@@ -414,6 +468,16 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   }
   assert.match(cleanupError?.message ?? "", /owned-run: stop request failed/);
   assert.deepEqual(log, ["stop:owned-run", "broker:close", "rpc:teardown"]);
+  // A shutting-down workflow refuses an idle trigger; a reinstall swaps in its own guard.
+  await assert.rejects(session.sendCustomMessage({ customType: "workflow-shell", content: "late", display: false }, { triggerTurn: true }), /Restart the managed workflow/);
+  running = false;
+  ctx.hasUI = false;
+  handlers.clear();
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: broker.policy.mode, readonly: false }), installSubagents, AgentSession });
+  for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
+  await session.sendCustomMessage({ customType: "workflow-shell", content: "reinstalled", display: false }, { triggerTurn: true });
+  assert.equal(prompted.length, 3, "the reinstall's guard, not the shut-down one, decides");
+  for (const handler of handlers.get("session_shutdown")) await handler({ reason: "quit" }, ctx);
 });
 
 test("every MCP call is resolved to its server and tool and put to the broker; unknown or unconfigured MCP tools are blocked", async t => {

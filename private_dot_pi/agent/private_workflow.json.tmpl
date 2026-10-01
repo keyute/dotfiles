@@ -2,10 +2,10 @@
 {{- $sandbox := includeTemplate "agent-sandbox" (dict "self" "pi" "root" .) | fromJson -}}
 {{- $agentDir := printf "%s/.pi/agent" .chezmoi.homeDir -}}
 {{- $denyRead := $sandbox.denyRead | uniq | sortAlpha -}}
-{{- /* Only live-loaded code is write-protected: the shared node_modules deny
-       plus the applied agent dir and the shell init that launches pi. Repo
-       source is fair game, as for the other harnesses; chezmoi apply is the gate. */ -}}
-{{- $denyWrite := concat $sandbox.denyWrite (list $agentDir (printf "%s/.zshrc" .chezmoi.homeDir)) -}}
+{{- /* Only live-loaded code is write-protected: the shared denyWrite (node_modules
+       and the applied bridge copy) plus the applied agent dir. Repo source is
+       fair game, as for the other harnesses; chezmoi apply is the gate. */ -}}
+{{- $denyWrite := concat $sandbox.denyWrite (list $agentDir) -}}
 {{- /* bash 3.2 here-documents land in /var/tmp, and read-only roles have no
        writable cwd to fall back on */ -}}
 {{- $allowWrite := append $sandbox.allowWrite "/var/tmp" -}}
@@ -21,7 +21,6 @@
 {{- $searchModel := get .subagent_tiers.pi $pi.search_tier -}}
 {{- if not $searchModel -}}{{- fail (printf "agents.pi.search_tier: unknown tier %s" $pi.search_tier) -}}{{- end -}}
 {{- dict
-      "version" 1
       "agentDir" $agentDir
       "childLimit" $pi.child_limit
       "models" (dict

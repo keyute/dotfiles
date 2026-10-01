@@ -1,7 +1,7 @@
 # Pi workflow reference
 
-Env-specific facts; if behavior seems changed, verify against the source repo and
-update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's `docs/decisions.md`.
+Env-specific facts; if behavior seems changed, verify against the source repo and update its
+template in the chezmoi repo. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's `docs/decisions.md`.
 
 ## Launch and pins
 
@@ -29,8 +29,9 @@ update this file. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's
   catalog (the startup probe checks each); if one is dropped, fail unavailable, not an alias or API billing.
 - All models draw one plan allowance at their own rate ([live rate card](https://learn.chatgpt.com/docs/pricing));
   API task cost is not Pro allowance; compare completed tasks including retries.
-- Context window: the subscription route's input limit is below the model page's API figure
-  and has moved without notice: trust the live readout (status line, `/session`; pi has no `/status`).
+{{- $cw := list }}{{ range $tier, $n := .agents.pi.defaults.context_window }}{{ $cw = append $cw (printf "%s (%v tokens)" $tier $n) }}{{ end }}
+- Context window: pinned for {{ $cw | join ", " }}; other tiers keep pi's catalog figure.
+  A `context_length_exceeded` below the pin means the subscription limit moved.
 
 ## Specialists and skills
 

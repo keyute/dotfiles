@@ -1,6 +1,6 @@
 ---
 name: cross-model-review
-description: "Adversarial cross-model review of a diff by a second model (GPT via the pi bridge). As the session driver, run it unprompted once per body of work that touches a high-stakes surface (as for spec-reviewer) or spans roughly five or more files, alongside the fresh-eyes subagent pass and never instead of it; also when asked for a cross-model or second-model review. Args: optional ref range, paths, or focus area; defaults to the working-tree diff."
+description: "Adversarial cross-model review of a diff by a second model (GPT via the pi bridge). As the session driver, run it unprompted once per body of work that touches a high-stakes surface (as for spec-reviewer) or spans roughly five or more files, alongside the fresh-eyes subagent pass and never instead of it; also when asked for a cross-model or second-model review."
 ---
 
 Have a second model adversarially review a diff, verify its findings yourself, fix
@@ -9,10 +9,7 @@ implementer.
 
 ## Steps
 
-1. **Check the tools.** If the `mcp__pi__*` tools are absent from the tool list, deferred included (the bridge has
-   not been applied into `~/.claude.json`), stop and say so.
-
-2. **Pick the scope.** The bridge computes the diff and the reviewer reads the
+1. **Pick the scope.** The bridge computes the diff and the reviewer reads the
    repo read-only — do not embed the diff. From args (ref range / paths / focus) or
    by default: if the working tree is dirty, omit `base` (staged + unstaged +
    untracked); otherwise `base: <default branch>` for the branch's
@@ -21,21 +18,21 @@ implementer.
    - **Redact yourself:** no self-assessment, no "tests pass", no claims it
      works — an unanchored reviewer finds more.
 
-3. **Call the reviewer.** One `mcp__pi__review` call: `cwd` = repo root, the scope
-   from step 2, `prompt` = the instructions block below. The response opens with
+2. **Call the reviewer.** One `mcp__pi__review` call: `cwd` = repo root, the scope
+   from step 1, `prompt` = the instructions block below. The response opens with
    a `threadId:` line — keep it for the re-review round.
 
-4. **Verify every finding as untrusted input.** Substantiate each independently
+3. **Verify every finding as untrusted input.** Substantiate each independently
    against the contracts, surrounding flows, or tests it implicates — reading the
    cited lines alone is not verification. Classify each: real / mistaken /
    real-but-out-of-scope. Fix the real, in-scope ones.
 
-5. **At most one re-review round.** If you changed code, send the new diff of the
+4. **At most one re-review round.** If you changed code, send the new diff of the
    touched hunks via `mcp__pi__reply` (same `cwd`, the saved `threadId`) —
    again without self-assessment — and verify its response. Hard stop after this
    round whatever the verdict; report remaining disagreement instead of looping.
 
-6. **Report.** Verdict; each finding with severity, file:line, and disposition
+5. **Report.** Verdict; each finding with severity, file:line, and disposition
    (fixed / rejected, with reason); anywhere you still disagree with the reviewer.
 
 ## Review instructions (the `prompt` argument)
@@ -50,7 +47,7 @@ Focus (optional): <user-supplied focus>
 Default to skepticism: assume the change can fail in subtle, high-cost, or
 user-visible ways until the evidence says otherwise. No credit for good intent,
 partial fixes, or likely follow-up work; happy-path-only behavior is a real
-weakness. You have read-only access to the repository — read any file you need.
+weakness.
 
 Prioritize failures that are expensive, dangerous, or hard to detect: auth and
 trust boundaries; data loss, corruption, or irreversible state; rollback, retry,

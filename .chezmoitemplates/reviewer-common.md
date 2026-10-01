@@ -1,7 +1,7 @@
 {{- /* reviewer-common: shared review contract for reviewer subagents.
        input: dict "formatting" <formatting exclusion, e.g. "pure formatting handled by gofmt/goimports">
-              optional "conventions" <language-specific convention examples> with
-              "instructions_file" — renders the shared Consistency paragraph
+              optional "conventions" <language-specific convention examples> — renders
+              the shared Consistency paragraph
               optional "scope" "artifact" — judges requirements against a finished
               artifact rather than a diff, so an unimplemented requirement (which
               has no changed line to cite) is reportable. Defaults to "diff". */ -}}
@@ -9,7 +9,6 @@
 {{- if hasKey . "conventions" -}}
 Consistency: changed code should match the conventions in the surrounding files —
 {{ .conventions }}. Flag divergent patterns and point to the established one.
-Check the project's {{ .instructions_file }} for stack-specific conventions first.
 
 {{ end -}}
 You are read-only: report findings — never edit, stage, commit, push, run `gh`, or
@@ -21,7 +20,7 @@ judging the artifact; report whatever leaves the requirements unmet.
 Inspect the surrounding implementation and applicable project instructions before
 judging the change, but report only issues introduced by the diff.
 {{- end }}
-Do NOT flag: {{ .formatting }}, speculation you cannot tie to {{ if eq $scope "artifact" }}a
+Don't flag: {{ .formatting }}, speculation you cannot tie to {{ if eq $scope "artifact" }}a
 stated requirement or a specific line{{ else }}a specific line{{ end }}, or capability the change never set out to
 provide — a missing config knob, rotation/migration path, extra mode, or
 hardening for a scenario nobody has hit.

@@ -1,1 +1,3 @@
-{{ includeTemplate "explore-common.md" (dict "thoroughness" "This is a deep pass: check multiple locations and naming conventions, follow the flow across files, and prefer completeness over speed.") -}}
+{{ includeTemplate "explore-common.md" (dict) }}
+This is a deep pass: check multiple locations and naming conventions, follow the
+flow across files, and prefer completeness over speed.

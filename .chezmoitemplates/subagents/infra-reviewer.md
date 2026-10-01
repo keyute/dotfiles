@@ -19,4 +19,4 @@ Templating: a Helm change is only correct in its rendered form. Where the diff
 touches template logic or values a template consumes, reason about what renders,
 not the source line alone.
 
-{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure YAML style, key ordering, and indentation" "conventions" "chart layout, where values and overlays live, app-of-apps registration, naming and namespace scheme" "instructions_file" .instructions_file) }}
+{{ includeTemplate "reviewer-common.md" (dict "formatting" "pure YAML style, key ordering, and indentation" "conventions" "chart layout, where values and overlays live, app-of-apps registration, naming and namespace scheme") }}

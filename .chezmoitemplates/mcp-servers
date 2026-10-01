@@ -6,7 +6,10 @@
                  connection: {type: "stdio", command, args, env}
                              — env op: refs resolved via onepasswordRead;
                              command node_modules/.bin/<package_bin>, or
-                             `node scripts/<script>` for repo-local bridges
+                             `node ~/.claude/pi-bridge/scripts/<script>`, the
+                             applied copy: the bridge runs outside the
+                             sandbox, so `chezmoi apply` gates its code; a
+                             leading `~/` in args expands to home
                  policy:     {auto_approve_tools, denied_tools, readonly_tools,
                              unsandboxed, domains} — always all keys,
                              normalized to false/[] so consumers can index
@@ -39,20 +42,16 @@
     {{- $args := list -}}
     {{- $script := get $cfg "script" -}}
     {{- if $script -}}
-      {{- $args = append $args (printf "%s/scripts/%s" $root.chezmoi.sourceDir $script) -}}
+      {{- $args = append $args (printf "%s/.claude/pi-bridge/scripts/%s" $root.chezmoi.homeDir $script) -}}
     {{- else -}}
       {{- $command = printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
     {{- end -}}
     {{- range $cfg.args -}}
-      {{- $args = append $args . -}}
+      {{- $args = append $args (regexReplaceAll "^~/" . (printf "%s/" $root.chezmoi.homeDir)) -}}
     {{- end -}}
     {{- $env := dict -}}
     {{- range $key, $value := default (dict) (get $cfg "env") -}}
-      {{- $ref := $value.op -}}
-      {{- if not (hasPrefix "op://" $ref) -}}
-        {{- $ref = printf "op://%s" $ref -}}
-      {{- end -}}
-      {{- $env = set $env $key (onepasswordRead $ref) -}}
+      {{- $env = set $env $key (onepasswordRead (printf "op://%s" $value.op)) -}}
     {{- end -}}
     {{- $entry = set $entry "connection" (dict "type" "stdio" "command" $command "args" $args "env" $env) -}}
   {{- end -}}

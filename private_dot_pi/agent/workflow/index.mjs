@@ -71,7 +71,8 @@ export function workflowPrompt({ mode, readonly, isRoot }) {
 
 // Plan mode keeps write/edit declared: the broker refuses the call, while a
 // retracted tool makes pi-ai resend the whole tool list and re-bill the
-// context on every later mode switch (docs/pi-implementation.md, Decisions).
+// context on every later mode switch; revisit if pi-ai stops re-declaring
+// tools after a removal.
 // A deferred or hidden tool is left as it stands: a refresh neither declares
 // it nor retracts one tool_search loaded.
 export function activeToolNames(tools, { ready, permitted, currentContext, active }) {
@@ -79,6 +80,61 @@ export function activeToolNames(tools, { ready, permitted, currentContext, activ
   return tools.filter(({ name, exposure }) => permitted(name)
     && !(name === "ask_user_question" && (currentContext?.mode !== "tui" || !currentContext?.hasUI))
     && (!["deferred", "hidden"].includes(exposure) || active.includes(name))).map(tool => tool.name);
+}
+
+// Every agent run passes through _runAgentPrompt, but only prompt() emits
+// before_agent_start first, and pi swallows a handler's throw: an idle
+// triggerTurn ran without the workflow sections and past the model guard
+// (docs/pi-coupling.md, Managed agent runs). The guard throws here, on every
+// run, and a run prompt() did not prepare gets prompt()'s preparation.
+const MANAGED_RUN = Symbol.for("pi-workflow:managed-run");
+function installManagedRun(AgentSession, guard) {
+  const prototype = AgentSession.prototype;
+  const installed = prototype._runAgentPrompt[MANAGED_RUN];
+  if (installed) { installed.guard = guard; return; }
+  const state = { guard };
+  const original = prototype._runAgentPrompt;
+  // What the original's finally does for a run that never reached agent.prompt.
+  const settle = async session => {
+    session._agentRunAbortRequested = false;
+    session._runSystemPromptOptions = undefined;
+    session._flushPendingBashMessages();
+    session._flushPendingCustomMessages();
+    await session._emitAgentSettled();
+  };
+  const run = async function (messages) {
+    const caller = [messages].flat();
+    // The original records the caller's messages via agent.prompt; a run that
+    // never reaches it appends them without a turn, as a non-triggering
+    // sendCustomMessage would, so an idle notice is not lost.
+    const keep = () => { for (const message of caller) if (message.role === "custom") this._appendCustomMessage(message); };
+    try { state.guard(this._extensionRunner.createContext()); }
+    catch (error) { this._runSystemPromptOptions = undefined; keep(); throw error; }
+    if (!this._runSystemPromptOptions) {
+      // Marked active before the first await, as the original does, so a
+      // second idle trigger queues instead of starting a parallel run.
+      this._isAgentRunActive = true;
+      try {
+        messages = [...caller];
+        const text = messages.map(({ content }) => typeof content === "string" ? content : content.filter(part => part.type === "text").map(part => part.text).join("\n")).join("\n");
+        const before = this._baseSystemPromptOptions.selectedTools;
+        const result = await this._extensionRunner.emitBeforeAgentStart(text, undefined, this._baseSystemPromptOptions);
+        const options = result.systemPromptOptions;
+        if (options.selectedTools.length === before.length && options.selectedTools.every((name, index) => name === before[index])) options.selectedTools = this.getActiveToolNames();
+        messages.push(...this._pendingNextTurnMessages, ...result.messages.map(({ customType, content, display, details }) => ({ role: "custom", customType, content: content ?? [], display, details, timestamp: Date.now() })));
+        const update = this._preparePromptAndToolLoadout(options);
+        this._runSystemPromptOptions = options;
+        if (update) messages.unshift(update);
+      } catch (error) { keep(); await settle(this); throw error; }
+      // An abort during preparation finds no model call to cancel; the
+      // original would clear its flag and start the turn anyway.
+      if (this._agentRunAbortRequested) { keep(); return settle(this); }
+      this._pendingNextTurnMessages = [];
+    }
+    return original.call(this, messages);
+  };
+  run[MANAGED_RUN] = state;
+  prototype._runAgentPrompt = run;
 }
 
 export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "workflow.json"), role = "root", runtime = {}) {
@@ -231,6 +287,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // herdr's pi extension reports `blocked` only on this bus event; pi's prompt
   // span is the one signal covering plan approval, questions and broker confirms.
+  // Drop once herdr's extension subscribes to ui_prompt_* itself, or each prompt counts twice.
   pi.on("ui_prompt_start", event => pi.events.emit("herdr:blocked", { active: true, label: event.title }));
   pi.on("ui_prompt_end", () => pi.events.emit("herdr:blocked", { active: false }));
 
@@ -283,6 +340,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("session_start", async (_event, ctx) => {
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     currentContext = ctx;
+    if (runtime.AgentSession) installManagedRun(runtime.AgentSession, assertManagedRun);
     shuttingDown = false;
     loadedTools.clear();
     const mode = isRoot ? broker.policy.mode : (await requestBroker(env, role, { action: "state" })).mode;
@@ -339,10 +397,13 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     return { action: "continue" };
   });
   pi.on("agent_end", () => { if (childRevoked) releaseChild?.(); });
-  pi.on("before_agent_start", async (event, ctx) => {
-    if (!ready || canonical(ctx.cwd) !== canonical(currentContext.cwd)) throw new Error("Restart the managed workflow after changing workspace");
+  const assertManagedRun = ctx => {
+    // Not `ready`: setMode clears it briefly, and a task notice sent meanwhile must still run.
+    if (childRevoked || shuttingDown || canonical(ctx.cwd) !== canonical(currentContext.cwd)) throw new Error("Restart the managed workflow after changing workspace");
     const model = ctx.model;
     if (!model || model.provider !== config.models.provider || !Object.values(config.models.tiers).includes(model.id) || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error("Select an available managed OpenAI subscription model; API fallback is disabled");
+  };
+  pi.on("before_agent_start", async event => {
     const state = await requestBroker(env, role, { action: "state" });
     // A returned systemPrompt forces the whole prompt and rewrites the
     // request's leading instructions on every change;
@@ -373,9 +434,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("session_shutdown", shutdown);
   if (isRoot) {
     pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", handler: (_args, ctx) => setMode("plan", ctx) });
-    pi.registerCommand("execute", { description: "Approve the current plan and enable scoped execution", handler: async (_args, ctx) => {
-      if (ctx.hasUI && await ctx.ui.confirm("Approve the current plan?", "Enable scoped edits and auto-reviewed actions for this task?")) await setMode("execute", ctx);
-    } });
+    pi.registerCommand("execute", { description: "Approve the current plan and enable scoped execution", handler: (_args, ctx) => setMode("execute", ctx) });
     pi.registerCommand("approvals", { description: "Choose auto-reviewed or individually prompted approvals", handler: async (_args, ctx) => {
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
       if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); publishStatus(ctx); }
@@ -464,6 +523,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   if (permittedTools.includes("web_fetch")) pi.registerTool({ ...webFetchTool(config), ...pluginRenderers("web_fetch") });
   // pi's built-in MCP, fed the managed servers only (no mcp.json is read);
   // every call is gated by the tool_call hook above.
+  // A trusted project's mcp.json would outrank a sandboxed server of the same name.
   if (mcpConfig(config, role).servers.length) {
     if (isRoot) await sdk.createToolSearchExtension()(styled);
     await sdk.createMcpExtension({ loadConfig: () => mcpConfig(config, role) })(styled);

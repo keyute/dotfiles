@@ -50,7 +50,7 @@ file are chezmoi-ignored (repo-local only).
 ## Harness iteration
 
 Changing models, roles, settings or instruction lines follows
-`docs/decisions.md` Events; `npm run test:pi` holds every mechanical check.
+`docs/decisions.md` Events.
 
 - **One record, only if needed.** Shared values live in agents.yaml. A
   decision gets a `docs/decisions.md` row (owned code: a `docs/pi-*.md`
@@ -62,9 +62,9 @@ Changing models, roles, settings or instruction lines follows
 - **Review on triggers only**: the events `docs/decisions.md` names, and only
   what the event touches. No scheduled or whole-harness sweeps.
 - **Rough parity by default.** Both harnesses reach roughly the same end
-  state where each can, not a faithful port. An asymmetry a reader would
-  "fix" back gets a row naming the harness limit or owner preference; a
-  missing vendor feature or a rendered difference gets none. Name the
+  state where each can, not a faithful port. An asymmetry that would cost
+  upkeep to remove gets no row; one a reader could cheaply "fix" back into a
+  regression gets a row naming the harness limit or owner preference. Name the
   boundary that enforces a restriction — sandbox, policy, tool list — never
   imply one.
 - **Set a vendor setting only to change its default**, to pin a value the

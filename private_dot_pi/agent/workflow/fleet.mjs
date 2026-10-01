@@ -72,6 +72,7 @@ export function navigate(state, action, open) {
 // Fleet keys are opaque display identities, not run ids. A successful match
 // stays bound until its row disappears; a missing bound run cannot become a
 // different sibling while its key remains visible.
+// pi-subagents' fleet DTO omits run ids by design, so nothing upstream retires this match.
 export function runIdFor(state, entry) {
   if (entry?.key != null && state.bindings.has(entry.key)) {
     const id = state.bindings.get(entry.key);

@@ -45,25 +45,7 @@ jobs:
         uses: oxsecurity/megalinter/flavors/documentation@15e5b45552097e318c93de385779ce3b1084052c # v10.0.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          # Allowlist individual linters rather than ENABLE whole descriptors:
-          # descriptors gain linters across MegaLinter majors and those
-          # auto-enable. A full-flavor run over this repo activated 31 linters;
-          # the ones left out are noise here, not gaps —
-          #   devskim        35 findings, all git commit SHAs in
-          #                  dot_config/nvim/lazy-lock.json matched as "tokens";
-          #                  betterleaks, secretlint, trufflehog and kingfisher
-          #                  all found zero.
-          #   osv-scanner,   the same 2 transitive npm CVEs Dependabot already
-          #   trivy          tracks; trivy re-downloads a 110MB DB every run.
-          #   cspell         605 findings: nvim, chezmoi, catppuccin, and the
-          #                  "[S]earch"-style keymap descriptions.
-          #   standard       demands single quotes and no semicolons.
-          #   prettier       reflow requests against deliberately formatted
-          #                  configs; never blocks, only nags.
-          #   luacheck       53 "mutating non-standard global variable vim" on
-          #   stylua         init.lua alone; Lua is formatted on save by
-          #                  conform.nvim already.
-          #   lychee         gates CI on third-party uptime.
+          # Allowlist, not descriptors: descriptors gain linters across majors and auto-enable.
           # Must stay on one line with no spaces after the commas: MegaLinter
           # splits on "," without stripping, so " YAML_YAMLLINT" matches no
           # linter and is silently dropped.

@@ -5,7 +5,6 @@
       {
         "id": "model",
         "type": "model",
-        "color": "cyan",
         "rawValue": true
       },
       { "id": "sep-a", "type": "separator", "character": " · ", "color": "brightBlack" },
@@ -51,12 +50,10 @@
         }
       },
       { "id": "sep-d", "type": "separator", "character": " · ", "color": "brightBlack" },
-      { "id": "git-branch", "type": "git-branch", "color": "magenta" },
+      { "id": "git-branch", "type": "git-branch", "rawValue": true, "metadata": { "hide": "no-git" } },
       { "id": "sep-e", "type": "separator", "character": " ", "color": "brightBlack" },
-      { "id": "git-changes", "type": "git-changes", "color": "brightBlack" }
-    ],
-    [],
-    []
+      { "id": "git-changes", "type": "git-changes", "color": "brightBlack", "metadata": { "hide": "no-git,zero" } }
+    ]
   ],
   "flexMode": "full-minus-40",
   "colorLevel": 1

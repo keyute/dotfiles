@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # docs/, README.md, AGENTS.md and CLAUDE.md are chezmoi-ignored —
+  # docs/, README.md and AGENTS.md are chezmoi-ignored —
   # repo-local only — so a commit touching nothing else cannot change a
   # rendered target. docs/decisions.md and AGENTS.md still trigger the run:
   # render.test reads them from source. Everything else, this workflow
@@ -54,7 +54,6 @@ jobs:
               - '!docs/pi-*.md'
               - '!docs/agent-authoring.md'
               - '!README.md'
-              - '!CLAUDE.md'
 
   # Fast gate on every PR and push to main: render.test applies the whole tree
   # headless into a scratch home with run scripts and externals excluded. modify_ scripts are not in the

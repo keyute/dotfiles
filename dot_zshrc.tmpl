@@ -13,10 +13,9 @@ alias python='python3'
 alias lg='lazygit'
 alias lzd='lazydocker'
 alias lsql='lazysql'
-# Disable native tools even if the mandatory workflow extension fails to load.
+# Native tools stay off even if a workflow startup handler throws (pi swallows handler errors) before the tool refresh.
 # The CLI is the repo's lockfile-pinned copy: pi breaks extension APIs across
 # 0.x point releases, and the workflow extension must match it exactly.
-unalias pi 2>/dev/null
 pi() {
   local -a pi_extensions=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts")
   [[ ! -f "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts" ]] ||

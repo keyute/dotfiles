@@ -2,11 +2,8 @@
 {{- $allowedDomains := concat .agent_sandbox.network.allowed_domains .agents.claude.extras.allowed_domains -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
 {{- $modelSettings := dict -}}
-{{- $noEffort := default (list) (get .agents.claude "no_effort_models") -}}
 {{- range $tier, $pin := .subagent_tiers.claude -}}
-  {{- if not (has $pin $noEffort) -}}
-    {{- $_ := set $modelSettings $pin (dict "effortLevel" $.agents.claude.defaults.reasoning_effort) -}}
-  {{- end -}}
+  {{- $_ := set $modelSettings $pin (dict "effortLevel" $.agents.claude.defaults.reasoning_effort) -}}
 {{- end -}}
 {{- /* the frontier pin's Agent-tool alias is its family segment (claude-<family>-…),
        so the deny follows the pin; denied_tools hand-lists only aliases with no tier */}}
@@ -18,6 +15,8 @@
   {{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}
   {{- if not (or (hasPrefix "~" .) (hasPrefix "/" .)) -}}{{- $permDeny = append $permDeny (printf "Edit(%s)" .) -}}{{- end -}}
 {{- end -}}
+{{- /* the sandbox's denyWrite stops Bash only; Claude's Edit/Write tools need the rule too */ -}}
+{{- range $sb.denyWrite -}}{{- $permDeny = append $permDeny (printf "Edit(/%s/**)" .) -}}{{- end -}}
 {{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
        resolving their op secrets here would make settings.json depend on
        1Password. An auto-approved server gets a per-tool allow for each of its
@@ -44,8 +43,7 @@
   },
   {{- /* driver pin from agents.yaml */}}
   "model": {{ (index .subagent_tiers.claude .agents.claude.defaults.tier) | toJson }},
-  {{- /* every Claude pin that takes an effort knob gets the driver effort, so a
-         /model change keeps it */}}
+  {{- /* every Claude pin gets the driver effort, so a /model change keeps it */}}
   "modelSettings": {{ $modelSettings | toPrettyJson | indent 2 | trim }},
   {{- /* fallback for the built-in `claude` type, plugin and workflow agents; a default, not a
          force — leave CLAUDE_CODE_SUBAGENT_MODEL_FORCE unset, it would erase specialist pins */}}
@@ -113,8 +111,6 @@
   "awaySummaryEnabled": false,
   {{- /* no built-in commit/PR workflow instructions in the system prompt */}}
   "includeGitInstructions": false,
-  {{- /* no greyed-out next-prompt suggestions */}}
-  "promptSuggestionEnabled": false,
   {{- /* no agent view: `claude agents`, --bg, /background and the on-demand daemon */}}
   "disableAgentView": true,
   {{- /* alternate-screen TUI, as pi's managed launch */}}

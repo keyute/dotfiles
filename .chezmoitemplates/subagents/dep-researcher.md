@@ -6,9 +6,9 @@ Read the upstream source itself: CHANGELOG, release notes, the project's upgrade
 guide, or context7 for the library. Never infer a changelog from a version number,
 and never report a search-result summary as if it were the release notes.
 
-Before calling anything breaking, grep this repo for the surface that changed — a
-removed API, renamed values key, or dropped CRD field only matters if the repo
-touches it. Say which surfaces you checked.
+Before calling anything breaking, check the files your prompt names for the
+surface that changed — a removed API, renamed values key, or dropped CRD field
+only matters if the repo touches it. Say which surfaces you checked.
 
 Return exactly:
 

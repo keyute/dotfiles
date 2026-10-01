@@ -11,7 +11,7 @@ function fixture(t) {
   for (const dir of ["work", "scratch", "control", "secret", "cache"]) mkdirSync(join(root, dir));
   writeFileSync(join(root, "secret", "fixture"), "not a real credential");
   symlinkSync(join(root, "secret"), join(root, "work", "link"));
-  const config = { version: 1, models: {}, filesystem: { denyRead: [join(root, "secret"), ".env"], denyWrite: [], allowWrite: [join(root, "cache")] }, network: { allowedDomains: [] }, agents: { reviewer: { readonly: true, tools: workerTools } }, mcp: { docs: { policy: { denied_tools: ["unsafe"], readonly_tools: ["search"], auto_approve_tools: true } } } };
+  const config = { models: {}, filesystem: { denyRead: [join(root, "secret"), ".env"], denyWrite: [], allowWrite: [join(root, "cache")] }, network: { allowedDomains: [] }, agents: { reviewer: { readonly: true, tools: workerTools } }, mcp: { docs: { policy: { denied_tools: ["unsafe"], readonly_tools: ["search"], auto_approve_tools: true } } } };
   config.agents.reviewer.tools = workerTools.map(publicToolName);
   return new Policy(config, join(root, "work"), join(root, "scratch"), join(root, "control"));
 }
@@ -132,7 +132,7 @@ test("/add-dir completions keep explicit relative, absolute and home paths first
   });
   process.env.HOME = join(root, "home");
   for (const dir of ["work", "scratch", "control", "cache", "home", "apps/apps/child", "home/apps/child"]) mkdirSync(join(root, dir), { recursive: true });
-  const config = { version: 1, models: {}, filesystem: { denyRead: [], denyWrite: [], allowWrite: [join(root, "cache")] }, network: { allowedDomains: [] }, agents: { reviewer: { readonly: true, tools: workerTools.map(publicToolName) } }, mcp: {} };
+  const config = { models: {}, filesystem: { denyRead: [], denyWrite: [], allowWrite: [join(root, "cache")] }, network: { allowedDomains: [] }, agents: { reviewer: { readonly: true, tools: workerTools.map(publicToolName) } }, mcp: {} };
   const p = new Policy(config, join(root, "work"), join(root, "scratch"), join(root, "control"));
   const apps = join(root, "apps", "apps");
   assert.deepEqual(p.addableDirs("../apps/"), ["../apps/", "../apps/apps/"]);

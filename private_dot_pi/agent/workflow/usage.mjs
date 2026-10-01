@@ -92,6 +92,8 @@ export function sessionCost(entries, report) {
     const message = entry.type === "message" ? entry.message : null;
     if (message?.role === "assistant" && message.usage) byModel(modelLabel(message.responseModel ?? message.model) ?? "other", message.usage);
     else if (entry.type === "usage") byModel(modelLabel(entry.model) ?? "other", entry.usage);
+    // Only web_fetch: subagent tool results carry child usage the cost report already counts.
+    else if (message?.role === "toolResult" && message.toolName === "web_fetch" && message.usage) byModel("summaries", message.usage);
     else if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) byModel("summaries", entry.usage);
   }
   const agents = new Map();

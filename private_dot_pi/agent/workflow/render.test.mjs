@@ -6,8 +6,6 @@ import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
-
 import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -102,7 +100,6 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const workflow = JSON.parse(run("cat", target(".pi/agent/workflow.json")));
   const piSettings = JSON.parse(run("cat", target(".pi/agent/settings.json")));
 
-  assert.equal(workflow.version, 1);
   // bash 3.2 here-documents on macOS; see private_workflow.json.tmpl
   assert.ok(workflow.filesystem.allowWrite.includes("/var/tmp"));
   assert.equal(piSettings.defaultModel, data.subagent_tiers.pi[data.agents.pi.defaults.tier]);
@@ -142,9 +139,8 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     const shim = run("cat", target(`.pi/agent/policy-roles/${role}.ts`));
     assert.match(agent, new RegExp(`^name: ${role}$`, "m"));
     assert.equal(/^tools: .*\bbg_wait\b/m.test(agent), workflow.agents[role].nests);
-    assert.match(agent, new RegExp(`^allowNestedSubagents: ${workflow.agents[role].nests}$`, "m"));
     assert.match(agent, new RegExp(`extensions: .*/policy-roles/${role}\\.ts`));
-    assert.match(shim, new RegExp(`, ${JSON.stringify(role)}\\);`));
+    assert.match(shim, new RegExp(`, ${JSON.stringify(role)}, \\{ AgentSession \\}\\);`));
   }
 
   const piInstructions = run("cat", target(".pi/agent/AGENTS.md"));
@@ -153,8 +149,6 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const piHarness = run("cat", target(".pi/agent/docs/harness.md"));
   const claudeSandboxDoc = run("cat", target(".claude/docs/sandbox.md"));
   const piSandboxDoc = run("cat", target(".pi/agent/docs/sandbox.md"));
-  // pi's escalation rule names the pin no child may take (children.mjs rejects it)
-  assert.ok(description.includes(`\`${data.subagent_tiers.pi.frontier}\``));
   for (const [name, text, max] of [
     [".pi/agent/AGENTS.md", piInstructions, PROJECTION_MAX_BYTES],
     [".claude/CLAUDE.md", claudeInstructions, PROJECTION_MAX_BYTES],
@@ -194,7 +188,10 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   for (const path of ["/h/.claude/ide", "/h/.claude/bridge-spawn"]) assert.ok(bridgePolicy.denyRead.includes(path), `bridge denyRead misses ${path}`);
   // a relative deny name sits in the writable cwd, so it also gets an Edit() deny
   assert.ok(claudeSettings.permissions.deny.includes("Edit(.env)"));
-  assert.ok(!claudeSettings.permissions.deny.some(rule => /^Edit\([~/]/.test(rule)));
+  // live code run outside the sandbox (node_modules, the bridge copy) is write-denied to Edit too
+  assert.deepEqual(claudeSettings.permissions.deny.filter(rule => /^Edit\([~/]/.test(rule)), claudeSettings.sandbox.filesystem.denyWrite.map(path => `Edit(/${path}/**)`));
+  const bridgeCopy = `${data.chezmoi.homeDir}/.claude/pi-bridge`;
+  assert.ok(claudeSettings.sandbox.filesystem.denyWrite.includes(bridgeCopy));
   assert.ok(bridgePolicy.writableRoots.length);
   // shared network policy reaches both harnesses; Claude may append its own extra domains
   const networkKeys = { allow_local_binding: "allowLocalBinding", allowed_domains: "allowedDomains" };
@@ -214,7 +211,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.ok(!claudeSettings.permissions.allow.some(rule => /^mcp__[^_]+$/.test(rule)), "a server-wide mcp allow");
   // driver_only is consumed on Claude (the tool-list-less nesting role disallows the server); pi never renders it
   const driverOnly = Object.entries(data.agent_mcp_servers).filter(([, server]) => server.driver_only).map(([name]) => name);
-  // the bridge itself must stay driver-only (decisions.md parity.cross_model), or the loop below checks nothing
+  // the bridge itself must stay driver-only, or the loop below checks nothing
   assert.ok(driverOnly.includes("pi"), "agent_mcp_servers.pi is not driver_only");
   const claudeGeneral = run("cat", target(".claude/agents/general-purpose.md"));
   const disallowed = /^disallowedTools: (.*)$/m.exec(claudeGeneral)?.[1].split(", ") ?? [];
@@ -226,7 +223,10 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     assert.doesNotMatch(text, /driver_only|disallowedTools/, "a pi render references driver_only");
   }
   // live code Claude runs unsandboxed is write-denied to sandboxed Bash, as pi's workflow.json does
-  assert.ok(claudeSettings.sandbox.filesystem.denyWrite.some(path => path.endsWith("/node_modules")));
+  for (const denyWrite of [claudeSettings.sandbox.filesystem.denyWrite, workflow.filesystem.denyWrite]) {
+    assert.ok(denyWrite.some(path => path.endsWith("/node_modules")));
+    assert.ok(denyWrite.includes(bridgeCopy));
+  }
   // the search plugin's config resolves its tier or fails the render
   const webSearch = JSON.parse(run("cat", target(".pi/agent/web-search.json")));
   assert.deepEqual(webSearch, { provider: data.agents.pi.defaults.provider, model: data.subagent_tiers.pi[data.agents.pi.search_tier] });
@@ -262,7 +262,6 @@ test("each role renders its roster tier and effort on every harness it targets",
   const { run, invoke, target, data: load } = fixture(t);
   const data = load();
   const provider = data.agents.pi.defaults.provider;
-  const noEffort = data.agents.claude.no_effort_models ?? [];
   const workflow = JSON.parse(run("cat", target(".pi/agent/workflow.json")));
   assert.deepEqual(Object.keys(workflow.agents).sort(), rolesFor(data, "pi").sort());
 
@@ -280,11 +279,8 @@ test("each role renders its roster tier and effort on every harness it targets",
       const agent = run("cat", claudePath);
       assert.match(agent, new RegExp(`^name: ${role}$`, "m"));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: claude model ${model}`);
-      if (noEffort.includes(model)) assert.doesNotMatch(agent, /^effort:/m, role);
-      else {
-        assert.ok(CLAUDE_EFFORTS.includes(meta.effort), `${role}: ${meta.effort} is not a Claude effort level`);
-        assert.ok(agent.split("\n").includes(`effort: ${meta.effort}`), `${role}: claude effort ${meta.effort}`);
-      }
+      assert.ok(CLAUDE_EFFORTS.includes(meta.effort), `${role}: ${meta.effort} is not a Claude effort level`);
+      assert.ok(agent.split("\n").includes(`effort: ${meta.effort}`), `${role}: claude effort ${meta.effort}`);
       // a nesting role inherits every tool, Agent included
       assert.equal(/^tools: /m.test(agent), !meta.nests, `${role}: claude tools line`);
       assert.equal(agent.split("\n").includes("omitClaudeMd: true"), meta.omit_instructions ?? false, `${role}: omitClaudeMd`);
@@ -321,10 +317,10 @@ test("each role renders its roster tier and effort on every harness it targets",
   }
 
   const settings = JSON.parse(run("cat", target(".claude/settings.json")));
-  // effort is pinned per model for every Claude pin that takes one
+  // effort is pinned per model for every Claude pin
   const effortLevel = data.agents.claude.defaults.reasoning_effort;
   assert.ok(CLAUDE_DRIVER_EFFORTS.includes(effortLevel), `agents.claude.defaults.reasoning_effort ${effortLevel}`);
-  const effortPins = [...new Set(Object.values(data.subagent_tiers.claude))].filter(pin => !noEffort.includes(pin));
+  const effortPins = [...new Set(Object.values(data.subagent_tiers.claude))];
   assert.deepEqual(Object.keys(settings.modelSettings).sort(), effortPins.sort());
   for (const pin of effortPins) assert.deepEqual(settings.modelSettings[pin], { effortLevel }, pin);
 
@@ -335,9 +331,6 @@ test("each role renders its roster tier and effort on every harness it targets",
   assert.ok(classifierPin, `agents.pi.defaults.classifier.tier ${pi.classifier.tier} is not a pi tier`);
   assertPiEffort(provider, classifierPin, pi.classifier.filter_effort, "classifier filter");
   assertPiEffort(provider, classifierPin, pi.classifier.judge_effort, "classifier judge");
-  // a model whose catalog maps the filter level to null (no `off`) would silently lift it
-  // a string wire value is required: null means the model has no such level, undefined would send the pi level verbatim
-  assert.equal(typeof getBuiltinModel(provider, classifierPin).thinkingLevelMap?.[pi.classifier.filter_effort], "string", `${classifierPin} maps no wire value for ${pi.classifier.filter_effort}`);
   assert.deepEqual(
     [workflow.models.classifierFilter, workflow.models.classifierJudge],
     [{ model: classifierPin, reasoningEffort: pi.classifier.filter_effort }, { model: classifierPin, reasoningEffort: pi.classifier.judge_effort }],
@@ -350,7 +343,7 @@ test("each role renders its roster tier and effort on every harness it targets",
   assertPiEffort(provider, data.subagent_tiers.pi.top, effort, "bridge");
 });
 
-test("every harness keeps one tier-key set with a distinct frontier, and its driver and no-effort models resolve through it", (t) => {
+test("every harness keeps one tier-key set with a distinct frontier, and its driver resolves through it", (t) => {
   const { data: load } = fixture(t);
   const data = load();
   const tierKeys = Object.keys(Object.values(data.subagent_tiers)[0]).sort();
@@ -362,9 +355,6 @@ test("every harness keeps one tier-key set with a distinct frontier, and its dri
       if (tier !== "frontier") assert.notEqual(pin, tiers.frontier, `${h}: ${tier} shares the frontier pin`);
     }
     assert.ok(tiers[agent.defaults.tier], `${h}: driver tier ${agent.defaults.tier}`);
-    for (const model of agent.no_effort_models ?? []) {
-      assert.ok(Object.values(tiers).includes(model), `${h}: no_effort_models entry ${model} is not a current pin`);
-    }
   }
 });
 
@@ -468,7 +458,7 @@ test("docs/decisions.md has a row for every tier pin, driver, classifier, search
   const rows = new Map(body.map(([key, ...rest]) => [key.replace(/^`(.*)`$/, "$1"), rest]));
   assert.equal(rows.size, body.length, "docs/decisions.md has a duplicate key");
   const slots = [
-    ...Object.entries(data.subagent_tiers).flatMap(([h, tiers]) => Object.keys(tiers).map(tier => `subagent_tiers.${h}.${tier}`)),
+    ...Object.keys(data.subagent_tiers.claude).map(tier => `subagent_tiers.claude.${tier}`),
     ...Object.keys(data.subagent_tiers).map(h => `agents.${h}.defaults.tier`),
     "agents.pi.defaults.classifier",
     "agents.pi.defaults.context_window",

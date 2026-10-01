@@ -5,5 +5,4 @@ scripts/
 docs/
 README.md
 AGENTS.md
-CLAUDE.md
 .pi/agent/workflow/*.test.mjs

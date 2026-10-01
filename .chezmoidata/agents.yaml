@@ -10,9 +10,6 @@ agents:
       # a subagent_tiers key, never a second copy of the pin
       tier: top
       reasoning_effort: high
-    # models with no effort knob: the render omits `effort:` for a role whose
-    # tier resolves to one. Keyed by model: the property moves with the pin.
-    no_effort_models: []
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -24,6 +21,7 @@ agents:
       - "todos"
       - "backups"
       - "sessions"
+      - "paste-cache"
       # IDE lock tokens and bridge spawn state: Claude Code denies these on its
       # own, but listing them here carries them to the bridge's git sandbox
       - "ide"
@@ -34,18 +32,14 @@ agents:
     plugins:
       "frontend-design@claude-plugins-official": true
     # disableBundledSkills stays unset: it also drops the review skills
-    # Bundled-skill listing: `off` drops a skill from the model's listing and
-    # removes the user's /name command,
-    # `user-invocable-only` keeps /name while hiding it from the model.
     skill_overrides:
       claude-in-chrome: "off"
       schedule: "off"
       dataviz: "off"
-      design-sync: "off"
       fewer-permission-prompts: "off"
       commit: "off"
       pr: "off"
-      keybindings-help: "user-invocable-only"
+      keybindings-help: "off"
       init: "user-invocable-only"
       simplify: "user-invocable-only"
       code-review: "user-invocable-only"
@@ -54,7 +48,6 @@ agents:
     denied_tools:
       - "DesignSync"
       - "RemoteTrigger"
-      - "PushNotification"
       - "Agent(isolation:remote)"
       # Agent-tool aliases with no small/top pin; the frontier pin's alias is
       # rendered from subagent_tiers, so children run only tier pins
@@ -80,9 +73,9 @@ agents:
       reasoning_effort: high
       # approval classifier: one tier model for both stages; the filter answers
       # every reviewed action, anything but allow is re-judged
-      classifier: { tier: top, filter_effort: "off", judge_effort: medium }
+      classifier: { tier: top, filter_effort: low, judge_effort: medium }
       # contextWindow per tier in ~/.pi/agent/models.json; an unlisted tier keeps pi's catalog window
-      context_window: { top: 872000, frontier: 872000 }
+      context_window: { frontier: 872000 }
     sensitive_subpaths:
       - "agent/auth.json"
       - "agent/sessions"
@@ -106,7 +99,7 @@ subagents:
     readonly: true
     omit_instructions: true
     tools: "Read, Bash"
-    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those. No web access: web and docs questions go to researcher, a dependency bump to dep-researcher."
+    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those."
   explore-deep:
     tier: top
     effort: medium
@@ -133,7 +126,7 @@ subagents:
     effort: high
     readonly: true
     tools: "Read, Bash"
-    description: "Judge one finished artifact against the requirements it was built from, in one pass — dispatched for the fresh-eyes self-review before work is called done, not for ordinary diff review. Reports requirements that went unimplemented as readily as defects in what was written; read-only. Reviewing the changed lines under one lens is diff-reviewer's job."
+    description: "Judge one finished artifact against the requirements it was built from, in one pass — dispatched for the fresh-eyes self-review before work is called done, not for ordinary diff review. Reports requirements that went unimplemented as readily as defects in what was written; read-only."
   dep-researcher:
     tier: top
     effort: medium
@@ -183,12 +176,13 @@ subagent_tiers:
   pi:
     small: gpt-6-luna
     # anchored: the Claude->pi review/advice bridge pins this tier
-    top: &openai_top gpt-6-sol
+    top: &openai_top gpt-6.1-sol
     frontier: gpt-6-astra
 agent_sandbox:
   filesystem:
     paths:
       ".env": none
+      ".env.local": none
       "~/.aws": none
       "~/.netrc": none
       "~/.git-credentials": none
@@ -214,10 +208,10 @@ agent_sandbox:
       "~/.cache/pi-bridge": none
       "~/.go/pkg/mod": write
       "~/.npm/_cacache": write
-      "~/.npm/_logs": write
       "~/Library/Caches/uv": write
       "~/Library/Caches/go-build": write
   network:
+    # binds and listens on all interfaces, and reaches every localhost port
     allow_local_binding: true
     allowed_domains:
       - github.com
@@ -257,7 +251,7 @@ agent_mcp_servers:
     package_bin: context7-mcp
     args: []
     # pi runs the server inside SRT, so its API hosts join that sandbox's allowlist
-    domains: [context7.com, "*.context7.com"]
+    domains: [context7.com]
     auto_approve_tools: true
     readonly_tools: [resolve-library-id, query-docs]
     env:
@@ -302,4 +296,4 @@ agent_mcp_servers:
       - --isolated
       # auto-named snapshots and logs land here, not in the session cwd
       - --output-dir
-      - /tmp/claude/playwright-mcp
+      - ~/Library/Caches/playwright-mcp
