@@ -27,7 +27,7 @@ function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
       widget.row.setMessage = text => { messages.push(text); setMessage(text); };
     },
   };
-  const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui };
+  const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, getContextUsage: () => ({ percent: 27.2 }), ui };
   const fleet = { attach() {}, render: () => [], activeCount: () => active };
   const tasks = { live: () => live };
   const footer = installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, readLimits: async () => null });
@@ -88,7 +88,6 @@ test("segments follow the ccstatusline order and omit missing data", () => {
   const texts = segments => segments.map(s => s.text);
   const segments = buildSegments({
     modelId: "gpt-5.6-sol",
-    thinkingLevel: "high",
     contextPercent: 12.34,
     limits: [
       { usedPercent: 7, resetsAt: null, windowMins: 300 },
@@ -97,7 +96,7 @@ test("segments follow the ccstatusline order and omit missing data", () => {
     branch: "main",
     changes: "+3 -1",
   });
-  assert.deepEqual(texts(segments), ["gpt-5.6-sol high", "12.3%", "ses 7%", "wk 41%", "main"]);
+  assert.deepEqual(texts(segments), ["gpt-5.6-sol", "12.3%", "ses 7%", "wk 41%", "main"]);
   // The counts stay a field of their own, so the render can colour them apart
   // from the branch (rows.mjs paintCounts).
   assert.deepEqual(segments.at(-1), { text: "main", color: "accent", changes: "+3 -1" });
@@ -149,7 +148,7 @@ test("footer renders the status line first and the fleet rows under it", () => {
     const fleet = { attach: tui => attached.push(tui), render: (width, theme) => [theme.fg("dim", `rows@${width}`)] };
     let live = 2;
     const tasks = { live: () => live };
-    const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, thinkingLevel: "high", getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; }, setWorkingVisible() {}, setWidget() {} } };
+    const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; }, setWorkingVisible() {}, setWidget() {} } };
     installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet, tasks, readLimits: async () => null });
     const tui = { requestRender() {} };
     let status = "execute auto";
@@ -157,7 +156,7 @@ test("footer renders the status line first and the fleet rows under it", () => {
     const render = width => factory(tui, { fg: (_color, text) => text }, footerData).render(width);
     const lines = render(70);
     assert.deepEqual(attached, [tui]);
-    assert.equal(lines[0], "  gpt-5.6-sol high · 27.2% · main" + " ".repeat(70 - 4 - 31 - 25) + "2 shells · execute · auto  ");
+    assert.equal(lines[0], "  gpt-5.6-sol · 27.2% · main" + " ".repeat(70 - 4 - 26 - 25) + "2 shells · execute · auto  ");
     assert.deepEqual(lines.slice(1), ["rows@70"]);
     // Too narrow for both: the left gives way, so the mode and its approval
     // survive whole. Truncating the composed line clipped the right first, and

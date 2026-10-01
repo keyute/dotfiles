@@ -185,7 +185,7 @@ export class PeekDialog extends Dialog {
   // Reserve the metadata and back cue before spending columns on the task.
   headerText(width = 80) {
     const info = this.info ?? {};
-    const model = modelLabel(info.model, info.effort);
+    const model = modelLabel(info.model);
     const tokens = formatTokens(info.tokens?.total ?? info.tokens);
     const state = info.terminal && info.state ? info.state : "";
     const tone = state === "completed" ? "success" : ["failed", "stopped"].includes(state) ? "error" : "warning";

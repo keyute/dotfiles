@@ -56,9 +56,9 @@ export function formatReset(resetsAt, { weekday = false } = {}) {
 
 // Segment order mirrors the Claude Code ccstatusline config:
 // model · ctx% · ses <used%> <reset> · wk <used%> <reset> · branch changes
-export function buildSegments({ modelId, thinkingLevel, contextPercent, limits, branch, changes }) {
+export function buildSegments({ modelId, contextPercent, limits, branch, changes }) {
   const segments = [];
-  if (modelId) segments.push({ text: thinkingLevel ? `${modelId} ${thinkingLevel}` : modelId, color: "accent" });
+  if (modelId) segments.push({ text: modelId, color: "accent" });
   if (contextPercent != null) segments.push({ text: `${contextPercent.toFixed(1)}%` });
   for (const window of limits ?? []) {
     const weekday = longWindow(window);
@@ -283,7 +283,6 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
         render(width) {
           const segments = buildSegments({
             modelId: uiCtx.model?.id,
-            thinkingLevel: uiCtx.thinkingLevel,
             contextPercent: uiCtx.getContextUsage()?.percent ?? null,
             limits: state.limits,
             branch: footerData.getGitBranch(),

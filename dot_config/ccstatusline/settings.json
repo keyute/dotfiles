@@ -8,8 +8,6 @@
         "color": "cyan",
         "rawValue": true
       },
-      { "id": "sep-effort", "type": "separator", "character": " ", "color": "brightBlack" },
-      { "id": "effort", "type": "thinking-effort", "color": "brightBlack", "rawValue": true },
       { "id": "sep-a", "type": "separator", "character": " · ", "color": "brightBlack" },
       {
         "id": "context",

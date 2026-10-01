@@ -31,7 +31,7 @@ function makeDialog({ dir, describeState, rpcCall, tui, palette = theme } = {}) 
   let renders = 0;
   const doneCalls = [];
   const stubTui = tui ?? { requestRender: () => renders++, terminal: { rows: 40 } };
-  const base = { agent: "reviewer", task: "Review the diff", model: "anthropic/claude:high", effort: "high", tokens: { total: 12400 }, startedAt: Date.now() - 134_000, state: "running", terminal: false };
+  const base = { agent: "reviewer", task: "Review the diff", model: "anthropic/claude:high", tokens: { total: 12400 }, startedAt: Date.now() - 134_000, state: "running", terminal: false };
   const info = describeState ?? base;
   const dialog = new PeekDialog(stubTui, palette, keybindings, value => doneCalls.push(value), {
     id: "run1",
@@ -62,8 +62,8 @@ test("open shows the live header and replayed rows", async () => {
   const header = lines[1];
   assert.match(header, /reviewer/);
   assert.match(header, /Review the diff/);
-  assert.match(header, /claude high/);
-  assert.match(header, /12\.4k tokens/);
+  assert.match(header, /claude · 12\.4k tokens/);
+  assert.doesNotMatch(header, /high/);
   // Rule 3: the current tool and the elapsed time are the pending row's and
   // the working row's, never the header's.
   assert.doesNotMatch(header, /bash/);
@@ -97,7 +97,7 @@ test("long task yields to model, tokens and terminal state in a narrow header", 
   assert.match(header, /peek/);
   assert.match(header, /reviewer/);
   assert.match(header, /…/);
-  assert.match(header, /claude high/);
+  assert.match(header, /claude/);
   assert.match(header, /12\.4k tokens/);
   assert.match(header, /completed/);
   assert.match(header, /esc back/);

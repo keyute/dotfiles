@@ -9,9 +9,8 @@ const SEP = " · ";
 const NAME_SEP = " › ";
 const TOK_FMT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1, minimumFractionDigits: 1 });
 const VISIBLE_ROWS = 5;
-// The fleet DTO's `model` is the launch string (provider/model:thinking) and
-// `effort` repeats the thinking level, so the suffix is dropped before the
-// effort is appended once — the footer's own spelling.
+// The fleet DTO's `model` is the launch string (provider/model:thinking); the
+// thinking suffix is dropped, since a child's level is its role's.
 const EFFORT_SUFFIX = /:([a-z]+)$/;
 
 export function formatTokens(n) {
@@ -20,17 +19,16 @@ export function formatTokens(n) {
   return TOK_FMT.format(v).toLowerCase().replace(".0", "");
 }
 
-export function modelLabel(model, effort) {
+export function modelLabel(model) {
   if (!model) return null;
-  const id = String(model).split("/").pop().replace(EFFORT_SUFFIX, "");
-  return effort ? `${id} ${effort}` : id;
+  return String(model).split("/").pop().replace(EFFORT_SUFFIX, "");
 }
 
 
-export function buildRow({ agent, goal, tokens, model, effort }) {
+export function buildRow({ agent, goal, tokens, model }) {
   const total = formatTokens(tokens?.total ?? tokens);
   const title = shortTitle(goal);
-  return [title ? `${agent}${NAME_SEP}${title}` : agent, total && `${total} tokens`, modelLabel(model, effort)].filter(Boolean).join(SEP);
+  return [title ? `${agent}${NAME_SEP}${title}` : agent, total && `${total} tokens`, modelLabel(model)].filter(Boolean).join(SEP);
 }
 
 export function createFleetState() {
@@ -334,7 +332,6 @@ export function installFleet(pi, ctx, {
       agent: entry?.agent ?? launch?.agent,
       task: launch?.task,
       model: entry?.model,
-      effort: entry?.effort,
       tokens: entry?.tokens,
       startedAt: entry?.startedAt,
       state: run?.state,
@@ -368,8 +365,8 @@ export function installFleet(pi, ctx, {
       const reply = id ? await rpcCall(pi.events, "status", { id, view: "transcript", lines: 40 }, timeoutMs) : null;
       if (controller.signal.aborted) return true;
       if (!reply?.text || !current.hasUI) { current.ui.notify(`No transcript yet for ${entry.agent}`, "info"); return false; }
-      const { agent, goal, model, effort } = rowFor(state, entry);
-      const header = [goal ? `${agent}${NAME_SEP}${oneLine(goal)}` : agent, modelLabel(model, effort)].filter(Boolean).join(" · ");
+      const { agent, goal, model } = rowFor(state, entry);
+      const header = [goal ? `${agent}${NAME_SEP}${oneLine(goal)}` : agent, modelLabel(model)].filter(Boolean).join(" · ");
       await current.ui.custom((tui, theme, _keybindings, done) => {
         controller.signal.addEventListener("abort", () => done(), { once: true });
         const body = new Text(reply.text, 2, 0);

@@ -1,19 +1,16 @@
 #!/usr/bin/env node
 // subagentStatusLine: rebuild the subagent panel row in Claude Code's own
-// workflow/agent-panel style and append the model and effort as a suffix.
+// workflow/agent-panel style and append the model as a suffix.
 // Complements the main ccstatusline status line (which only ever sees the parent
 // session's model). Contract (Claude Code >= 2.1.214): stdin is JSON { columns,
-// tasks: [{ id, name, type, description, tokenCount, model, effort, ... }] };
+// tasks: [{ id, name, type, description, tokenCount, model, ... }] };
 // stdout is one JSON line per task, schema { id, content }, which REPLACES that
 // task's row — there is no append mode, so the row is composed here from its
 // components:
-//   "name › description · <compact> tokens · model effort"
+//   "name › description · <compact> tokens · model"
 // mirroring the stock workflow row (name › description · <compact> tokens · N
-// tools) but with model and effort in place of the tool count, which the stock
-// row never surfaces. Tasks we omit keep their default rendering.
-// `effort` is the child's reasoning effort ("low"…"max", or a numeric token
-// budget) and is absent when the child inherits the session's effort — then the
-// model stands alone, as in pi's fleet row (fleet.mjs modelLabel).
+// tools) but with the model in place of the tool count, which the stock row
+// never surfaces. Tasks we omit keep their default rendering.
 // `name` is the registry name — a workflow task's or a typed agent name — and is
 // absent otherwise; `type` is the generic execution kind "local_agent" (Claude
 // Code exposes no agent-type field here), so with no name the head is the
@@ -79,8 +76,6 @@ function main(raw) {
       v != null && String(v) !== "" && String(v) !== "undefined"
         ? String(v)
         : "";
-    const effort = clean(t.effort);
-    const tail = effort ? `${model} ${effort}` : model;
     const name = clean(t.name);
     const desc = t.description ? String(t.description) : "";
     // Workflow row order (name › description · tokens) with the model tail
@@ -88,7 +83,7 @@ function main(raw) {
     // is just the description, with no description just the name.
     const build = (d) => {
       const head = name && d ? `${name}${NAME_SEP}${d}` : name || d || "";
-      return [head, formatTokens(t.tokenCount), tail]
+      return [head, formatTokens(t.tokenCount), model]
         .filter((p) => p != null && p !== "")
         .join(SEP);
     };

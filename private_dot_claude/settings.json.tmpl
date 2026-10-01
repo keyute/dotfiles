@@ -83,7 +83,7 @@
   },
   {{- /* no Remote Control bridge to claude.ai or the mobile app */}}
   "disableRemoteControl": true,
-  {{- /* ccstatusline, and the model/effort row for subagents */}}
+  {{- /* ccstatusline, and the model row for subagents */}}
   "statusLine": {
     "type": "command",
     "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline"

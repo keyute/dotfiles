@@ -140,7 +140,7 @@ here.
   OAuth from third-party harnesses (sanctioned as of 2026-09-05) — then the
   review backend needs a new transport.
 - `private_dot_claude/executable_subagent-statusline.js` (owned subagent row):
-  reversal trigger — Claude's stock subagent row shows model and effort →
+  reversal trigger — Claude's stock subagent row shows the model →
   delete it.
 - `scripts/agent-usage.mjs` (owned usage report): reversal trigger — a
   maintained tool reports per-role and per-origin usage from both session
