@@ -433,6 +433,56 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.deepEqual(appended, ["abort me", "Ran `pwd`"]);
   assert.equal(session._runSystemPromptOptions, undefined);
   ctx.model = { provider: "openai-codex", id: "gpt-5.6-sol" };
+  // Ordinary prompt() prepares the run before the wrapper guards it; the
+  // wrapper must reject disallowed models without preparing an allowed run twice.
+  const ordinary = Object.create(AgentSession.prototype);
+  const preparation = [];
+  const ordinaryPrompts = [];
+  Object.assign(ordinary, {
+    ...session, _isAgentRunActive: false,
+    _modelRuntime: { hasConfiguredAuth: () => true },
+    _resourceLoader: { getPrompts: () => ({ prompts: [] }) },
+    _extensionRunner: {
+      ...session._extensionRunner, hasHandlers: () => false,
+      async emitBeforeAgentStart(...args) {
+        preparation.push("before_agent_start");
+        return session._extensionRunner.emitBeforeAgentStart(...args);
+      },
+    },
+    _preparePromptAndToolLoadout(options) {
+      preparation.push("loadout");
+      assert.match(options.sections.workflow, /Workflow mode: plan/);
+      assert.match(options.sections.skills, /<name>fixture-skill<\/name>/);
+    },
+    agent: {
+      state: { get model() { return ctx.model; }, messages: [] },
+      async prompt(messages) {
+        preparation.push("agent.prompt");
+        ordinaryPrompts.push(messages);
+        assert.ok(ordinary._runSystemPromptOptions);
+      },
+    },
+    _emitAgentSettled: async () => { ordinary._isAgentRunActive = false; },
+  });
+  ctx.model = { provider: "openai-codex", id: "unmanaged" };
+  await assert.rejects(ordinary.prompt("Ordinary unmanaged prompt"), /Select an available managed OpenAI subscription model/);
+  assert.equal(ordinaryPrompts.length, 0);
+  assert.deepEqual(preparation, ["before_agent_start", "loadout"]);
+  assert.equal(ordinary._runSystemPromptOptions, undefined);
+  preparation.length = 0;
+  ctx.model = { provider: "openai-codex", id: "gpt-5.6-sol" };
+  ctx.modelRegistry.isUsingOAuth = () => false;
+  await assert.rejects(ordinary.prompt("Ordinary API prompt"), /Select an available managed OpenAI subscription model/);
+  assert.equal(ordinaryPrompts.length, 0);
+  assert.deepEqual(preparation, ["before_agent_start", "loadout"]);
+  assert.equal(ordinary._runSystemPromptOptions, undefined);
+  preparation.length = 0;
+  ctx.modelRegistry.isUsingOAuth = () => true;
+  await ordinary.prompt("Ordinary subscription prompt");
+  assert.deepEqual(preparation, ["before_agent_start", "loadout", "agent.prompt"]);
+  assert.equal(ordinaryPrompts.length, 1);
+  assert.deepEqual(ordinaryPrompts[0].map(message => ({ role: message.role, content: message.content })), [{ role: "user", content: [{ type: "text", text: "Ordinary subscription prompt" }] }]);
+  assert.equal(ordinary._runSystemPromptOptions, undefined);
   assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "submit_plan", "subagent", "web_search", "web_fetch"]);
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
   for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);
