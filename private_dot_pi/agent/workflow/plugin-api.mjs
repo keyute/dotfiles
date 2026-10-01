@@ -17,15 +17,14 @@ export const mcpConfig = (config, role) => ({
       exposure: role === "root" ? "deferred" : "direct", toolExposure,
     } };
   }),
-  errors: [], autoEnableCodemode: false,
+  errors: [],
 });
 
 // pi-subagents' control notice: a message whose content is the model's
 // instructions (run id, four subagent({…}) calls) and whose own renderer draws
 // all of it in a box. The content is left alone — the model acts on it — and
 // only the row is ours. A payload missing the fields the row needs is the
-// plugin's to draw, so the guard is total and never throws: pi drops a throwing
-// renderer to its own box, which is the notice in full.
+// plugin's to draw, so the guard is total and never throws.
 export const CONTROL_NOTICE = "subagent_control_notice";
 // pi-subagents' completion notice: real model context (it can trigger the next
 // turn), but its box duplicates the completion line the fleet already draws

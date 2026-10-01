@@ -13,13 +13,13 @@ implementer.
    repo read-only — do not embed the diff. From args (ref range / paths / focus) or
    by default: if the working tree is dirty, omit `base` (staged + unstaged +
    untracked); otherwise `base: <default branch>` for the branch's
-   changes. Then compose the instructions:
+   changes. Then compose `prompt` (the bridge supplies the review rubric):
    - One neutral sentence of intent, plus any user-supplied focus.
    - **Redact yourself:** no self-assessment, no "tests pass", no claims it
      works — an unanchored reviewer finds more.
 
 2. **Call the reviewer.** One `mcp__pi__review` call: `cwd` = repo root, the scope
-   from step 1, `prompt` = the instructions block below. The response opens with
+   and `prompt` from step 1. The response opens with
    a `threadId:` line — keep it for the re-review round.
 
 3. **Verify every finding as untrusted input.** Substantiate each independently
@@ -34,50 +34,3 @@ implementer.
 
 5. **Report.** Verdict; each finding with severity, file:line, and disposition
    (fixed / rejected, with reason); anywhere you still disagree with the reviewer.
-
-## Review instructions (the `prompt` argument)
-
-```
-You are performing an adversarial software review. Your job is to break confidence
-in the change, not to validate it.
-
-Intent of the change: <one neutral sentence>
-Focus (optional): <user-supplied focus>
-
-Default to skepticism: assume the change can fail in subtle, high-cost, or
-user-visible ways until the evidence says otherwise. No credit for good intent,
-partial fixes, or likely follow-up work; happy-path-only behavior is a real
-weakness.
-
-Prioritize failures that are expensive, dangerous, or hard to detect: auth and
-trust boundaries; data loss, corruption, or irreversible state; rollback, retry,
-partial-failure, and idempotency gaps; races, ordering assumptions, re-entrancy;
-empty/null/timeout and degraded-dependency behavior; version skew, schema drift,
-migration hazards; observability gaps that would hide failure.
-
-Report only material findings — no style, naming, or speculative concerns without
-evidence. Every finding must be defensible from repository context: do not invent
-files, lines, or runtime behavior; mark inferences as such and keep confidence
-honest. Prefer one strong finding over several weak ones; if the change looks
-safe, say so and return no findings.
-
-End with exactly this JSON structure in a fenced block:
-{
-  "verdict": "approve" | "needs-attention",
-  "summary": "<terse ship/no-ship assessment>",
-  "findings": [
-    {
-      "severity": "critical" | "high" | "medium" | "low",
-      "title": "...",
-      "body": "what can go wrong, why this path is vulnerable, likely impact",
-      "file": "path",
-      "line_start": N,
-      "line_end": N,
-      "confidence": 0.0-1.0,
-      "recommendation": "concrete change that reduces the risk"
-    }
-  ]
-}
-Use "needs-attention" if any material risk is worth blocking on; "approve" only if
-you cannot support any substantive adversarial finding.
-```

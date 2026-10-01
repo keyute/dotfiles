@@ -1,5 +1,4 @@
 {{- $sb := fromJson (includeTemplate "agent-sandbox" (dict "self" "claude" "root" .)) -}}
-{{- $allowedDomains := concat .agent_sandbox.network.allowed_domains .agents.claude.extras.allowed_domains -}}
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
 {{- $modelSettings := dict -}}
 {{- range $tier, $pin := .subagent_tiers.claude -}}
@@ -15,7 +14,6 @@
   {{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}
   {{- if not (or (hasPrefix "~" .) (hasPrefix "/" .)) -}}{{- $permDeny = append $permDeny (printf "Edit(%s)" .) -}}{{- end -}}
 {{- end -}}
-{{- /* the sandbox's denyWrite stops Bash only; Claude's Edit/Write tools need the rule too */ -}}
 {{- range $sb.denyWrite -}}{{- $permDeny = append $permDeny (printf "Edit(/%s/**)" .) -}}{{- end -}}
 {{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
        resolving their op secrets here would make settings.json depend on
@@ -51,7 +49,7 @@
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
     {{- /* also disables the bundled `loop` skill; add `loop: "off"` to skill_overrides if this goes */}}
     "CLAUDE_CODE_DISABLE_CRON": "1",
-    {{- /* no Statsig telemetry and no feature-flag fetching (local-only) */}}
+    {{- /* no usage telemetry and no feature-flag fetching */}}
     "DISABLE_TELEMETRY": "1",
     {{- /* no Sentry error reports */}}
     "DISABLE_ERROR_REPORTING": "1",
@@ -97,19 +95,18 @@
     "enabled": true,
     "failIfUnavailable": true,
     "network": {
-      "allowedDomains": {{ $allowedDomains | uniq | toPrettyJson | indent 6 | trim }},
+      "allowedDomains": {{ .agent_sandbox.network.allowed_domains | toPrettyJson | indent 6 | trim }},
       "allowLocalBinding": {{ .agent_sandbox.network.allow_local_binding }}
     },
     "filesystem": {
-      "allowWrite": {{ $sb.allowWrite | toPrettyJson | indent 6 | trim }},
-      "denyWrite": {{ $sb.denyWrite | toPrettyJson | indent 6 | trim }}
+      "allowWrite": {{ $sb.allowWrite | toPrettyJson | indent 6 | trim }}
     }
   },
   {{- /* no rotating tips under the spinner */}}
   "spinnerTipsEnabled": false,
   {{- /* no session recap on returning after 5+ minutes away */}}
   "awaySummaryEnabled": false,
-  {{- /* no built-in commit/PR workflow instructions in the system prompt */}}
+  {{- /* no built-in commit/PR workflow text or git status snapshot (branch, status, recent commits) in the system prompt */}}
   "includeGitInstructions": false,
   {{- /* no agent view: `claude agents`, --bg, /background and the on-demand daemon */}}
   "disableAgentView": true,

@@ -15,17 +15,12 @@
 {{- $_ := set $managed "tuiMode" "fullscreen" -}}
 {{- /* fullscreen exit prints a resume hint, not the whole transcript */ -}}
 {{- $_ := set $managed "fullscreenExitOutput" "resume-hint" -}}
-{{- /* hides the startup header */ -}}
+{{- /* hides pi's startup key hints, model scope and resource listing; header.mjs draws the session header */ -}}
 {{- $_ := set $managed "quietStartup" true -}}
 {{- /* no inline images in the terminal; shows turn progress in the terminal tab */ -}}
 {{- $_ := set $managed "terminal" (dict "showImages" false "showTerminalProgress" true) -}}
 {{- /* no horizontal transcript padding */ -}}
 {{- $_ := set $managed "outputPad" 0 -}}
-{{- /* ! commands run in zsh with the interactive config. The model's workspace_bash
-       stays on bash -c without rc: zsh would load the interactive rc into every
-       sandboxed call */ -}}
-{{- $_ := set $managed "shellPath" "/bin/zsh" -}}
-{{- $_ := set $managed "shellCommandPrefix" "source ~/.zshrc" -}}
 {{- /* drops the subagent extension's built-in agents; the roster is the whole set */ -}}
 {{- $_ := set $managed "subagents" (dict "disableBuiltins" true) -}}
 {{- /* turns off pi's install ping to pi.dev */ -}}
@@ -37,10 +32,10 @@
 {{- $_ := set $managed "followUpMode" "all" -}}
 #!/usr/bin/env bash
 # pi's settings setters write UI state (theme, thinking level, changelog version)
-# to settings.json; jq's `*` keeps whatever this declared subset does not name
-# (theme and thinking level are managed, so they reset on apply; objects merge
-# recursively, arrays and scalars are replaced). modelThinkingLevels is deleted:
-# pi's per-model overrides would otherwise outrank defaultThinkingLevel.
+# to settings.json; jq's `*` (sprig mergeOverwrite would drop false/0) keeps what
+# this declared subset does not name (theme and thinking level are managed, so
+# they reset on apply; objects merge recursively, arrays and scalars are replaced).
+# modelThinkingLevels is deleted: per-model overrides outrank defaultThinkingLevel.
 set -euo pipefail
 
 input=$(cat)

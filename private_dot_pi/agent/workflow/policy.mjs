@@ -245,7 +245,6 @@ export class Policy {
         denyWrite: this.denyWrite,
       },
       network: { allowedDomains: this.config.network.allowedDomains, deniedDomains: [], allowLocalBinding: this.config.network.allowLocalBinding },
-      enableWeakerNestedSandbox: false,
     };
   }
 }

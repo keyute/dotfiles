@@ -1,21 +1,9 @@
 #!/usr/bin/env node
-// subagentStatusLine: rebuild the subagent panel row in Claude Code's own
-// workflow/agent-panel style and append the model as a suffix.
-// Complements the main ccstatusline status line (which only ever sees the parent
-// session's model). Contract (Claude Code >= 2.1.214): stdin is JSON { columns,
-// tasks: [{ id, name, type, description, tokenCount, model, ... }] };
-// stdout is one JSON line per task, schema { id, content }, which REPLACES that
-// task's row — there is no append mode, so the row is composed here from its
-// components:
-//   "name › description · <compact> tokens · model"
-// mirroring the stock workflow row (name › description · <compact> tokens · N
-// tools) but with the model in place of the tool count, which the stock row
-// never surfaces; delete this script and the subagentStatusLine key once it
-// does. Tasks we omit keep their default rendering.
-// `name` is the registry name — a workflow task's or a typed agent name — and is
-// absent otherwise; `type` is the generic execution kind "local_agent" (Claude
-// Code exposes no agent-type field here), so with no name the head is the
-// description alone (never the literal string "undefined").
+// subagentStatusLine: rebuild each subagent row as "name › label · <compact>
+// tokens · model" — the stock workflow row with the model in place of the tool
+// count, which the stock row never shows; delete this script and the
+// subagentStatusLine key once it does. Each stdout line { id, content } REPLACES
+// that task's row (no append mode); omitted tasks keep the default rendering.
 
 const SEP = " · ";
 const NAME_SEP = " › "; // name↔description divider, matching the workflow row
@@ -78,7 +66,7 @@ function main(raw) {
         ? String(v)
         : "";
     const name = clean(t.name);
-    const desc = t.description ? String(t.description) : "";
+    const desc = String(t.label || t.description || "");
     // Workflow row order (name › description · tokens) with the model tail
     // appended. The › divider only joins name↔description; with no name the head
     // is just the description, with no description just the name.

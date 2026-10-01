@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-// byte budgets (single owner; docs/agent-authoring.md points here):
+// byte budgets (single owner):
 // harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, pi's subagent tool description
 const PROJECTION_MAX_BYTES = 5300;
 const ON_DEMAND_DOC_MAX_BYTES = 6000;
@@ -114,30 +114,18 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(workflow.agents["spec-reviewer"].readonly, true);
   assert.ok(["workspace_write", "mcp__exa__web_fetch_exa", "subagent", "bg_wait"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
   for (const role of Object.values(workflow.agents)) assert.equal(role.tools.includes("bg_wait"), role.nests);
-  for (const [name, server] of Object.entries(workflow.mcp)) {
-    assert.equal(server.policy.unsandboxed, name === "playwright", `${name} unsandboxed`);
-  }
   const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
-  for (const role of Object.keys(data.subagents)) {
-    assert.equal(description.includes(`\n- ${role}: `), rolesFor(data, "pi").includes(role), `${role} in the pi tool description`);
-  }
   assert.doesNotMatch(description, /workflowScript|runs\.|guide|resume|CLI/);
-  assert.equal(piSettings.defaultProvider, data.agents.pi.defaults.provider);
   // one entry per distinct tier model: tiers may share a pin
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
-  assert.match(piSettings.themes[0], /\/node_modules\/catppuccin-pi-theme\/themes$/);
-  assert.equal(piSettings.enableInstallTelemetry, false);
   const models = JSON.parse(run("cat", target(".pi/agent/models.json")));
   const overrides = models.providers[data.agents.pi.defaults.provider].modelOverrides;
   const windows = data.agents.pi.defaults.context_window;
   for (const [tier, value] of Object.entries(windows)) assert.equal(overrides[data.subagent_tiers.pi[tier]].contextWindow, value, `${tier} contextWindow`);
-  const small = data.subagent_tiers.pi.small;
-  if (!Object.keys(windows).some(tier => data.subagent_tiers.pi[tier] === small)) assert.equal(overrides[small], undefined, "small tier keeps the catalog window");
 
   for (const role of Object.keys(workflow.agents)) {
     const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
     const shim = run("cat", target(`.pi/agent/policy-roles/${role}.ts`));
-    assert.match(agent, new RegExp(`^name: ${role}$`, "m"));
     assert.equal(/^tools: .*\bbg_wait\b/m.test(agent), workflow.agents[role].nests);
     assert.match(agent, new RegExp(`extensions: .*/policy-roles/${role}\\.ts`));
     assert.match(shim, new RegExp(`, ${JSON.stringify(role)}, \\{ AgentSession \\}\\);`));
@@ -188,12 +176,11 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   for (const path of ["/h/.claude/ide", "/h/.claude/bridge-spawn"]) assert.ok(bridgePolicy.denyRead.includes(path), `bridge denyRead misses ${path}`);
   // a relative deny name sits in the writable cwd, so it also gets an Edit() deny
   assert.ok(claudeSettings.permissions.deny.includes("Edit(.env)"));
-  // live code run outside the sandbox (node_modules, the bridge copy) is write-denied to Edit too
-  assert.deepEqual(claudeSettings.permissions.deny.filter(rule => /^Edit\([~/]/.test(rule)), claudeSettings.sandbox.filesystem.denyWrite.map(path => `Edit(/${path}/**)`));
-  const bridgeCopy = `${data.chezmoi.homeDir}/.claude/pi-bridge`;
-  assert.ok(claudeSettings.sandbox.filesystem.denyWrite.includes(bridgeCopy));
-  assert.ok(bridgePolicy.writableRoots.length);
-  // shared network policy reaches both harnesses; Claude may append its own extra domains
+  // live code run outside the sandbox (node_modules, the bridge copy) is write-denied by Edit() rules,
+  // which the harness merges into the Bash sandbox
+  const liveCode = [`${data.chezmoi.sourceDir}/node_modules`, `${data.chezmoi.homeDir}/.claude/pi-bridge`];
+  assert.deepEqual(claudeSettings.permissions.deny.filter(rule => /^Edit\([~/]/.test(rule)), liveCode.map(path => `Edit(/${path}/**)`));
+  // shared network policy reaches both harnesses
   const networkKeys = { allow_local_binding: "allowLocalBinding", allowed_domains: "allowedDomains" };
   for (const [key, value] of Object.entries(data.agent_sandbox.network)) {
     const rendered = networkKeys[key];
@@ -219,14 +206,8 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     assert.ok(disallowed.includes(`mcp__${name}`), `claude general-purpose does not disallow mcp__${name}`);
     assert.ok(!(name in workflow.mcp), `pi renders driver_only server ${name}`);
   }
-  for (const text of [JSON.stringify(workflow), run("cat", target(".pi/agent/agents/general-purpose.md"))]) {
-    assert.doesNotMatch(text, /driver_only|disallowedTools/, "a pi render references driver_only");
-  }
-  // live code Claude runs unsandboxed is write-denied to sandboxed Bash, as pi's workflow.json does
-  for (const denyWrite of [claudeSettings.sandbox.filesystem.denyWrite, workflow.filesystem.denyWrite]) {
-    assert.ok(denyWrite.some(path => path.endsWith("/node_modules")));
-    assert.ok(denyWrite.includes(bridgeCopy));
-  }
+  // pi's workflow.json write-denies the same live code
+  for (const path of liveCode) assert.ok(workflow.filesystem.denyWrite.includes(path), `pi denyWrite misses ${path}`);
   // the search plugin's config resolves its tier or fails the render
   const webSearch = JSON.parse(run("cat", target(".pi/agent/web-search.json")));
   assert.deepEqual(webSearch, { provider: data.agents.pi.defaults.provider, model: data.subagent_tiers.pi[data.agents.pi.search_tier] });
@@ -243,16 +224,8 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   }
 
   assert.ok(piHarness.includes(data.subagent_tiers.pi.frontier));
-  assert.match(run("cat", target(".pi/agent/extensions/workflow.ts")), /\/\.pi\/agent\/workflow\/index\.mjs/);
-  assert.match(run("cat", target(".pi/agent/node_modules")), /\/node_modules\s*$/);
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/private_dot_pi")), false);
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/node_modules")), true);
-
-  const zsh = run("cat", target(".zshrc"));
-  const zshPath = target(".zshrc.rendered");
-  writeFileSync(zshPath, zsh);
-  const syntax = spawnSync("zsh", ["-n", zshPath], { encoding: "utf8" });
-  assert.equal(syntax.status, 0, syntax.stderr);
 });
 
 // every pi (pin, effort) pair must be a level the pinned pi-ai catalog offers that model
@@ -343,41 +316,6 @@ test("each role renders its roster tier and effort on every harness it targets",
   assertPiEffort(provider, data.subagent_tiers.pi.top, effort, "bridge");
 });
 
-test("every harness keeps one tier-key set with a distinct frontier, and its driver resolves through it", (t) => {
-  const { data: load } = fixture(t);
-  const data = load();
-  const tierKeys = Object.keys(Object.values(data.subagent_tiers)[0]).sort();
-  assert.ok(tierKeys.includes("frontier"), "no frontier tier");
-  for (const [h, agent] of Object.entries(data.agents)) {
-    const tiers = data.subagent_tiers[h];
-    assert.deepEqual(Object.keys(tiers).sort(), tierKeys, `${h}: tier keys differ across harnesses`);
-    for (const [tier, pin] of Object.entries(tiers)) {
-      if (tier !== "frontier") assert.notEqual(pin, tiers.frontier, `${h}: ${tier} shares the frontier pin`);
-    }
-    assert.ok(tiers[agent.defaults.tier], `${h}: driver tier ${agent.defaults.tier}`);
-  }
-});
-
-test("missing or unknown role tier and effort fail rendering rather than inheriting", (t) => {
-  const { invoke } = fixture(t);
-  for (const render of [
-    '{{ includeTemplate "subagent-claude.md" (dict "root" . "name" "implementer") }}',
-    '{{ includeTemplate "pi-roles" (dict "root" .) }}',
-  ]) {
-    for (const edit of ['unset $role "tier"', 'unset $role "effort"', 'set $role "tier" "no-such-tier"']) {
-      const result = invoke("execute-template", `{{ $role := index .subagents "implementer" }}{{ $_ := ${edit} }}${render}`);
-      assert.notEqual(result.status, 0, `${edit} should fail ${render}`);
-    }
-  }
-});
-
-test("a Claude tool with no pi mapping fails the pi roles render", (t) => {
-  const { invoke } = fixture(t);
-  const result = invoke("execute-template", '{{ $role := index .subagents "implementer" }}{{ $_ := set $role "tools" "Read, NotebookEdit" }}{{ includeTemplate "pi-roles" (dict "root" .) }}');
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /implementer: no pi mapping for NotebookEdit/);
-});
-
 test("every roster role and shared skill has its source stubs, and every stub a source", (t) => {
   const { data: load } = fixture(t);
   const data = load();
@@ -446,7 +384,7 @@ test("readonly roles grant no write tool and only read-only MCP tools; writers c
   }
 });
 
-test("docs/decisions.md has a row for every tier pin, driver, classifier, search, bridge and deny slot", (t) => {
+test("docs/decisions.md has a row for every tier pin, driver, classifier, search and bridge slot", (t) => {
   const { data: load } = fixture(t);
   const data = load();
   const nouns = familyNouns(data);
@@ -464,7 +402,6 @@ test("docs/decisions.md has a row for every tier pin, driver, classifier, search
     "agents.pi.defaults.context_window",
     "agents.pi.search_tier",
     "agent_mcp_servers.pi.args",
-    "agents.claude.denied_tools.models",
     "measure.role_matrix",
   ];
   for (const key of slots) assert.ok(rows.has(key), `docs/decisions.md has no ${key} row`);

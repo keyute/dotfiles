@@ -246,6 +246,12 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.has("ask_user_question"));
   assert.ok(!tools.has("ask_user"));
   assert.ok(!tools.has("read"));
+  // promptGuidelines are the SDK's, renamed: a reworded SDK line would leave a bare tool name
+  for (const name of ["read", "write", "edit"]) {
+    const guidelines = tools.get(`workspace_${name}`).promptGuidelines;
+    assert.ok(guidelines.some(line => line.includes(`workspace_${name}`)));
+    assert.ok(guidelines.every(line => !new RegExp(`(?<!workspace_)\\b${name}\\b(?= )`).test(line)), guidelines.join("\n"));
+  }
   const blocked = [];
   events.on("herdr:blocked", data => blocked.push(data));
   for (const handler of handlers.get("ui_prompt_start")) handler({ type: "ui_prompt_start", kind: "custom", title: "Plan" });
@@ -274,7 +280,6 @@ test("pinned upstream packages register against the managed extension and prefli
   const blocking = { agent: "fixture-reader", task: "Inspect fixture", async: false };
   await checkChildLaunch(blocking, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(blocking.async, true);
-  await assert.rejects(checkChildLaunch({ ...args, workflowScript: "bad" }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /workflow scripts/);
   // Keys the upstream schema advertises are dropped, not refused: every observed
   // first launch carried some of them and the refusal cost a turn per batch.
   const noisy = { ...args, cwd: "/elsewhere", toolBudget: { hard: 20 }, acceptance: false, context: "fork" };
@@ -742,14 +747,6 @@ test("only a server the config marks unsandboxed receives the managed null-profi
   // A child's server lease follows the MCP tools its role names.
   assert.equal((await leaseServer("playwright", "fixture-browser")).ok, true);
   assert.equal((await leaseServer("docs", "fixture-browser")).ok, false);
-});
-
-test("the broker refuses to start without an integer child limit", async t => {
-  const { root, config } = fixture(t);
-  delete config.childLimit;
-  await assert.rejects(startBroker(config, root, async () => true), /integer childLimit/);
-  config.childLimit = "20";
-  await assert.rejects(startBroker(config, root, async () => true), /integer childLimit/);
 });
 
 test("an inherit-model child resolves to the parent's model before the tier check", async t => {

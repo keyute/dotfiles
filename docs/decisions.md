@@ -1,12 +1,9 @@
 # Harness decisions
 
-Sole owner of each live decision's why and reversal event; a superseded row
-is deleted. Key: the agents.yaml path, else a `parity.`, `setting.`,
-`measure.` or `instruction.<principle>` label. Why opens with its evidence
-kind: measured (a reading here; its date may sit in the why), vendor,
-benchmark (third-party; nominates only), preference, forced. Revisit when: an
-event noticed in use, never a date or a reading nobody takes.
-`render.test.mjs` enforces the rest.
+Why opens with its evidence kind: measured (a reading here; its date may sit
+in the why), vendor, benchmark (third-party; nominates only), preference,
+forced. Revisit when: an event noticed in use, never a date or a reading
+nobody takes.
 
 ## Events
 
@@ -75,9 +72,8 @@ a tier nothing uses is dropped.
 | agents.pi.defaults.tier | preference: frontier drives while the pi pool is slack; effort high per AA Terminal-Bench (cheaper per task than lower effort) | the pi pool binds → lower effort, then tier |
 | agents.pi.defaults.classifier | vendor: top tier for both stages on its system card's injection defence, judge medium; preference: filter low, the pin having no off level | an observed false allow, or false denies blocking work → re-judge; the pi pool binds → judge low, then a cheaper tier |
 | agents.pi.defaults.context_window | measured: an 838,180-input-token request accepted on the frontier tier via the subscription route (2026-09-29); small and top tiers unprobed | a re-pin, or context_length_exceeded below the window → re-probe that tier at ~840k input tokens, drop it if rejected; the pi pool binds on long turns → a larger reserve |
-| agents.claude.denied_tools.models | measured: the Agent enum has one alias with no tier; the frontier alias renders from its pin; pi refuses non-tier children (children.mjs); Workflow agent() opts.model is instruction-guarded | a Claude Code release (Events) adds an untiered alias, or permission rules see Workflow agents → extend the deny |
 | agents.pi.search_tier | preference: each search is one extra request on the pool, so the small tier | an observed search miss the top tier catches → top |
-| setting.native_coverage | measured: each covered line is in the Claude Code driver prompt and its subagent prompt, or pi's subagent-tool-description; initiative is driver-prompt only, and a child cannot check back anyway | a Claude Code release (Events) whose prompt lacks a covered line → unshave that key; a context7 bump → re-check docs_mcp |
+| setting.native_coverage | measured: covered lines are in Claude Code's driver and subagent prompts or pi's subagent-tool-description; docs_mcp in context7's server instructions (Claude); initiative is driver-only: a child cannot check back | a Claude Code release lacks a covered line → unshave it; a context7 bump → re-check docs_mcp |
 | agent_mcp_servers.pi.args | preference: review and advice are recall-critical, so `--reasoning-effort high` | the pi pool binds with the bridge origin a visible share in agent-usage → medium |
 | measure.role_matrix | preference: top/medium default; lookups lower, recall-critical roles higher (values in agents.yaml) | an observed Explore miss → medium; a lens miss a later review catches → high; a small re-pin → probe a role at small |
 | parity.researcher_no_bash | forced: upstream release-note hosts are off the shared Bash allowlist, so curl there fails confusingly; WebFetch/WebSearch reach them without widening every role's Bash | the allowlist covers upstream hosts, or a fetch tool fails on them → Bash |
@@ -92,6 +88,4 @@ a tier nothing uses is dropped.
 | instruction.scope_of_extras | measured: pi-side replay arms shipped 2.8–3.5× the tests; no reversible-change test ban yet | a shipped diff carries unrequested tests after a model release → the vendor's no-tests-for-reversible-changes line |
 | measure.single_writer | measured: implementer median 17 calls per dispatch (2026-09-26); the only write-capable specialist | implementer dispatches run out of turns or deadline on bounded slices → a second write-capable specialist |
 | measure.pi_second_vendor | measured: children 25% of root+child pi spend; a weaker substitute repays its saving through repairs | the pi pool binds with children ≥30% of spend → OpenCode Go for explore-deep |
-| parity.env_scrub | forced: pi strips secret-named and pre-sandbox-hook env vars from sandboxed commands (sandbox-runner.mjs); Claude Bash keeps the env, as CLAUDE_CODE_SUBPROCESS_ENV_SCRUB forces default permission mode over plan | the scrub stops forcing default mode → set it |
-| parity.cli_versioning | preference: Claude runs the unpinned brew @latest cask | a release breaks a key the Claude Code release event cannot fix → the stable cask |
 | instruction.self_review | measured: 13 spec-reviewer runs, 4–5 zero-finding, every catch on a high-stakes surface → the skip and fix-scoped re-review; fresh-context review beats same-session (F1 28.6 vs 24.6, arXiv 2603.12123); repeat rounds cut precision 0.30→0.20 (2603.16244) | zero-finding runs dominate an agent-usage reading → narrow the rule |

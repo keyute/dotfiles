@@ -93,7 +93,6 @@ export function gitSandboxProfile(policy, cwd) {
   return {
     filesystem: { denyRead: [...policy.denyRead, ...repoDenies], allowWrite: [], denyWrite: [] },
     network: { allowedDomains: [], deniedDomains: [] },
-    enableWeakerNestedSandbox: false,
   };
 }
 const ROLE_NOTE =
@@ -127,6 +126,46 @@ export function validateThreadId(threadId) {
   if (!UUID_V4_RE.test(threadId)) throw new Error(`invalid threadId: ${threadId}`);
 }
 
+const REVIEW_RUBRIC = `You are performing an adversarial software review. Your job is to break confidence
+in the change, not to validate it.
+
+Default to skepticism: assume the change can fail in subtle, high-cost, or
+user-visible ways until the evidence says otherwise. No credit for good intent,
+partial fixes, or likely follow-up work; happy-path-only behavior is a real
+weakness.
+
+Prioritize failures that are expensive, dangerous, or hard to detect: auth and
+trust boundaries; data loss, corruption, or irreversible state; rollback, retry,
+partial-failure, and idempotency gaps; races, ordering assumptions, re-entrancy;
+empty/null/timeout and degraded-dependency behavior; version skew, schema drift,
+migration hazards; observability gaps that would hide failure.
+
+Report only material findings — no style, naming, or speculative concerns without
+evidence. Every finding must be defensible from repository context: do not invent
+files, lines, or runtime behavior; mark inferences as such and keep confidence
+honest. Prefer one strong finding over several weak ones; if the change looks
+safe, say so and return no findings.
+
+End with exactly this JSON structure in a fenced block:
+{
+  "verdict": "approve" | "needs-attention",
+  "summary": "<terse ship/no-ship assessment>",
+  "findings": [
+    {
+      "severity": "critical" | "high" | "medium" | "low",
+      "title": "...",
+      "body": "what can go wrong, why this path is vulnerable, likely impact",
+      "file": "path",
+      "line_start": N,
+      "line_end": N,
+      "confidence": 0.0-1.0,
+      "recommendation": "concrete change that reduces the risk"
+    }
+  ]
+}
+Use "needs-attention" if any material risk is worth blocking on; "approve" only if
+you cannot support any substantive adversarial finding.`;
+
 export function composeReviewPrompt({ base, prompt, diffText }) {
   const scopeText = base
     ? `Review this branch's changes against base ${base}.`
@@ -136,7 +175,7 @@ export function composeReviewPrompt({ base, prompt, diffText }) {
       ? `${diffText.slice(0, DIFF_CAP)}\n[diff truncated — read the changed files directly]`
       : diffText;
   const body = truncated.trim() ? truncated : "The diff is empty.";
-  const parts = [scopeText];
+  const parts = [REVIEW_RUBRIC, scopeText];
   if (prompt) parts.push(prompt);
   parts.push(`\`\`\`\n${body}\n\`\`\``);
   return parts.join("\n\n");
@@ -420,7 +459,7 @@ server.registerTool(
       prompt: z
         .string()
         .optional()
-        .describe("Custom review instructions / focus"),
+        .describe("One neutral sentence of the change's intent, plus any focus; the bridge supplies the review rubric"),
     },
     annotations: readOnly,
   },

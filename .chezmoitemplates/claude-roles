@@ -10,7 +10,6 @@
   {{- if $harnesses -}}{{- if not (has "claude" $harnesses) -}}{{- $scoped = false -}}{{- end -}}{{- end -}}
   {{- if $scoped -}}
     {{- $tier := get $meta "tier" -}}
-    {{- if not $tier -}}{{- fail (printf "%s: missing tier" $name) -}}{{- end -}}
     {{- $model := get $root.subagent_tiers.claude $tier -}}
     {{- if not $model -}}{{- fail (printf "%s: unknown tier %s" $name $tier) -}}{{- end -}}
     {{- $effort := get $meta "effort" -}}

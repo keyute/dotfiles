@@ -6,10 +6,9 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-    # pi pins typebox and jiti exactly; a pi bump that moves them fails stability.test
+    # pi pins typebox exactly; a pi bump that moves it fails stability.test
     ignore:
       - dependency-name: "typebox"
-      - dependency-name: "jiti"
     groups:
       # pi's family moves as one PR; first matching group wins, keeping it out of non-breaking
       pi:

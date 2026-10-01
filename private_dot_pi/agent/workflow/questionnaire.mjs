@@ -26,15 +26,12 @@ const questionnaireSchema = Type.Object({
   }), { minItems: 1, maxItems: 4 }),
 });
 
+// pi validates params against questionnaireSchema before execute; these are the checks it cannot express.
 export function validateQuestionnaire(input) {
-  if (!Array.isArray(input?.questions) || input.questions.length < 1 || input.questions.length > 4) return "questions must contain 1-4 questions";
   for (const question of input.questions) {
-    if (typeof question?.question !== "string" || !question.question.trim() || typeof question.header !== "string" || !question.header.trim() || question.header.length > 16) return "each question needs complete text and a header of 1-16 characters";
+    if (!question.question.trim() || !question.header.trim()) return "each question needs complete text and a header";
     if (/[\n\t]/.test(question.header)) return "question headers may not contain line breaks or tabs";
-    if (!Array.isArray(question.options) || question.options.length < 2 || question.options.length > 4) return "each question needs 2-4 options";
-    if (question.options.some(option => typeof option?.label !== "string" || !option.label.trim() || option.label.length > 60 || RESERVED_LABELS.has(option.label.trim().toLowerCase()))) return `option labels need 1-60 characters and may not be Other or ${CUSTOM_LABEL}`;
-    if (question.options.some(option => typeof option.description !== "string" || (option.preview !== undefined && typeof option.preview !== "string"))) return "option descriptions and previews must be text";
-    if (question.multiSelect !== undefined && typeof question.multiSelect !== "boolean") return "multiSelect must be a boolean";
+    if (question.options.some(option => !option.label.trim() || RESERVED_LABELS.has(option.label.trim().toLowerCase()))) return `option labels may not be blank, Other or ${CUSTOM_LABEL}`;
     if (question.multiSelect && question.options.some(option => option.preview !== undefined)) return "previews are only supported for single-select questions";
     const text = [question.question, question.header, ...question.options.flatMap(option => [option.label, option.description, option.preview ?? ""])];
     if (text.some(value => /[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(value))) return "Questions and options may not contain terminal control characters; use Markdown formatting.";

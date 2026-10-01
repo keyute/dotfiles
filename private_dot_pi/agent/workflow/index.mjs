@@ -47,18 +47,6 @@ export function trimHistory(history, budget = 16 * 1024) {
   return kept;
 }
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
-// The SDK's own guidelines for the pinned version, spelled with the managed
-// tool names (the SDK's mention plain `read`/`edit`, which do not exist here).
-const GUIDELINES = {
-  read: ["Use workspace_read to examine files instead of cat or sed."],
-  write: ["Use workspace_write only for new files or complete rewrites."],
-  edit: [
-    "Use workspace_edit for precise changes (edits[].oldText must match exactly)",
-    "When changing multiple separate locations in one file, use one workspace_edit call with multiple entries in edits[] instead of multiple workspace_edit calls",
-    "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
-    "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
-  ],
-};
 
 // `readonly` is also every read-only role's state in execute mode, so the
 // planning workflow is gated on the root in plan mode: a child has neither
@@ -155,10 +143,6 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let ceiling;
   let fleet;
   let surfaces;
-  // Rebuilt every session_start (pi's own settings re-read point, /reload
-  // included) so the once-built shell runner's exec/prefix getters pick up a
-  // changed shellPath/shellCommandPrefix without reinstalling the runner.
-  let shellConfig;
   let releaseChild;
   let childRevoked = false;
   let broker;
@@ -225,7 +209,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       ...(isRoot || !config.agents[role].readonly ? { dangerouslyDisableSandbox: { type: "boolean", description: "Run outside the OS sandbox with the full host environment; every such call is reviewed or prompted. Set it only when the user asks, or when this exact command just failed with a sandbox restriction (operation not permitted, denied path, blocked host or socket), and decide per command: an earlier approval does not carry over." } } : {}),
     };
     const parameters = Object.keys(flags).length ? { ...template.parameters, properties: { ...template.parameters.properties, ...flags } } : template.parameters;
-    pi.registerTool({ ...template, parameters, ...toolRenderers(name), name: publicToolName(name), promptGuidelines: GUIDELINES[name], async execute(id, args, signal, onUpdate, ctx) {
+    // The SDK's guidelines name the tool as a word followed by a space ("Use
+    // edit for", "one edit call"); "into one edit." is prose.
+    pi.registerTool({ ...template, parameters, ...toolRenderers(name), name: publicToolName(name), promptGuidelines: name === "bash" ? undefined : template.promptGuidelines?.map(line => line.replace(new RegExp(`\\b${name}\\b(?= )`, "g"), publicToolName(name))), async execute(id, args, signal, onUpdate, ctx) {
       const { ticket } = await authorize(name, args);
       if (name === "bash" && background && args.run_in_background) {
         // No turn signal: the task outlives the call, and only workspace_task or a mode change stops it.
@@ -363,17 +349,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       installSkillDisplay(runtime.InteractiveMode);
       installReasoningHide(runtime.AssistantMessageComponent);
       installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
-      // pi's own settings, honoured the way its native `!` branch would
-      // (docs/pi-coupling.md's owned `!` block); a session never installs
-      // the shell without a UI, so SettingsManager is only built here. The
-      // trust decision gates the project file as pi's own manager does — an
-      // untrusted checkout's .pi/settings.json must not choose the shell.
-      const settings = sdk.SettingsManager.create(ctx.cwd, undefined, { projectTrusted: ctx.isProjectTrusted() });
-      shellConfig = { ops: sdk.createLocalBashOperations({ shellPath: settings.getShellPath() }), prefix: settings.getShellCommandPrefix() };
       if (!surfaces) {
         installFolding(pi, ctx);
         const footer = installFooter(pi, ctx, { fleet, tasks });
-        const shell = installShell(pi, () => currentContext, { working: footer.working, exec: (...args) => shellConfig.ops.exec(...args), env: hostEnvironment, prefix: () => shellConfig.prefix });
+        // `!` runs in zsh with the interactive config; workspace_bash stays on
+        // bash -c without rc, which would otherwise load into every sandboxed call
+        const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations({ shellPath: "/bin/zsh" }).exec, env: hostEnvironment, prefix: () => "source ~/.zshrc" });
         surfaces = { footer, shell };
       }
       // pi resets every extension surface when a session is invalidated

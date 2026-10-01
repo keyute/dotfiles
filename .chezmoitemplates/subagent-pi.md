@@ -18,9 +18,10 @@ extensions: {{ $role.extensionPath }}
 {{- /* omit_instructions drops both, as Claude's omitClaudeMd does: repo AGENTS.md/CLAUDE.md and ~/.pi/agent/AGENTS.md */}}
 inheritProjectContext: {{ not (get $meta "omit_instructions") }}
 inheritGlobalContext: {{ not (get $meta "omit_instructions") }}
-{{- /* pi-subagents infers acceptance from acceptanceRole alone; `writer` would add its bundled reviewer outside the tier policy */}}
-{{ if $role.readonly }}acceptanceRole: read-only{{ else }}mutationTools: {{ join ", " $role.mutationTools }}
-acceptance: {"level":"none","reason":"the driver verifies each slice from its diff and gate"}{{ end }}
+{{- if not $role.readonly }}
+mutationTools: {{ join ", " $role.mutationTools }}
+{{- end }}
+acceptance: {"level":"none","reason":"the driver verifies each result"}
 ---
 
 {{ includeTemplate (printf "subagents/%s.md" $name) (dict) -}}

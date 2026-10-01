@@ -345,21 +345,7 @@ test("the active signal dismisses inline approval and cleanup prevents duplicate
   assert.equal(prompt.stats().completions, 1);
 });
 
-test("RPC uses supported dialogs while unattended modes cancel instead of autoapproving", async () => {
-  const calls = [];
-  const rpc = (choice, feedback) => ({
-    mode: "rpc",
-    hasUI: true,
-    ui: {
-      async select(title, options, opts) { calls.push(["select", title, options, opts]); return choice; },
-      async input(title, placeholder, opts) { calls.push(["input", title, placeholder, opts]); return feedback; },
-    },
-  });
-  assert.deepEqual(await requestPlanApproval(rpc("Yes")), { decision: PLAN_APPROVED });
-  assert.deepEqual(await requestPlanApproval(rpc("No", "line one\nline two")), { decision: PLAN_REVISION, feedback: "line one\nline two" });
-  assert.deepEqual(await requestPlanApproval(rpc("No", "  ")), { decision: PLAN_CANCELLED });
-  assert.deepEqual(await requestPlanApproval(rpc(undefined)), { decision: PLAN_CANCELLED });
+test("non-TUI modes cancel instead of autoapproving", async () => {
+  assert.deepEqual(await requestPlanApproval({ mode: "rpc", hasUI: true, ui: {} }), { decision: PLAN_CANCELLED });
   assert.deepEqual(await requestPlanApproval({ mode: "print", hasUI: false, ui: {} }), { decision: PLAN_CANCELLED });
-  assert.ok(calls.some(([method]) => method === "select"));
-  assert.ok(calls.some(([method]) => method === "input"));
 });

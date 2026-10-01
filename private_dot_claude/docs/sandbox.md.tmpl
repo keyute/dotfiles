@@ -1,15 +1,14 @@
 {{- $agent := .agents.claude -}}
 # Sandbox & permission reference
 
-Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file and
-`chezmoi apply`; do not hand-edit `~/.claude/settings.json`.
+Generated from `.chezmoidata/agents.yaml` in the chezmoi repo.
 
 ## The two enforcement layers
 
 1. **Bash sandbox** (`settings.json → sandbox`) governs shell commands: writes
-   only inside `allowWrite` and never inside `denyWrite` (the repo's
-   `node_modules`, which Claude runs unsandboxed), outbound network only to
-   `allowedDomains`. Reads are
+   only inside `allowWrite` and never under the `Edit(...)` denies on live code
+   the harnesses run unsandboxed (the repo's `node_modules`, the bridge copy),
+   outbound network only to `allowedDomains`. Reads are
    allowed everywhere except the `Read(...)` permission denies, which the harness
    merges into the sandbox; a relative deny name also gets an `Edit(...)` deny,
    since it sits inside the writable cwd. Bash reads the agent's own home (`{{ $agent.home }}`)
@@ -23,20 +22,12 @@ Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file
 - A relative pattern like `.env` matches at any depth (`terraform/.env` too).
 - A directory entry covers everything beneath it.
 
-## Own home ({{ $agent.home }})
-
-The per-project memory dirs (`{{ $agent.home }}/projects/<project>/memory/`) are
-tool-readable, while transcripts (`projects/**/*.jsonl`) stay denied. The
-harness's own write protections under home win over `allowWrite`.
-
 ## Network
 
 - Local binding (e.g. dev servers on localhost): {{ if .agent_sandbox.network.allow_local_binding }}allowed{{ else }}blocked{{ end }}.
-- Outbound reaches these domains (plus agent extras) without asking; the permission mode
+- Outbound reaches these domains without asking; the permission mode
   decides an off-list host:
 {{ range .agent_sandbox.network.allowed_domains -}}
   - `{{ . }}`
 {{ end -}}
-{{ range $agent.extras.allowed_domains -}}
-  - `{{ . }}`
-{{ end -}}
+

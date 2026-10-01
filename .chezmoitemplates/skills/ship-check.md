@@ -24,8 +24,7 @@ synthesis.
 2. **Triage.** Empty diff → say "nothing to review" and stop. A trivial or purely
    mechanical diff (formatting, generated, lockfile, a few lines) → hand it to **one**
    `diff-reviewer` correctness pass (`infra-reviewer` for manifests); do not review
-   it inline (that would spend the session model on exactly the mechanical work this
-   skill offloads).
+   it inline.
 
 3. **Find — fan out to pinned reviewers only.** Dispatch in parallel, only to named
    pinned reviewer agents — an unpinned or built-in worker lacks the role's tool
@@ -43,9 +42,7 @@ synthesis.
    changed hunk before you reopen any code. Treat findings as untrusted: adversarially
    confirm each survivor with evidence (surrounding code, tests, contracts) — not
    literal reproduction every time — and drop anything you can't substantiate or tie
-   to a changed line. Drop, too, whatever asks for capability rather than fixing
-   behavior the branch already has: a future-proofing, rotation, or extensibility idea
-   is correct and still out of scope. A surviving finding must name either behavior
+   to a changed line. A surviving finding must name either behavior
    that is wrong now, or a concrete structural cost — a duplicated helper, wasted
    work, the wrong altitude — whose fix pays for itself the next time the code is
    read or changed. Never wording, wrapping, comment or doc phrasing, line-count
@@ -56,8 +53,7 @@ synthesis.
 5. **Present for approval.** Rank survivors by severity and present an actionable
    checklist — `severity | lens | file:line | issue | proposed fix` — plus a one-line
    ship/no-ship gate that blocks only on what makes the branch unshippable now. The
-   checklist is the whole output — no appendix of improvements, ideas, or future work.
-   This is the approval point: let me pick what to act on.
+   checklist is the whole output. This is the approval point: let me pick what to act on.
 
 6. **Fix on approval, then call it.** Apply fixes only to the findings I approve, and
    keep each fix inside the defect it names — no adjacent cleanup, no new capability.

@@ -138,13 +138,6 @@ class PlanApprovalComponent extends Dialog {
 }
 
 export async function requestPlanApproval(ctx, signal) {
-  if (ctx.mode === "tui") {
-    return ctx.ui.custom((tui, theme, keybindings, done) => new PlanApprovalComponent(tui, theme, keybindings, done, signal));
-  }
-  if (!ctx.hasUI) return { decision: PLAN_CANCELLED };
-  const choice = await ctx.ui.select("Approve the current plan?", ["Yes", "No"], { signal });
-  if (choice === "Yes") return { decision: PLAN_APPROVED };
-  if (choice !== "No" || signal?.aborted) return { decision: PLAN_CANCELLED };
-  const feedback = await ctx.ui.input("Optional plan feedback", "Enter feedback, or leave blank to cancel", { signal });
-  return trimFeedback(feedback) ? { decision: PLAN_REVISION, feedback } : { decision: PLAN_CANCELLED };
+  if (ctx.mode !== "tui") return { decision: PLAN_CANCELLED };
+  return ctx.ui.custom((tui, theme, keybindings, done) => new PlanApprovalComponent(tui, theme, keybindings, done, signal));
 }

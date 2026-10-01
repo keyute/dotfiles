@@ -61,8 +61,9 @@ export function buildSegments({ modelId, contextPercent, limits, branch, changes
   if (modelId) segments.push({ text: modelId, color: "accent" });
   if (contextPercent != null) segments.push({ text: `${contextPercent.toFixed(1)}%` });
   for (const window of limits ?? []) {
-    const weekday = longWindow(window);
-    const reset = formatReset(window.resetsAt, { weekday });
+    const reset = longWindow(window)
+      ? formatReset(window.resetsAt, { weekday: true })
+      : window.resetsAt ? formatDuration(window.resetsAt * 1000 - Date.now()) : "";
     segments.push({ text: `${windowLabel(window.windowMins)} ${window.usedPercent}%${reset ? ` ${reset}` : ""}`, color: "dim" });
   }
   // The counts ride the branch segment rather than joining its text: they take
@@ -276,9 +277,15 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
       // click or a later completion joining their group repaints through here.
       setRepaint(folds, () => tui.requestRender());
       const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+      // The turn tick stops between turns; this keeps the short-window reset countdown current while idle.
+      const refresh = setInterval(() => tui.requestRender(), 60_000);
+      refresh.unref?.();
       const separator = theme.fg("dim", " · ");
       return {
-        dispose: unsubscribe,
+        dispose() {
+          unsubscribe();
+          clearInterval(refresh);
+        },
         invalidate() {},
         render(width) {
           const segments = buildSegments({

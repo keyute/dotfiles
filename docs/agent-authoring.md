@@ -6,8 +6,7 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
 
 - Intent lives beside its projection: each bullet ends in a non-rendering
   `{{/* <principle>: <why> */}}` comment. An intent change edits the bullet
-  and its comment together. `native_coverage` in agents.yaml is only the
-  per-harness list of principles the shared template skips.
+  and its comment together.
 - A comment opens with `model:` when the line compensates a model default;
   an untagged line is an owner contract.
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`.
@@ -33,22 +32,19 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   trigger's question needs, each fact at its current state. Quirk
   workarounds go there too, where they expire cheaply.
 - Implementation mechanics a harness editor needs go to
-  `docs/pi-implementation.md` (pi and the bridge), not the deployed doc;
-  `render.test.mjs` budgets each rendered on-demand doc.
+  `docs/pi-implementation.md` (pi and the bridge), not the deployed doc.
 - Occasional workflows → skills.
 
 ## Style
 
 - One imperative intent line plus a why; the why records the tradeoff or
   failure the rule is meant to protect, so the rule survives cases it never
-  enumerated. Evidence, numbers and sources go to `docs/decisions.md`, not
-  the why.
+  enumerated. Evidence and numbers stay out of the why; a row only where One
+  record calls for one.
 - State the constraint with its concrete trigger, not a description of the
   preferred world.
 - Say what to do; reserve "never" for absolute boundaries and emphasis
   markers for almost nothing — both work only while scarce.
-- Reuse the principle keys' exact terminology; synonyms obscure equivalence and
-  make drift harder to detect.
 - Skill bodies are imperative, with numbered steps only where order matters,
   otherwise goal, constraints and definition of done; never duplicate what the
   harness provides natively. *Why: step choreography degrades current models'

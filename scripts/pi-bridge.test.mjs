@@ -133,6 +133,7 @@ test("validateThreadId requires a strict UUID v4", () => {
 test("composeReviewPrompt states the scope and includes the diff", () => {
   const prompt = composeReviewPrompt({ diffText: "diff --git a/x b/x" });
   assert.match(prompt, /Review the uncommitted changes/);
+  assert.match(prompt, /adversarial software review/);
   assert.match(prompt, /diff --git a\/x b\/x/);
 });
 

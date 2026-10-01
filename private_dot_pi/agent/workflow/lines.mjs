@@ -4,6 +4,7 @@
 // host's memory); the caller decides what an error means (destroy, kill).
 export function readLines(stream, onMessage, { limit = 1024 * 1024, onError = () => {} } = {}) {
   let buffer = "";
+  stream.setEncoding?.("utf8");
   stream.on("data", chunk => {
     buffer += chunk;
     if (buffer.length > limit) { buffer = ""; return onError(new Error("Oversized message")); }

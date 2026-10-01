@@ -85,6 +85,7 @@ function listFiles(root, extraIgnores, signal) {
     signal.addEventListener("abort", abort, { once: true });
     let output = "";
     let stderr = "";
+    child.stdout.setEncoding("utf8");
     child.stdout.on("data", chunk => { output += chunk; });
     child.stderr.on("data", chunk => { stderr += chunk; });
     child.on("error", error => rejectPromise(ripgrepMissing(error)));

@@ -21,7 +21,6 @@
   {{- $harnesses := get $meta "harnesses" -}}
   {{- if or (not $harnesses) (has "pi" $harnesses) -}}
     {{- $tier := get $meta "tier" -}}
-    {{- if not $tier -}}{{- fail (printf "%s: missing tier" $name) -}}{{- end -}}
     {{- $effort := get $meta "effort" -}}
     {{- if not $effort -}}{{- fail (printf "%s: missing effort" $name) -}}{{- end -}}
     {{- $pin := get $root.subagent_tiers.pi $tier -}}

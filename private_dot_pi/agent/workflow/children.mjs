@@ -1,7 +1,6 @@
 import { canonical } from "./policy.mjs";
 
 const launchKeys = new Set(["agent", "task", "async", "model", "context", "agentScope"]);
-const scriptKeys = new Set(["workflowScript", "workflowScriptPath", "tasks", "chain"]);
 const controlKeys = new Set(["action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery"]);
 const listKeys = new Set(["action", "agentScope", "capabilities"]);
 const managementActions = new Set(["list", "status", "interrupt", "stop", "steer"]);
@@ -42,7 +41,6 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
     args.steeringRecovery = false;
     return;
   }
-  if (Object.keys(args).some(key => scriptKeys.has(key))) throw new Error("Use a named child launch with agent and task; workflow scripts, task lists and chains are not enabled");
   // Launch-only extras stay silently dropped; the execution contract admits only launchKeys.
   for (const key of Object.keys(args)) if (!launchKeys.has(key)) delete args[key];
   const child = config.agents[args.agent];

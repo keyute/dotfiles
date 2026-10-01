@@ -78,7 +78,7 @@ test("bundled extension entry installs skill, pending-input and reasoning displa
     setActiveTools() {},
   };
   await start(pi);
-  const ctx = { cwd: root, mode: "tui", hasUI: true, isProjectTrusted: () => false,
+  const ctx = { cwd: root, mode: "tui", hasUI: true,
     sessionManager: { getSessionId: () => "skill-fixture", getBranch: () => [], getEntries: () => [] },
     // The classifier's shared id is off subscription OAuth; the frontier is on it.
     modelRegistry: { find: (provider, id) => ({ provider, id }), isUsingOAuth: model => model.id !== "gpt-6-sol" },

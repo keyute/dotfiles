@@ -28,7 +28,7 @@
     Finish a failed worker's piece yourself rather than promoting it.{{/* driver_ownership: explicit ownership keeps scoped implementation out of the driver's context without ceding cross-scope decisions, and objective gates make worker results reviewable */}}
 {{- if not (has "specialist_pinning" $native) }}
   - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
-    does not show it: override a model only to escalate after an observed failure.{{/* specialist_pinning: presets are tuned once, not per session */}}
+    does not show it: don't override their model.{{/* specialist_pinning: presets are tuned once, not per session */}}
 {{- end }}
   - Once children are launched, their scope is off-limits: do only work outside
     it; read a report before deciding whether a finding needs your own check.{{/* delegation_wait: a parent that redoes its children's work while it runs pays for it twice in tokens and wall-clock */}}

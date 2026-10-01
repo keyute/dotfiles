@@ -16,7 +16,7 @@ const BG = "\x1b[48;5;1m";
 const theme = { fg, bg: (_color, text) => `${BG}${text}\x1b[49m` };
 const strip = text => text.replace(/\x1b\[[0-9;]*m/g, "");
 
-test("parseShellInput mirrors pi's own !/!! branch", () => {
+test("parseShellInput: ! keeps the run in context, !! excludes it, the command is trimmed and an empty one is no command", () => {
   assert.deepEqual(parseShellInput("!ls"), { command: "ls", excludeFromContext: false });
   assert.deepEqual(parseShellInput("!!pwd"), { command: "pwd", excludeFromContext: true });
   assert.deepEqual(parseShellInput("!!  pwd  "), { command: "pwd", excludeFromContext: true });
@@ -28,7 +28,7 @@ test("parseShellInput mirrors pi's own !/!! branch", () => {
   assert.equal(parseShellInput(""), null);
 });
 
-test("contextText matches pi's bashExecutionToText's shape for every case", () => {
+test("contextText: Ran `command`, the output fenced or (no output), then cancellation or a nonzero exit, then truncation", () => {
   assert.equal(contextText({ command: "ls", output: "a\nb", exitCode: 0, cancelled: false }), "Ran `ls`\n```\na\nb\n```");
   assert.equal(contextText({ command: "ls", output: "", exitCode: 0, cancelled: false }), "Ran `ls`\n(no output)");
   assert.equal(contextText({ command: "false", output: "", exitCode: 2, cancelled: false }), "Ran `false`\n(no output)\n\nCommand exited with code 2");
@@ -267,7 +267,7 @@ function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds(), 
   return { runner, sent, appended, notices, workingCalls, folds, pi };
 }
 
-test("a shellCommandPrefix runs before the command, which reaches exec in an eval, but details.command stays the typed command", async () => {
+test("a shell prefix runs before the command, which reaches exec in an eval, but details.command stays the typed command", async () => {
   const execCalls = [];
   const exec = async (command, _cwd, { onData }) => { execCalls.push(command); onData(Buffer.from("hi\n")); return { exitCode: 0 }; };
   const h = harness({ exec, prefix: () => "source ~/.zshrc" });
@@ -329,7 +329,7 @@ test("! immediately appends a visible entry and defers only its hidden context",
   assert.equal(h.sent[0].message.content, contextText(h.appended[0].data));
 });
 
-test("! sends a hidden custom message with the mirrored context text", async () => {
+test("! sends a hidden custom message carrying its contextText", async () => {
   const h = harness({ exec: async (_command, _cwd, { onData }) => { onData(Buffer.from("hi\n")); return { exitCode: 0 }; } });
   assert.equal(h.runner.submit("!echo hi"), true);
   await h.runner.pending;

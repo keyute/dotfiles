@@ -5,9 +5,7 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
 
 ## Models
 
-- Settings pin the driver (`model` key) to `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}`;
-  effort `{{ .agents.claude.defaults.reasoning_effort }}` is pinned under `modelSettings` for every pin,
-  so a `/model` escalation keeps it.
+- Driver: `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}` at effort `{{ .agents.claude.defaults.reasoning_effort }}`, pinned under `modelSettings` for every pin so a `/model` escalation keeps it.
 - Escalate effort first: `/effort xhigh` keeps the prompt cache. `{{ .subagent_tiers.claude.frontier }}`
   is escalation-only: for an ambiguous root-cause or architecture problem
   where the driver at higher effort fell short, start a fresh session with
@@ -27,8 +25,8 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
   (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin and workflow
   agents and teammates.
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
-{{- $bare := list }}{{ $scoped := list }}{{ $modelDeny := list }}
-{{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
+{{- $modelDeny := list }}
+{{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ end }}
 - The `Agent(model:…)` deny rules (the frontier pin's alias, plus `{{ $modelDeny | join "`, `" }}`) keep per-call children on the tier pins;
   they do not see a Workflow `agent()` opts.model, which does reach the frontier, or a
   third-party `model: inherit`, nor prove routing.
@@ -37,14 +35,6 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
 - Every custom subagent except the omit_instructions roles ({{ $omit | join ", " }}) loads
   `~/.claude/CLAUDE.md`; all draw the same Max pools (5-hour
   window, shared weekly pool; the frontier model's weekly cap is shared, not reserved); check `/usage`.
-
-## Workflows
-
-- The keyword `ultracode` opts one turn into a workflow at session effort; `/effort ultracode [on|off]`
-  toggles standing workflows for the session and keeps the current effort, with no size
-  warning and no 20-agent Agent-tool cap. Only the driver can start one; concurrency is
-  min(16, CPUs−2). A bare `agent()` gets the
-  `CLAUDE_CODE_SUBAGENT_MODEL` pin at session effort; `agent({agentType})` the role's pin and effort.
 - Fan-out size and per-agent scope drive workflow burn; effort barely does.
 
 ## Web search
@@ -54,15 +44,5 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
 ## Local-only surface
 
 - No claude.ai-product surface: account skill/plugin sync, claude.ai connectors and Remote
-  Control are off in settings, the cron scheduler by env; `{{ $bare | join "`, `" }}` are
-  bare-denied (gone from the tool list); `{{ $scoped | join "`, `" }}` block only the
-  matching call, as does the frontier alias deny rendered from its pin. Skill overrides and denies live in agents.yaml (plugin skills follow
-  `enabledPlugins`). `/code-review ultra` and `claude --cloud` have no disable knob, both
-  user-invoked only.
-
-## Cross-model bridge on pi
-
-- `cross-model-review` / `cross-model-advice` call the Claude-only `pi` MCP bridge
-  (`scripts/pi-bridge.mjs`: read-only, model and effort pinned in `agent_mcp_servers.pi`,
-  allow-listed for plan mode). It runs from the applied copy in `~/.claude/pi-bridge`, so an edit
-  takes effect after `chezmoi apply`, and refuses scratch dirs and linked worktrees: review a real checkout.
+  Control are off in settings, the cron scheduler by env; tool and skill denies live in agents.yaml.
+  `/code-review ultra` and `claude --cloud` have no disable knob, both user-invoked only.

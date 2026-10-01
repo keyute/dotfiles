@@ -84,7 +84,7 @@ for (const file of walk(path.join(home, ".claude/projects"))) {
     }
     for (const c of Array.isArray(m?.content) ? m.content : []) {
       if (c.type === "tool_use" && c.name === "Agent") {
-        const role = c.input?.subagent_type ?? "fork";
+        const role = c.input?.subagent_type ?? "general-purpose";
         toolRole.set(c.id, role);
         if (recent) tally(claudeDispatches, role);
       } else if (recent && c.type === "tool_use" && c.name === "Skill") {

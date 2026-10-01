@@ -1,7 +1,7 @@
 # Pi workflow reference
 
 Env-specific facts; if behavior seems changed, verify against the source repo and update its
-template in the chezmoi repo. Sandbox, modes, approvals: `sandbox.md`; decisions: the repo's `docs/decisions.md`.
+template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
 
 ## Launch and pins
 
@@ -70,9 +70,5 @@ template in the chezmoi repo. Sandbox, modes, approvals: `sandbox.md`; decisions
 - MCP servers other than Playwright (see `sandbox.md`) run inside SRT; Node servers
   use `NODE_USE_ENV_PROXY=1` so fetch follows the sandbox proxy. If every call
   fails with `fetch failed`, check that setting, then the allowed domains.
-- Config is explicit, not imported from other harnesses: no `mcp.json` is read,
-  codemode is off, and `/mcp` shows only the managed servers. Every MCP call,
-  including to tools a server adds later, goes through policy review; denied tools
-  are hidden.
 - No LSP: diagnostics come from project toolchains via `workspace_bash` (`tsc --noEmit`,
   `go vet`, pyright, linters). Claude's proprietary plugins and cloud services: use Claude.

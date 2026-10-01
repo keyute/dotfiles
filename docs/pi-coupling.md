@@ -37,16 +37,10 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   input. *On red:* fall back to pi's native pending display; lost: the shaded
   `❯` blocks and their `π` labels. *Retire:* when pi offers a pending-input
   renderer. *Pin:* `stability.test.mjs`, render/lifecycle tests.
-- **Editor render shape**: exported but undocumented `renderDiff`;
-  `CustomEditor`'s render shape (borders, `setPaddingX`,
-  first-line padding) and the Editor internals shell mode uses for its atomic
-  prefix. *Why:* rule 5's composer and shell-mode prompt. *On red:* repair.
-  *Retire:* when pi exposes a shell-mode/prompt-prefix editor API. *Pin:*
-  `stability.test.mjs`, `caret.test.mjs`, real-editor tests.
 - **The owned `!` block**: `CaretEditor` intercepts the `onSubmit` pi assigns
-  to a custom editor, parses `!`/`!!` as pi's branch does so
+  to a custom editor, parses `!`/`!!` so
   `handleBashCommand` never runs, and runs the command through
-  `createLocalBashOperations` with pi's `shellPath`/`shellCommandPrefix`.
+  `createLocalBashOperations` in zsh sourcing `~/.zshrc`.
   *Why:* rule 5's shell block; pi has no renderer
   hook for its own. *Residual:* no `bash_execution_update`, no full-output file
   on truncation, no pi pending shell component. *On red:* repair. *Retire:*
@@ -89,4 +83,5 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   *Re-verify:* segments missing on a live turn with a fresh login — check the
   response shape, not the parser. *Retire:* for `@hk_net/pi-usage-bars` if the
   endpoint breaks, losing the segments inside rule 3's single status line.
-  *On red* (the credential field shape): repair. *Pin:* `stability.test.mjs`.
+  *On red* (the credential field shape): repair. *Pin:* `stability.test.mjs`
+  (the stored credential's fields only; the endpoint has no pin).

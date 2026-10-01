@@ -5,9 +5,7 @@ import { PAD, appendVisible, closeFolds, defaultFolds, shadedBlock } from "./row
 // The `!`/`!!` round trip pi's native BashExecutionComponent used to own
 // (docs/pi-design.md rule 5's shell block, and rule 9's
 // background exception): this extension intercepts the composer submit, runs
-// the command itself and draws it in the transcript's own shape. Mirrors pi's
-// own parsing (interactive-mode.js ~2588-2591) and its bashExecutionToText
-// (messages.js) for the hidden model-context message.
+// the command itself and draws it in the transcript's own shape.
 
 export function parseShellInput(text) {
   if (!text.startsWith("!")) return null;
@@ -16,9 +14,8 @@ export function parseShellInput(text) {
   return command ? { command, excludeFromContext } : null;
 }
 
-// Mirrors bashExecutionToText (core/messages.js): the same literal shape, but
-// without the fullOutputPath truncation line — we have no saved-file path, so
-// a truncated run says so plainly instead.
+// The hidden model-context text; there is no saved full-output file, so a
+// truncated run says so plainly.
 export function contextText(details) {
   let text = `Ran \`${details.command}\`\n`;
   text += details.output ? `\`\`\`\n${details.output}\n\`\`\`` : "(no output)";
@@ -136,13 +133,12 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
       }
     };
     let result;
-    // pi's own bash tool joins prefix and command with a newline
-    // (core/tools/bash.js), but zsh -c parses its whole string before running
-    // any of it, so aliases the prefix defines (`source ~/.zshrc`) would miss
-    // the command; eval makes the command a later parse. The prefix never
-    // appears in details.command or the drawn block.
-    const shellCommandPrefix = prefix();
-    const resolvedCommand = shellCommandPrefix ? `${shellCommandPrefix}\neval '${command.replaceAll("'", "'\\''")}'` : command;
+    // zsh -c parses its whole string before running any of it, so aliases the
+    // prefix defines (`source ~/.zshrc`) would miss a newline-joined command;
+    // eval makes the command a later parse. The prefix never appears in
+    // details.command or the drawn block.
+    const shellPrefix = prefix();
+    const resolvedCommand = shellPrefix ? `${shellPrefix}\neval '${command.replaceAll("'", "'\\''")}'` : command;
     try {
       result = await exec(resolvedCommand, cwd(), { onData, signal, env: env() });
     } catch (error) {

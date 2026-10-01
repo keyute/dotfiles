@@ -39,9 +39,8 @@ jobs:
           persist-credentials: false
 
       - name: Run MegaLinter
-        # The documentation flavor carries every linter in ENABLE_LINTERS
-        # (verified against the image) at roughly a third the size of the full
-        # flavor, which is 11.6GB.
+        # The documentation flavor carries every linter in ENABLE_LINTERS at a
+        # fraction of the full flavor's size.
         uses: oxsecurity/megalinter/flavors/documentation@15e5b45552097e318c93de385779ce3b1084052c # v10.0.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -54,13 +53,10 @@ jobs:
           # markdownlint even when it is the only MARKDOWN linter enabled.
           MARKDOWN_DEFAULT_STYLE: rumdl
           # MegaLinter classes rumdl as a formatter and defaults its findings to
-          # non-blocking ("non blocking error(s)", job stays green); this makes
-          # them fail the gate.
+          # non-blocking; this makes them fail the gate.
           MARKDOWN_RUMDL_DISABLE_ERRORS: false
-          # zizmor's online audits resolve action refs against github.com, and
-          # one failed online audit aborts the whole run ("no audit was
-          # performed"). --offline forces offline despite GITHUB_TOKEN being
-          # set, keeping the static audits.
+          # One failed online audit aborts the whole zizmor run; --offline
+          # forces offline despite GITHUB_TOKEN being set, keeping the static audits.
           ACTION_ZIZMOR_ARGUMENTS: --offline
           # Diff mode resolves the base as origin/$DEFAULT_BRANCH, which only
           # exists on a pull request; push and merge_group sweep everything.
@@ -68,8 +64,6 @@ jobs:
           DEFAULT_BRANCH: ${{ github.base_ref }}
           # .chezmoitemplates/*.md are Go templates that render into markdown,
           # not markdown documents: rumdl reads `{{- /* ... */ -}}` comments as
-          # inline HTML and the frontmatter `---` as a setext heading. Every one
-          # of the 13 findings there was that mis-parse or a nit inside a
-          # template comment. What renders out of them is markdown, and
-          # test.yml's render job already renders it.
+          # inline HTML and the frontmatter `---` as a setext heading. What
+          # renders out of them is markdown, and test.yml's render job renders it.
           MARKDOWN_FILTER_REGEX_EXCLUDE: \.chezmoitemplates/.*

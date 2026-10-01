@@ -45,8 +45,7 @@ jobs:
         id: filter
         with:
           # Negated patterns are ignored under the default `some` quantifier,
-          # which would leave this filter matching every commit. Added in
-          # v4.0.3 — v4.0.2 does not accept it.
+          # which would leave this filter matching every commit.
           predicate-quantifier: some-with-excludes
           filters: |
             chezmoi:
@@ -90,8 +89,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install shellcheck ripgrep
 
-      # fresh.yml actually runs these, but only weekly and only down the paths
-      # they happen to take.
+      # fresh.yml runs these only weekly and only down the paths they take.
       - name: Render and check run scripts
         run: |
           set -euo pipefail

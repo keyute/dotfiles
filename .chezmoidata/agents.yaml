@@ -18,7 +18,6 @@ agents:
       - "history.jsonl"
       - "projects/**/*.jsonl"
       - "shell-snapshots"
-      - "todos"
       - "backups"
       - "sessions"
       - "paste-cache"
@@ -26,9 +25,6 @@ agents:
       # own, but listing them here carries them to the bridge's git sandbox
       - "ide"
       - "bridge-spawn"
-    extras:
-      allowed_domains:
-        - "code.claude.com"
     plugins:
       "frontend-design@claude-plugins-official": true
     # disableBundledSkills stays unset: it also drops the review skills
@@ -216,20 +212,12 @@ agent_sandbox:
     allowed_domains:
       - github.com
       - "*.github.com"
-      - githubusercontent.com
       - "*.githubusercontent.com"
-      - registry.npmjs.org
-      - npmjs.org
       - "*.npmjs.org"
       - pypi.org
       - files.pythonhosted.org
       - proxy.golang.org
       - sum.golang.org
-      - pkg.go.dev
-      - developer.mozilla.org
-      - stackoverflow.com
-      - stackexchange.com
-      - "*.stackexchange.com"
       - nodejs.org
 agent_mcp_servers:
   # auto_approve_tools: Claude emits an allow rule and pi's workflow/policy.mjs
@@ -264,12 +252,6 @@ agent_mcp_servers:
     domains: [api.exa.ai]
     auto_approve_tools: true
     readonly_tools: [web_search_exa, web_fetch_exa]
-    # these dispatch and bill remote agentic runs; denied so a default flip
-    # cannot make them auto-approved
-    denied_tools:
-      - deep_researcher_start
-      - deep_researcher_check
-      - agent_run
     env:
       EXA_API_KEY:
         op: Personal/Exa/api key
@@ -294,6 +276,9 @@ agent_mcp_servers:
       - --headless
       - --no-webmcp
       - --isolated
+      # no "Ran Playwright code" section in tool results
+      - --codegen
+      - none
       # auto-named snapshots and logs land here, not in the session cwd
       - --output-dir
       - ~/Library/Caches/playwright-mcp

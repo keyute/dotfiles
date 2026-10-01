@@ -77,9 +77,8 @@ const mcpFixture = () => ({
 });
 
 test("the root's MCP config defers every server and hides denied tools", () => {
-  const { servers, errors, autoEnableCodemode } = mcpConfig(mcpFixture(), "root");
+  const { servers, errors } = mcpConfig(mcpFixture(), "root");
   assert.deepEqual(errors, []);
-  assert.equal(autoEnableCodemode, false);
   assert.deepEqual(servers.map(server => server.name), ["context7", "exa", "playwright"]);
   const [context7, exa, playwright] = servers;
   assert.deepEqual(context7, { name: "context7", source: runnerPath, scope: "extension", config: {

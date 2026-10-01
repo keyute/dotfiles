@@ -1,10 +1,6 @@
 # Pi implementation working record
 
-The durable decisions behind the managed pi setup; read before changing its architecture, policy or package pins. Design history
-is in git history (`git log -p docs/pi-implementation.md`); model,
-role, setting and asymmetry decisions, their evidence and reversal triggers
-are in `docs/decisions.md`; architecture decisions and their triggers stay
-here.
+Architecture decisions behind the managed pi setup and their triggers; model, role and setting decisions are in `docs/decisions.md`.
 
 ## Decisions
 
@@ -13,7 +9,8 @@ here.
   routes its primitive operations (documented `operations` seam, as pi's
   Gondolin example does) into a per-invocation SRT ops worker. Grep search runs
   wholly inside the worker (the SDK's GrepOperations seam does not cover its
-  host-side ripgrep spawn). MCP stdio servers also use SRT workers.
+  host-side ripgrep spawn). MCP stdio servers except Playwright also use SRT
+  workers.
 - Root Unix-socket broker owns mode, approvals and process leases (owned code:
   re-check when a pi release ships per-tool approval or a policy hook API).
   Child sessions carry the policy epoch they were launched under (via the
@@ -47,15 +44,6 @@ here.
 - `toolDescriptionMode` is `compact`: any explicit mode drops
   `promptSnippet`/`promptGuidelines` but keeps its fixed safety guidance, which
   the managed description replaces.
-  Rejected UI packages: grouping ones patch pi's private components; dialog,
-  compact-tool and status-line ones bring their own grammar. Also rejected: chezmoi-native
-  settings merge (sprig `mergeOverwrite` skips `false`/`0`; jq's `. * $m` in
-  the modify script, as `.claude.json` uses jq, does the merge);
-  `modelScope.strict`
-  for the tier check (loses refusal text and the frontier rule); dropping the
-  double checks on child launch and MCP policy (defence in depth); pooled SRT
-  workers, no broker or a one-stage classifier (each recreates leases or changes
-  decisions).
 - Mode changes and shutdown stop detached children through
   session-owned RPC and require observed process-terminal proof, not a
   completion notification. Unverified cleanup blocks mode changes; shutdown
@@ -64,13 +52,6 @@ here.
   tasks; cleanup retains their outputs and failures. Cleanup cannot run after
   Pi receives SIGKILL, nor does it cover deliberately detached `setsid` daemons
   or external services/containers.
-- TypeSafe Jev is not adopted for the approval classifier: the
-  only slice an offline replay fast-allows safely is the sandboxed reviewed
-  verbs, 11% of reviews, and escalations rarely clear the confidence bar.
-  Reversal trigger: the single-model classifier's per-stage measurement
-  misses its latency target (a filter median over ~2 s), escalations stop
-  dominating, and a fresh replay clears the escalation slice with zero wrong
-  allows (replay numbers in git history).
 
 ## Verification and remaining gates
 
@@ -83,10 +64,3 @@ here.
   is bound to epoch/role/tool, not arguments (the approval flow changes, or pi
   lets arguments change post-review); setsid/double-fork/other-user children
   escape kill (an orphan after a kill, or a role granted a daemoniser).
-
-## Claude-side bridge internals
-
-- `scripts/pi-bridge.mjs` and `scripts/pi-bridge-guard.mjs`: reversal trigger
-  — pi's print mode, tool allowlist or `tool_call` blocking regresses, or
-  OpenAI withdraws subscription OAuth for third-party harnesses; then the
-  review backend needs a new transport.

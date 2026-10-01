@@ -12,12 +12,11 @@ Audit dependency version bumps for breaking changes and produce a risk matrix.
    ecosystem (npm / go / python / helm / action), from → to, whether it
    crosses a major, and its manifest and usage files (grep the repo).
 
-2. **Research each bump.** Patch bumps of well-behaved deps get a changelog skim;
-   majors and infrastructure charts get full treatment. Fan out one pinned
-   `dep-researcher` per dependency — never an unpinned or built-in worker, which
-   lacks the role's tool scope, pinned effort and return format. Give each one
-   dependency, its from → to, and the manifest and usage files you found; it
-   owns the sources and the return format.
+2. **Research each bump.** Fan out one pinned `dep-researcher` per dependency —
+   never an unpinned or built-in worker, which lacks the role's tool scope,
+   pinned effort and return format. Give each one dependency, its from → to, and
+   the manifest and usage files you found; it owns the sources and the return
+   format.
 
 3. **Check against this repo's usage.** A breaking change matters only if the repo
    touches that surface — spot-check each reported breaking change against the
@@ -27,5 +26,4 @@ Audit dependency version bumps for breaking changes and produce a risk matrix.
 
 4. **Report a risk matrix.**
    `dependency | from → to | risk (low/med/high) | breaking changes that apply here | required actions`
-   End with safe-to-merge, merge-with-actions, and blocker lists, stating which
-   bumps were skimmed vs researched.
+   End with safe-to-merge, merge-with-actions, and blocker lists.
