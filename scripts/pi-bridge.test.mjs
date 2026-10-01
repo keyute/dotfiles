@@ -203,6 +203,8 @@ test("guard owns grep's glob so a directory search skips denied names at any dep
   // pi's grep runs `rg --hidden --glob <glob> -- <pattern> <path>`
   const rg = spawnSync("rg", ["--json", "--line-number", "--color=never", "--hidden", "--glob", input.glob, "--", "SECRET", cwd], { encoding: "utf8" });
   if (rg.error) {
+    // CI's live run installs rg, so a missing one there fails instead of skipping
+    assert.notEqual(process.env.PI_WORKFLOW_LIVE_TESTS, "1", `rg is required under PI_WORKFLOW_LIVE_TESTS=1: ${rg.error.message}`);
     t.skip("rg not installed");
   } else {
     assert.match(rg.stdout, /SECRET=0/);

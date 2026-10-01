@@ -40,7 +40,7 @@ function receiver(Mode = InteractiveMode) {
   return { mode, history };
 }
 
-test("bundled extension entry installs skill and pending-input displays through root session_start", async t => {
+test("bundled extension entry installs skill, pending-input and reasoning displays through root session_start", async t => {
   const root = mkdtempSync(join(tmpdir(), "pi-skill-display-"));
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = root;
@@ -88,6 +88,7 @@ test("bundled extension entry installs skill and pending-input displays through 
   t.after(async () => { for (const handler of handlers.get("session_shutdown") ?? []) await handler({}, ctx); });
   assert.notEqual(host.InteractiveMode, InteractiveMode, "bundled Pi does not use the native SDK prototype");
   for (const handler of [...handlers.get("session_start")]) await handler({ reason: "startup" }, ctx);
+  assert.ok(host.AssistantMessageComponent.prototype.updateContent[Symbol.for("pi-workflow:reasoning-hidden")], "bundled assistant rows hide reasoning");
   assert.deepEqual(notices.filter(([message]) => message.includes("unavailable")),
     [["gpt-6-sol is pinned but unavailable on subscription OAuth in this Pi model catalog; no fallback will be used.", "warning"]]);
   const raw = skill("ship-check", "first line\nsecond line");

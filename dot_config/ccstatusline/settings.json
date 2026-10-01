@@ -8,6 +8,8 @@
         "color": "cyan",
         "rawValue": true
       },
+      { "id": "sep-effort", "type": "separator", "character": " ", "color": "brightBlack" },
+      { "id": "effort", "type": "thinking-effort", "color": "brightBlack", "rawValue": true },
       { "id": "sep-a", "type": "separator", "character": " · ", "color": "brightBlack" },
       {
         "id": "context",
@@ -59,20 +61,5 @@
     []
   ],
   "flexMode": "full-minus-40",
-  "compactThreshold": 60,
-  "colorLevel": 1,
-  "inheritSeparatorColors": false,
-  "globalBold": false,
-  "powerline": {
-    "enabled": false,
-    "separators": [
-      ""
-    ],
-    "separatorInvertBackground": [
-      false
-    ],
-    "startCaps": [],
-    "endCaps": [],
-    "autoAlign": false
-  }
+  "colorLevel": 1
 }

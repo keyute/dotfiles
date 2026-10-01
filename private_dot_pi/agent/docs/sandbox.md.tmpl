@@ -21,15 +21,15 @@ If behavior seems changed, verify against the source and update this file.
 - `/approvals` selects auto review or individual prompts. Hard denial, inherited
   role scope and mode restrictions run before approval; approval cannot widen them.
   Dialogs are once-only; MCP approvals are never cached across a mode change.
-- Shell commands run inside the SRT profile without review, as sandboxed commands
-  do in Claude Code; the profile is the boundary. Only remote-mutating verbs it
-  cannot judge — `git push`, `gh` other than view/list/status/search/diff/checks,
-  `gh api` with a method or field, `npm publish`, `docker push`, `curl`/`wget`
-  with data, json or upload flags, `ssh`, `scp`, `sftp`, `rsync` — and `git commit`
-  (the user commits) go to the classifier, then a confirm dialog on `ask`.
+- Shell commands execute inside the SRT profile, as sandboxed commands do in Claude
+  Code, and run without review; the profile is the boundary. Only remote-mutating
+  commands it cannot judge — pushes, publishes, non-read `gh` calls, data-sending
+  `curl`/`wget`, remote shells and copies; `workflow/policy.mjs` owns the list — and
+  `git commit` (the user commits) go to the classifier, then a confirm dialog on `ask`.
   Workspace file edits run without review once execution is approved.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
-  A pending dialog is announced in the footer and times out after ten minutes.
+  A pending dialog is announced in the footer: the call fails after ten minutes;
+  the dialog stays until answered.
 - Inside the profile the environment is the host's minus the workflow's own
   variables, secret-named exports (`KEY|SECRET|TOKEN|PASSW|CREDENTIAL|AUTH`) and
   pre-sandbox hooks (`BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`, `LD_*`, `DYLD_*`);
@@ -52,9 +52,9 @@ If behavior seems changed, verify against the source and update this file.
   "list" }` lists tasks; output is tail-capped at 256 KiB. `/plan`, `/remove-dir`
   and exiting pi stop tasks; detached `setsid` daemons and containers outlive that.
   If a mode change is blocked on unverified cleanup, kill orphans and restart.
-- `/add-dir <path>` adds an editable directory, as Claude Code's does: edits need
-  approved execution, its `.git`, `.pi` and relative denies (`.env`) are protected,
-  its `AGENTS.md`/`CLAUDE.md` joins the system prompt. Home, its ancestors, denied
+- `/add-dir <path>` adds an editable directory and loads its `AGENTS.md`/`CLAUDE.md`
+  into the system prompt, as Claude Code's does: edits need approved execution, its
+  `.git`, `.pi` and relative denies (`.env`) are protected. Home, its ancestors, denied
   paths, symlinks out and directories already in scope are refused with the reason.
   `/remove-dir` drops one; state is per session; its skills need a restart with
   `--skill <path>`. Reads were never workspace-confined; only the deny list applies.

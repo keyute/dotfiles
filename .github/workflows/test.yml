@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # docs/, README.md, AGENTS.md, CLAUDE.md and .claude/ are chezmoi-ignored —
+  # docs/, README.md, AGENTS.md and CLAUDE.md are chezmoi-ignored —
   # repo-local only — so a commit touching nothing else cannot change a
   # rendered target. docs/decisions.md and AGENTS.md still trigger the run:
   # render.test reads them from source. Everything else, this workflow
@@ -55,10 +55,9 @@ jobs:
               - '!docs/agent-authoring.md'
               - '!README.md'
               - '!CLAUDE.md'
-              - '!.claude/**'
 
-  # Fast gate on every PR and push to main: headless apply into a scratch home
-  # with run scripts and externals excluded. modify_ scripts are not in the
+  # Fast gate on every PR and push to main: render.test applies the whole tree
+  # headless into a scratch home with run scripts and externals excluded. modify_ scripts are not in the
   # `scripts` exclude class, so both harnesses' MCP/merge paths still execute —
   # with 1Password stubbed so no real secret ever reaches a runner.
   render:
@@ -79,24 +78,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: current
           cache: npm
 
       - name: Install repo npm dependencies
         run: npm ci --ignore-scripts --prefix "$GITHUB_WORKSPACE"
 
-      - name: Apply into scratch home
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/home"
-          chezmoi -S "$GITHUB_WORKSPACE" -D "$RUNNER_TEMP/home" apply \
-            --exclude scripts,externals --no-tty
-
-      # shellcheck is not on the macOS runner image.
-      - name: Install shellcheck
+      # shellcheck and ripgrep are not on the macOS runner image; the live
+      # tests below need rg.
+      - name: Install shellcheck and ripgrep
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
-        run: brew install shellcheck
+        run: brew install shellcheck ripgrep
 
       # fresh.yml actually runs these, but only weekly and only down the paths
       # they happen to take.
@@ -111,35 +104,6 @@ jobs:
           done
           # Plain run_*.sh scripts (no template directives) are checked in place.
           shellcheck --shell=bash --format=gcc "$out"/run_*.sh run_*.sh
-
-      - name: Assert rendered targets
-        run: |
-          set -euo pipefail
-          home="$RUNNER_TEMP/home"
-          jq empty "$home/.claude/settings.json"
-          jq empty "$home/.claude.json"
-          jq empty "$home/.pi/agent/settings.json"
-          # Rendered configs point MCP/statusline commands into the source
-          # dir's node_modules/.bin; a missing binary renders fine but breaks
-          # silently at runtime, so assert existence here.
-          #
-          # Collect into a checked assignment rather than reading a process
-          # substitution: `< <(jq ... | sort)` discards the pipeline's exit
-          # status even under pipefail, so a jq failure would leave the loop
-          # with nothing to read and the step passing green.
-          missing=0
-          bins=$(jq -r '.. | objects | ((.command? // empty), (.args[]? // empty))
-                        | strings | select(test("node_modules/\\.bin"))' \
-                 "$home/.claude.json" "$home/.claude/settings.json" | sort -u)
-          while IFS= read -r bin; do
-            if [ -n "$bin" ] && [ ! -x "$bin" ]; then
-              echo "missing binary: $bin"
-              missing=1
-            fi
-          done <<< "$bins"
-          # the pi launcher (zshrc, the MCP bridge) is not in a rendered config
-          test -x "$GITHUB_WORKSPACE/node_modules/.bin/pi"
-          [ "$missing" -eq 0 ]
 
       # Includes the render test, the roster/stub/pin drift gate. The live SRT
       # tests run only here: they need a host Unix socket the local agent

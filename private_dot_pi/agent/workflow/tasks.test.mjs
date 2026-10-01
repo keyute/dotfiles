@@ -95,6 +95,20 @@ test("a task reports its tail and duration when it ends, and counts as live unti
   assert.equal(h.tasks.output(id), "completed (exit 0)\nline 1\nline 2\n");
 });
 
+test("output past the bash tool's line cap reaches the model as its tail behind a one-line note", async () => {
+  const h = harness();
+  const { id, exec } = h.start("seq 3000");
+  const lines = Array.from({ length: 3000 }, (_, i) => `${i + 1}`).join("\n");
+  exec.onChunk(lines);
+  const shown = "[Earlier output dropped; showing the last 2000 lines]\n1001\n";
+  assert.ok(h.tasks.output(id).startsWith(`running\n${shown}`));
+  const settled = h.tasks.settle(id, 10_000);
+  exec.resolve({ exitCode: 0 });
+  const { output } = await settled;
+  assert.ok(output.startsWith(shown));
+  assert.ok(output.endsWith("\n3000"));
+});
+
 test("a non-zero exit fails; a stop or a worker abort reads as stopped; unknown ids throw", async () => {
   const h = harness();
   const failing = h.start("false");

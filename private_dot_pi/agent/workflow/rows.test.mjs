@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
-import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, appendVisible, blankReasoning, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, hideStreamingReasoning, installFolding, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, toolRenderers } from "./rows.mjs";
+import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
+import { addFold, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, toolRenderers } from "./rows.mjs";
 import { createShellRunner } from "./shell.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
@@ -807,57 +807,42 @@ test("a subagent launch inside a sealed closed group renders nothing, launch lin
   assert.deepEqual(subagent.renderResult(launched, { expanded: false }, theme, ctx("l2")).render(80), []);
 });
 
-test("assistant bullets sit at column 0, a leading heading rides the bullet line, other block starts follow it, reasoning renders nothing", () => {
+test("assistant bullets sit at column 0, a leading heading rides the bullet line, other block starts follow it", () => {
   assert.equal(bulletMarkdown("Done.", { messageType: "assistant" }), "• Done.");
   assert.equal(bulletMarkdown("# Title\nbody", { messageType: "assistant" }), "• **Title**\n\nbody");
   assert.equal(bulletMarkdown("- one\n- two", { messageType: "assistant" }), "•\n- one\n- two");
   assert.equal(bulletMarkdown("plain", { messageType: "user" }), "❯ plain");
   assert.equal(bulletMarkdown("  ", { messageType: "user" }), "  ");
   assert.equal(bulletMarkdown("  ", { messageType: "assistant" }), "  ");
-  assert.equal(bulletMarkdown("Let me think.", { messageType: "assistant-thinking" }), "");
   const lines = md => new Markdown(bulletMarkdown(md, { messageType: "assistant" }), 0, 0, getMarkdownTheme()).render(40).map(line => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
   assert.equal(lines("Done.")[0], "• Done.");
   // A list interrupts the bullet paragraph without a blank line; a heading is bold on the bullet line.
   assert.deepEqual(lines("- one\n- two"), ["•", "- one", "- two"]);
   assert.deepEqual(lines("## Title"), ["• Title"]);
   assert.deepEqual(lines("## Title\n\nbody"), ["• Title", "", "body"]);
-  assert.deepEqual(new Markdown(bulletMarkdown("hm", { messageType: "assistant-thinking" }), 0, 0, getMarkdownTheme()).render(40), []);
 });
 
-test("reasoning is blanked only where the provider replays it from the opaque item", () => {
-  const message = (api, blocks) => ({ role: "assistant", api, content: blocks });
-  const thinking = extra => ({ type: "thinking", thinking: "weighing it up", ...extra });
-  const opaque = message("openai-responses", [thinking({ thinkingSignature: '{"type":"reasoning"}' }), { type: "toolCall", id: "t1" }]);
-  assert.equal(blankReasoning(opaque), opaque);
-  assert.equal(opaque.content[0].thinking, "");
-  // The signature keeps the provider's own summary, so nothing leaves the session.
-  assert.equal(opaque.content[0].thinkingSignature, '{"type":"reasoning"}');
-  assert.equal(blankReasoning(opaque), undefined, "a blanked message is not replaced twice");
-  const anthropic = message("anthropic-messages", [thinking({ thinkingSignature: "sig" })]);
-  assert.equal(blankReasoning(anthropic), undefined);
-  assert.equal(anthropic.content[0].thinking, "weighing it up");
-  // Without a signature the text is all there is; an aborted stream leaves that.
-  const unsigned = message("openai-responses", [thinking({})]);
-  assert.equal(blankReasoning(unsigned), undefined);
-  assert.equal(unsigned.content[0].thinking, "weighing it up");
-  assert.equal(blankReasoning({ role: "user", content: [] }), undefined);
-});
-
-test("hideStreamingReasoning blanks a copy of the thinking block without touching the original or unrelated messages", () => {
-  const thinkingBlock = { type: "thinking", thinking: "weighing it up" };
-  const textBlock = { type: "text", text: "hi" };
-  const message = { role: "assistant", api: "openai-responses", content: [thinkingBlock, textBlock] };
-  hideStreamingReasoning(message);
-  assert.equal(message.content[0].thinking, "");
-  assert.equal(thinkingBlock.thinking, "weighing it up");
-  assert.equal(message.content[1], textBlock);
-  const anthropic = { role: "assistant", api: "anthropic-messages", content: [{ type: "thinking", thinking: "weighing it up" }] };
-  hideStreamingReasoning(anthropic);
-  assert.equal(anthropic.content[0].thinking, "weighing it up");
-  const user = { role: "user", content: [] };
-  const userContent = user.content;
-  hideStreamingReasoning(user);
-  assert.equal(user.content, userContent);
+test("an assistant message with reasoning draws exactly as the one without it, label hidden or not, and keeps its reasoning", () => {
+  installReasoningHide();
+  const wrapped = AssistantMessageComponent.prototype.updateContent;
+  installReasoningHide();
+  assert.equal(AssistantMessageComponent.prototype.updateContent, wrapped, "reload does not stack wrappers");
+  const strip = line => line.replace(/\x1b\][^\x07]*\x07/g, "").replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
+  const draw = (message, hideThinkingBlock) => new AssistantMessageComponent(message, hideThinkingBlock, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]).render(40).map(strip);
+  const thinking = { type: "thinking", thinking: "weighing it up", thinkingSignature: "sig" };
+  const reply = { type: "text", text: "Done." };
+  const message = Object.freeze({ role: "assistant", api: "anthropic-messages", content: Object.freeze([thinking, reply, thinking, { type: "toolCall", id: "t1", name: "read", arguments: {} }]) });
+  const without = { ...message, content: message.content.filter(block => block.type !== "thinking") };
+  for (const hide of [false, true]) {
+    assert.deepEqual(draw(message, hide), draw(without, hide));
+    assert.deepEqual(draw({ role: "assistant", api: "openai-responses", content: [thinking] }, hide), []);
+  }
+  assert.deepEqual(draw(message, false), ["", "• Done."]);
+  const component = new AssistantMessageComponent(message, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
+  component.invalidate();
+  assert.deepEqual(component.render(40).map(strip), ["", "• Done."]);
+  assert.equal(message.content.length, 4);
+  assert.equal(thinking.thinking, "weighing it up");
 });
 
 test("answers, completion and turn lines format", () => {

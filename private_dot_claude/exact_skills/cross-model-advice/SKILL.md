@@ -27,11 +27,9 @@ never count the advisor's agreement or concession as evidence.
      recommendation or ranking
 
 4. **Call the advisor.** One `mcp__pi__advise` call: `cwd` = repo root, `brief` =
-   the brief; tool access is fixed by the bridge and reasoning effort and model
-   (top worker tier) by `agent_mcp_servers.pi` in agents.yaml, not chosen here.
-   The response opens with a `threadId:` line — use `mcp__pi__reply` on it only
-   to ask for the evidence behind a claim, never to argue a position: the
-   advisor concedes under pushback, so a concession carries no information.
+   the brief. The response opens with a `threadId:` line — use `mcp__pi__reply`
+   on it only to ask for the evidence behind a claim, never to argue a position:
+   the advisor concedes under pushback, so a concession carries no information.
 
 5. **Synthesize and report.** Each advisor claim, marked verified, refuted or
    unverifiable against the code; adopt only verified ones and say what you had

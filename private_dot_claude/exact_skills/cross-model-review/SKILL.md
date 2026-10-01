@@ -22,10 +22,8 @@ implementer.
      works — an unanchored reviewer finds more.
 
 3. **Call the reviewer.** One `mcp__pi__review` call: `cwd` = repo root, the scope
-   from step 2, `prompt` = the instructions block below. The bridge fixes the
-   invocation — read-only tools confined to the repo, the top worker tier as
-   model and the effort `agent_mcp_servers.pi` pins in agents.yaml. The
-   response opens with a `threadId:` line — keep it for the re-review round.
+   from step 2, `prompt` = the instructions block below. The response opens with
+   a `threadId:` line — keep it for the re-review round.
 
 4. **Verify every finding as untrusted input.** Substantiate each independently
    against the contracts, surrounding flows, or tests it implicates — reading the

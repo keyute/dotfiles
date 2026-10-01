@@ -8,15 +8,12 @@ here.
 
 ## Decisions
 
-- The root npm manifest/lockfile is the only Pi install (CLI and SDK are one
-  package, pinned exactly); the Brew entry was dropped because it cannot
-  declare a version and pi breaks extension APIs across 0.x releases.
-  The applied `~/.pi/agent/node_modules` is a symlink
-  to that pinned tree, which `workflow/` reaches by parent-directory lookup.
+- The root npm manifest/lockfile is the only pi install, pinned exactly
+  (`docs/decisions.md`, `parity.cli_versioning`). The applied
+  `~/.pi/agent/node_modules` is a symlink to that pinned tree, which
+  `workflow/` reaches by parent-directory lookup.
   Settings merge by managed key: pi's `lastChangelogVersion` survives apply, a
   saved theme or `/thinking` level resets, and trust lives in `trust.json`.
-- OpenAI subscription OAuth only; tier models live in agents.yaml
-  (`subagent_tiers.pi`).
 - Native host Pi and trusted extensions. The `workspace_*` tools are the SDK's
   own tools running in-host with the real harness context; each invocation
   routes its primitive operations (documented `operations` seam, as pi's
@@ -41,9 +38,6 @@ here.
   extension fails.
 - Security claim is scoped: effects and subprocess execution are sandboxed;
   path probes, diff generation, and output temp files stay host-side.
-- Managed zsh launch runs the repo-pinned CLI in fullscreen TUI (mouse
-  click-to-expand), disables native tools and ambient extensions, and loads
-  workflow plus the existing Herdr lifecycle extension when present.
 - pi-subagents retains its executor; the existing registration proxy owns
   presentation, narrowed schema and managed description. Launch
   policy stays in `tool_call` and broker leases. Scripts/arbitrary management
@@ -58,21 +52,6 @@ here.
   Re-judge when Pi ships native subagents.
   Keep existing plugins and owned UI: catalog alternatives do not remove these policy/presentation seams; reconsider
   adoption when a public API covers them without a wrapper or workaround.
-- No agent LSP or semantic-navigation integration:
-  Serena's startup and language-server provisioning add maintenance without a
-  demonstrated need. Navigation uses file/search tools; diagnostics use project
-  toolchains in `workspace_bash`. Reintroduce only on measured pain.
-- No root `@earendil-works/pi-client` pin: pi-subagents resolves runner
-  imports through the host's packages (`runner-aliases.js`).
-- An owned questionnaire replaces RPIV and its dependencies using
-  public TUI primitives. Completed decisions keep the question text for the
-  classifier; model results omit presentation data.
-- pi-subagents ships no completion guard for the roles; the driver's diff
-  check is the gate (`docs/pi-coupling.md`,
-  Acceptance and mutation names). The subagent schema and description expose
-  managed keys/APIs only; executor and enforcement are unchanged
-  (`docs/pi-coupling.md`, Plugin tool Proxy). Nesting children lack the native
-  notifier and collect descendants with blocking `bg_wait` before synthesis.
 - Keep structured `workflow`/`contextFiles` prompt options, not a
   forced `systemPrompt`. Offline pinned request fixtures preserve initial
   instructions, input and tools across section patches and mode switches.
@@ -81,15 +60,13 @@ here.
 - MCP is pi's own: the workflow calls the exported MCP and tool-search factories with the servers rendered into `workflow.json`, so tools carry Claude Code's `mcp__server__tool` names and the broker reviews each call in `tool_call` (`docs/pi-coupling.md`, Native MCP wiring). No `mcp.json` and no `-e builtin:mcp`: children load no built-ins, and a trusted project's `mcp.json` would outrank a sandboxed server of the same name. pi-mcp-adapter is dropped: its pi-ai peer range stops short of the pinned pi, so installing it needs a peer override. The root reaches every server's tools through `tool_search` (`docs/decisions.md`, `setting.pi_mcp_exposure`); children get their named tools declared. Accepted: a connect per server per session and per child. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
 - `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), returns a cross-host redirect instead of following it, and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt (`docs/decisions.md`, `parity.web_tools`).
 - Nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; revisit when upstream delivers completion-triggered turns to headless children. The `timeoutMs` runtime backstop with its `checkpointBeforeDeadlineMs` checkpoint/stop steer (`extensions/subagent/config.json`) replaces the productive run's 30-minute cutoff, not HTTP or auto-drain timeouts: `bg_wait` window expiry is non-terminal, the separate headless `agent_end` auto-drain keeps its 30-minute limit, and a nesting child collects results during its turn, not through that drain.
-- No on-disk patches; two guarded prototype replacements (`docs/pi-coupling.md`, Skill display and Pending input). The upstream Pi proposal is a public bash renderer hook shared by live/replayed blocks: red shell marker, existing transcript indentation, visible streaming output/exit/cancel status, native execution unchanged. Rather than wait, the extension owns the `!` round-trip, honouring pi's `shellPath`/`shellCommandPrefix` so the hand-back changes nothing the user sees; when the hook ships, hand execution back to pi and keep only the renderer (`docs/pi-coupling.md`, The owned `!` block).
+- No on-disk patches; three guarded prototype replacements (`docs/pi-coupling.md`: Skill display, Pending input, Hidden reasoning). The extension owns the `!` round-trip, honouring pi's `shellPath`/`shellCommandPrefix` and wrapping the command in an `eval` so the rc's aliases expand. When pi ships a public bash renderer hook shared by live and replayed blocks, hand execution back to pi and keep only the renderer; pi's native `!` would lose that alias expansion (`docs/pi-coupling.md`, The owned `!` block).
 - Keep the owned UI and harness, adopt nothing: pi has no user-message,
-  pending-input, bash-block or prompt-prefix renderer hook (`user_bash` still
-  draws pi's own block; the editor-border spinner breaks rule 3; pi#8154 closed
-  not-planned); pi-subagents keeps
-  run ids out of the fleet DTO; any explicit `toolDescriptionMode` drops its
-  `promptSnippet`/`promptGuidelines`, while every mode's description carries its
-  fixed safety guidance, so the mode is `compact` and the managed description
-  replaces that text.
+  pending-input, bash-block or prompt-prefix renderer hook (pi#8154 closed
+  not-planned), and pi-subagents keeps run ids out of the fleet DTO.
+  `toolDescriptionMode` is `compact`: any explicit mode drops
+  `promptSnippet`/`promptGuidelines` but keeps its fixed safety guidance, which
+  the managed description replaces.
   Grouping packages patch pi's private components; dialog, compact-tool and
   status-line packages bring their own grammar. Also rejected: chezmoi-native
   settings merge (sprig `mergeOverwrite` skips `false`/`0`; jq's `. * $m` in
@@ -99,9 +76,6 @@ here.
   double checks on child launch and MCP policy (defence in depth); pooled SRT
   workers, no broker or a one-stage classifier (each recreates leases or changes
   decisions).
-- Settings `defaultThinkingLevel` is the one owner of the root thinking
-  level; the workflow sets none per mode (`docs/decisions.md`,
-  `setting.pi_defaultThinkingLevel`).
 - Root `workspace_write`/`workspace_edit` stay declared in plan mode. After
   any tool removal pi-ai resends the
   full tool list for the rest of the transcript, so every later mode switch
@@ -121,12 +95,6 @@ here.
   tasks; cleanup retains their outputs and failures. Cleanup cannot run after
   Pi receives SIGKILL, nor does it cover deliberately detached `setsid` daemons
   or external services/containers.
-- The top and frontier tiers get a raised `contextWindow` through
-  `modify_models.json.tmpl` from `agents.pi.defaults.context_window`;
-  compaction keeps pi's default reserve against it, and a provider rejection
-  falls back to pi's overflow compact-and-retry.
-- The workflow lists skills to the root model itself, naming `workspace_read`
-  (`docs/pi-coupling.md`, Skill listing).
 - TypeSafe Jev is not adopted for the approval classifier: the
   only slice an offline replay fast-allows safely is the sandboxed reviewed
   verbs, 11% of reviews, and escalations rarely clear the confidence bar.
@@ -134,23 +102,9 @@ here.
   misses its latency target (a filter median over ~2 s), escalations stop
   dominating, and a fresh replay clears the escalation slice with zero wrong
   allows (replay numbers in git history).
-- The approval classifier's model and efforts: `docs/decisions.md`,
-  `agents.pi.defaults.classifier`; filter `off` maps to the model's `none`
-  through pi-ai.
-- The host copies the settings `editorPaddingX` (default 0) onto custom editors
-  right after the factory runs and on settings reloads; `CaretEditor` clamps
-  `setPaddingX` to ≥ 2 so the caret's padding columns survive. A `promptPrefix`
-  editor option is the right upstream ask.
-- Themes come from the data-only `catppuccin-pi-theme` pin, registered by path
-  through the managed settings `themes` array (no `pi install`, no extension);
-  the `theme` light/dark pair enables pi's terminal-followed auto mode.
 
 ## Verification and remaining gates
 
-- `npm run test:pi` covers pinned package registration, policy decisions,
-  classifier fallback, terminal proof, child launch preflight and the
-  secret-stubbed chezmoi projections; fixtures that need a Unix socket or SRT
-  skip where the sandbox denies them.
 - `PI_WORKFLOW_LIVE_TESTS=1 npm run test:pi` exercises actual sockets and
   SRT against disposable fixtures; the macOS CI job sets it (the agent sandbox
   denies the socket locally). If it cannot go green there, delete the live
@@ -185,16 +139,11 @@ here.
   `tool_call` blocking regresses, or OpenAI withdraws ChatGPT-subscription
   OAuth from third-party harnesses (sanctioned as of 2026-09-05) — then the
   review backend needs a new transport.
-- Subagent model resolution order (since CLI 2.1.251): per-call `model`,
-  frontmatter (`inherit` = main conversation), the `CLAUDE_CODE_SUBAGENT_MODEL`
-  fallback, main conversation; no managed role uses `inherit`. The
-  `Agent(model:…)` deny rule alone guards the per-call path (trialled
-  2026-09-27; the hook it superseded is deleted).
 - `private_dot_claude/executable_subagent-statusline.js` (owned subagent row):
   reversal trigger — Claude's stock subagent row shows model and effort →
   delete it.
 - `scripts/agent-usage.mjs` (owned usage report): reversal trigger — a
   maintained tool reports per-role and per-origin usage from both session
   stores → adopt it.
-  pi's `/usage` is the per-session view (context, cost incl. subagents);
+  The owned `/usage` command is the per-session view (`docs/pi-design.md`);
   the script stays the cross-session one.

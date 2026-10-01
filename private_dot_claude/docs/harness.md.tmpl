@@ -25,7 +25,7 @@ If behavior seems changed, verify (claude-code-guide) and update.
 {{ end }}
 - `general-purpose` and `Plan` override the built-ins. `CLAUDE_CODE_SUBAGENT_MODEL`
   (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin and workflow
-  agents and teammates; leave its `_FORCE` variant unset, it would erase specialist pins.
+  agents and teammates.
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
 {{- $bare := list }}{{ $scoped := list }}{{ $modelDeny := list }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ if contains "(" . }}{{ $scoped = append $scoped . }}{{ else }}{{ $bare = append $bare . }}{{ end }}{{ end }}
@@ -42,10 +42,13 @@ If behavior seems changed, verify (claude-code-guide) and update.
 
 - The keyword `ultracode` opts one turn into a workflow at session effort; `/effort ultracode`
   is xhigh plus standing workflows, with no size warning and no 20-agent Agent-tool cap. Only the
-  driver can start one; concurrency is min(16, CPUs−2); `skipWorkflowUsageWarning: true`
-  suppresses auto mode's pre-workflow cost prompt. A bare `agent()` gets the
+  driver can start one; concurrency is min(16, CPUs−2). A bare `agent()` gets the
   `CLAUDE_CODE_SUBAGENT_MODEL` pin at session effort; `agent({agentType})` the role's pin and effort.
 - Fan-out size and per-agent scope drive workflow burn; effort barely does.
+
+## Web search
+
+{{ includeTemplate "web-search.md" (dict) | trim }}
 
 ## Local-only surface
 

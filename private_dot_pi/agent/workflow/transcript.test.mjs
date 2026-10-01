@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Container } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, hideStreamingReasoning, installFolding, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
+import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, installFolding, installReasoningHide, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -275,18 +275,22 @@ test("a folded image result with image display disabled adds neither preview nor
   assert.deepEqual(container.render(80).map(strip), ["", "• Read 2 files", "  ↳ Read image", "  ↳ Read text"]);
 });
 
-// pi's component decides its spacers from the raw thinking text, ahead of
-// bulletMarkdown's zero-line transform.
-test("hideStreamingReasoning removes the streaming component's extra blank line above a reply, and its only line for reasoning alone", () => {
-  const withReply = { role: "assistant", api: "openai-responses", content: [{ type: "thinking", thinking: "weighing it up" }, { type: "text", text: "Done." }] };
-  hideStreamingReasoning(withReply);
-  const replyComponent = new AssistantMessageComponent(undefined, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
-  replyComponent.updateContent(withReply, true);
-  assert.deepEqual(replyComponent.render(40).map(strip), ["", "• Done."]);
-
-  const thinkingOnly = { role: "assistant", api: "openai-responses", content: [{ type: "thinking", thinking: "still thinking" }] };
-  hideStreamingReasoning(thinkingOnly);
-  const thinkingComponent = new AssistantMessageComponent(undefined, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
-  thinkingComponent.updateContent(thinkingOnly, true);
-  assert.deepEqual(thinkingComponent.render(40).map(strip), []);
+// pi's component decides its spacers from the raw thinking text, so the wrap
+// hands it a copy without reasoning on every streaming update and at the end.
+test("a streaming reply with reasoning draws exactly as the reply alone, reasoning alone draws nothing, and the streamed message keeps its reasoning", () => {
+  installReasoningHide();
+  const stream = updates => {
+    const component = new AssistantMessageComponent(undefined, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
+    updates.forEach((message, i) => component.updateContent(message, i < updates.length - 1));
+    return component.render(40).map(strip);
+  };
+  const thinking = { type: "thinking", thinking: "weighing it up" };
+  const reply = { type: "text", text: "Done." };
+  const partial = { role: "assistant", api: "openai-responses", content: [thinking] };
+  const settled = { role: "assistant", api: "openai-responses", content: [thinking, reply] };
+  assert.deepEqual(stream([partial]), []);
+  assert.deepEqual(stream([partial, settled]), stream([{ ...settled, content: [reply] }]));
+  assert.deepEqual(stream([partial, settled]), ["", "• Done."]);
+  assert.deepEqual(settled.content, [thinking, reply]);
+  assert.equal(thinking.thinking, "weighing it up");
 });

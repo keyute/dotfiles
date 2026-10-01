@@ -1,4 +1,4 @@
-import { InteractiveMode } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { installWorkflow } from {{ printf "%s/.pi/agent/workflow/index.mjs" .chezmoi.homeDir | toJson }};
 
-export default pi => installWorkflow(pi, undefined, "root", { InteractiveMode });
+export default pi => installWorkflow(pi, undefined, "root", { AssistantMessageComponent, InteractiveMode });

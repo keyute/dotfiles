@@ -23,8 +23,9 @@ synthesis.
 
 2. **Triage.** Empty diff → say "nothing to review" and stop. A trivial or purely
    mechanical diff (formatting, generated, lockfile, a few lines) → hand it to **one**
-   pinned reviewer; do not review it inline (that would spend the session model on
-   exactly the mechanical work this skill offloads).
+   `diff-reviewer` correctness pass (`infra-reviewer` for manifests); do not review
+   it inline (that would spend the session model on exactly the mechanical work this
+   skill offloads).
 
 3. **Find — fan out to pinned reviewers only.** Dispatch in parallel, only to named
    pinned reviewer agents — an unpinned or built-in worker lacks the role's tool
@@ -50,8 +51,7 @@ synthesis.
    read or changed. Never wording, wrapping, comment or doc phrasing, line-count
    trims, or a matter-of-taste alternative to a choice the diff already made: the
    bar is what lets a pass over already-reviewed code come back empty and say "ship"
-   instead of restarting the churn. If a large set survives, pre-validate with a
-   pinned `diff-reviewer` rather than reopening it all yourself.
+   instead of restarting the churn.
 
 5. **Present for approval.** Rank survivors by severity and present an actionable
    checklist — `severity | lens | file:line | issue | proposed fix` — plus a one-line

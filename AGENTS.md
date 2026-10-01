@@ -19,8 +19,9 @@ file are chezmoi-ignored (repo-local only).
   services only escalate. Adopt a plugin only if maintained, widely used and
   its public API covers the need with at most a one-line seam; own it for
   this repo's policy or layout, or when adoption needs a wrapper, pin or
-  coupling workaround, or uses only a sliver. Record its reversal trigger
-  (One record). A pin bump lands alone, so its cost stays measurable.
+  coupling workaround, or uses only a sliver. A version bump (one dependabot
+  PR) carries only its Events row's repairs; adoptions and removals land
+  apart.
 - Keep vendor-templated files (oh-my-tmux, ghostty, gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
 
@@ -34,8 +35,8 @@ file are chezmoi-ignored (repo-local only).
   body lives once in `.chezmoitemplates/skills/` with a one-line stub per
   harness.
   A shared key (role flags, `agent_sandbox` values) is rendered or
-  test-enforced on each harness it applies to; where it cannot be, a parity
-  row names why. The parity test in `render.test.mjs` (`npm run test:pi`,
+  test-enforced on each harness it applies to; where it cannot be, the Parity
+  rule decides on a row. The parity test in `render.test.mjs` (`npm run test:pi`,
   CI) is the gate. *Why: copies drift from the data; a failing test catches it.*
 - Code the harness spawns outside the sandbox (MCP servers, the bridge, hooks)
   treats caller-supplied paths, repos and arguments as hostile: pin its config,
@@ -48,28 +49,27 @@ file are chezmoi-ignored (repo-local only).
 
 ## Harness iteration
 
-For changing models, roles, settings or instruction lines. The record is
-`docs/decisions.md` (its Events section is the procedure); `npm run test:pi`
-holds every mechanical check.
+Changing models, roles, settings or instruction lines follows
+`docs/decisions.md` Events; `npm run test:pi` holds every mechanical check.
 
-- **Children never run the frontier tier.**
-- **One record.** Values live in agents.yaml. A model, role, setting or
-  asymmetry's why and reversal event live only in its `docs/decisions.md`
-  row, edited in the same change; owned code's design, seams and triggers live in
-  `docs/pi-design.md`, `docs/pi-implementation.md` and `docs/pi-coupling.md`. A comment beside a key says what it does, never
-  evidence or a date; a hazard comment may name the condition that breaks it.
-  Agent memory holds only session-side gotchas.
+- **One record, only if needed.** Shared values live in agents.yaml. A
+  decision gets a `docs/decisions.md` row (owned code: a `docs/pi-*.md`
+  entry) only if the code, a key comment or the vendor default cannot show
+  its why *and* a named event would reverse it; else git history holds it.
+  Edit it in the same change. A key comment says what the key does or the
+  hazard that breaks it, never evidence or a date. A repair-only pi seam
+  needs only its pin. Agent memory holds only session-side gotchas.
 - **Review on triggers only**: the events `docs/decisions.md` names, and only
   what the event touches. No scheduled or whole-harness sweeps.
 - **Rough parity by default.** Both harnesses reach roughly the same end
-  state where each can, not a faithful port; an asymmetry (a side effect
-  counts) exists only as a row naming the harness limit or the owner's
-  preference. Name the boundary that enforces a restriction — sandbox,
-  policy, tool list — never imply one.
+  state where each can, not a faithful port. An asymmetry a reader would
+  "fix" back gets a row naming the harness limit or owner preference; a
+  missing vendor feature or a rendered difference gets none. Name the
+  boundary that enforces a restriction — sandbox, policy, tool list — never
+  imply one.
 - **Set a vendor setting only to change its default**, to pin a value the
   harness UI persists, or because owned code reads it; a one-line comment
-  beside the key names the behaviour it changes. A cosmetic setting needs no
-  row.
+  beside the key names the behaviour it changes; a row only if measured.
 - **A line earns its place.** An always-loaded instruction line, or a rule in
   this file, the `docs/decisions.md` header or `docs/agent-authoring.md`,
   exists only for a diagnosed, recurring failure that the harness prompt, the

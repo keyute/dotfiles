@@ -50,13 +50,18 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   an omitted role an attestation section — and cannot see renamed tools; the
   driver verifies from the diff. *On red:*
   repair. *Pin:* `stability.test.mjs`.
-- **Quiet completion notice**: the `pluginApi` Proxy intercepts `sendMessage`
-  and sends pi-subagents' completion notice with `display` off; during shutdown
-  results still reach the transcript with `triggerTurn: false`. *Why:* rule 4.
-  *On red:* repair. *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`.
-- **Session surfaces**: pi's `resetExtensionUI` (on `/new`, `/resume`) clears
-  the header, footer and custom editor, so `session_start` re-applies them.
-  *Why:* rule 8. *On red:* repair. *Pin:* `stability.test.mjs`.
+- **Repair-only seams** (*On red:* repair; each pin's claim holds the
+  mechanics): the quiet completion notice (rule 4), session surfaces
+  re-applied on `session_start` (rule 8), Tab completion in command arguments
+  (rule 5), inline dialog text (rule 11), the fold handle's mouse dispatch
+  (rule 2), row spacing for empty self-shelled rows (rule 8), srt's
+  `CLAUDE_CODE_TMPDIR`, the plugin data the rows and policy read, the
+  pi-subagents config keys and frontmatter flags the roster sets,
+  `modelRegistry` members and stream options, the `McpExposure` union, the
+  `project_context` split `/usage` reads, the `commands`→`prompts` migration,
+  the built-in tool guidelines `GUIDELINES` mirrors, and the bridge guard's
+  path normalisation. *Pin:* `stability.test.mjs`; inline dialog text in
+  `plan-approval.test.mjs`.
 - **Skill display**: wraps `InteractiveMode`'s undocumented
   `getUserMessageText` once, turning a native `parseSkillBlock` match back into
   `/skill:name` plus arguments; the host class comes from pi's virtual modules,
@@ -76,35 +81,18 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   input. *On red:* fall back to pi's native pending display; lost: the shaded
   `❯` blocks and their `π` labels. *Retire:* when pi offers a pending-input
   renderer. *Pin:* `stability.test.mjs`, render/lifecycle tests.
-- **Tab completion**: the documented `addAutocompleteProvider` wrapper
-  (`editor.mjs` `argumentCompletions`) and `CaretEditor`'s key re-issue after
-  an accept. *Why:* pi
-  routes Tab in a command's arguments to forced file completion and nothing
-  re-opens the menu after an accept (rule 5). *On red:* repair. *Pin:*
-  `stability.test.mjs`, `caret.test.mjs`.
 - **Editor render shape**: exported but undocumented `renderDiff` and
   `getMarkdownTheme`; `CustomEditor`'s render shape (borders, `setPaddingX`,
   first-line padding) and the Editor internals shell mode uses for its atomic
   prefix. *Why:* rule 5's composer and shell-mode prompt. *On red:* repair.
   *Retire:* when pi exposes a shell-mode/prompt-prefix editor API. *Pin:*
   `stability.test.mjs`, `caret.test.mjs`, real-editor tests.
-- **Inline dialog text**: plan feedback, questionnaire notes and free answers
-  keep `Editor.render()` and drop its border rows at one site, `dialog.mjs`'s
-  field. *Why:* rule 11's inline text. *On red:* repair. *Pin:*
-  `plan-approval.test.mjs`.
-- **Mouse**: the fold handle answers clicks from its own `handleMouse`, resting
-  on `MouseRegion` asking the child first and `ToolExecutionComponent`
-  forwarding self-shell events one row up. Reasoning's transformer returns ""
-  so no invisible clickable line renders. *Why:* rule 2's handle. *On red:* repair. *Pin:* `stability.test.mjs`.
-- **Row spacing**: `ToolExecutionComponent` renders no line, spacer included,
-  for a self-shelled row with no content; a group's hidden members lean on it.
-  *Why:* rule 8. *On red:* repair. *Pin:* `stability.test.mjs`,
-  `transcript.test.mjs`.
 - **The owned `!` block**: `CaretEditor` intercepts the `onSubmit` pi assigns
   to a custom editor, parses `!`/`!!` as pi's branch does so
   `handleBashCommand` never runs, and runs the command through
   `createLocalBashOperations` with pi's `shellPath`/`shellCommandPrefix`, gated
-  on `isProjectTrusted()` so an untrusted checkout cannot pick the shell.
+  on `isProjectTrusted()` so an untrusted checkout cannot pick the shell, and
+  wraps the command in an `eval` after the prefix so rc aliases expand.
   *Why:* rule 5's shell block; pi has no renderer
   hook for its own. *Residual:* no `bash_execution_update`, no full-output file
   on truncation, no pi pending shell component. *On red:* repair. *Retire:*
@@ -137,26 +125,20 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   *Why:* rule 6's peek. *On red:* repair. *Retire:* each record seam when
   pi-subagents documents the shape or serves it over RPC; the render-shape seam
   when Editor offers a borderless, height-bounded render API. *Pin:* `stability.test.mjs`.
-- **srt `CLAUDE_CODE_TMPDIR`**: names the `TMPDIR` srt exports into a wrapped
-  command, documented only in srt's source; `sandbox-runner.mjs` sets it to the
-  lease's scratch path. *On red:* repair. *Pin:* `sandbox-runner.test.mjs`,
-  `stability.test.mjs`.
-- **Plugin data the rows and policy read**: pi-web-search's `details.error` and
-  its `web_search` name; the SDK bash schema's `properties` map taking the
-  `run_in_background` flag. *On red:* repair. *Pin:* `stability.test.mjs`.
 - **Working row**: a pi-tui `Loader` subclass docked through `setWidget`'s
   component form above the editor; it stands down for pi's compaction indicator,
   and pi's auto-retry countdown shows alongside it. *Why:* rule 3. *On red:*
   fall back to pi's own working row (`setWorkingVisible` left on); lost: the
   column-0 row with a trailing blank line and the frozen settled-root snapshot.
   *Pin:* `stability.test.mjs`.
-- **Blanked reasoning**: `message_end` blanks the thinking text and
-  `message_update` swaps blanked copies into the streaming message, gated on
-  `message.api`; it rests on pi-ai and pi-agent-core internals. *Why:* rule 2's
-  "takes no space" (earendil-works/pi#8154). *On red:* fall back to the
-  `assistant-thinking` transformer alone (or `hideThinkingBlock`); lost: pi's
-  spacer before a reasoned assistant message returns. *Pin:*
-  `stability.test.mjs`.
+- **Hidden reasoning** (`rows.mjs` `installReasoningHide`): wraps the
+  exported `AssistantMessageComponent.prototype.updateContent` once, on the
+  host class the extension entry passes, drawing from a copy without
+  `thinking` blocks; rests on every draw passing through it. *Why:* rule 2's
+  "takes no space" (earendil-works/pi#8154). *On red:* set `hideThinkingBlock:
+  true` in modify_settings; lost: "takes no space" — pi's label, its spacer and
+  click region return. *Retire:* when pi can hide reasoning outright. *Pin:*
+  `stability.test.mjs`, `rows.test.mjs`, `transcript.test.mjs`.
 - **Usage segments** (outside the npm pin): unversioned
   `GET chatgpt.com/backend-api/wham/usage`, read with pi's stored
   `openai-codex` credential (`readStoredCredential`) and its
@@ -171,7 +153,10 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
 - **herdr blocked state** (outside the npm pin): herdr's bundled pi extension
   reports `blocked` only on the ref-counted `herdr:blocked` `{ active, label }`
   bus event, not pi's `ui_prompt_*`; `index.mjs` bridges the prompt span to it
-  so dialogs raise herdr's needs-input notification. *Re-verify:* when the
+  so dialogs raise herdr's needs-input notification. pi-subagents' own herdr
+  bridge (`integrations/herdr-status.js`, on under `HERDR_ENV=1`) raises
+  `herdr:busy`/`herdr:blocked` on the same counted bus and reports pane labels
+  through `herdr pane report-metadata` while children run. *Re-verify:* when the
   herdr integrations script re-fires on an upgrade, together with the herdr
   hook mirror in `private_dot_claude/settings.json.tmpl`. *Retire:* once
   herdr's extension subscribes to `ui_prompt_*` itself, or each prompt counts

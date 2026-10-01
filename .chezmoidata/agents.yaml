@@ -22,18 +22,20 @@ agents:
       - "projects/**/*.jsonl"
       - "shell-snapshots"
       - "todos"
+      - "backups"
+      - "sessions"
       # IDE lock tokens and bridge spawn state: Claude Code denies these on its
       # own, but listing them here carries them to the bridge's git sandbox
       - "ide"
       - "bridge-spawn"
     extras:
       allowed_domains:
-        - "*.anthropic.com"
         - "code.claude.com"
     plugins:
       "frontend-design@claude-plugins-official": true
     # disableBundledSkills stays unset: it also drops the review skills
-    # Bundled-skill listing: `off` drops a skill from the model's listing,
+    # Bundled-skill listing: `off` drops a skill from the model's listing and
+    # removes the user's /name command,
     # `user-invocable-only` keeps /name while hiding it from the model.
     skill_overrides:
       claude-in-chrome: "off"
@@ -41,6 +43,8 @@ agents:
       dataviz: "off"
       design-sync: "off"
       fewer-permission-prompts: "off"
+      commit: "off"
+      pr: "off"
       keybindings-help: "user-invocable-only"
       init: "user-invocable-only"
       simplify: "user-invocable-only"
@@ -101,26 +105,26 @@ subagents:
     effort: low
     readonly: true
     omit_instructions: true
-    tools: "Read, Grep, Glob, Bash"
+    tools: "Read, Bash"
     description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those. No web access: web and docs questions go to researcher, a dependency bump to dep-researcher."
   explore-deep:
     tier: top
     effort: medium
     readonly: true
     omit_instructions: true
-    tools: "Read, Grep, Glob, Bash"
+    tools: "Read, Bash"
     description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself."
   infra-reviewer:
     tier: top
     effort: medium
     readonly: true
-    tools: "Read, Grep, Glob, Bash"
+    tools: "Read, Bash"
     description: "Review Kubernetes/Helm/ArgoCD manifest diffs — chart values, CRDs, GitOps app definitions — for correctness and upgrade safety before merging."
   diff-reviewer:
     tier: top
     effort: medium
     readonly: true
-    tools: "Read, Grep, Glob, Bash"
+    tools: "Read, Bash"
     description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language (Kubernetes/Helm/ArgoCD manifests: infra-reviewer); read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them."
   spec-reviewer:
     # the projection's self-review rule names this role literally; render.test
@@ -128,27 +132,27 @@ subagents:
     tier: top
     effort: high
     readonly: true
-    tools: "Read, Grep, Glob, Bash"
+    tools: "Read, Bash"
     description: "Judge one finished artifact against the requirements it was built from, in one pass — dispatched for the fresh-eyes self-review before work is called done, not for ordinary diff review. Reports requirements that went unimplemented as readily as defects in what was written; read-only. Reviewing the changed lines under one lens is diff-reviewer's job."
   dep-researcher:
     tier: top
     effort: medium
     readonly: true
     omit_instructions: true
-    tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
-    description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never touches the repo."
+    tools: "Read, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
+    description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never edits."
   researcher:
     tier: top
     effort: medium
     readonly: true
     omit_instructions: true
-    tools: "Read, Grep, Glob, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
+    tools: "Read, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
   implementer:
     tier: top
     effort: medium
     readonly: false
-    tools: "Read, Grep, Glob, Bash, Edit, Write"
+    tools: "Read, Bash, Edit, Write"
     description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. NOT for exploratory work or an unsettled design; never commits."
   # Overrides Claude Code's built-in of the same name and is pi's managed
   # catch-all: the only role that may launch children.
@@ -157,7 +161,7 @@ subagents:
     effort: high
     readonly: false
     nests: true
-    tools: "Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
+    tools: "Read, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
     description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation; prefer a specialist when one fits."
   # Claude only: overrides the built-in planner, which inherits the session model
   Plan:
@@ -167,7 +171,7 @@ subagents:
     readonly: true
     # its body's read-the-instructions line is then its only route to them
     omit_instructions: true
-    tools: "Read, Grep, Glob, Bash"
+    tools: "Read, Bash"
     description: "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs."
 # explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
 subagent_tiers:
@@ -206,6 +210,8 @@ agent_sandbox:
       "~/.claude.json": none
       "~/.zsh_history": none
       "~/.zhistory": none
+      "~/.python_history": none
+      "~/.cache/pi-bridge": none
       "~/.go/pkg/mod": write
       "~/.npm/_cacache": write
       "~/.npm/_logs": write
@@ -231,8 +237,6 @@ agent_sandbox:
       - stackexchange.com
       - "*.stackexchange.com"
       - nodejs.org
-      - context7.com
-      - "*.context7.com"
 agent_mcp_servers:
   # auto_approve_tools: Claude emits an allow rule and pi's workflow/policy.mjs
   # allows a read-only call outright; omission keeps normal review.
@@ -252,6 +256,8 @@ agent_mcp_servers:
   context7:
     package_bin: context7-mcp
     args: []
+    # pi runs the server inside SRT, so its API hosts join that sandbox's allowlist
+    domains: [context7.com, "*.context7.com"]
     auto_approve_tools: true
     readonly_tools: [resolve-library-id, query-docs]
     env:
@@ -263,8 +269,7 @@ agent_mcp_servers:
     # pi runs the server inside SRT, so its API host joins that sandbox's allowlist
     domains: [api.exa.ai]
     auto_approve_tools: true
-    # crawling_exa is web_fetch_exa's legacy name
-    readonly_tools: [web_search_exa, web_fetch_exa, get_code_context_exa, company_research_exa, crawling_exa]
+    readonly_tools: [web_search_exa, web_fetch_exa]
     # these dispatch and bill remote agentic runs; denied so a default flip
     # cannot make them auto-approved
     denied_tools:
@@ -293,6 +298,7 @@ agent_mcp_servers:
       - --browser
       - chromium
       - --headless
+      - --no-webmcp
       - --isolated
       # auto-named snapshots and logs land here, not in the session cwd
       - --output-dir

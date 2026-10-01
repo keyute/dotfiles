@@ -21,9 +21,7 @@ pi() {
   local -a pi_extensions=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts")
   [[ ! -f "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts" ]] ||
     pi_extensions+=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts")
-  # No pi.dev version check. Excluding pi-subagents' lazy loader keeps
-  # `subagent` declared from the first turn; left in, the loader re-adds itself
-  # every turn.
+  # No pi.dev version check; excluding the lazy loader keeps `subagent` declared.
   PI_SKIP_VERSION_CHECK=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions --exclude-tools subagents_enable "${pi_extensions[@]}" "$@"
 }
 

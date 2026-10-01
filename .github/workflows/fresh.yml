@@ -46,6 +46,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: chezmoi -S "$GITHUB_WORKSPACE" apply --no-tty
 
+      # run scripts and externals always differ from state, so verify only files
+      - name: Verify applied state
+        run: |
+          set -euo pipefail
+          chezmoi -S "$GITHUB_WORKSPACE" verify --exclude scripts,externals
+          # settings.json's hooks call this; only herdr's run script installs it
+          test -f "$HOME/.claude/hooks/herdr-agent-state.sh"
+
       - name: Disk after
         if: always()
         run: df -h /

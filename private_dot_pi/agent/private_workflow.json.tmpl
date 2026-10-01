@@ -6,7 +6,8 @@
        plus the applied agent dir and the shell init that launches pi. Repo
        source is fair game, as for the other harnesses; chezmoi apply is the gate. */ -}}
 {{- $denyWrite := concat $sandbox.denyWrite (list $agentDir (printf "%s/.zshrc" .chezmoi.homeDir)) -}}
-{{- /* bash 3.2 here-documents land in /var/tmp (docs/decisions.md, parity.pi_sandbox_paths) */ -}}
+{{- /* bash 3.2 here-documents land in /var/tmp, and read-only roles have no
+       writable cwd to fall back on */ -}}
 {{- $allowWrite := append $sandbox.allowWrite "/var/tmp" -}}
 {{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
 {{- /* MCP servers run inside SRT here, so each server's own hosts join the allowlist */ -}}

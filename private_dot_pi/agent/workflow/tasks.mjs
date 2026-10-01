@@ -1,3 +1,5 @@
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "@earendil-works/pi-coding-agent";
+
 // Background shell tasks (Claude Code's run_in_background): the leased worker
 // outlives the tool call, output is kept in memory (tail-capped), and the end
 // of a task reaches the model through pi.sendMessage — with its next tool
@@ -6,6 +8,12 @@
 // like any other sandbox process; the worker then reports the exec as aborted.
 const OUTPUT_KEEP = 256 * 1024;
 const TAIL_LINES = 20;
+
+// What reaches the model, held to the foreground bash tool's limits.
+function shown(output) {
+  const truncation = truncateTail(output, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
+  return truncation.truncated ? `[Earlier output dropped; showing the last ${truncation.outputLines} lines]\n${truncation.content}` : output;
+}
 
 export function createTasks({ notify, record, now = Date.now, setTimer = setTimeout }) {
   const tasks = new Map();
@@ -18,7 +26,7 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
   };
   // exitCode is null when a signal ended the command (ops-worker reports no code).
   const reason = task => (task.status === "running" ? null : task.exitCode != null ? `exit ${task.exitCode}` : task.error ?? "killed");
-  const summary = task => `${task.status}${reason(task) ? ` (${reason(task)})` : ""}\n${task.output || "(no output)"}`;
+  const summary = task => `${task.status}${reason(task) ? ` (${reason(task)})` : ""}\n${shown(task.output) || "(no output)"}`;
   return {
     start({ command, run, close }) {
       const id = `t${next++}`;
@@ -66,7 +74,7 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
         clearTimeout(timer);
         // Status is set before the claim is read, so a task that ended as the
         // grace ran out is still answered here rather than notified nowhere.
-        if (task.status !== "running") return { status: task.status, exitCode: task.exitCode, error: task.error, output: task.output };
+        if (task.status !== "running") return { status: task.status, exitCode: task.exitCode, error: task.error, output: shown(task.output) };
         task.claimed = false;
         return null;
       });

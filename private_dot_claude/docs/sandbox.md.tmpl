@@ -16,7 +16,8 @@ Generated from `.chezmoidata/agents.yaml` in the chezmoi repo — edit that file
    like any other path; the harness itself denies writes to most of it.
 2. **Permission rules** (`settings.json → permissions`) govern harness tools (Read,
    Edit, WebFetch, MCP). Deny beats allow: a denied path can only be re-opened by
-   narrowing the deny in agents.yaml, never by an allow rule.
+   narrowing the deny in agents.yaml, never by an allow rule. The `git commit`/`git push`
+   Bash denies are a speed bump, not a boundary: prefix rules miss `git -C x commit` and `sh -c`.
 
 ## Path semantics
 
@@ -32,7 +33,8 @@ harness's own write protections under home win over `allowWrite`.
 ## Network
 
 - Local binding (e.g. dev servers on localhost): {{ if .agent_sandbox.network.allow_local_binding }}allowed{{ else }}blocked{{ end }}.
-- Outbound is blocked except these domains (plus agent extras):
+- Outbound reaches these domains (plus agent extras) without asking; the permission mode
+  decides an off-list host:
 {{ range .agent_sandbox.network.allowed_domains -}}
   - `{{ . }}`
 {{ end -}}

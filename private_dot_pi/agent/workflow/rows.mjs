@@ -1,5 +1,5 @@
 import { Container, Markdown, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
 // line under a row, π for anything the harness says in its own voice, the
@@ -697,11 +697,8 @@ export const planRenderers = {
 // rides the bullet line as bold, the way Claude Code shows headings; any other
 // block-level start keeps its syntax by taking the bullet as the paragraph
 // before it (lists, fences, quotes and tables all interrupt that paragraph, so
-// no blank line is needed between them). Reasoning renders as nothing at all:
-// pi's own hidden-thinking label is wrapped in colour codes, so even an empty
-// label leaves an invisible, clickable line.
+// no blank line is needed between them).
 export function bulletMarkdown(markdown, { messageType }, palette) {
-  if (messageType === "assistant-thinking") return "";
   // A sent message opens with the composer's glyph at the same column: pi's
   // user box renders its content at outputPad, which is 0. The glyph takes the
   // box's own colour rather than the accent — the box colours its content
@@ -723,42 +720,21 @@ export function bulletMarkdown(markdown, { messageType }, palette) {
   return /^(```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? `${BULLET}\n${body}` : `${BULLET} ${body}`;
 }
 
-// pi's assistant component adds a blank line for any message whose raw content
-// carries reasoning, before any display hook runs (earendil-works/pi#8154), so
-// a folded run stacks one blank per hidden reasoning block. These APIs replay
-// reasoning from the opaque item alone (`JSON.parse(block.thinkingSignature)`
-// in pi-ai's openai-responses-shared) and never send the text, so the same
-// model loses nothing. The one cost is a change of model identity — pi's
-// `transformMessages` keeps a signed block only when provider, api and model id
-// all match, forwards the reasoning as plain text otherwise, and drops the block
-// once that text is empty, so those summaries stop reaching the new model. Only
-// the model id can change under the managed roster, which fixes the provider and
-// validates the id in `before_agent_start`. Anthropic replays the text with its
-// signature and rejects a modified block, hence the gate.
-const OPAQUE_REASONING_APIS = new Set(["openai-responses", "azure-openai-responses", "openai-codex-responses"]);
-export function blankReasoning(message) {
-  if (message?.role !== "assistant" || !OPAQUE_REASONING_APIS.has(message.api)) return undefined;
-  let blanked = false;
-  for (const block of message.content ?? []) {
-    if (block.type !== "thinking" || !block.thinkingSignature || !block.thinking) continue;
-    // Mutated in place: pi's replacement copies onto this same object, and the
-    // stream's signature backfill still holds the block by reference.
-    block.thinking = "";
-    blanked = true;
-  }
-  return blanked ? message : undefined;
-}
-
-// The streaming component spaces from raw reasoning too. The update event's
-// message is a per-event shallow copy that pi hands to extensions before the
-// UI, so swapping its content array changes only what is drawn — the provider
-// is still appending to the original blocks, hence copies, not mutation. No
-// signature check: a block is unsigned until it ends. Same API gate as
-// blankReasoning so streaming matches the settled message.
-export function hideStreamingReasoning(message) {
-  if (message?.role !== "assistant" || !OPAQUE_REASONING_APIS.has(message.api)) return;
-  if (!message.content?.some(block => block.type === "thinking" && block.thinking)) return;
-  message.content = message.content.map(block => (block.type === "thinking" && block.thinking ? { ...block, thinking: "" } : block));
+// pi's assistant component draws reasoning as a clickable block (or its label)
+// and spaces the message from it, so every draw — construction, streaming,
+// history and invalidate all pass through updateContent — takes a copy without
+// the thinking blocks. The message itself, and so model context and the
+// session file, keep them.
+const REASONING_HIDDEN = Symbol.for("pi-workflow:reasoning-hidden");
+export function installReasoningHide(AssistantMessage = AssistantMessageComponent) {
+  const prototype = AssistantMessage.prototype;
+  if (prototype.updateContent[REASONING_HIDDEN]) return;
+  const original = prototype.updateContent;
+  const hidden = function (message, ...rest) {
+    return original.call(this, { ...message, content: message.content.filter(block => block.type !== "thinking") }, ...rest);
+  };
+  hidden[REASONING_HIDDEN] = true;
+  prototype.updateContent = hidden;
 }
 
 export function answerLines(answers, theme) {

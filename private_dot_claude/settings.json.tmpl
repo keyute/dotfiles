@@ -37,8 +37,10 @@
   "permissions": {
     "allow": {{ $allowedPerms | toPrettyJson | indent 4 | trim }},
     "deny": {{ $permDeny | toPrettyJson | indent 4 | trim }},
-    {{- /* sessions start in plan mode, not default */}}
-    "defaultMode": "plan"
+    {{- /* sessions start in plan mode, not auto */}}
+    "defaultMode": "plan",
+    {{- /* no --dangerously-skip-permissions or bypass mode */}}
+    "disableBypassPermissionsMode": "disable"
   },
   {{- /* driver pin from agents.yaml */}}
   "model": {{ (index .subagent_tiers.claude .agents.claude.defaults.tier) | toJson }},
@@ -51,14 +53,20 @@
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
     {{- /* also disables the bundled `loop` skill; add `loop: "off"` to skill_overrides if this goes */}}
     "CLAUDE_CODE_DISABLE_CRON": "1",
-    {{- /* no Statsig telemetry (local-only) */}}
-    "DISABLE_TELEMETRY": "1"
+    {{- /* no Statsig telemetry and no feature-flag fetching (local-only) */}}
+    "DISABLE_TELEMETRY": "1",
+    {{- /* no Sentry error reports */}}
+    "DISABLE_ERROR_REPORTING": "1",
+    {{- /* --add-dir directories also load their CLAUDE.md files, as pi does */}}
+    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+    {{- /* stdio MCP servers get only an allowlisted env, not the full shell env */}}
+    "CLAUDE_CODE_MCP_ALLOWLIST_ENV": "1",
+    {{- /* a subagent's subagent cannot spawn another (main is depth 0), matching pi's maxSubagentDepth */}}
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"
   },
   {{- /* Mirrors herdr's canonical SessionStart entry (structural JSON equality)
          so `herdr integration install claude` leaves this file untouched; the
-         script itself is herdr-generated and chezmoi-unmanaged. Re-check it
-         against herdr's entry when run_onchange_after_zz-herdr-integrations
-         re-fires on a herdr upgrade. */}}
+         script itself is herdr-generated and chezmoi-unmanaged. */}}
   "hooks": {
     "SessionStart": [
       {
@@ -101,6 +109,14 @@
   },
   {{- /* no rotating tips under the spinner */}}
   "spinnerTipsEnabled": false,
+  {{- /* no session recap on returning after 5+ minutes away */}}
+  "awaySummaryEnabled": false,
+  {{- /* no built-in commit/PR workflow instructions in the system prompt */}}
+  "includeGitInstructions": false,
+  {{- /* no greyed-out next-prompt suggestions */}}
+  "promptSuggestionEnabled": false,
+  {{- /* no agent view: `claude agents`, --bg, /background and the on-demand daemon */}}
+  "disableAgentView": true,
   {{- /* alternate-screen TUI, as pi's managed launch */}}
   "tui": "fullscreen",
   {{- /* advisory fan-out size the Workflow tool shows the driver */}}

@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
-import { AgentSession, InteractiveMode, SessionManager, initTheme } from "@earendil-works/pi-coding-agent";
+import { AgentSession, InteractiveMode, SessionManager, createLocalBashOperations, initTheme } from "@earendil-works/pi-coding-agent";
 import { createFolds } from "./rows.mjs";
 import { contextText, createShellRunner, installShell, parseShellInput, shellComponent, shellLines } from "./shell.mjs";
 
@@ -263,13 +264,13 @@ function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds(), 
   return { runner, sent, appended, notices, workingCalls, folds, pi };
 }
 
-test("a shellCommandPrefix is joined with the command for exec, pi's own composition, but details.command stays the typed command", async () => {
+test("a shellCommandPrefix runs before the command, which reaches exec in an eval, but details.command stays the typed command", async () => {
   const execCalls = [];
   const exec = async (command, _cwd, { onData }) => { execCalls.push(command); onData(Buffer.from("hi\n")); return { exitCode: 0 }; };
   const h = harness({ exec, prefix: () => "source ~/.zshrc" });
   h.runner.submit("!echo hi");
   await h.runner.pending;
-  assert.deepEqual(execCalls, ["source ~/.zshrc\necho hi"]);
+  assert.deepEqual(execCalls, ["source ~/.zshrc\neval 'echo hi'"]);
   assert.equal(h.sent[0].message.details.command, "echo hi");
 });
 
@@ -279,8 +280,29 @@ test("!! joins the prefix too, and its recorded command also stays typed", async
   const h = harness({ exec, prefix: () => "export CI=1" });
   h.runner.submit("!!pwd");
   await h.runner.pending;
-  assert.deepEqual(execCalls, ["export CI=1\npwd"]);
+  assert.deepEqual(execCalls, ["export CI=1\neval 'pwd'"]);
   assert.equal(h.appended[0].data.command, "pwd");
+});
+
+test("a single quote in the command is escaped for the eval's quoting", async () => {
+  const execCalls = [];
+  const exec = async command => { execCalls.push(command); return { exitCode: 0 }; };
+  const h = harness({ exec, prefix: () => "export CI=1" });
+  h.runner.submit("!echo 'x'");
+  await h.runner.pending;
+  assert.deepEqual(execCalls, ["export CI=1\neval 'echo '\\''x'\\'''"]);
+  assert.equal(h.appended[0].data.command, "echo 'x'");
+});
+
+// zsh -c parses its whole string before running any of it: an alias the
+// prefix defines reaches the command only when the command is a later parse.
+test("in zsh an alias the prefix defines expands in the command, quotes intact", { skip: !existsSync("/bin/zsh") && "no /bin/zsh" }, async () => {
+  const ops = createLocalBashOperations({ shellPath: "/bin/zsh" });
+  const h = harness({ exec: (command, _cwd, options) => ops.exec(command, process.cwd(), options), prefix: () => "alias greet='echo aliased'" });
+  h.runner.submit(`!greet "it's" 'a "b"'`);
+  await h.runner.pending;
+  assert.equal(h.appended[0].data.exitCode, 0);
+  assert.equal(h.appended[0].data.output, `aliased it's a "b"`);
 });
 
 test("with no prefix the command reaches exec verbatim", async () => {

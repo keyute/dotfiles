@@ -1,5 +1,6 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { Dialog } from "./dialog.mjs";
+import { TASK_CHARS } from "./approval.mjs";
 
 export const PLAN_APPROVED = "approved";
 export const PLAN_REVISION = "revision_requested";
@@ -31,7 +32,7 @@ function updatePlanTask(userTask, { decision, plan, feedback }) {
     : decision === PLAN_REVISION && trimFeedback(feedback)
       ? `Plan feedback: ${trimFeedback(feedback)}`
       : "";
-  return addition ? `${userTask}\n${addition}`.slice(-8000) : userTask;
+  return addition ? `${userTask}\n${addition}`.slice(-TASK_CHARS) : userTask;
 }
 
 export async function applyPlanDecision(decision, { plan, userTask, setUserTask, setMode, abort }) {

@@ -22,7 +22,8 @@ const socketsDenied = await new Promise(resolve => {
   probe.once("error", () => { rmSync(dir, { recursive: true, force: true }); resolve(true); });
   probe.listen(join(dir, "p.sock"), () => probe.close(() => { rmSync(dir, { recursive: true, force: true }); resolve(false); }));
 });
-const skip = socketsDenied && "Unix sockets are not permitted here";
+// the live flag (CI) must run these, so there a denied socket fails instead of skipping
+const skip = socketsDenied && process.env.PI_WORKFLOW_LIVE_TESTS !== "1" && "Unix sockets are not permitted here";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-integration-test-"));

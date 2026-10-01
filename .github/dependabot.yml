@@ -7,8 +7,8 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      # pi breaks extension APIs across 0.x minors, so its family moves as one
-      # PR of its own; first matching group wins, keeping it out of non-breaking
+      # pi's family moves as one PR, typebox and jiti included because pi pins
+      # them exactly; first matching group wins, keeping it out of non-breaking
       pi:
         applies-to: "version-updates"
         patterns:
@@ -16,6 +16,8 @@ updates:
           - "pi-*"
           - "catppuccin-pi-theme"
           - "@anthropic-ai/sandbox-runtime"
+          - "typebox"
+          - "jiti"
       non-breaking:
         applies-to: "version-updates"
         patterns:

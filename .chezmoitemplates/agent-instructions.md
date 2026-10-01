@@ -17,10 +17,9 @@
   - Delegate bounded, independent work that repays the handoff, including
     read-only planning research, exploration, reviews, and option proposals.
     State objective, scope, files/tools, and output format; take back a distilled
-    summary, never a raw dump. Verify delegated writes from the actual diff.
+    summary. Verify delegated writes from the actual diff.
     Keep inline trivial tasks, tightly sequential steps, and changes whose
-    details must stay in your context; never hand one worker the whole problem.{{/* model: context_hygiene, delegation_contract, delegation_economics: the driver's context degrades before the window is full; underspecified workers drift and unbounded scope wastes them; verbose worker output re-read by the driver costs what the handoff saved; a handoff pays only when specifying and verifying its boundary costs less than doing, or repairing, the work inline */}}
-{{- /* no frontier child: children.mjs enforces it on pi; on Claude the Agent(model:…) deny covers the Agent tool and the CLAUDE.md Workflow bullet covers agent() */}}
+    details must stay in your context.{{/* model: context_hygiene, delegation_contract, delegation_economics: the driver's context degrades before the window is full; underspecified workers drift and unbounded scope wastes them; verbose worker output re-read by the driver costs what the handoff saved; a handoff pays only when specifying and verifying its boundary costs less than doing, or repairing, the work inline */}}
   - Before editing a non-trivial implementation slice, delegate it once design,
     exclusive scope, and an objective gate are settled. Use the lowest capable
     pinned worker; it owns implementation/test/repair. Keep decomposition,
@@ -32,8 +31,7 @@
     does not show it: override a model only to escalate after an observed failure.{{/* specialist_pinning: presets are tuned once, not per session */}}
 {{- end }}
   - Once children are launched, their scope is off-limits: do only work outside
-    it, then wait for their results; read a report before deciding whether a
-    finding needs your own check.{{/* delegation_wait: a parent that redoes its children's work while it runs pays for it twice in tokens and wall-clock */}}
+    it; read a report before deciding whether a finding needs your own check.{{/* delegation_wait: a parent that redoes its children's work while it runs pays for it twice in tokens and wall-clock */}}
   - Before calling done a change that no deterministic check gates and that
     will be merged or applied — always on a high-stakes surface (auth or
     security boundaries, data loss or migration, concurrency, an external
@@ -51,9 +49,6 @@
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
   library/API docs — resolve the library id and fetch unprompted.{{/* docs_mcp: training data goes stale */}}
 {{ end -}}
-- Web search and fetch: built-in by default (cost); escalate to the Exa MCP
-  (search or fetch) when built-in results are sparse, stale, miss community
-  sources, or when a fetch is refused or empty.{{/* web_search: route by strength, meter by price; the built-in tools' misses are the tools', not the web's */}}
 - Keep implementations simple — the simplest thing that works: no features,
   refactors, or abstractions beyond the task, no helpers for one-shot
   operations, no speculative error handling, fallbacks, or validation without a
@@ -97,6 +92,5 @@
   believe you read a credential, flag it immediately so I can rotate it.{{/* credential_hygiene: exposure is irreversible; the path list itself is enforced by the sandbox from agents.yaml via the agent-sandbox template, not projected */}}
 - Never commit on my behalf — I stage, commit, and push myself.{{/* commit_etiquette: authorship and review stay mine */}}
 - A blocked path, command or domain, or a mode or approval question: read
-  `{{ $ag.docs }}/sandbox.md` first. Pins, tiers, limits, web search, MCP or the
-  bridge: read `{{ $ag.docs }}/harness.md` first — before spawning a lookup
-  agent.{{/* doc_pointers: discretionary loading under-triggers, so the pointer names the question; one line for both harnesses so they load their docs on the same occasions */}}
+  `{{ $ag.docs }}/sandbox.md` first. Pins, tiers, limits, web search or MCP: read
+  `{{ $ag.docs }}/harness.md` first — before spawning a lookup agent.{{/* doc_pointers: discretionary loading under-triggers, so the pointer names the question; one line for both harnesses so they load their docs on the same occasions */}}

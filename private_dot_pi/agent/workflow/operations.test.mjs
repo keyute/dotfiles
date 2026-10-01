@@ -55,7 +55,7 @@ test("SDK bash tool streams through worker operations without a session", async 
   const root = fixture(t);
   const client = direct("bash", root);
   try {
-    const definition = createBashToolDefinition(root, { exposeSessionEnvironment: false, operations: workerOperations(client).bash });
+    const definition = createBashToolDefinition(root, { operations: workerOperations(client).bash });
     const result = await definition.execute("test", { command: "printf seam-ok; printf ' and-err' >&2" });
     const text = result.content.filter(part => part.type === "text").map(part => part.text).join("\n");
     assert.ok(text.includes("seam-ok"));

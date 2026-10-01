@@ -6,5 +6,11 @@
   "asyncWidget": false,
   "intercomBridge": {
     "mode": "off"
+  },
+  "missions": {
+    "enabled": false
+  },
+  "scheduledRuns": {
+    "enabled": false
   }
 }

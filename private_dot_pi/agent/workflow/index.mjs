@@ -8,7 +8,7 @@ import { startBroker as createPolicyBroker, requestBroker as callPolicyBroker, a
 import { startToolWorker, workerOperations, executeSandboxGrep } from "./operations.mjs";
 import { rootTools, canonical, expand, publicToolName, unsandboxed, workerTools } from "./policy.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
-import { reviewAction } from "./approval.mjs";
+import { TASK_CHARS, reviewAction } from "./approval.mjs";
 import { allowedChildAgents, checkChildLaunch, narrowSubagentSchema } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
@@ -18,7 +18,7 @@ import { installPendingInput } from "./pending-input.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { answerLines, appendVisible, blankReasoning, bulletMarkdown, doneEntryRenderer, hideStreamingReasoning, installFolding, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { answerLines, appendVisible, bulletMarkdown, doneEntryRenderer, installFolding, installReasoningHide, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
@@ -145,9 +145,6 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   const toolFactory = name => sdk[`create${name[0].toUpperCase()}${name.slice(1)}ToolDefinition`];
-  // Session env exposure is disabled: exec runs in a worker whose environment
-  // is the broker-leased safe set, so session variables would never arrive.
-  const bashOptions = { exposeSessionEnvironment: false };
   const workerEnv = { ...env, PI_WORKFLOW_ROLE: role };
 
   // Background tasks end in a steer message (heard with the next tool result,
@@ -163,7 +160,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   function sandboxTool(name) {
     if (!permittedTools.includes(publicToolName(name))) return;
-    const template = toolFactory(name)(process.cwd(), name === "bash" ? bashOptions : undefined);
+    const template = toolFactory(name)(process.cwd());
     // Claude Code's bash flags, added to the SDK's own schema: run_in_background
     // where the role has workspace_task, dangerouslyDisableSandbox where the
     // role may write (the policy refuses it for read-only roles regardless).
@@ -199,7 +196,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         if (name === "grep") return await executeSandboxGrep(client, args, signal);
         const operations = workerOperations(client)[name];
         if (name === "bash") operations.exec = recordingExec(shellHistory, args, operations.exec);
-        const tool = toolFactory(name)(currentContext.cwd, name === "bash" ? { ...bashOptions, operations } : { operations });
+        const tool = toolFactory(name)(currentContext.cwd, { operations });
         return await tool.execute(id, args, signal, onUpdate, ctx);
       } finally { await client.close(); }
     } });
@@ -306,6 +303,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (isRoot && ctx.hasUI) {
       installSkillDisplay(runtime.InteractiveMode);
+      installReasoningHide(runtime.AssistantMessageComponent);
       installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
       // pi's own settings, honoured the way its native `!` branch would
       // (docs/pi-coupling.md's owned `!` block); a session never installs
@@ -337,7 +335,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     }
   });
   pi.on("input", event => {
-    if (isRoot && event.source !== "extension") userTask = `${userTask}\n${event.text}`.slice(-8000);
+    if (isRoot && event.source !== "extension") userTask = `${userTask}\n${event.text}`.slice(-TASK_CHARS);
     return { action: "continue" };
   });
   pi.on("agent_end", () => { if (childRevoked) releaseChild?.(); });
@@ -425,21 +423,15 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         return { question: entry.question, answer: selected, notes: entry.custom ?? "" };
       }).filter(entry => entry.answer || entry.notes);
       if (!answers.length) return;
-      userTask = `${userTask}\n${answers.map(entry => `User decision: ${entry.question} → ${[entry.answer, entry.notes].filter(Boolean).join(" — ")}`).join("\n")}`.slice(-8000);
+      userTask = `${userTask}\n${answers.map(entry => `User decision: ${entry.question} → ${[entry.answer, entry.notes].filter(Boolean).join(" — ")}`).join("\n")}`.slice(-TASK_CHARS);
       appendVisible(pi, "workflow-answers", { answers });
     });
     pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
     pi.registerMarkdownTransformer((markdown, context) => bulletMarkdown(markdown, context, currentContext?.ui.theme));
-    // Reasoning leaves the settled message as well as the transcript; the
-    // markdown transformer only reaches the render, and pi spaces the message
-    // from its raw content (see blankReasoning). The same holds while the
-    // message streams (see hideStreamingReasoning).
     pi.on("message_end", event => {
       const isolated = isolatePlanApproval(event.message);
-      const message = blankReasoning(isolated ?? event.message);
-      return isolated || message ? { message: message ?? isolated } : undefined;
+      return isolated ? { message: isolated } : undefined;
     });
-    pi.on("message_update", event => { hideStreamingReasoning(event.message); });
     pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), executionMode: "sequential", ...planRenderers, async execute(_id, args, signal) {
       const ctx = currentContext;
       // The plan itself is the row above (planRenderers), not the approval UI's body.

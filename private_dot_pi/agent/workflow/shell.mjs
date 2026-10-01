@@ -136,10 +136,13 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
       }
     };
     let result;
-    // pi's own bash tool composes the same way (core/tools/bash.js); the
-    // prefix runs but never appears in details.command or the drawn block.
+    // pi's own bash tool joins prefix and command with a newline
+    // (core/tools/bash.js), but zsh -c parses its whole string before running
+    // any of it, so aliases the prefix defines (`source ~/.zshrc`) would miss
+    // the command; eval makes the command a later parse. The prefix never
+    // appears in details.command or the drawn block.
     const shellCommandPrefix = prefix();
-    const resolvedCommand = shellCommandPrefix ? `${shellCommandPrefix}\n${command}` : command;
+    const resolvedCommand = shellCommandPrefix ? `${shellCommandPrefix}\neval '${command.replaceAll("'", "'\\''")}'` : command;
     try {
       result = await exec(resolvedCommand, cwd(), { onData, signal, env: env() });
     } catch (error) {

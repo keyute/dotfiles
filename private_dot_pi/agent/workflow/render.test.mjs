@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
@@ -579,9 +579,40 @@ test("models.json keeps user entries and the managed contextWindow wins", (t) =>
   assert.equal(models.providers[provider].modelOverrides[frontier].contextWindow, data.agents.pi.defaults.context_window.frontier);
 });
 
+test("settings.json keeps user entries and drops per-model thinking overrides", (t) => {
+  const { run, target, data: load } = fixture(t);
+  const data = load();
+  mkdirSync(target(".pi/agent"), { recursive: true });
+  writeFileSync(target(".pi/agent/settings.json"), JSON.stringify({
+    lastChangelogVersion: "1.0.0",
+    modelThinkingLevels: { "some-model": "low" },
+    defaultThinkingLevel: "off",
+  }));
+  const settings = JSON.parse(run("cat", target(".pi/agent/settings.json")));
+  assert.equal(settings.lastChangelogVersion, "1.0.0");
+  assert.equal(settings.modelThinkingLevels, undefined);
+  assert.equal(settings.defaultThinkingLevel, data.agents.pi.defaults.reasoning_effort);
+});
+
 // the whole tree, as CI applies it: every template (shared skill bodies included) and
 // modify_ script renders against an isolated destination, so a template error fails here
 test("the whole tree applies into an isolated destination", (t) => {
-  const { run } = fixture(t);
+  const { run, target } = fixture(t);
   run("apply", "--no-tty", ["--exclude", "scripts,externals"]);
+  const configs = [".claude.json", ".claude/settings.json", ".pi/agent/settings.json", ".pi/agent/workflow.json"]
+    .map(path => JSON.parse(readFileSync(target(path), "utf8")));
+  // configs point MCP/statusline commands into the source dir's node_modules/.bin;
+  // a missing binary renders fine but breaks at runtime
+  const bins = new Set([join(source, "node_modules/.bin/pi")]); // the pi launcher (zshrc, the bridge) is in no config
+  const walk = value => {
+    if (Array.isArray(value)) return value.forEach(walk);
+    if (!value || typeof value !== "object") return;
+    for (const s of [value.command, ...(Array.isArray(value.args) ? value.args : [])]) {
+      if (typeof s === "string" && s.includes("node_modules/.bin")) bins.add(s);
+    }
+    Object.values(value).forEach(walk);
+  };
+  configs.forEach(walk);
+  assert.ok(bins.size > 1, "no node_modules/.bin command found in the rendered configs");
+  for (const bin of bins) assert.doesNotThrow(() => accessSync(bin, constants.X_OK), `missing binary: ${bin}`);
 });

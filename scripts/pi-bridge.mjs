@@ -203,9 +203,9 @@ async function ensureSessionDir() {
   await chmod(SESSION_DIR, 0o700);
 }
 
-// pi 0.87 renames <cwd>/.pi/commands to .pi/prompts at startup (migrations.js),
-// before --no-approve or the guard can act: the one write a review could make
-// to the reviewed tree, so refuse rather than review
+// pi renames <cwd>/.pi/commands to .pi/prompts at startup when only the former
+// exists (migrations.js), before --no-approve or the guard can act: the one
+// write a review could make to the reviewed tree, so refuse rather than review
 export function assertNoPendingMigration(cwd) {
   if (existsSync(join(cwd, ".pi", "commands")) && !existsSync(join(cwd, ".pi", "prompts"))) {
     throw new Error(`refusing: pi would rename ${cwd}/.pi/commands to .pi/prompts`);

@@ -141,8 +141,10 @@ for (const [file, origin] of piFiles) {
     if (!inWindow(r)) return;
     const m = r.message;
     const usage = r.usage ?? m?.usage;
-    if ((r.role ?? m?.role) === "assistant" && usage) {
-      piCalls.set(m?.responseId ?? `${file}:${n}`, { key: `${r.model ?? m?.model ?? model}|${origin}`, usage });
+    // Compaction and branch summaries, and usage entries (e.g. cache warming), are model calls outside the message stream.
+    const sideCall = ["compaction", "branch_summary", "usage"].includes(r.type);
+    if (((r.role ?? m?.role) === "assistant" || sideCall) && usage) {
+      piCalls.set(m?.responseId ?? (sideCall && r.id ? `${r.type}:${r.id}` : `${file}:${n}`), { key: `${r.model ?? m?.model ?? model}|${origin}`, usage });
     }
     if (origin !== "root") return;
     for (const c of Array.isArray(m?.content) ? m.content : []) {
