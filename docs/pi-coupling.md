@@ -99,14 +99,35 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   `_runAgentPrompt`. *Why:* an idle triggerTurn skips `before_agent_start`, and pi swallows
   handler throws. *On red:* repair. *Retire:* upstream routes triggerTurn through
   `before_agent_start` and lets a handler block. *Pin:* `stability.test.mjs`, `integration.test.mjs`.
-- **Usage segments** (outside the npm pin): unversioned
-  `GET chatgpt.com/backend-api/wham/usage`, read with pi's stored
-  `openai-codex` credential (`readStoredCredential`) and its
-  `rate_limit.primary_window/secondary_window` fields (`used_percent`,
-  `limit_window_seconds`, `reset_at`); a failed read only drops the
-  segments. *Why:* rule 3.
-  *Re-verify:* segments missing on a live turn with a fresh login — check the
-  response shape, not the parser. *Retire:* for `@hk_net/pi-usage-bars` if the
-  endpoint breaks, losing the segments inside rule 3's single status line.
-  *On red* (the credential field shape): repair. *Pin:* `stability.test.mjs`
-  (the stored credential's fields only; the endpoint has no pin).
+- **Usage segments** (`footer.mjs`): Pi's documented
+  `after_provider_response` (Codex context only) and `provider_stream_event`
+  (Codex provider only) expose stable but unversioned Codex limits. HTTP/SSE
+  uses `x-codex-{primary|secondary}-{used-percent|window-minutes|reset-at}`;
+  `x-codex-limit-name` is a display label, not bucket identity. WS uses
+  `codex.rate_limits.rate_limits` with `primary/secondary` windows
+  (`used_percent`, `window_minutes`, `reset_at`), default `codex` bucket only
+  (`metered_limit_name` before `limit_name`). Named/model quotas and credits
+  are ignored; windows are labeled by duration, not position. Header shape:
+  [rust-v0.50.0](https://github.com/openai/codex/blob/rust-v0.50.0/codex-rs/core/src/client.rs)
+  versus [rust-v0.160.0](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/codex-api/src/rate_limits.rs).
+  WS introduced in
+  [df000da917952024edd14cb624af8d1e1740a2b5](https://github.com/openai/codex/blob/df000da917952024edd14cb624af8d1e1740a2b5/codex-rs/codex-api/src/rate_limits.rs),
+  retaining its shape in rust-v0.160.0. *Why:* rule 3's live limits without polling.
+  Native snapshots render immediately and outrank older in-flight GETs,
+  including `/usage` reports; fresh native limits suppress automatic GETs
+  for 60 seconds, not permanently. One state retains last-good limits on
+  failure; without intervening native data a failed `/usage` reports unavailable.
+  Startup, completion/run-end events and forced `/usage` retain the existing
+  `GET chatgpt.com/backend-api/wham/usage` fallback, using Pi's stored
+  `openai-codex` credential without refreshing and the endpoint's
+  `rate_limit.primary_window/secondary_window` (`used_percent`,
+  `limit_window_seconds`, `reset_at`). No idle polling or deferred reads.
+  *Re-verify:* missing or stale limits on a live turn with a fresh login —
+  check native payloads and fallback response shape; the external fields have
+  no npm pin. *On red:* repair the native seam or fall back to the existing
+  usage endpoint, deleting native consumption; repair credential shape changes.
+  *Retire:* native parsing when Pi offers a normalized quota event.
+  *Pin:* `stability.test.mjs` pins Codex response-header forwarding and raw
+  event callbacks before normalization on both SSE and reused WS, SDK event
+  forwarding and stored credential fields; `footer.test.mjs` pins historical
+  parser fixtures, precedence, freshness and last-good failure behaviour.

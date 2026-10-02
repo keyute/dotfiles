@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { formatReset } from "./footer.mjs";
 import { contextUsage, formatMoney, readUsage, sessionCost, usageLines } from "./usage.mjs";
@@ -32,6 +33,44 @@ const fixture = () => [
   { type: "message", message: { role: "toolResult", toolName: "subagent", usage: usage(0.8), details: { mode: "single", runId: "fg1", results: [] } } },
   { type: "compaction", usage: usage(0.02) },
 ];
+
+test("/usage wiring forces the footer reader in TUI and keeps the default reader without it", async () => {
+  const source = readFileSync(new URL("./index.mjs", import.meta.url), "utf8");
+  const registration = source.match(/^    pi\.registerCommand\("usage",.*$/m)?.[0];
+  assert.ok(registration, "usage command registration exists");
+  const commands = new Map();
+  const entries = [];
+  const pi = { registerCommand: (name, command) => commands.set(name, command) };
+  const commandContext = ctx(1000);
+  let surfaces;
+  let forced = 0;
+  let optionsSeen;
+  let result = limits;
+  const read = async (api, context, options) => {
+    assert.equal(api, pi);
+    assert.equal(context, commandContext);
+    optionsSeen = options;
+    // Explicit null for the non-TUI test avoids reading real stored credentials.
+    return readUsage({ events: bus({}) }, context, options ?? { readLimits: async () => null });
+  };
+  const register = new Function("pi", "surfaces", "readUsage", "appendVisible", registration);
+  const append = (_pi, type, data) => entries.push({ type, data });
+  register(pi, surfaces, read, append);
+  await commands.get("usage").handler("", commandContext);
+  assert.equal(optionsSeen, undefined, "non-TUI uses readUsage's default reader");
+  assert.equal(entries.at(-1).data.limits, null);
+  surfaces = { footer: { refreshUsage(options) { assert.deepEqual(options, { force: true }); forced++; return Promise.resolve(result); } } };
+  register(pi, surfaces, read, append);
+  await commands.get("usage").handler("", commandContext);
+  assert.equal(forced, 1);
+  assert.equal(entries.at(-1).type, "workflow-usage");
+  assert.deepEqual(entries.at(-1).data.limits, limits);
+  result = null;
+  await commands.get("usage").handler("", commandContext);
+  assert.equal(forced, 2);
+  assert.equal(entries.at(-1).data.limits, null);
+  assert.equal(usageLines(entries.at(-1).data, plain, 70)[0], "π Plan · unavailable");
+});
 
 test("cost: parent usage without tool-result usage, subagents from the cost report", () => {
   const cost = sessionCost(fixture(), costReport);

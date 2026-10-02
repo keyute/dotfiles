@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { buildSegments, formatReset, installFooter, paintMode, paintSegment, parseGitChanges, parseRateLimits, readRateLimits, windowLabel } from "./footer.mjs";
+import { buildSegments, formatReset, installFooter, paintMode, paintSegment, parseCodexHeaders, parseCodexRateLimits, parseGitChanges, parseRateLimits, readRateLimits, windowLabel } from "./footer.mjs";
 import { createTurnClock } from "./rows.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
-function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
+function harness({ active = 0, live = 0, tickMs = 5, readLimits = async () => null, mountFooter = false } = {}) {
   const path = process.env.PATH;
   process.env.PATH = ""; // git lookups fail fast instead of spawning
   const handlers = {};
@@ -15,10 +15,18 @@ function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
   const pi = { on: (name, fn) => { handlers[name] = fn; }, registerEntryRenderer() {}, appendEntry: (kind, data) => entries.push({ kind, data }) };
   const widget = {};
   const visible = [];
+  let component;
+  let renders = 0;
   // The working row is a real Loader over a fake tui; every label it is given
   // is recorded, so the turn clock's ticks stay observable.
   const ui = {
-    setFooter() {},
+    setFooter(factory) {
+      if (!mountFooter) return;
+      component?.dispose();
+      component = factory({ requestRender() { renders++; } }, { fg: (_color, text) => text }, {
+        onBranchChange: () => () => {}, getGitBranch: () => null, getExtensionStatuses: () => new Map(),
+      });
+    },
     setWorkingVisible: value => visible.push(value),
     setWidget(key, factory) {
       widget.key = key;
@@ -27,13 +35,228 @@ function harness({ active = 0, live = 0, tickMs = 5 } = {}) {
       widget.row.setMessage = text => { messages.push(text); setMessage(text); };
     },
   };
-  const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, getContextUsage: () => ({ percent: 27.2 }), ui };
+  const ctx = { cwd: ".", model: { id: "gpt-5.6-sol", provider: "openai-codex" }, getContextUsage: () => ({ percent: 27.2 }), ui };
   const fleet = { attach() {}, render: () => [], activeCount: () => active };
   const tasks = { live: () => live };
-  const footer = installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, readLimits: async () => null });
+  const footer = installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, readLimits });
   process.env.PATH = path;
-  const fire = (name, event = {}) => handlers[name]?.(event, { cwd: "." });
-  return { fire, entries, messages, fleet, tasks, widget, visible, working: footer.working, done: () => fire("session_shutdown") };
+  const fire = (name, event = {}, eventCtx = ctx) => handlers[name]?.(event, eventCtx);
+  return { fire, entries, messages, fleet, tasks, widget, visible, working: footer.working, refreshUsage: footer.refreshUsage, attach: () => footer.attach(ctx), render: () => component.render(100)[0], renders: () => renders, done: () => { fire("session_shutdown"); component?.dispose(); } };
+}
+
+const usageWindow = usedPercent => [{ usedPercent, resetsAt: null, windowMins: 300 }];
+
+test("usage refreshes mid-run on assistant and tool results, not user messages", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 0 });
+  let calls = 0;
+  const h = harness({ readLimits: async () => usageWindow(++calls), mountFooter: true });
+  t.after(h.done);
+  assert.equal(calls, 1, "attach makes exactly one initial read even at epoch zero");
+  await h.refreshUsage();
+  h.fire("agent_start");
+  t.mock.timers.tick(60_000);
+  h.fire("message_end", { message: { role: "user" } });
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  h.fire("message_end", { message: { role: "assistant" } });
+  assert.equal(calls, 2);
+  await h.refreshUsage();
+  assert.match(h.render(), /ses 2%/);
+  t.mock.timers.tick(60_000);
+  h.fire("message_end", { message: { role: "toolResult" } });
+  assert.equal(calls, 3);
+  await h.refreshUsage();
+  t.mock.timers.tick(60_000);
+  h.fire("agent_end");
+  assert.equal(calls, 4);
+  await h.refreshUsage();
+  h.attach();
+  await Promise.resolve();
+  assert.equal(calls, 4, "session attach respects the same throttle");
+  t.mock.timers.tick(60_000);
+  h.attach();
+  assert.equal(calls, 5);
+  await h.refreshUsage();
+});
+
+test("automatic usage throttle skips without queuing; idle ticks only repaint", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+  let calls = 0;
+  const h = harness({ readLimits: async () => usageWindow(++calls), mountFooter: true });
+  t.after(h.done);
+  await h.refreshUsage();
+  t.mock.timers.tick(59_999);
+  h.fire("message_end", { message: { role: "assistant" } });
+  assert.equal(await h.refreshUsage(), null);
+  assert.equal(calls, 1);
+  t.mock.timers.tick(1);
+  await Promise.resolve();
+  assert.equal(calls, 1, "the skipped event did not schedule a boundary read");
+  h.fire("message_end", { message: { role: "toolResult" } });
+  assert.equal(calls, 2, "the exact boundary permits the next event");
+  await h.refreshUsage();
+  const renders = h.renders();
+  t.mock.timers.tick(10 * 60_000);
+  await Promise.resolve();
+  assert.equal(calls, 2, "idle time never fetches");
+  assert.ok(h.renders() > renders, "the countdown still repaints");
+});
+
+test("forced usage bypasses throttle but shares each in-flight automatic or manual read", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 0 });
+  let calls = 0;
+  let resolve;
+  const h = harness({ readLimits: () => { calls++; return new Promise(done => { resolve = done; }); }, mountFooter: true });
+  t.after(h.done);
+  const automatic = h.refreshUsage();
+  const forced = h.refreshUsage({ force: true });
+  assert.equal(forced, automatic);
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  resolve(usageWindow(12));
+  assert.deepEqual(await forced, usageWindow(12));
+  assert.match(h.render(), /ses 12%/);
+  assert.equal(await h.refreshUsage(), null);
+  const manual = h.refreshUsage({ force: true });
+  assert.equal(h.refreshUsage({ force: true }), manual);
+  assert.equal(h.refreshUsage(), manual);
+  h.fire("message_end", { message: { role: "assistant" } });
+  await Promise.resolve();
+  assert.equal(calls, 2);
+  resolve(usageWindow(25));
+  assert.deepEqual(await manual, usageWindow(25));
+  assert.match(h.render(), /ses 25%/, "a fresh manual read updates the footer");
+});
+
+test("failed fresh reads return null while retaining the footer's last good limits", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 0 });
+  let result = usageWindow(15);
+  let calls = 0;
+  const h = harness({ readLimits: async () => { calls++; return result; }, mountFooter: true });
+  t.after(h.done);
+  await h.refreshUsage();
+  const renders = h.renders();
+  result = null;
+  assert.equal(await h.refreshUsage({ force: true }), null);
+  assert.match(h.render(), /ses 15%/);
+  assert.equal(h.renders(), renders);
+  t.mock.timers.tick(59_999);
+  h.fire("agent_end");
+  assert.equal(await h.refreshUsage(), null);
+  assert.equal(calls, 2, "failed attempts are throttled too");
+  t.mock.timers.tick(1);
+  h.fire("message_end", { message: { role: "assistant" } });
+  assert.equal(await h.refreshUsage(), null);
+  assert.equal(calls, 3);
+  assert.match(h.render(), /ses 15%/);
+  result = usageWindow(30);
+  await h.refreshUsage({ force: true });
+  assert.match(h.render(), /ses 30%/, "failure releases the shared request for the next read");
+});
+
+test("Codex historical headers retain stable default windows and suppress phantom zero", () => {
+  const headers = {
+    "x-codex-primary-used-percent": "12.5",
+    "x-codex-primary-window-minutes": "300",
+    "x-codex-primary-reset-at": "1800000000",
+    "x-codex-secondary-used-percent": "40",
+    "x-codex-secondary-window-minutes": "10080",
+    "x-codex-limit-name": "Pro display label",
+    "x-codex-other-primary-used-percent": "99",
+  };
+  assert.deepEqual(parseCodexHeaders(headers), [
+    { usedPercent: 12.5, windowMins: 300, resetsAt: 1800000000 },
+    { usedPercent: 40, windowMins: 10080, resetsAt: null },
+  ]);
+  assert.equal(parseCodexHeaders({ "x-other-primary-used-percent": "1" }), null);
+  for (const value of ["", " ", "NaN", "Infinity", undefined]) {
+    assert.equal(parseCodexHeaders({ "x-codex-primary-used-percent": value }), null);
+  }
+  for (const minutes of [undefined, "0", "bad"]) {
+    assert.equal(parseCodexHeaders({ "x-codex-primary-used-percent": "0", "x-codex-primary-window-minutes": minutes }), null);
+  }
+  assert.deepEqual(parseCodexHeaders({ "x-codex-primary-used-percent": "120", "x-codex-primary-window-minutes": "-1", "x-codex-primary-reset-at": "0" }), [{ usedPercent: 120, windowMins: -1, resetsAt: 0 }]);
+  assert.deepEqual(parseCodexHeaders({ "x-codex-primary-used-percent": "2", "x-codex-primary-window-minutes": "1.5", "x-codex-primary-reset-at": "bad" }), [{ usedPercent: 2, windowMins: null, resetsAt: null }]);
+});
+
+const codexEvent = (rate_limits, metadata = {}) => ({ type: "codex.rate_limits", rate_limits, ...metadata });
+
+test("Codex WS fixtures accept only the default bucket and reject malformed snapshots", () => {
+  const primary = { used_percent: 0, window_minutes: 300, reset_at: 1800000000 };
+  const secondary = { used_percent: 40, window_minutes: 10080 };
+  assert.deepEqual(parseCodexRateLimits(codexEvent({ primary, secondary }, { credits: { ignored: true } })), [
+    { usedPercent: 0, windowMins: 300, resetsAt: 1800000000 },
+    { usedPercent: 40, windowMins: 10080, resetsAt: null },
+  ]);
+  assert.deepEqual(parseCodexRateLimits(codexEvent({ primary: { used_percent: 0 }, secondary: null }, { limit_name: " CODEX " })), [{ usedPercent: 0, windowMins: null, resetsAt: null }]);
+  for (const name of ["", "gpt-5", "codex-other", 42, {}, []]) {
+    assert.equal(parseCodexRateLimits(codexEvent({ primary }, { metered_limit_name: name, limit_name: "codex" })), null);
+  }
+  assert.equal(parseCodexRateLimits(codexEvent({ primary }, { limit_name: "other" })), null);
+  assert.ok(parseCodexRateLimits(codexEvent({ primary }, { metered_limit_name: "codex", limit_name: "other" })));
+  for (const malformed of [{ used_percent: "2" }, { used_percent: Infinity }, { used_percent: 1, window_minutes: "300" }, { used_percent: 1, reset_at: 1.5 }, false]) {
+    assert.equal(parseCodexRateLimits(codexEvent({ primary, secondary: malformed })), null);
+  }
+  assert.equal(parseCodexRateLimits(codexEvent({ primary: null })), null);
+  assert.equal(parseCodexRateLimits({ type: "unknown", rate_limits: { primary } }), null);
+  assert.equal(parseCodexRateLimits(undefined), null);
+  assert.deepEqual(parseCodexRateLimits(codexEvent({ secondary: { used_percent: 120, window_minutes: -1, reset_at: 0 } })), [{ usedPercent: 120, windowMins: -1, resetsAt: 0 }]);
+});
+
+for (const transport of ["headers", "stream"]) {
+  test(`native ${transport} updates inside throttle and fallback waits for a stale event`, async t => {
+    t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 0 });
+    let calls = 0;
+    const h = harness({ mountFooter: true, readLimits: async () => usageWindow(++calls) });
+    t.after(h.done);
+    await h.refreshUsage();
+    const send = (percent, eventCtx) => transport === "headers"
+      ? h.fire("after_provider_response", { headers: { "x-codex-primary-used-percent": String(percent), "x-codex-primary-window-minutes": "10080" } }, eventCtx)
+      : h.fire("provider_stream_event", { provider: eventCtx?.model?.provider ?? "openai-codex", data: codexEvent({ primary: { used_percent: percent, window_minutes: 10080 } }) });
+    send(22, { model: { provider: "other" } });
+    assert.match(h.render(), /ses 1%/);
+    t.mock.timers.tick(30_000);
+    const renders = h.renders();
+    send(22);
+    assert.ok(h.renders() > renders);
+    assert.match(h.render(), /wk 22%/);
+    assert.doesNotMatch(h.render(), /ses/, "full snapshot replaces the missing short window");
+    send(23);
+    assert.match(h.render(), /wk 23%/);
+    h.fire("message_end", { message: { role: "assistant" } });
+    assert.equal(await h.refreshUsage(), null);
+    assert.equal(calls, 1);
+    h.fire("provider_stream_event", { provider: "openai-codex", data: codexEvent({ primary: { used_percent: "bad" } }) });
+    h.fire("after_provider_response", { headers: {} });
+    t.mock.timers.tick(60_000);
+    await Promise.resolve();
+    assert.equal(calls, 1, "staleness and missing data schedule no reads");
+    h.fire("agent_end");
+    await h.refreshUsage();
+    assert.equal(calls, 2);
+    assert.match(h.render(), /ses 2%/);
+  });
+}
+
+for (const force of [false, true]) {
+  for (const result of [usageWindow(5), null]) {
+    test(`late ${force ? "forced" : "automatic"} GET ${result ? "success" : "failure"} returns the newer native snapshot`, async t => {
+      let resolve;
+      const h = harness({ mountFooter: true, readLimits: () => new Promise(done => { resolve = done; }) });
+      t.after(h.done);
+      resolve(usageWindow(1));
+      await h.refreshUsage();
+      // A forced call starts inside freshness; an automatic call starts stale.
+      t.mock.timers.enable({ apis: ["Date", "setInterval"], now: Date.now() + (force ? 0 : 60_000) });
+      const pending = h.refreshUsage({ force });
+      assert.equal(h.refreshUsage({ force: true }), pending, "/usage shares the in-flight read");
+      h.fire("provider_stream_event", { provider: "openai-codex", data: codexEvent({ primary: { used_percent: 35, window_minutes: 300 } }) });
+      resolve(result);
+      assert.deepEqual(await pending, usageWindow(35));
+      assert.match(h.render(), /ses 35%/);
+      assert.equal(await h.refreshUsage(), null);
+    });
+  }
 }
 
 test("rate limits key only on stable window fields", () => {

@@ -391,11 +391,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         // bash -c without rc, which would otherwise load into every sandboxed call
         const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations({ shellPath: "/bin/zsh" }).exec, env: hostEnvironment, prefix: () => "source ~/.zshrc" });
         surfaces = { footer, shell };
-      }
+      } else surfaces.footer.attach(ctx);
       // pi resets every extension surface when a session is invalidated
       // (/new, /resume), so these are applied on each session start.
       installHeader(ctx);
-      surfaces.footer.attach(ctx);
       ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell }));
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
@@ -484,7 +483,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       await setMode(broker.policy.mode, ctx);
       appendVisible(pi, "workflow-note", { text: `Removed ${dir} from the workspace` });
     } });
-    pi.registerCommand("usage", { description: "Show plan limits, context use and session cost", handler: async (_args, ctx) => appendVisible(pi, "workflow-usage", await readUsage(pi, ctx)) });
+    pi.registerCommand("usage", { description: "Show plan limits, context use and session cost", handler: async (_args, ctx) => appendVisible(pi, "workflow-usage", await readUsage(pi, ctx, surfaces?.footer ? { readLimits: () => surfaces.footer.refreshUsage({ force: true }) } : undefined)) });
     pi.registerEntryRenderer("workflow-usage", (entry, _options, theme) => usageComponent(entry.data, theme));
     pi.registerEntryRenderer("workflow-note", (entry, _options, theme) => new Text(noteLine(entry.data.text, theme), 0, 0));
     // The questionnaire owns its invisible renderers; completed answers feed

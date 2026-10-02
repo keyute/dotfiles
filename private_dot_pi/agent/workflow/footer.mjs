@@ -4,8 +4,8 @@ import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-
 import { PAD, TURN_GLYPH, appendVisible, createTurnClock, defaultFolds, firstLine, formatDuration, formatTurn, paintCounts, setRepaint, shortTitle } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 
-// Usage comes from the ChatGPT backend's usage endpoint — an unversioned
-// surface, but its window fields have only ever grown additively. The bearer token is pi's stored openai-codex
+// The GET fallback uses the ChatGPT backend's unversioned usage endpoint.
+// The bearer token is pi's stored openai-codex
 // credential via the exported one-off `readStoredCredential`; it is never
 // refreshed here — a rotating refresh raced against pi's own would invalidate
 // the login, so an expired credential skips the read and pi's next model call
@@ -35,6 +35,43 @@ export function parseRateLimits(result) {
       resetsAt: w.reset_at ?? null,
       windowMins: typeof w.limit_window_seconds === "number" ? Math.round(w.limit_window_seconds / 60) : null,
     }));
+  return windows.length ? windows : null;
+}
+
+// Codex headers carry only the default bucket; limit-name is a display label.
+export function parseCodexHeaders(headers) {
+  const windows = [];
+  for (const slot of ["primary", "secondary"]) {
+    const prefix = `x-codex-${slot}-`;
+    const usage = headers?.[`${prefix}used-percent`];
+    if (typeof usage !== "string" || !usage.trim()) continue;
+    const usedPercent = Number(usage);
+    if (!Number.isFinite(usedPercent)) continue;
+    const metadata = name => {
+      const value = headers?.[prefix + name];
+      return typeof value === "string" && /^[+-]?\d+$/.test(value.trim()) && Number.isInteger(Number(value)) ? Number(value) : null;
+    };
+    const windowMins = metadata("window-minutes");
+    const resetsAt = metadata("reset-at");
+    if (usedPercent === 0 && (windowMins == null || windowMins === 0) && resetsAt == null) continue;
+    windows.push({ usedPercent, windowMins, resetsAt });
+  }
+  return windows.length ? windows : null;
+}
+
+export function parseCodexRateLimits(data) {
+  if (data?.type !== "codex.rate_limits") return null;
+  const limits = data.rate_limits;
+  const bucket = data.metered_limit_name ?? data.limit_name ?? "codex";
+  if (typeof bucket !== "string" || bucket.trim().toLowerCase().replaceAll("-", "_") !== "codex") return null;
+  const windows = [];
+  for (const window of [limits?.primary, limits?.secondary]) {
+    if (window == null) continue;
+    if (!Number.isFinite(window.used_percent) ||
+        (window.window_minutes != null && !Number.isInteger(window.window_minutes)) ||
+        (window.reset_at != null && !Number.isInteger(window.reset_at))) return null;
+    windows.push({ usedPercent: window.used_percent, windowMins: window.window_minutes ?? null, resetsAt: window.reset_at ?? null });
+  }
   return windows.length ? windows : null;
 }
 
@@ -147,16 +184,40 @@ const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
 export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000, readLimits = readRateLimits, folds = defaultFolds } = {}) {
-  const state = { limits: null, changes: null, usageAt: 0, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false, working: null, compacting: false, shell: null };
-
-  const refreshUsage = async () => {
-    if (Date.now() - state.usageAt < USAGE_MIN_INTERVAL_MS) return;
+  const state = { limits: null, changes: null, usageAt: -Infinity, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false, working: null, compacting: false, shell: null };
+  let usageInFlight;
+  let nativeRevision = 0;
+  const acceptNative = limits => {
+    if (!limits) return;
+    nativeRevision++;
+    state.limits = limits;
     state.usageAt = Date.now();
-    const limits = await readLimits();
-    if (limits) {
-      state.limits = limits;
-      state.tui?.requestRender();
-    }
+    state.tui?.requestRender();
+  };
+  pi.on("after_provider_response", (event, eventCtx) => {
+    if (eventCtx.model?.provider === "openai-codex") acceptNative(parseCodexHeaders(event.headers));
+  });
+  pi.on("provider_stream_event", event => {
+    if (event.provider === "openai-codex") acceptNative(parseCodexRateLimits(event.data));
+  });
+
+  const refreshUsage = ({ force = false } = {}) => {
+    if (usageInFlight) return usageInFlight;
+    if (!force && Date.now() - state.usageAt < USAGE_MIN_INTERVAL_MS) return Promise.resolve(null);
+    state.usageAt = Date.now();
+    const revision = nativeRevision;
+    usageInFlight = (async () => {
+      const limits = await readLimits();
+      // A response-carried snapshot outranks a GET already in flight, including
+      // its report result when that older request fails.
+      if (nativeRevision !== revision) return state.limits;
+      if (limits) {
+        state.limits = limits;
+        state.tui?.requestRender();
+      }
+      return limits;
+    })().finally(() => { usageInFlight = null; });
+    return usageInFlight;
   };
   const refreshGit = async cwd => {
     if (Date.now() - state.gitAt < GIT_MIN_INTERVAL_MS) return;
@@ -232,6 +293,9 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     state.tick ??= setInterval(showLabel, tickMs);
     startWorking();
   });
+  pi.on("message_end", event => {
+    if (event.message.role === "assistant" || event.message.role === "toolResult") void refreshUsage();
+  });
   pi.on("agent_end", (event, eventCtx) => {
     void refreshUsage();
     void refreshGit(eventCtx.cwd);
@@ -259,12 +323,12 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   pi.on("session_shutdown", () => { clearTick(); stopWorking(); });
   pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
-  void refreshUsage();
   void refreshGit(ctx.cwd);
 
   // pi drops every extension surface on a session invalidate (/new, /resume),
   // so they are re-applied at each session start; events are wired once.
   const attach = uiCtx => {
+    void refreshUsage();
     // pi's built-in working row is switched off in favour of the widget above
     // the composer; with it off no working indicator is ever built, so pi's
     // two-line idle placeholder never lands in the status container either.
@@ -320,5 +384,5 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     });
   };
   attach(ctx);
-  return { attach, working };
+  return { attach, working, refreshUsage };
 }
