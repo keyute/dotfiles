@@ -38,9 +38,10 @@ test("contextText: Ran `command`, the output fenced or (no output), then cancell
   assert.equal(contextText({ command: "x", output: "", exitCode: 1, cancelled: false, truncated: true }), "Ran `x`\n(no output)\n\nCommand exited with code 1\n\n[Output truncated]");
 });
 
-test("shellLines: three shaded rows, the ! and command coloured like the composer", () => {
+test("shellLines: three shaded rows, then one unshaded blank before output", () => {
   const lines = shellLines({ command: "ls -la", output: "" }, {}, theme, 20);
-  assert.equal(lines.length, 6);
+  assert.equal(lines.length, 7);
+  assert.equal(lines[3], "");
   for (const line of lines.slice(0, 3)) {
     assert.ok(line.startsWith(BG), line);
     assert.equal(visibleWidth(strip(line)), 20);
@@ -54,7 +55,8 @@ test("shellLines: three shaded rows, the ! and command coloured like the compose
 
 test("a two-line command shades both lines, the second two in", () => {
   const lines = shellLines({ command: "echo one\necho two", output: "" }, {}, theme, 30);
-  assert.equal(lines.length, 7);
+  assert.equal(lines.length, 8);
+  assert.equal(lines[4], "");
   assert.match(strip(lines[1]), /^! echo one */);
   assert.match(strip(lines[2]), /^ {2}echo two */);
 });
@@ -62,26 +64,28 @@ test("a two-line command shades both lines, the second two in", () => {
 test("output lines sit two in, muted; empty output is explicit", () => {
   assert.equal(strip(shellLines({ command: "x", output: "" }, {}, theme, 30).at(-1)), "  no output");
   const lines = shellLines({ command: "x", output: "a\nb", exitCode: 0 }, {}, theme, 30);
-  assert.equal(strip(lines[3]), "• Output · 2 lines · exit 0");
-  assert.ok(lines[3].includes(fg("success", "•")));
-  assert.equal(strip(lines[4]), "  a");
-  assert.equal(strip(lines[5]), "  b");
-  assert.ok(lines[4].includes(fg("muted", "a")));
+  assert.equal(lines[3], "");
+  assert.equal(strip(lines[4]), "• Output · 2 lines · exit 0");
+  assert.ok(lines[4].includes(fg("success", "•")));
+  assert.equal(strip(lines[5]), "  a");
+  assert.equal(strip(lines[6]), "  b");
+  assert.ok(lines[5].includes(fg("muted", "a")));
 });
 
 test("long success shows last four; failure and cancellation show first two and last two", () => {
   const output = Array.from({ length: 9 }, (_, i) => `l${i}`).join("\n");
   const success = shellLines({ command: "x", output, exitCode: 0 }, {}, theme, 40);
-  assert.equal(strip(success[3]), "▸ Output · 9 lines · exit 0");
-  assert.ok(success[3].includes(fg("success", "▸")));
-  assert.deepEqual(success.slice(4).map(strip), ["  … 5 more lines", "  l5", "  l6", "  l7", "  l8"]);
+  assert.equal(strip(success[4]), "▸ Output · 9 lines · exit 0");
+  assert.ok(success[4].includes(fg("success", "▸")));
+  assert.deepEqual(success.slice(5).map(strip), ["  … 5 more lines", "  l5", "  l6", "  l7", "  l8"]);
   for (const details of [{ exitCode: 2 }, { cancelled: true }]) {
     const lines = shellLines({ command: "x", output, ...details }, {}, theme, 40);
-    assert.deepEqual(lines.slice(4).map(strip), ["  l0", "  l1", "  … 5 more lines", "  l7", "  l8"]);
+    assert.equal(lines[3], "");
+    assert.deepEqual(lines.slice(5).map(strip), ["  l0", "  l1", "  … 5 more lines", "  l7", "  l8"]);
   }
   const expanded = shellLines({ command: "x", output, exitCode: 0 }, { expanded: true }, theme, 40);
-  assert.equal(strip(expanded[3]), "▾ Output · 9 lines · exit 0");
-  assert.deepEqual(expanded.slice(4).map(strip), output.split("\n").map(line => `  ${line}`));
+  assert.equal(strip(expanded[4]), "▾ Output · 9 lines · exit 0");
+  assert.deepEqual(expanded.slice(5).map(strip), output.split("\n").map(line => `  ${line}`));
 });
 
 test("outcome summary uses semantic colours and calls out truncation", () => {
@@ -90,13 +94,15 @@ test("outcome summary uses semantic colours and calls out truncation", () => {
     [{ exitCode: 1 }, "error", "exit 1"],
     [{ cancelled: true }, "warning", "cancelled"],
   ]) {
-    const summary = shellLines({ command: "x", output: "", ...details }, {}, theme, 50)[3];
+    const lines = shellLines({ command: "x", output: "", ...details }, {}, theme, 50);
+    assert.equal(lines[3], "");
+    const summary = lines[4];
     assert.ok(summary.includes(fg(color, label)));
     assert.ok(summary.includes(fg(color, "•")));
   }
   const truncated = shellLines({ command: "x", output: "", exitCode: 0, truncated: true }, {}, theme, 50);
-  assert.match(strip(truncated[3]), /output truncated/);
-  assert.ok(truncated[3].includes(fg("warning", "output truncated")));
+  assert.match(strip(truncated[4]), /output truncated/);
+  assert.ok(truncated[4].includes(fg("warning", "output truncated")));
 });
 
 test("shellComponent renders through shellLines at the given width and invalidates as a no-op", () => {
@@ -119,27 +125,28 @@ test("entry renderer retains clicked expansion through rebuild, Ctrl+O outranks 
   const details = { command: "x", output: "a\nb\nc\nd\ne\nf", exitCode: 0 };
   const entry = { data: details };
   let child = renderers.entry(entry, { expanded: false }, theme);
-  assert.equal(strip(child.render(50)[3]).startsWith("▸"), true);
-  assert.equal(child.handleMouse({ type: "click", button: "left", y: 3 }).handled, true);
+  assert.equal(strip(child.render(50)[4]).startsWith("▸"), true);
+  assert.equal(child.handleMouse({ type: "click", button: "left", y: 3 }), undefined, "the blank line is not clickable");
+  assert.equal(child.handleMouse({ type: "click", button: "left", y: 4 }).handled, true);
   assert.equal(repaints, 1);
   child = renderers.entry(entry, { expanded: false }, theme);
-  assert.equal(strip(child.render(50)[3]).startsWith("▾"), true);
-  assert.equal(child.handleMouse({ type: "click", button: "left", y: 4 }), undefined);
+  assert.equal(strip(child.render(50)[4]).startsWith("▾"), true);
+  assert.equal(child.handleMouse({ type: "click", button: "left", y: 5 }), undefined);
   child = renderers.entry(entry, { expanded: true }, theme);
-  assert.equal(child.render(50).length, 10);
-  assert.equal(child.handleMouse({ type: "click", button: "left", y: 3 }), undefined);
+  assert.equal(child.render(50).length, 11);
+  assert.equal(child.handleMouse({ type: "click", button: "left", y: 4 }), undefined);
   child = renderers.entry(entry, { expanded: false }, theme);
-  assert.equal(strip(child.render(50)[3]).startsWith("▸"), true);
+  assert.equal(strip(child.render(50)[4]).startsWith("▸"), true);
   const message = { details };
   let history = renderers.message(message, { expanded: false }, theme);
   history.render(50);
-  assert.equal(history.handleMouse({ type: "click", button: "left", y: 3 }).handled, true);
+  assert.equal(history.handleMouse({ type: "click", button: "left", y: 4 }).handled, true);
   history = renderers.message(message, { expanded: false }, theme);
-  assert.equal(strip(history.render(50)[3]).startsWith("▾"), true);
+  assert.equal(strip(history.render(50)[4]).startsWith("▾"), true);
   history = renderers.message(message, { expanded: true }, theme);
-  assert.equal(history.render(50).length, 10);
+  assert.equal(history.render(50).length, 11);
   history = renderers.message(message, { expanded: false }, theme);
-  assert.equal(strip(history.render(50)[3]).startsWith("▸"), true);
+  assert.equal(strip(history.render(50)[4]).startsWith("▸"), true);
 });
 
 test("native host entry owns one spacer and forwards clicks across resize, theme rebuild, and Ctrl+O", () => {
@@ -163,23 +170,25 @@ test("native host entry owns one spacer and forwards clicks across resize, theme
   assert.equal(host.children.length, 2, "one host spacer and one renderer child");
   const render = width => host.render(width).map(strip);
   assert.equal(render(50)[0], "");
-  assert.equal(render(50)[4].startsWith("▸"), true);
-  assert.equal(host.handleMouse({ type: "click", button: "left", x: 0, y: 4, width: 50, height: host.render(50).length }).handled, true);
+  assert.equal(render(50)[4], "");
+  assert.equal(render(50)[5].startsWith("▸"), true);
+  assert.equal(host.handleMouse({ type: "click", button: "left", x: 0, y: 4, width: 50, height: host.render(50).length }), undefined);
+  assert.equal(host.handleMouse({ type: "click", button: "left", x: 0, y: 5, width: 50, height: host.render(50).length }).handled, true);
   assert.equal(repaints, 1);
-  assert.equal(render(50)[4].startsWith("▾"), true);
+  assert.equal(render(50)[5].startsWith("▾"), true);
   const dark = host.render(50).join("\n");
   initTheme("light");
   host.invalidate();
   assert.notEqual(host.render(50).join("\n"), dark, "host rebuild reads the live theme");
-  assert.equal(render(15)[4].startsWith("▾"), true);
+  assert.equal(render(15)[5].startsWith("▾"), true);
   assert.ok(host.render(15).every(line => visibleWidth(line) <= 15));
   host.setExpanded(true);
   assert.equal(host.children.length, 2);
-  assert.equal(host.handleMouse({ type: "click", button: "left", x: 0, y: 4, width: 15, height: host.render(15).length }), undefined);
+  assert.equal(host.handleMouse({ type: "click", button: "left", x: 0, y: 5, width: 15, height: host.render(15).length }), undefined);
   host.setExpanded(false);
-  assert.equal(render(15)[4].startsWith("▸"), true);
-  assert.equal(host.handleMouse({ type: "click", button: "left", x: 0, y: 4, width: 15, height: host.render(15).length }).handled, true);
-  assert.equal(render(15)[4].startsWith("▾"), true);
+  assert.equal(render(15)[5].startsWith("▸"), true);
+  assert.equal(host.handleMouse({ type: "click", button: "left", x: 0, y: 5, width: 15, height: host.render(15).length }).handled, true);
+  assert.equal(render(15)[5].startsWith("▾"), true);
   initTheme("dark");
 });
 
@@ -245,7 +254,7 @@ test("a run of exactly four newline-terminated lines shows all four with no more
   const details = h.sent[0].message.details;
   assert.equal(details.output.split("\n").length, 4);
   const lines = shellLines(details, { expanded: false }, theme, 30);
-  assert.equal(strip(lines[4]), "  l0");
+  assert.equal(strip(lines[5]), "  l0");
   assert.ok(!lines.some(line => /more lines/.test(strip(line))));
 });
 

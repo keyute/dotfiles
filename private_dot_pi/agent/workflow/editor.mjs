@@ -1,4 +1,5 @@
 import * as sdk from "@earendil-works/pi-coding-agent";
+import { matchesKey } from "@earendil-works/pi-tui";
 import { parseShellInput } from "./shell.mjs";
 import { PAD, PROMPT, padRow, shade } from "./rows.mjs";
 
@@ -52,11 +53,12 @@ export function argumentCompletions(current) {
 export class CaretEditor extends sdk.CustomEditor {
   // The editor factory is handed an EditorTheme (borders and autocomplete only),
   // so the palette for the shade and the caret arrives separately.
-  constructor(tui, theme, keybindings, { fleet, palette, shell } = {}) {
+  constructor(tui, theme, keybindings, { fleet, palette, shell, pending } = {}) {
     super(tui, theme, keybindings, { paddingX: PROMPT_PADDING, embedWorkingStatus: false });
     this.fleet = fleet;
     this.palette = palette;
     this.shell = shell;
+    this.pending = pending;
     // pi-tui's Editor declares `onSubmit` as a bare class field, which
     // installs an own data property on this instance during super() and
     // would shadow the accessor pair below forever; dropping it here lets
@@ -127,6 +129,11 @@ export class CaretEditor extends sdk.CustomEditor {
   // enters it only when the editor itself had nothing left to do with the key,
   // so wrapped lines, line-end moves, history and autocomplete keep priority.
   handleInput(data) {
+    if (this.pending && matchesKey(data, "ctrl+enter") && !this.fleet?.focused() && !this.shellMode()) {
+      this.cancelAutocomplete();
+      void this.pending.sendNow(this);
+      return;
+    }
     // Native Alt+Enter queues raw editor text as a follow-up. Shell input
     // instead takes Enter's expanded-paste submit path before that action.
     if (this.shell && !this.fleet?.focused() && this.keybindings.matches(data, "app.message.followUp") && parseShellInput(this.getExpandedText().trim())) {

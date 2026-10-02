@@ -203,13 +203,17 @@ test("the plan renders as markdown while the decision is open, then hands its bo
   assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, context({ isPartial: true }))), [title]);
   assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, context({ argsComplete: true, isPartial: true }))), [title]);
   const pending = context({ executionStarted: true, isPartial: true });
-  assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, pending)), [title, ...body]);
+  assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, pending)), [title]);
+  for (const args of [{ plan }, { edits: [{ oldText: "old", newText: plan }] }]) {
+    const updated = result("", { plan, revision: 2, decision: "pending" });
+    assert.deepEqual(rendered(planRenderers.renderResult(updated, { isPartial: true, expanded: false }, theme, context({ args }))), body);
+  }
 
   // A result is what retires the body; pi re-runs the call slot when it lands,
   // and from there only `expanded` shows the plan.
-  const settled = context({ executionStarted: true, args: { plan } });
+  const settled = context({ executionStarted: true, args: { plan: "wrong args" } });
   assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, settled)), [`<success>${title}`]);
-  const approved = result("Plan approved; scoped execution enabled.", { decision: "approved" });
+  const approved = result("Plan approved; scoped execution enabled.", { decision: "approved", plan });
   assert.deepEqual(rendered(planRenderers.renderResult(approved, { expanded: false }, theme, settled)), ["  <muted>↳ <success>approved"]);
   assert.deepEqual(rendered(planRenderers.renderResult(approved, { expanded: true }, theme, settled)), ["  <muted>↳ <success>approved", ...body]);
   const revision = result("Plan revision requested.", { decision: "revision_requested" });

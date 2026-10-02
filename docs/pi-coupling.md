@@ -53,11 +53,22 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   single box — the skill shows as a second block with its instruction body.
   *Retire:* when pi exposes a user/skill-message renderer. *Pin:*
   `stability.test.mjs`, bundled-entry and real-render tests.
-- **Pending input**: replaces only `InteractiveMode.updatePendingMessagesDisplay`
-  on the same host class; pi keeps queue ownership. *Why:* rule 5, queued
-  input. *On red:* fall back to pi's native pending display; lost: the shaded
-  `❯` blocks and their `π` labels. *Retire:* when pi offers a pending-input
-  renderer. *Pin:* `stability.test.mjs`, render/lifecycle tests.
+- **Pending input**: replaces `InteractiveMode.updatePendingMessagesDisplay`
+  on the same host class; pi keeps queue ownership. Ctrl+Enter awaits the native
+  session's `abort()` without clearing either queue, transfers raw compaction
+  input through its native admission methods, then uses the already-managed
+  `_runAgentPrompt([])` entry: the agent's initial steering poll consumes the
+  queued messages before its first request, keeping follow-ups and attachments.
+  The draft moves synchronously from the composer into that existing raw-input
+  queue, so native submit/dequeue actions cannot resend a hidden captured copy.
+  `flushCompactionQueue` is held only through this action so `compaction_end`
+  cannot start a competing response during abort cleanup. The editor callback
+  and lifecycle reset keep old-session work from reaching a replacement.
+  *Why:* rule 5's queued-input layout and interrupt-and-send action. *On red:*
+  fall back to pi's native pending display and Escape then Enter; lost: grouped
+  shaded blocks and single-key send-now. *Retire:* the renderer when pi offers
+  a pending-input renderer, the send seam when it offers interrupt-and-send.
+  *Pin:* `stability.test.mjs`, render/lifecycle and native queue-loop tests.
 - **The owned `!` block**: `CaretEditor` intercepts the `onSubmit` pi assigns
   to a custom editor, parses `!`/`!!` so
   `handleBashCommand` never runs, and runs the command through

@@ -110,7 +110,9 @@ test("bundled extension entry installs skill, pending-input and reasoning displa
   mode.ui = { requestRender() {} };
   mode.updatePendingMessagesDisplay();
   const pending = mode.pendingMessagesContainer.render(60);
-  assert.match(pending.map(strip).join("\n"), /π Steering · next response\n\n❯ next response/);
+  assert.match(pending.map(strip).join("\n"), /π Steering · next response · ctrl\+enter send now/);
+  assert.match(pending.map(strip).join("\n"), /alt\+up\s+edit all queued\n\n❯ next response/);
+  assert.ok(pending.at(-1).startsWith("\x1b[44m"), "the native widget supplies the gap after the shaded queued block");
   assert.match(pending.map(strip).join("\n"), /π Follow-up · after current task\n\n❯ after task/);
   assert.equal(pending.filter(line => line.startsWith("\x1b[44m")).length, 6);
   assert.deepEqual(queue, { steering: ["next response"], followUp: ["after task"] });

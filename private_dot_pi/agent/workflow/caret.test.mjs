@@ -13,6 +13,38 @@ const BG = "\x1b[48;5;1m";
 const palette = { fg: (color, text) => `<${color}>${text}`, bg: (_color, text) => `${BG}${text}\x1b[49m` };
 const editor = options => new CaretEditor({ terminal: { rows: 24 }, requestRender: () => {} }, editorTheme, keybindings, { palette, ...options });
 
+test("Ctrl+Enter invokes send-now with the expanded-paste editor; Enter and Alt+Enter stay native", () => {
+  const sent = [], normal = [], followUp = [];
+  const caret = editor({ pending: { sendNow: current => sent.push(current.getExpandedText()) } });
+  caret.onSubmit = text => normal.push(text);
+  caret.actionHandlers.set("app.message.followUp", () => followUp.push(caret.getText()));
+  const pasted = "line\n".repeat(15);
+  caret.handleInput(`\x1b[200~${pasted}\x1b[201~`);
+  caret.handleInput("\x1b[13;5u");
+  assert.deepEqual(sent, [pasted]);
+  assert.equal(caret.getExpandedText(), pasted, "send-now controller owns clearing after acceptance");
+  caret.setText("normal");
+  caret.handleInput("\r");
+  caret.setText("later");
+  caret.handleInput("\x1b\r");
+  assert.deepEqual(normal, ["normal"]);
+  assert.deepEqual(followUp, ["later"]);
+});
+
+test("Ctrl+Enter does not send from shell mode or steal fleet focus", () => {
+  const caret = editor({ pending: { sendNow() { throw new Error("must not send"); } } });
+  const normal = [];
+  caret.onSubmit = text => normal.push(text);
+  caret.setText("!echo hi");
+  caret.handleInput("\x1b[13;5u");
+  assert.deepEqual(normal, []);
+  assert.equal(caret.getText(), "!echo hi");
+  caret.setText("draft");
+  caret.fleet = { focused: () => true, handleKey: () => true };
+  caret.handleInput("\x1b[13;5u");
+  assert.deepEqual(normal, []);
+});
+
 test("composer is the user box's shape: shaded rows instead of rules, the prompt at column 0, bg re-opened after the cursor reset", () => {
   const lines = editor().render(40);
   assert.equal(lines[0], `${BG}${" ".repeat(40)}\x1b[49m`);

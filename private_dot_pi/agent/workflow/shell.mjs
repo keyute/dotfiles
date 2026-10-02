@@ -64,7 +64,7 @@ export function shellLines(details, { expanded = false } = {}, theme, width) {
     : typeof details.exitCode === "number" && details.exitCode !== 0 ? `exit ${details.exitCode}`
       : details.exitCode === 0 ? "exit 0" : "exit unknown";
   const summary = `${theme.fg(outcome, expandable ? expanded ? "▾" : "▸" : "•")} Output · ${count} ${count === 1 ? "line" : "lines"} · ${theme.fg(outcome, status)}${details.truncated ? ` · ${theme.fg("warning", "output truncated")}` : ""}`;
-  return [...headerLines(details, theme, width), ...wrapTextWithAnsi(summary, Math.max(1, width)), ...outputLines(details, expanded, theme, width)];
+  return [...headerLines(details, theme, width), "", ...wrapTextWithAnsi(summary, Math.max(1, width)), ...outputLines(details, expanded, theme, width)];
 }
 
 // CustomEntryComponent rebuilds its child on theme changes and Ctrl+O; the
@@ -78,7 +78,7 @@ export function shellComponent(details, options, theme, state, repaint = () => {
   let headerHeight = 0;
   return {
     render(width) {
-      headerHeight = headerLines(details, theme, width).length;
+      headerHeight = headerLines(details, theme, width).length + 1;
       return shellLines(details, { expanded: expanded() }, theme, width);
     },
     invalidate() {},

@@ -65,8 +65,11 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
 
 - MCP tools are pi's native `mcp__<server>__<tool>` (e.g. `mcp__context7__query-docs`),
   called directly. The root's MCP tools are all deferred: `tool_search` finds and
-  loads them for the calls that follow. A child is declared exactly the MCP tools
-  its role lists.
+  loads them for the calls that follow. For Context7, discover `resolve-library-id`
+  and `query-docs` together (`query: "+context7 resolve-library-id query-docs"`,
+  `limit: 2`), then check the returned names; a one-result search can load only
+  the query tool when the resolver is needed. A child is declared exactly the
+  MCP tools its role lists.
 - MCP servers other than Playwright (see `sandbox.md`) run inside SRT; Node servers
   use `NODE_USE_ENV_PROXY=1` so fetch follows the sandbox proxy. If every call
   fails with `fetch failed`, check that setting, then the allowed domains.

@@ -152,11 +152,13 @@ export async function startBroker(config, cwd, review) {
   return {
     policy,
     env: { PI_WORKFLOW_SOCKET: socketPath, PI_WORKFLOW_TOKEN: token },
-    async setMode(mode) {
+    async setMode(mode, current = () => true) {
       if (!["plan", "execute"].includes(mode)) throw new Error("Unknown workflow mode");
       policy.transitioning = true;
-      policy.epoch++;
+      const epoch = ++policy.epoch;
       await stopProcesses();
+      // Cleanup can outlive a session switch or a newer mode request.
+      if (policy.epoch !== epoch || !current()) throw new Error("Mode transition superseded");
       policy.mode = mode;
       policy.transitioning = false;
     },

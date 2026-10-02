@@ -198,6 +198,22 @@ test("broker does not expose its credential to the classifier and invalidates pe
   await assert.rejects(requestBroker({ ...broker.env, PI_WORKFLOW_TOKEN: "invalid" }, "root", { action: "state" }), /Unavailable/);
 });
 
+test("broker cannot enable execution after its plan/session or transition is superseded", { skip }, async t => {
+  const { root, config } = fixture(t);
+  const broker = await startBroker(config, root, async () => true);
+  t.after(() => broker.close());
+  await assert.rejects(broker.setMode("execute", () => false), /superseded/);
+  assert.equal(broker.policy.mode, "plan");
+  assert.equal(broker.policy.transitioning, true, "stale approval leaves tools blocked");
+  await broker.setMode("execute");
+  const older = broker.setMode("execute");
+  const newer = broker.setMode("plan");
+  await assert.rejects(older, /superseded/);
+  await newer;
+  assert.equal(broker.policy.mode, "plan");
+  assert.equal(broker.policy.transitioning, false);
+});
+
 test("pinned upstream packages register against the managed extension and preflight custom child tools", async t => {
   const { config } = fixture(t);
   const configPath = join(config.agentDir, "workflow.json");
@@ -242,7 +258,7 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.equal(tools.has("codemode"), false);
   assert.ok(tools.has("submit_plan"));
   assert.equal(tools.get("submit_plan").executionMode, "sequential");
-  assert.equal(tools.get("submit_plan").description, "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.");
+  assert.match(tools.get("submit_plan").description, /Read the current plan/);
   assert.ok(tools.has("ask_user_question"));
   assert.ok(!tools.has("ask_user"));
   assert.ok(!tools.has("read"));
@@ -365,7 +381,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
 
   const ctx = {
     cwd: process.cwd(), mode: "rpc", hasUI: false, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, thinkingLevel: "medium",
-    sessionManager: { getSessionId: () => "headless-root", getSessionFile: () => null },
+    sessionManager: { getSessionId: () => "headless-root", getSessionFile: () => null, getBranch: () => [] },
     modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [], complete: async (_model, request) => { classified = request.messages[0].content; return { content: [{ type: "text", text: '{"decision":"allow"}' }] }; } },
     ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
   };
@@ -506,6 +522,46 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   const executeTools = activeTools.at(-1);
   assert.ok(executeTools.includes("workspace_write"));
   assert.equal(executeTools.includes("ask_user_question"), false, "RPC UI cannot show the TUI questionnaire");
+  const notifications = [];
+  ctx.ui.notify = text => notifications.push(text);
+  assert.deepEqual(commands.get("plan").getArgumentCompletions("s"), [{ value: "show", label: "show" }]);
+  await commands.get("plan").handler("show", ctx);
+  assert.equal(broker.policy.mode, "execute", "show does not change mode");
+  assert.equal(notifications.at(-1), "No current plan");
+  const submit = tools.get("submit_plan");
+  const updates = [];
+  ctx.abort = () => {};
+  const cancelled = await submit.execute("p", { plan: "# First\n\nChange A" }, undefined, update => updates.push(update));
+  assert.equal(cancelled.details.decision, "cancelled");
+  assert.equal(cancelled.details.revision, 1);
+  assert.equal(updates[0].details.plan, cancelled.details.plan);
+  assert.equal(broker.policy.mode, "plan", "changed draft revokes execute before approval");
+  const read = await submit.execute("r", { action: "read" });
+  assert.match(read.content[0].text, /Change A/);
+  await assert.rejects(submit.execute("bad", { revision: 0, edits: [{ oldText: "A", newText: "B" }] }), /current revision/);
+  assert.equal((await submit.execute("r", { action: "read" })).details.revision, 1);
+  const branch = [{ type: "message", message: { role: "toolResult", toolName: "submit_plan", details: { ...cancelled.details, decision: "approved" } } }, { type: "compaction" }];
+  ctx.sessionManager.getBranch = () => branch;
+  for (const handler of handlers.get("session_tree")) await handler({}, ctx);
+  assert.equal((await submit.execute("r", { action: "read" })).details.plan, cancelled.details.plan);
+  assert.equal(broker.policy.mode, "plan", "restored approval is not execution permission");
+  ctx.hasUI = false;
+  for (const handler of handlers.get("session_start")) await handler({}, ctx);
+  ctx.hasUI = true;
+  assert.equal((await submit.execute("r", { action: "read" })).details.revision, 1);
+  let finishApproval;
+  ctx.mode = "tui";
+  ctx.ui.custom = () => new Promise(resolve => { finishApproval = resolve; });
+  const pending = submit.execute("pending", { revision: 1, edits: [{ oldText: "Change A", newText: "Change B" }] }, undefined, update => updates.push(update));
+  assert.equal(updates.at(-1).details.plan, "# First\n\nChange B");
+  assert.equal(updates.at(-1).details.revision, 2);
+  ctx.sessionManager.getBranch = () => [];
+  for (const handler of handlers.get("session_tree")) await handler({}, ctx);
+  finishApproval({ decision: "approved" });
+  assert.equal((await pending).details.decision, "cancelled");
+  assert.equal(broker.policy.mode, "plan", "a stale approval cannot grant permission");
+  ctx.mode = "rpc";
+  assert.equal((await submit.execute("r", { action: "read" })).content[0].text, "No current plan");
   await commands.get("plan").handler("", ctx);
   assert.equal(broker.policy.mode, "plan");
   assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader"]);
@@ -586,7 +642,7 @@ test("every MCP call is resolved to its server and tool and put to the broker; u
   await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker, installSubagents });
   const ctx = {
     cwd: process.cwd(), mode: "rpc", hasUI: false, model: { provider: "openai-codex", id: "gpt-5.6-sol" },
-    sessionManager: { getSessionId: () => "mcp-gate-root", getSessionFile: () => null },
+    sessionManager: { getSessionId: () => "mcp-gate-root", getSessionFile: () => null, getBranch: () => [] },
     modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
     ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
   };
@@ -658,7 +714,7 @@ test("a child's MCP calls reach the broker only for the tools its roster names",
   for (const name of ["search", "other"]) styled.registerTool({ name: `mcp__docs__${name}`, label: `docs/${name}`, exposure: "direct", parameters: Type.Object({}), async execute() {} });
   const ctx = {
     cwd: process.cwd(), mode: "rpc", hasUI: false, abort() {}, isIdle: () => true,
-    sessionManager: { getSessionId: () => "mcp-gate-child", getSessionFile: () => null },
+    sessionManager: { getSessionId: () => "mcp-gate-child", getSessionFile: () => null, getBranch: () => [] },
     modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
     ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
   };

@@ -763,38 +763,27 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 export const taskTitle = args => (args.action === "list" ? "Listed background tasks" : args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`);
 export const taskRenderers = rowRenderers({ name: "plugin", title: taskTitle });
 
-// The plan reads as chat, not as a dialog: pi's `confirm` folds its second
-// argument into the selector's title, which renders bold accent with no
-// markdown and no scroll, so the plan lands in the transcript instead and the
-// dialog asks only the question. It is visible while the decision is open —
-// nobody can approve what they cannot see — and `isPartial` retires it the
-// moment a result lands, after which `expanded` governs it as it governs every
-// other body: pi holds that flag until `updateResult`, which re-runs this slot,
-// and the glyph above already reads it as the row's settled state. The window
-// opens at `executionStarted`, which is the call's own turn rather than the
-// batch's: `argsComplete` fires at `message_end` for every call queued behind
-// this one, so gating on it would draw a plan before its dialog and strand the
-// body of a plan whose batch aborted before reaching it. It is also never set on
-// a non-streaming reply, where pi builds the row at `tool_execution_start` from
-// arguments that are already whole.
+// Pending results carry the assembled draft; call arguments may contain only edits.
 export const planRenderers = {
   renderShell: "self",
   renderCall(args, theme, context) {
     const container = new Container();
     container.addChild(new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Plan approval")}`, 0, 0));
-    if (context.executionStarted && context.isPartial && args?.plan) container.addChild(new Markdown(args.plan, PAD.length, 0, getMarkdownTheme()));
     return container;
   },
   renderResult(result, options, theme, context) {
+    const plan = result.details?.plan ?? context.args?.plan;
+    if (options.isPartial && result.details?.decision === "pending") return new Markdown(plan ?? "", PAD.length, 0, getMarkdownTheme());
     // Persisted results from before structured decisions have only result text.
     const status = {
+      pending: ["warning", "draft"],
       approved: ["success", "approved"],
       revision_requested: ["warning", "revision requested"],
       cancelled: ["warning", "cancelled"],
     }[result.details?.decision] ?? (/approved;/.test(resultText(result)) ? ["success", "approved"] : ["warning", "not approved"]);
     const container = new Container();
     container.addChild(new Text(indent(`${theme.fg("muted", SUB)} ${theme.fg(status[0], status[1])}`), 0, 0));
-    if (options.expanded && context.args?.plan) container.addChild(new Markdown(context.args.plan, PAD.length, 0, getMarkdownTheme()));
+    if (options.expanded && plan) container.addChild(new Markdown(plan, PAD.length, 0, getMarkdownTheme()));
     return container;
   },
 };

@@ -16,7 +16,7 @@ import { installFleet } from "./fleet.mjs";
 import { installShell } from "./shell.mjs";
 import { installPendingInput } from "./pending-input.mjs";
 import { createTasks } from "./tasks.mjs";
-import { applyPlanDecision, isolatePlanApproval, requestPlanApproval } from "./plan-approval.mjs";
+import { applyPlanDecision, isolatePlanApproval, PlanState, requestPlanApproval, showPlan } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
 import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installFolding, installReasoningHide, isMcp, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
@@ -53,7 +53,8 @@ const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 // submit_plan nor ask_user_question (policy.mjs rootTools).
 // Fills the `workflow` system prompt section (see before_agent_start).
 export function workflowPrompt({ mode, readonly, isRoot }) {
-  const planning = isRoot && mode === "plan" ? " Research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it. Approval switches the mode and revokes running child sessions, aborting their work: settle async children before submitting the plan, or launch them after." : "";
+  // Read-only requests need an answer, not implementation permission.
+  const planning = isRoot && mode === "plan" ? " Answer read-only questions and command requests directly. For requested source edits or external mutations, research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it. Approval switches the mode and revokes running child sessions, aborting their work: settle async children before submitting the plan, or launch them after." : "";
   return `Workflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}`;
 }
 
@@ -160,6 +161,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   if (isRoot && !subagentDescription) throw new Error("Managed subagent description is empty");
   let currentContext;
   let userTask = "";
+  const plans = new PlanState();
+  let pendingInput;
   // This process's recent shell commands (command, sandboxed, exit code; never
   // output), sent with every bash authorization as the classifier's evidence.
   const shellHistory = [];
@@ -309,6 +312,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   async function setMode(mode, ctx, { cleanup = true } = {}) {
     if (!broker) throw new Error("Only the parent can change workflow mode");
+    const generation = plans.generation;
     ready = false;
     refreshActiveTools();
     if (cleanup) {
@@ -318,7 +322,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       if (tasks.live()) throw new Error("Background shell cleanup did not finish; workflow remains unavailable");
       await fleet.stopAll();
     }
-    await broker.setMode(mode);
+    if (generation !== plans.generation) throw new Error("Mode transition superseded by a session change");
+    await broker.setMode(mode, () => generation === plans.generation);
     publishEpoch();
     ceiling?.update({ allowedAgents: allowedChildAgents(config, role, broker.policy.mode), allowedTools: ceilingTools });
     ready = true;
@@ -327,6 +332,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   async function shutdown() {
+    plans.generation++;
+    pendingInput?.reset();
     if (isRoot && currentContext?.hasUI) for (const name of mcpTools.keys()) seenMcp.add(name);
     ready = false;
     refreshActiveTools();
@@ -353,6 +360,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("session_start", async (_event, ctx) => {
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     currentContext = ctx;
+    if (isRoot) plans.restore(ctx);
     if (runtime.AgentSession) installManagedRun(runtime.AgentSession, assertManagedRun);
     shuttingDown = false;
     loadedTools.clear();
@@ -375,7 +383,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (isRoot && ctx.hasUI) {
       installSkillDisplay(runtime.InteractiveMode);
       installReasoningHide(runtime.AssistantMessageComponent);
-      installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
+      pendingInput = installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
       const registered = new Set(pi.getAllTools().map(tool => tool.name));
       for (const entry of ctx.sessionManager.getBranch()) {
         for (const part of entry.message?.content ?? []) {
@@ -395,7 +403,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       // pi resets every extension surface when a session is invalidated
       // (/new, /resume), so these are applied on each session start.
       installHeader(ctx);
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell }));
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell, pending: pendingInput }));
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
     refreshActiveTools();
@@ -406,6 +414,11 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       const model = ctx.modelRegistry.find(config.models.provider, id);
       if (!model || !ctx.modelRegistry.isUsingOAuth(model)) ctx.ui.notify(`${id} is pinned but unavailable on subscription OAuth in this Pi model catalog; no fallback will be used.`, "warning");
     }
+  });
+  pi.on("session_tree", async (_event, ctx) => {
+    currentContext = ctx;
+    pendingInput?.reset();
+    if (isRoot) { plans.restore(ctx); await setMode("plan", ctx); }
   });
   pi.on("input", event => {
     if (isRoot && event.source !== "extension") userTask = `${userTask}\n${event.text}`.slice(-TASK_CHARS);
@@ -448,7 +461,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   if (isRoot) fleet = installFleet(pi, null);
   pi.on("session_shutdown", shutdown);
   if (isRoot) {
-    pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", handler: (_args, ctx) => setMode("plan", ctx) });
+    pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", getArgumentCompletions: prefix => "show".startsWith(prefix) ? [{ value: "show", label: "show" }] : [], handler: (args, ctx) => args?.trim() === "show" ? showPlan(ctx, plans.snapshot) : setMode("plan", ctx) });
     pi.registerCommand("execute", { description: "Approve the current plan and enable scoped execution", handler: (_args, ctx) => setMode("execute", ctx) });
     pi.registerCommand("approvals", { description: "Choose auto-reviewed or individually prompted approvals", handler: async (_args, ctx) => {
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
@@ -506,17 +519,30 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       const isolated = isolatePlanApproval(event.message);
       return isolated ? { message: isolated } : undefined;
     });
-    pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval.", parameters: Type.Object({ plan: Type.String() }), executionMode: "sequential", ...planRenderers, async execute(_id, args, signal) {
+    pi.registerTool({ name: "submit_plan", label: "Plan approval", description: "Present a concise implementation plan—recommended approach, affected files, and verification—for explicit user approval. Create with plan. Revise with unique, non-overlapping edits against revision instead of reprinting the plan; omit both to re-present unchanged. Read the current plan with action read.", parameters: Type.Object({ plan: Type.Optional(Type.String()), edits: Type.Optional(Type.Array(Type.Object({ oldText: Type.String(), newText: Type.String() }))), revision: Type.Optional(Type.Integer()), action: Type.Optional(Type.Literal("read")) }), executionMode: "sequential", ...planRenderers, async execute(_id, args, signal, onUpdate) {
       const ctx = currentContext;
-      // The plan itself is the row above (planRenderers), not the approval UI's body.
+      if (args.action === "read") {
+        if (args.plan !== undefined || args.edits !== undefined) throw new Error("read does not change the plan");
+        return { content: [{ type: "text", text: plans.snapshot ? `Plan revision ${plans.snapshot.revision}\n\n${plans.snapshot.plan}` : "No current plan" }], details: { ...plans.snapshot, action: "read" } };
+      }
+      const snapshot = { ...plans.revise(args), decision: "pending" };
+      const generation = plans.generation;
+      if (broker.policy.mode === "execute") await setMode("plan", ctx);
+      if (generation !== plans.generation) throw new Error("Plan session changed");
+      onUpdate?.({ content: [], details: snapshot });
       const decision = await requestPlanApproval(ctx, signal);
-      return applyPlanDecision(decision, {
-        plan: args.plan,
+      if (generation !== plans.generation || plans.snapshot?.revision !== snapshot.revision) return { content: [{ type: "text", text: "Plan approval superseded" }], details: { ...snapshot, decision: "cancelled" }, terminate: true };
+      const result = await applyPlanDecision(signal?.aborted ? { decision: "cancelled" } : decision, {
+        plan: snapshot.plan,
         userTask,
         setUserTask: value => { userTask = value; },
         setMode: () => setMode("execute", ctx),
         abort: () => ctx.abort(),
       });
+      result.details = { ...snapshot, ...result.details };
+      result.content[0].text += ` (revision ${snapshot.revision})`;
+      if (generation === plans.generation) plans.snapshot = { ...result.details };
+      return result;
     } });
     // pi-subagents registers no renderer for these, so ours are registered
     // directly; the map above still composes ours over one it adds later.

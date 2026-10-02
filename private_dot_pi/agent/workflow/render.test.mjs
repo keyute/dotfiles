@@ -116,6 +116,9 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   for (const role of Object.values(workflow.agents)) assert.equal(role.tools.includes("bg_wait"), role.nests);
   const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
   assert.doesNotMatch(description, /workflowScript|runs\.|guide|resume|CLI/);
+  assert.match(description, /consume native completion notifications/);
+  assert.match(description, /required headless\/nested waits/);
+  assert.match(run("cat", target(".zshrc")), /--exclude-tools subagents_enable/);
   // one entry per distinct tier model: tiers may share a pin
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
   const models = JSON.parse(run("cat", target(".pi/agent/models.json")));

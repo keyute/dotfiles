@@ -1,15 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runAgentLoop } from "@earendil-works/pi-agent-core";
-import { CURSOR_MARKER, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { SessionManager, initTheme } from "@earendil-works/pi-coding-agent";
+import { CURSOR_MARKER, Markdown, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import {
   PLAN_APPROVED,
   PLAN_CANCELLED,
   PLAN_REVISION,
+  PlanState,
   applyPlanDecision,
   isolatePlanApproval,
   planDecisionResult,
   requestPlanApproval,
+  showPlan,
 } from "./plan-approval.mjs";
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -348,4 +351,103 @@ test("the active signal dismisses inline approval and cleanup prevents duplicate
 test("non-TUI modes cancel instead of autoapproving", async () => {
   assert.deepEqual(await requestPlanApproval({ mode: "rpc", hasUI: true, ui: {} }), { decision: PLAN_CANCELLED });
   assert.deepEqual(await requestPlanApproval({ mode: "print", hasUI: false, ui: {} }), { decision: PLAN_CANCELLED });
+});
+
+test("plan patches are revision-bound, original-text matched and atomic", () => {
+  const state = new PlanState();
+  assert.equal(state.revise({ plan: "Alpha Beta Gamma" }).revision, 1);
+  for (const args of [
+    { revision: 0, edits: [{ oldText: "Alpha", newText: "X" }] },
+    { revision: 1, edits: [{ oldText: "Alpha", newText: "X" }, { oldText: "missing", newText: "Y" }] },
+    { revision: 1, edits: [{ oldText: "Alpha Beta", newText: "X" }, { oldText: "Beta", newText: "Y" }] },
+    { revision: 1, edits: [{ oldText: "", newText: "X" }] },
+  ]) {
+    assert.throws(() => state.revise(args));
+    assert.equal(state.snapshot.plan, "Alpha Beta Gamma");
+    assert.equal(state.snapshot.revision, 1);
+  }
+  assert.equal(state.revise({ revision: 1, edits: [{ oldText: "Alpha", newText: "Beta" }, { oldText: "Beta", newText: "Alpha" }] }).plan, "Beta Alpha Gamma");
+  assert.equal(state.snapshot.revision, 2);
+  assert.equal(state.revise({ plan: state.snapshot.plan }).revision, 2);
+  assert.equal(state.revise({ plan: "repeat repeat" }).revision, 3);
+  assert.throws(() => state.revise({ revision: 3, edits: [{ oldText: "repeat", newText: "X" }] }), /uniquely/);
+});
+
+test("plan snapshots restore from real branch history across compaction, not abandoned alternatives", () => {
+  const manager = SessionManager.inMemory("/work");
+  const result = (plan, revision, decision = "approved") => ({ role: "toolResult", toolName: "submit_plan", toolCallId: `p${revision}`, content: [{ type: "text", text: decision }], details: { plan, revision, decision }, isError: false, timestamp: Date.now() });
+  const first = manager.appendMessage(result("first plan", 1));
+  manager.appendMessage(result("alternative plan", 2));
+  const state = new PlanState();
+  state.restore({ sessionManager: manager });
+  assert.equal(state.snapshot.revision, 2);
+  manager.branch(first);
+  const boundary = manager.appendMessage({ role: "user", content: "continue", timestamp: Date.now() });
+  manager.appendCompaction("short summary without plan text", boundary, 1000);
+  state.restore({ sessionManager: manager });
+  assert.equal(state.snapshot.plan, "first plan");
+  assert.equal(state.snapshot.revision, 1);
+  manager.appendMessage({ ...result("read is not a draft update", 9), details: { ...result("read is not a draft update", 9).details, action: "read" } });
+  state.restore({ sessionManager: manager });
+  assert.equal(state.snapshot.revision, 1);
+  state.restore({ sessionManager: SessionManager.inMemory("/new") });
+  assert.equal(state.snapshot, undefined);
+});
+
+test("plan show is a bounded scrollable dialog and closes without a decision", async () => {
+  let component;
+  const ctx = { mode: "tui", ui: { custom: factory => new Promise(resolve => {
+    component = factory({ terminal: { rows: 20 }, requestRender() {} }, theme, keybindings, resolve);
+  }) } };
+  const shown = showPlan(ctx, { plan: Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n\n"), revision: 3 });
+  assert.match(component.render(60).join("\n"), /revision 3/);
+  component.handleInput("\x1b[6~");
+  assert.ok(component.offset > 0);
+  for (const width of [3, 12, 60]) assert.ok(component.render(width).every(line => visibleWidth(line) <= width));
+  component.handleInput("\x1b");
+  assert.equal(await shown, undefined);
+});
+
+test("plan show reuses Markdown work across repaint and scroll, but rerenders on resize and theme invalidation", async t => {
+  initTheme("dark");
+  t.after(() => initTheme("dark"));
+  const renderToken = t.mock.method(Markdown.prototype, "renderToken");
+  let component;
+  const ctx = { mode: "tui", ui: { custom: factory => new Promise(resolve => {
+    component = factory({ terminal: { rows: 20 }, requestRender() {} }, theme, keybindings, resolve);
+  }) } };
+  const shown = showPlan(ctx, { plan: Array.from({ length: 40 }, (_, i) => `# Step ${i}\n\nA long description that wraps at narrow widths.`).join("\n\n"), revision: 1 });
+  const initial = component.render(60);
+  const initialWork = renderToken.mock.callCount();
+  assert.ok(initialWork > 0);
+  assert.deepEqual(component.render(60), initial);
+  component.handleInput("\x1b[B");
+  assert.notDeepEqual(component.render(60), initial);
+  assert.equal(renderToken.mock.callCount(), initialWork, "repaint and scroll reuse rendered Markdown");
+
+  const resized = component.render(24);
+  const resizedWork = renderToken.mock.callCount();
+  assert.ok(resizedWork > initialWork, "new width rerenders Markdown");
+  assert.ok(resized.every(line => visibleWidth(line) <= 24));
+  assert.deepEqual(component.render(24), resized);
+  assert.equal(renderToken.mock.callCount(), resizedWork);
+
+  const editorInvalidate = t.mock.method(component.editor, "invalidate");
+  initTheme("light");
+  component.invalidate();
+  assert.equal(editorInvalidate.mock.callCount(), 1, "dialog invalidation still reaches the editor");
+  const recoloured = component.render(24);
+  const themedWork = renderToken.mock.callCount();
+  assert.ok(themedWork > resizedWork, "theme invalidation rerenders Markdown");
+  assert.notDeepEqual(recoloured, resized, "Markdown uses the new theme");
+  assert.deepEqual(component.render(24), recoloured);
+  assert.equal(renderToken.mock.callCount(), themedWork);
+  component.handleInput("\x1b");
+  assert.equal(await shown, undefined);
+});
+
+test("read calls do not isolate sibling tools", () => {
+  const message = assistant([call("r", "read"), call("p", "submit_plan", { action: "read" })]);
+  assert.equal(isolatePlanApproval(message), undefined);
+  assert.equal(message.content.length, 2);
 });
