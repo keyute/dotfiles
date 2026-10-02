@@ -1,6 +1,6 @@
 import { canonical } from "./policy.mjs";
 
-const launchKeys = new Set(["agent", "task", "async", "model", "context", "agentScope"]);
+const launchKeys = new Set(["agent", "task", "async", "context", "agentScope"]);
 const controlKeys = new Set(["action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery"]);
 const listKeys = new Set(["action", "agentScope", "capabilities"]);
 const managementActions = new Set(["list", "status", "interrupt", "stop", "steer"]);
@@ -17,7 +17,6 @@ export function narrowSubagentSchema(schema) {
       action: { ...properties.action, enum: [...managementActions] },
       context: { ...properties.context, enum: [...launchContexts] },
       agentScope: { ...properties.agentScope, enum: [...agentScopes] },
-      ...(properties.model && { model: { ...properties.model, description: "provider/id of a small or top tier pin; the role's thinking level applies (no :effort suffix)" } }),
     },
     additionalProperties: false,
   };
@@ -51,15 +50,9 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   }
   args.agentScope = "user";
   if (args.context !== undefined && !launchContexts.has(args.context)) delete args.context;
-  let modelName = args.model ?? child.model;
-  // `inherit` is pi-subagents' own frontmatter value; resolving it here keeps
-  // the launch contract check on a concrete tier-policy model.
-  if (modelName === "inherit") modelName = args.model = `${ctx.model.provider}/${ctx.model.id}`;
-  // A child runs at its role's rendered thinking level; like Claude's Agent
-  // tool, a launch can pick the model but not the effort.
-  if (modelName.includes(":")) throw new Error("A child runs at its role's thinking level; pass the model without an :effort suffix");
-  // The frontier tier is the driver's alone: a child on it, requested or
-  // inherited, is the measured quota failure the tier policy exists to stop.
+  const modelName = child.model;
+  // The frontier tier is the driver's alone: a child on it is the measured
+  // quota failure the tier policy exists to stop.
   const { frontier } = config.models.tiers;
   if (frontier && modelName === `${config.models.provider}/${frontier}`) throw new Error("Children never run the frontier tier; it is the driver's tier alone");
   const allowedModels = Object.values(config.models.tiers).map(id => `${config.models.provider}/${id}`);

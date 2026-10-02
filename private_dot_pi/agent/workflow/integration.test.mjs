@@ -63,13 +63,13 @@ test("active tool exposure follows permission and UI, never mode", () => {
 });
 
 test("a refresh never declares a deferred or hidden tool and keeps one tool_search already loaded", () => {
-  const tools = [{ name: "workspace_read" }, { name: "tool_search", exposure: "model-only" }, { name: "mcp__exa__web_fetch_exa", exposure: "direct" }, { name: "mcp__context7__query-docs", exposure: "deferred" }, { name: "mcp__exa__agent_run", exposure: "hidden" }, { name: "mcp__playwright__browser_click", exposure: "deferred" }];
+  const tools = [{ name: "workspace_read" }, { name: "tool_search", exposure: "model-only" }, { name: "mcp__exa__web_fetch_exa", exposure: "direct" }, { name: "mcp__context7__query_docs", exposure: "deferred" }, { name: "mcp__exa__agent_run", exposure: "hidden" }, { name: "mcp__playwright__browser_click", exposure: "deferred" }];
   const names = active => activeToolNames(tools, { ready: true, permitted: () => true, currentContext: { mode: "tui", hasUI: true }, active });
   assert.deepEqual(names([]), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa"]);
-  assert.deepEqual(names(["workspace_read", "mcp__context7__query-docs"]), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa", "mcp__context7__query-docs"]);
+  assert.deepEqual(names(["workspace_read", "mcp__context7__query_docs"]), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa", "mcp__context7__query_docs"]);
   // Permission still decides first: a loaded tool outside the scope is retracted.
-  assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name !== "mcp__context7__query-docs", currentContext: { mode: "tui", hasUI: true }, active: ["mcp__context7__query-docs"] }), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa"]);
-  assert.deepEqual(activeToolNames(tools, { ready: false, permitted: () => true, currentContext: { mode: "tui", hasUI: true }, active: ["mcp__context7__query-docs"] }), []);
+  assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name !== "mcp__context7__query_docs", currentContext: { mode: "tui", hasUI: true }, active: ["mcp__context7__query_docs"] }), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa"]);
+  assert.deepEqual(activeToolNames(tools, { ready: false, permitted: () => true, currentContext: { mode: "tui", hasUI: true }, active: ["mcp__context7__query_docs"] }), []);
 });
 
 test("Subscription Responses payloads retain distinct workflow and project-context patches across mode switches", async () => {
@@ -169,9 +169,10 @@ test("plan mode rejects configured writers before resolving a child contract", a
   await checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "root", ctx, resolve, "execute");
   await assert.rejects(checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "fixture-reader", ctx, resolve, "execute"), /delegate to writers/);
   assert.equal(resolved, 2);
-  await checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture", model: "openai-codex/gpt-5.6-sol" }, config, "root", ctx, resolve, "plan");
-  await assert.rejects(checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture", model: "openai-codex/gpt-5.6-sol:xhigh" }, config, "root", ctx, resolve, "plan"), /without an :effort suffix/);
-  assert.equal(resolved, 3);
+  // The frontier tier is in the catalog but never a child's.
+  config.agents["fixture-frontier"] = { ...config.agents["fixture-reader"], model: "openai-codex/gpt-6-astra" };
+  await assert.rejects(checkChildLaunch({ agent: "fixture-frontier", task: "Inspect fixture" }, config, "root", ctx, resolve, "plan"), /frontier/);
+  assert.equal(resolved, 2);
 });
 
 test("broker does not expose its credential to the classifier and invalidates pending approval", { skip }, async t => {
@@ -232,7 +233,7 @@ test("pinned upstream packages register against the managed extension and prefli
   };
   const { installWorkflow } = await import("./index.mjs");
   config.mcp = Object.fromEntries(["context7", "exa", "playwright"].map(name => [name, { policy: { denied_tools: [] } }]));
-  config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__context7__query-docs"] };
+  config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__context7__query_docs"] };
   writeFileSync(configPath, JSON.stringify(config));
   const jiti = createJiti(import.meta.url);
   const runtime = {
@@ -245,8 +246,9 @@ test("pinned upstream packages register against the managed extension and prefli
   t.after(() => handlers.get("session_shutdown").find(handler => handler.name === "shutdown")());
   assert.ok(tools.has("workspace_read"));
   assert.ok(tools.has("subagent"));
+  assert.equal(tools.has("subagents_enable"), false);
   const subagentSchema = tools.get("subagent").parameters;
-  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "agentScope", "async", "capabilities", "context", "id", "index", "lines", "message", "mode", "model", "runId", "steeringRecovery", "task", "view"].sort());
+  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "agentScope", "async", "capabilities", "context", "id", "index", "lines", "message", "mode", "runId", "steeringRecovery", "task", "view"].sort());
   assert.equal(subagentSchema.additionalProperties, false);
   assert.deepEqual(subagentSchema.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
   assert.deepEqual(subagentSchema.properties.context.enum, ["fresh", "fork"]);
@@ -516,8 +518,12 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.equal(entries.length, 1);
   ctx.hasUI = true;
   ctx.ui.confirm = async () => true;
+  const beforeExecute = activeTools.length;
   await commands.get("execute").handler("", ctx);
   assert.equal(broker.policy.mode, "execute");
+  // A turn prepared inside the transition must not see a tool removal: pi-ai
+  // would then re-declare the whole tool list on every later request.
+  assert.ok(activeTools.slice(beforeExecute).every(names => names.includes("workspace_read")), "a mode transition keeps the declared set");
   assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader", "fixture-writer"]);
   const executeTools = activeTools.at(-1);
   assert.ok(executeTools.includes("workspace_write"));
@@ -569,7 +575,10 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   running = true;
   log.length = 0;
   await assert.rejects(commands.get("plan").handler("", ctx), /owned-run: stop request failed/);
-  assert.deepEqual(activeTools.at(-1), []);
+  assert.deepEqual(activeTools.at(-1), executeTools, "a failed transition leaves the declarations");
+  let verdict;
+  for (const handler of handlers.get("tool_call")) verdict ??= await handler({ toolName: "workspace_read", input: {} }, ctx);
+  assert.equal(verdict?.block, true, "the unavailable workflow refuses every call");
   assert.deepEqual(log, ["stop:owned-run"], "a failed child stop does not reach the broker mode update");
   log.length = 0;
   let cleanupError;
@@ -853,25 +862,6 @@ test("only a server the config marks unsandboxed receives the managed null-profi
   // A child's server lease follows the MCP tools its role names.
   assert.equal((await leaseServer("playwright", "fixture-browser")).ok, true);
   assert.equal((await leaseServer("docs", "fixture-browser")).ok, false);
-});
-
-test("an inherit-model child resolves to the parent's model before the tier check", async t => {
-  const { config } = fixture(t);
-  const role = config.agents["fixture-reader"];
-  config.agents["fixture-worker"] = { ...role, readonly: false };
-  const contract = { agent: { filePath: role.agentPath }, tools: { configuredExtensions: [role.extensionPath], effectiveAllowlist: ["workspace_read"] }, digest: "d" };
-  const resolve = async request => { resolve.model = request.model; return { ok: true, contract }; };
-  const registry = { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] };
-  const launch = () => ({ agent: "fixture-worker", task: "Do the thing", model: "inherit" });
-  const ctxFor = id => ({ cwd: process.cwd(), model: { provider: "openai-codex", id }, modelRegistry: registry });
-  const resolved = launch();
-  await checkChildLaunch(resolved, config, "root", ctxFor("gpt-5.6-sol"), resolve, "execute");
-  assert.deepEqual([resolve.model, resolved.model], ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-sol"]);
-  await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-5-other"), resolve, "execute"), /tier policy/);
-  await assert.rejects(checkChildLaunch(launch(), config, "fixture-reader", ctxFor("gpt-5.6-sol"), resolve, "execute"), /delegate to writers/);
-  // The frontier tier is in the catalog but never a child's, requested or inherited.
-  await assert.rejects(checkChildLaunch({ ...launch(), model: "openai-codex/gpt-6-astra" }, config, "root", ctxFor("gpt-5.6-sol"), resolve, "execute"), /frontier/);
-  await assert.rejects(checkChildLaunch(launch(), config, "root", ctxFor("gpt-6-astra"), resolve, "execute"), /frontier/);
 });
 
 // Last in the file: the names a UI root met stay known for the process.

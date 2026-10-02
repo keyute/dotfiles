@@ -120,7 +120,7 @@ export function launchesFromBranch(entries) {
   return launches;
 }
 
-// pi-subagents 0.73.1 never fills the DTO's `goal`; the task comes from the
+// pi-subagents never fills the DTO's `goal`; the task comes from the
 // launch this session recorded against the run id.
 function rowFor(state, entry) {
   return entry.goal ? entry : { ...entry, goal: state.launches.get(runIdFor(state, entry))?.task };

@@ -118,7 +118,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.doesNotMatch(description, /workflowScript|runs\.|guide|resume|CLI/);
   assert.match(description, /consume native completion notifications/);
   assert.match(description, /required headless\/nested waits/);
-  assert.match(run("cat", target(".zshrc")), /--exclude-tools subagents_enable/);
+  assert.equal(JSON.parse(run("cat", target(".pi/agent/extensions/subagent/config.json"))).toolActivation, "eager");
   // one entry per distinct tier model: tiers may share a pin
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
   const models = JSON.parse(run("cat", target(".pi/agent/models.json")));
@@ -276,12 +276,13 @@ test("each role renders its roster tier and effort on every harness it targets",
       );
       if (!meta.readonly) assert.ok(contract.mutationTools.length > 0, role);
       else assert.deepEqual(contract.mutationTools, [], role);
-      // pi's MCP reach is the Claude tools list: each mcp__<server>__<tool> by name, and mcp__* as
-      // every tool the pi roster names (policy.inspectMcp refuses the rest); WebFetch is the owned web_fetch
+      // pi's MCP reach is the Claude tools list: each mcp__<server>__<tool> by name (pi's tool names
+      // map every character outside [A-Za-z0-9_] to "_"), and mcp__* as every tool the pi roster
+      // names (policy.inspectMcp refuses the rest); WebFetch is the owned web_fetch
       const claudeTools = meta.tools.split(",").map(tool => tool.trim());
       const named = rolesFor(data, "pi").flatMap(name => data.subagents[name].tools.split(",").map(tool => tool.trim()).filter(tool => tool.startsWith("mcp__") && tool !== "mcp__*"));
       const expectedMcp = claudeTools.flatMap(tool => tool === "mcp__*" ? named : tool.startsWith("mcp__") ? [tool] : []);
-      assert.deepEqual(contract.tools.filter(tool => tool.startsWith("mcp__")).sort(), [...new Set(expectedMcp)].sort(), `${role}: MCP tools`);
+      assert.deepEqual(contract.tools.filter(tool => tool.startsWith("mcp__")).sort(), [...new Set(expectedMcp.map(tool => tool.replace(/[^A-Za-z0-9_]/g, "_")))].sort(), `${role}: MCP tools`);
       assert.equal(contract.tools.includes("web_fetch"), claudeTools.includes("WebFetch"), `${role}: web_fetch`);
       const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: pi model ${model}`);

@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import { AgentSession, InteractiveMode, SessionManager, createLocalBashOperations, initTheme } from "@earendil-works/pi-coding-agent";
-import { createFolds } from "./rows.mjs";
+import { addFold, createFolds, foldGroup, liveGroup, settleFold } from "./rows.mjs";
 import { contextText, createShellRunner, installShell, parseShellInput, shellComponent, shellLines } from "./shell.mjs";
 
 // Real ANSI codes (not the readable `<color>` tags other suites use) so
@@ -382,6 +382,19 @@ test("folds close synchronously at submit, before the command settles", async ()
   h.runner.submit("!pwd");
   assert.equal(folds.timeline.at(-1).kind, "boundary");
   resolveExec();
+  await h.runner.pending;
+});
+
+test("a ! submitted while a tool runs seals the settled rows above it, leaving the running one outside", async () => {
+  const folds = createFolds();
+  for (const id of ["a", "b", "c"]) addFold(folds, id, "read");
+  settleFold(folds, "a", false);
+  settleFold(folds, "b", false);
+  const h = harness({ folds });
+  h.runner.submit("!pwd");
+  assert.equal(foldGroup(folds, "a")?.sealed, true);
+  assert.deepEqual(foldGroup(folds, "a").entries.map(entry => entry.id), ["a", "b"]);
+  assert.equal(foldGroup(folds, "c") ?? liveGroup(folds, "c"), null);
   await h.runner.pending;
 });
 

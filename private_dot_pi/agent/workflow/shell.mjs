@@ -1,6 +1,6 @@
 import { stripTerminalSequences, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "@earendil-works/pi-coding-agent";
-import { PAD, appendVisible, closeFolds, defaultFolds, shadedBlock } from "./rows.mjs";
+import { PAD, appendVisible, closeLive, defaultFolds, shadedBlock } from "./rows.mjs";
 
 // The `!`/`!!` round trip pi's native BashExecutionComponent used to own
 // (docs/pi-design.md rule 5's shell block, and rule 9's
@@ -174,7 +174,7 @@ export function createShellRunner({ pi, cwd, notify, exec, env, folds = defaultF
       return "busy";
     }
     const { command, excludeFromContext } = parsed;
-    closeFolds(folds);
+    closeLive(folds);
     working({ command, startedAt: now() });
     controller = new AbortController();
     const signal = controller.signal;

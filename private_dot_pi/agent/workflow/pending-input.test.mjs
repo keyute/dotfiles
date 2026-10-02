@@ -76,6 +76,16 @@ test("native widget composition leaves exactly one unshaded blank below queued i
   assert.ok(lines[working - 2].startsWith("\x1b[41m"), "the preceding row is shaded, not a second unshaded blank");
 });
 
+test("a queued skill invocation draws as its /skill: command, not the expanded instructions", () => {
+  installPendingInput(() => palette("mocha"));
+  const { mode, queue, render } = host();
+  queue.followUp.push('<skill name="review" location="/fixture/review/SKILL.md">\n# Internal instructions\n\nNever show this.\n</skill>\n\nthe diff');
+  mode.updatePendingMessagesDisplay();
+  const output = render(80).map(plain).join("\n");
+  assert.match(output, /❯ \/skill:review the diff/);
+  assert.doesNotMatch(output, /Never show this/);
+});
+
 test("consumed steering leaves follow-ups visible, and native abort restores the remainder with the draft", () => {
   installPendingInput(() => palette("mocha"));
   const { mode, queue, children, render } = host();

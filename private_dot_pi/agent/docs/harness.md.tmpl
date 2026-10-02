@@ -56,14 +56,14 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
   network path, and the provider's own terms grey zone. Each search is one extra
   request on the usage windows, at the {{ .agents.pi.search_tier }} tier set in `~/.pi/agent/web-search.json`.
   Roles with Claude's `WebSearch` get it.
-- Read a page with `web_fetch`: fetched in-process (public hosts only; a redirect to
-  another host comes back to fetch again), converted to markdown, and the {{ .agents.pi.search_tier }} tier
+- Read a page with `web_fetch`: fetched in-process (public hosts only),
+  converted to markdown, and the {{ .agents.pi.search_tier }} tier
   answers the prompt from it. Roles with Claude's `WebFetch` get it.
 - Use Playwright for pages that need JavaScript.
 
 ## MCP and code intelligence
 
-- MCP tools are pi's native `mcp__<server>__<tool>` (e.g. `mcp__context7__query-docs`),
+- MCP tools are pi's native `mcp__<server>__<tool>` (e.g. `mcp__context7__query_docs`),
   called directly. The root's MCP tools are all deferred: `tool_search` finds and
   loads them for the calls that follow. For Context7, discover `resolve-library-id`
   and `query-docs` together (`query: "+context7 resolve-library-id query-docs"`,

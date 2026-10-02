@@ -142,7 +142,6 @@ async function fetchPage(input, { request, lookup = dnsLookup, signal }) {
     const response = await get(url, { request, lookup, signal: deadline });
     if (!response.location) return { url, ...response };
     const next = checkUrl(new URL(response.location, url).href);
-    if (next.hostname !== url.hostname) return { url, status: response.status, redirect: next };
     if (hops === MAX_REDIRECTS) throw new Error(`More than ${MAX_REDIRECTS} redirects`);
     url = next;
   }
@@ -168,15 +167,11 @@ export function webFetchTool(config, { request, lookup } = {}) {
   return {
     name: "web_fetch",
     label: "Web fetch",
-    description: `Read one public web page and answer a prompt from it: the page (http or https, public hosts only) is fetched, converted to markdown and a small model answers the prompt using only its content. A redirect to another host is returned for you to fetch again.`,
+    description: `Read one public web page and answer a prompt from it: the page (http or https, public hosts only) is fetched, converted to markdown and a small model answers the prompt using only its content.`,
     parameters: Type.Object({ url: Type.String({ description: "The http or https URL to read" }), prompt: Type.String({ description: "What to extract or answer from the page" }) }),
     async execute(_id, args, signal, _onUpdate, ctx) {
       try {
         const page = await fetchPage(args.url, { request, lookup, signal });
-        if (page.redirect) {
-          const text = `Redirected to ${page.redirect.href}\nThat is a different host, so it was not followed. Call web_fetch again with url "${page.redirect.href}" and the same prompt to read it.`;
-          return { content: [{ type: "text", text }], details: { url: page.url.href, status: page.status, chars: 0 } };
-        }
         if (page.status < 200 || page.status >= 300) throw new Error(`HTTP ${page.status} from ${page.url.href}`);
         const text = toText(page.type, page.body);
         if (!text) throw new Error(`No readable text at ${page.url.href}`);

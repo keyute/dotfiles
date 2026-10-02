@@ -2,6 +2,8 @@
   "timeoutMs": 7200000,
   "checkpointBeforeDeadlineMs": 300000,
   "toolDescriptionMode": "compact",
+  "toolActivation": "eager",
+  "disabledFeatures": ["agent-management", "watchdog", "panes", "missions", "lane-management", "spawn-budget-grants", "preflight", "lane-metadata", "gates", "usage-budgets", "tool-budgets", "control-overrides", "extension-bindings", "external-machines"],
   "fleetView": false,
   "asyncWidget": false,
   "intercomBridge": {

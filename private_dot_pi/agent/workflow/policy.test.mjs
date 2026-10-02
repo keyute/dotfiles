@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Policy, canonical, needsReview, workerTools, publicToolName } from "./policy.mjs";
+import { Policy, canonical, needsReview, workerTools, publicToolName, mayReachServer } from "./policy.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-policy-test-"));
@@ -195,6 +195,12 @@ test("MCP tools stay within the role's grant", t => {
   assert.throws(() => p.inspectMcp("general", "docs", "unsafe"), /denied/);
   p.config.agents.researcher.tools.push("mcp__docs__new_unknown_tool");
   assert.throws(() => p.inspectMcp("researcher", "docs", "new_unknown_tool"), /read-only/);
+  // Grants carry pi's sanitised tool name; the label keeps the server's own.
+  p.config.agents.general.tools.push("mcp__docs__query_docs");
+  assert.equal(p.inspectMcp("general", "docs", "query-docs"), "review");
+  assert.throws(() => p.inspectMcp("general", "docs", "query-other"), /outside the role's grant/);
+  p.config.agents.general.tools.push("mcp__dev_radius__x");
+  assert.equal(mayReachServer(p.config, "general", "dev-radius"), true);
 });
 
 test("MCP output arguments are writes even on a read-only tool", t => {

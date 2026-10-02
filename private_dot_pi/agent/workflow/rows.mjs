@@ -146,9 +146,10 @@ export function resultSummary(name, result) {
     const removed = diff.split("\n").filter(line => /^-(?!--)/.test(line)).length;
     return `+${added} −${removed}`;
   }
-  const text = resultText(result);
+  // pi's read, ls, find, grep and bash append one "\n\n[...]" notice on truncation or offset.
+  const text = resultText(result).replace(/\n\n\[(Showing |\d+ more lines in file|Some lines truncated|[^\n]* limit reached)[^\n]*\]$/, "");
   if (name === "grep") return plural(text.split("\n").filter(line => /^[^:\n]+:\d+: /.test(line)).length, "match", "matches");
-  if (name === "find" || name === "ls") return !text || /^No /.test(text) ? "" : plural(nonEmpty(text).length, "entry", "entries");
+  if (name === "find" || name === "ls") return !text || /^(No |\(empty directory\))/.test(text) ? "" : plural(nonEmpty(text).length, "entry", "entries");
   if (text) return plural(text.split("\n").length, "line");
   return name === "read" ? "" : "no output";
 }
@@ -189,6 +190,8 @@ function summaryLine(name, summary, theme) {
 // The lines a row's result draws: the summary line first when there is one,
 // then the body, each indented to the text column.
 export function rowLines(name, result, { expanded = false, isError = false } = {}, theme) {
+  // A subagent launch answers with its run id and finishes later.
+  if (name === "subagent" && !isError && result?.details?.asyncId) return [indent(theme.fg("muted", `${SUB} launched`))];
   const lines = [];
   const summary = isError ? "" : resultSummary(name, result);
   if (summary) lines.push(summaryLine(name, summary, theme));
@@ -445,6 +448,19 @@ const tailHasPending = (folds, end) => {
   return false;
 };
 
+// A successful completion's fact at `index`, shared with the fleet peek's
+// replay of a child's own entries, which keep the seq the child gave them.
+export function addCompletion(folds, type, data, index = folds.timeline.length) {
+  data.seq ??= nextSeq(folds);
+  const length = folds.timeline.length;
+  if (tailHasPending(folds, index)) closeFolds(folds, index);
+  const done = DONE[type];
+  refold(folds, () => {
+    addFact(folds, { kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) }, index + folds.timeline.length - length);
+    folds.revision += 1;
+  });
+}
+
 // While a reply streams, pi mounts an entry above the reply rather than below
 // it, so the entry's fact or boundary goes in before the reply's boundary to
 // keep fold order equal to screen order. A spliced completion only ever ends
@@ -456,12 +472,7 @@ export function appendVisible(pi, type, data, folds = defaultFolds) {
   const streaming = () => (folds.streamBoundary ? folds.timeline.indexOf(folds.streamBoundary) : -1);
   const end = () => (streaming() < 0 ? folds.timeline.length : streaming());
   if (done) {
-    if (tailHasPending(folds, end())) closeFolds(folds, end());
-    data.seq = nextSeq(folds);
-    refold(folds, () => {
-      addFact(folds, { kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) }, end());
-      folds.revision += 1;
-    });
+    addCompletion(folds, type, data, end());
   } else if (streaming() >= 0) {
     // The reply's boundary stays where it is and now closes the run above this
     // entry, so that group keeps its key (and its click/ctrl+o state); a new
@@ -738,25 +749,14 @@ export function toolRenderers(name, folds = defaultFolds) {
   return rowRenderers({ name, title: (args, { inline }) => callTitle(name, inline ? { ...args, run_in_background: false } : args), folds });
 }
 
-// pi-web-search reports failures in details.error without isError; a
-// subagent launch answers with its run id and finishes later.
+// pi-web-search reports failures in details.error without isError.
 export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {}) {
-  const subagent = name === "subagent";
-  const renderers = rowRenderers({
-    name: subagent ? "subagent" : isMcp(name) ? "mcp" : "plugin",
+  return rowRenderers({
+    name: name === "subagent" ? "subagent" : isMcp(name) ? "mcp" : "plugin",
     title: args => pluginTitle(name, args, servers),
     folds,
     failed: (result, context) => context.isError || Boolean(result?.details?.error),
   });
-  if (!subagent) return renderers;
-  return {
-    ...renderers,
-    renderResult(result, options, theme, context) {
-      if (hidden(folds, context.toolCallId)) return new Text("", 0, 0);
-      if (result?.details?.asyncId && !context.isError) return withFollowingCompletions(new Text(indent(theme.fg("muted", `${SUB} launched`)), 0, 0), folds, context.toolCallId, theme);
-      return renderers.renderResult(result, options, theme, context);
-    },
-  };
 }
 
 // The background-task tool: its result is a status line and the task's output.
@@ -768,11 +768,19 @@ export const planRenderers = {
   renderShell: "self",
   renderCall(args, theme, context) {
     const container = new Container();
-    container.addChild(new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", "Plan approval")}`, 0, 0));
+    container.addChild(new Text(`${glyph(theme, context)} ${theme.fg("toolTitle", args?.action === "read" ? "Read plan" : "Plan approval")}`, 0, 0));
     return container;
   },
   renderResult(result, options, theme, context) {
+    if (context.isError) return new Text(rowLines("plugin", result, { isError: true }, theme).join("\n"), 0, 0);
     const plan = result.details?.plan ?? context.args?.plan;
+    if (result.details?.action === "read") {
+      const revision = result.details.revision;
+      const container = new Container();
+      container.addChild(new Text(indent(theme.fg("muted", `${SUB} ${revision == null ? "no plan" : `revision ${revision}`}`)), 0, 0));
+      if (options.expanded && plan) container.addChild(new Markdown(plan, PAD.length, 0, getMarkdownTheme()));
+      return container;
+    }
     if (options.isPartial && result.details?.decision === "pending") return new Markdown(plan ?? "", PAD.length, 0, getMarkdownTheme());
     // Persisted results from before structured decisions have only result text.
     const status = {
@@ -805,6 +813,7 @@ export function bulletMarkdown(markdown, { messageType }, palette) {
     const body = markdown.trimStart();
     const skill = palette && body.match(/^(\/skill:[^\s]+)(?=\s|$)/);
     if (skill) return `${PROMPT} ${palette.fg("accent", skill[1])}${palette.fg("userMessageText", body.slice(skill[1].length))}`;
+    if (/^(```|~~~)/.test(body)) return `${PROMPT}\n${body}`;
     return `${PROMPT} ${body}`;
   }
   if (messageType !== "assistant") return markdown;
@@ -863,7 +872,7 @@ export function completionLine({ agent, task, status, durationMs }, theme) {
 
 // Successful completion entries use distinct count keys from launches while
 // carrying completionLine's shape for both their plain row and group member.
-const DONE = {
+export const DONE = {
   "workflow-child": { key: "agentDone", line: data => data },
   "workflow-task": { key: "taskDone", line: data => ({ agent: `task ${data.id}`, task: data.command, status: data.status, durationMs: data.durationMs }) },
 };
@@ -929,7 +938,7 @@ const behind = (text, head) => (text.startsWith(head) ? text.slice(head.length).
 // pi-subagents' control notice carries the run id and the four subagent({…})
 // calls the model answers it with; the reader gets the completion line's shape
 // instead, and the message's own content reaches the model untouched. Every
-// notice is a "needs attention" (idle, supervisor request; 0.70.1 has no
+// notice is a "needs attention" (idle, supervisor request; there is no
 // failure notice). The signal opens by naming the agent and, on the idle
 // notice, its state too — both of which the title has said, and the default
 // idle signal parenthesizes what is left of it.

@@ -38,15 +38,14 @@ test("the plugin API replaces only the subagent description without changing its
 });
 
 test("the subagent schema exposes only the managed launch and control surface", () => {
-  const supported = ["agent", "task", "async", "model", "context", "agentScope", "action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery", "capabilities"];
-  const upstream = { type: "object", description: "upstream safety description", properties: Object.fromEntries([...supported, "cwd", "workflowScript"].map(name => [name, { description: `${name} definition` }])) };
+  const supported = ["agent", "task", "async", "context", "agentScope", "action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery", "capabilities"];
+  const upstream = { type: "object", description: "upstream safety description", properties: Object.fromEntries([...supported, "model", "cwd", "workflowScript"].map(name => [name, { description: `${name} definition` }])) };
   const narrowed = narrowSubagentSchema(upstream);
   assert.deepEqual(Object.keys(narrowed.properties).sort(), supported.slice().sort());
   assert.equal(narrowed.additionalProperties, false);
   assert.deepEqual(narrowed.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
   assert.deepEqual(narrowed.properties.context.enum, ["fresh", "fork"]);
   assert.deepEqual(narrowed.properties.agentScope.enum, ["user"]);
-  assert.equal(narrowed.properties.model.description, "provider/id of a small or top tier pin; the role's thinking level applies (no :effort suffix)");
   assert.equal(narrowed.description, "upstream safety description");
   assert.equal(narrowed.properties.task.description, "task definition");
 });
@@ -72,7 +71,7 @@ const mcpFixture = () => ({
     playwright: { policy: { denied_tools: ["browser_run_code_unsafe"] } },
   },
   agents: {
-    researcher: { tools: ["workspace_read", "mcp__exa__web_fetch_exa", "mcp__context7__query-docs"] },
+    researcher: { tools: ["workspace_read", "mcp__exa__web_fetch_exa", "mcp__context7__query_docs"] },
     reviewer: { tools: ["workspace_read"] },
   },
 });
@@ -104,17 +103,17 @@ test("the plugin API records each MCP tool's identity from its label", () => {
   const identities = new Map();
   const styled = pluginApi({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, {}, undefined, undefined, undefined, identities);
   const execute = () => {};
-  styled.registerTool({ name: "mcp__context7__query-docs", label: "context7/query-docs", exposure: "deferred", execute });
+  styled.registerTool({ name: "mcp__context7__query_docs", label: "context7/query-docs", exposure: "deferred", execute });
   // A hash-shortened name keeps its identity in the label only.
   styled.registerTool({ name: "mcp__exa__a_very_long_name_1a2b3c4d", label: "exa/a.very/long/name", exposure: "direct", execute });
   styled.registerTool({ name: "mcp__nolabel__x", label: "mcp__nolabel__x", execute });
   styled.registerTool({ name: "bg_wait", label: "bg/wait", execute });
   assert.deepEqual([...identities], [
-    ["mcp__context7__query-docs", { server: "context7", tool: "query-docs" }],
+    ["mcp__context7__query_docs", { server: "context7", tool: "query-docs" }],
     ["mcp__exa__a_very_long_name_1a2b3c4d", { server: "exa", tool: "a.very/long/name" }],
   ]);
-  assert.equal(tools.get("mcp__context7__query-docs").exposure, "deferred");
-  assert.equal(tools.get("mcp__context7__query-docs").execute, execute);
+  assert.equal(tools.get("mcp__context7__query_docs").exposure, "deferred");
+  assert.equal(tools.get("mcp__context7__query_docs").execute, execute);
 });
 
 test("a message renderer we own is composed over the plugin's, which stays as the fallback", () => {

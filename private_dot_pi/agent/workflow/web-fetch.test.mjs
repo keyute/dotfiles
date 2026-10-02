@@ -120,13 +120,14 @@ test("an abort stops a request that has not answered", async () => {
   assert.equal(calls.length, 0);
 });
 
-test("a same-host redirect is followed up to the cap; another host comes back as text", async () => {
+test("redirects are followed up to the cap, across hosts too", async () => {
   const { run, seen, calls } = fixture({
     "http://example.com/a": { status: 301, headers: { location: "https://example.com/b" } },
     "https://example.com/b": { status: 302, headers: { location: "/c" } },
     "https://example.com/c": { body: "final" },
     "https://example.com/loop": { status: 302, headers: { location: "/loop" } },
     "https://example.com/away": { status: 302, headers: { location: "https://other.example.org/x" } },
+    "https://other.example.org/x": { body: "elsewhere" },
   });
   const followed = await run("http://example.com/a");
   assert.deepEqual(seen, ["http://example.com/a", "https://example.com/b", "https://example.com/c"]);
@@ -134,15 +135,16 @@ test("a same-host redirect is followed up to the cap; another host comes back as
   await assert.rejects(run("https://example.com/loop"), /More than 5 redirects/);
   seen.length = 0;
   const away = await run("https://example.com/away");
-  assert.deepEqual(seen, ["https://example.com/away"]);
-  assert.match(away.content[0].text, /^Redirected to https:\/\/other\.example\.org\/x\n[^]*web_fetch again/);
-  assert.equal(calls.length, 1);
+  assert.deepEqual(seen, ["https://example.com/away", "https://other.example.org/x"]);
+  assert.equal(away.content[0].text.split("\n")[0], "https://other.example.org/x");
+  assert.equal(calls.length, 2);
 });
 
 test("hostile URLs, inward DNS answers and inward redirects are refused before any answer", async () => {
   const { run, seen, calls } = fixture({
     "https://example.com/meta": { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data/" } },
     "https://example.com/local": { status: 307, headers: { location: "http://localhost:8080/" } },
+    "https://example.com/rebind": { status: 302, headers: { location: "https://rebind.example.com/" } },
   }, {
     "rebind.example.com": [...PUBLIC, { address: "10.1.2.3", family: 4 }],
     ...Object.fromEntries(["127.0.0.2", "172.16.0.1", "192.168.1.1", "100.64.0.1", "0.0.0.0", "224.0.0.1", "::1", "fe80::1", "fd00::1", "::ffff:10.0.0.1", "::", "64:ff9b::a00:5", "2002:c0a8:101::1", "::7f00:1", "198.18.0.1", "240.0.0.1", "2001:db8::1", "64:ff9b:1::a00:5", "2001:2::1"]
@@ -158,5 +160,6 @@ test("hostile URLs, inward DNS answers and inward redirects are refused before a
   for (let i = 0; i < 19; i++) await assert.rejects(run(`https://inward${i}.example.com/`), /resolves to a private or local address/, `inward${i}`);
   await assert.rejects(run("https://example.com/meta"), /169\.254\.169\.254/);
   await assert.rejects(run("https://example.com/local"), /non-public host: localhost/);
+  await assert.rejects(run("https://example.com/rebind"), /resolves to a private or local address \(10\.1\.2\.3\)/);
   assert.equal(calls.length, 0);
 });

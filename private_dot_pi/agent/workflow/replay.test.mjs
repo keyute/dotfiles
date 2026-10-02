@@ -27,11 +27,11 @@ test("trimRows keeps the newest rows behind one note and forgets what fell off",
   replayEvents(state, [
     JSON.stringify({ type: "tool_execution_start", toolCallId: "t1", toolName: "workspace_read", args: { path: "a" } }),
     JSON.stringify({ type: "tool_execution_start", toolCallId: "t2", toolName: "workspace_read", args: { path: "b" } }),
-    JSON.stringify({ type: "subagent.steer.queued", requestId: "q1" }),
+    JSON.stringify({ type: "subagent.events.truncated" }),
     JSON.stringify({ type: "tool_execution_start", toolCallId: "t3", toolName: "workspace_read", args: { path: "c" } }),
   ].join("\n") + "\n");
   trimRows(state, 2);
-  assert.deepEqual(state.rows.map(row => (row.kind === "tool" ? row.id : row.text)), [EARLIER_NOTE, "steer queued", "t3"]);
+  assert.deepEqual(state.rows.map(row => (row.kind === "tool" ? row.id : row.text)), [EARLIER_NOTE, "further activity not recorded (event log limit)", "t3"]);
   assert.equal(state.toolRowsById.has("t1"), false);
   assert.equal(state.toolRowsById.has("t3"), true);
   trimRows(state, 2);
@@ -114,7 +114,6 @@ test("a steer-prefixed user message renders a shaded block with only the body", 
   const text = "Mid-run steering from the parent orchestrator:\n\nFocus on tests\n\nIncorporate this guidance at the next safe point. Do not restart the task unless the guidance explicitly asks you to.";
   const state = feed({ type: "message_end", message: { role: "user", content: [{ type: "text", text }] } });
   assert.equal(state.rows[0].kind, "user");
-  assert.equal(state.rows[0].steer, true);
   assert.equal(state.rows[0].text, "Focus on tests");
   const lines = render(state);
   assert.ok(lines.some(l => l.includes("Focus on tests")));
@@ -124,7 +123,6 @@ test("a steer-prefixed user message renders a shaded block with only the body", 
 test("a plain user message is the task block", () => {
   const state = feed({ type: "message_end", message: { role: "user", content: [{ type: "text", text: "Task: fix the bug" }] } });
   assert.equal(state.rows[0].kind, "user");
-  assert.equal(state.rows[0].steer, undefined);
   const lines = render(state);
   assert.ok(lines.some(l => l.includes("Task: fix the bug")));
 });
@@ -177,18 +175,8 @@ test("toolResult and turn_* events produce no rows", () => {
   assert.equal(state.rows.length, 0);
 });
 
-test("queued then delivered for one requestId settles to one note with the final text", () => {
-  const state = feed(
-    { type: "subagent.steer.queued", requestId: "r1" },
-    { type: "subagent.steer.delivered", requestId: "r1" },
-  );
-  assert.equal(state.rows.length, 1);
-  assert.equal(state.rows[0].kind, "note");
-  assert.equal(state.rows[0].text, "steer delivered");
-});
-
 test("a failed steer records the reason", () => {
-  const state = feed({ type: "subagent.steer.failed", requestId: "r1", error: "child gone" });
+  const state = feed({ type: "subagent.steer.failed", requestId: "r1", reason: "child gone" });
   assert.equal(state.rows[0].text, "steer failed · child gone");
 });
 
@@ -403,4 +391,31 @@ test("a backgrounded bash answered inside its grace period reads as the foregrou
     "• Started serve in background · unsandboxed",
     "• Done",
   ]);
+});
+
+const taskDone = (seq, status) => ({ type: "entry_appended", entry: { type: "custom", customType: "workflow-task", data: { id: "t1", command: "make", status, durationMs: 12000, seq } } });
+
+test("a child's completed background task joins the group", () => {
+  const state = feedDeterministic(...readOk("r1", "a"), taskDone("s1", "completed"), says("Done"));
+  assert.deepEqual(plain(render(state)), ["▸ Read 1 file, finished 1 background task", "", "• Done"]);
+});
+
+test("a trimmed completion row stops counting toward the group", () => {
+  const state = feedDeterministic(taskDone("s1", "completed"), ...readOk("r1", "a"), ...readOk("r2", "b"), says("Done"));
+  trimRows(state, 3);
+  assert.equal(state.folds.timeline.some(fact => fact.id === "s1"), false);
+  assert.deepEqual(plain(render(state)), ["  ↳ earlier activity not shown", "", "▸ Read 2 files", "", "• Done"]);
+});
+
+test("a child's failed background task stays visible and closes the group", () => {
+  const failed = feedDeterministic(...readOk("r1", "a"), ...readOk("r2", "b"), taskDone(undefined, "failed"), ...readOk("r3", "c"), ...readOk("r4", "d"));
+  assert.deepEqual(plain(render(failed)), ["▸ Read 2 files", "", "• task t1 failed · make · 12s", "", "• Read 2 files", "  ↳ Read c · 1 line", "  ↳ Read d · 1 line"]);
+});
+
+test("a grandchild launch reads launched", () => {
+  const state = feed(
+    { type: "tool_execution_start", toolCallId: "s1", toolName: "subagent", args: { agent: "researcher", task: "dig" } },
+    { type: "tool_execution_end", toolCallId: "s1", toolName: "subagent", isError: false, result: { content: [{ type: "text", text: "started" }], details: { asyncId: "a1" } } },
+  );
+  assert.ok(plain(render(state)).includes("  ↳ launched"));
 });

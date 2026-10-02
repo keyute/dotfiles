@@ -20,8 +20,8 @@ pi() {
   local -a pi_extensions=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts")
   [[ ! -f "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts" ]] ||
     pi_extensions+=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts")
-  # No startup network activity (version check, catalog refresh); excluding the lazy loader keeps `subagent` declared.
-  PI_OFFLINE=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions --exclude-tools subagents_enable "${pi_extensions[@]}" "$@"
+  # No startup network activity (version check, catalog refresh).
+  PI_OFFLINE=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions "${pi_extensions[@]}" "$@"
 }
 
 # `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the

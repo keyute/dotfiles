@@ -7,8 +7,10 @@ export const workerTools = [...fileTools, "bash"];
 export const publicToolName = name => workerTools.includes(name) ? `workspace_${name}` : name;
 // The parent session's tool set; children get theirs from the roster config.
 export const rootTools = [...workerTools.map(publicToolName), "workspace_task", "tool_search", "subagent", "bg_wait", "ask_user_question", "submit_plan", "web_search", "web_fetch"];
+// Mirrors pi's MCP tool naming.
+export const mcpToolName = (server, tool) => `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/g, "_");
 // The root reaches every configured MCP server; a child those its roster names a tool of.
-export const mayReachServer = (config, role, server) => role === "root" || config.agents[role].tools.some(tool => tool.startsWith(`mcp__${server}__`));
+export const mayReachServer = (config, role, server) => role === "root" || config.agents[role].tools.some(tool => tool.startsWith(mcpToolName(server, "")));
 
 // Sandboxed shell runs without review, as Claude Code (autoAllowBashIfSandboxed)
 // does: the SRT profile is the boundary. The one effect the profile
@@ -224,7 +226,7 @@ export class Policy {
   inspectMcp(role, server, tool, args = {}) {
     if (this.transitioning) throw new Error("Policy transition in progress");
     // The root reaches every configured tool; a child only the ones its roster names.
-    if (role !== "root" && !this.role(role).tools.includes(`mcp__${server}__${tool}`)) throw new Error("MCP tool outside the role's grant");
+    if (role !== "root" && !this.role(role).tools.includes(mcpToolName(server, tool))) throw new Error("MCP tool outside the role's grant");
     const entry = this.config.mcp[server];
     if (!entry || entry.policy.denied_tools.includes(tool)) throw new Error("MCP tool denied by managed policy");
     const readOnly = entry.policy.readonly_tools?.includes(tool) ?? false;

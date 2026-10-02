@@ -56,6 +56,11 @@ test("the summary line says what the result was", () => {
   assert.equal(resultSummary("grep", result("No matches found")), "0 matches");
   assert.equal(resultSummary("find", result("a\nb\nc")), "3 entries");
   assert.equal(resultSummary("find", result("No files found")), "");
+  // pi's read and ls append a bracketed notice that is not content.
+  assert.equal(resultSummary("ls", result("a\nb\n\n[50 entries limit reached. Use limit=100 for more]")), "2 entries");
+  assert.equal(resultSummary("read", result("one\ntwo\n\n[Showing lines 1-2 of 9. Use offset=3 to continue.]")), "2 lines");
+  assert.equal(resultSummary("read", result("[a]\nx = 1\n\n[section]")), "4 lines");
+  assert.equal(resultSummary("ls", result("(empty directory)")), "");
   assert.equal(resultSummary("bash", result("one\ntwo")), "2 lines");
   // The SDK bash tool's stand-in for empty output is not a line.
   assert.equal(resultSummary("bash", result("(no output)")), "no output");
@@ -224,6 +229,13 @@ test("the plan renders as markdown while the decision is open, then hands its bo
   assert.deepEqual(rendered(planRenderers.renderResult(legacyApproved, { expanded: false }, theme, settled)), ["  <muted>↳ <success>approved"]);
   const legacyRejected = result("Plan not approved. Remain in planning mode.");
   assert.deepEqual(rendered(planRenderers.renderResult(legacyRejected, { expanded: false }, theme, settled)), ["  <muted>↳ <warning>not approved"]);
+  // A thrown submit_plan error shows the error, not a decision.
+  const thrown = result("Edits require the current revision");
+  assert.deepEqual(rendered(planRenderers.renderResult(thrown, { expanded: false }, theme, context({ isError: true }))), ["  <error>Edits require the current revision"]);
+  // A read changes nothing: its own title and the revision it returned.
+  assert.deepEqual(rendered(planRenderers.renderCall({ action: "read" }, theme, settled)), ["<success>• <toolTitle>Read plan"]);
+  assert.deepEqual(rendered(planRenderers.renderResult(result("Plan revision 2", { plan, revision: 2, action: "read" }), { expanded: false }, theme, settled)), ["  <muted>↳ revision 2"]);
+  assert.deepEqual(rendered(planRenderers.renderResult(result("No current plan", { action: "read" }), { expanded: false }, theme, settled)), ["  <muted>↳ no plan"]);
 });
 
 test("diff counts take the theme's success/error pair, whichever minus the surface spells", () => {
@@ -640,7 +652,7 @@ test("successful calls, discovery, launches, and completions share one chronolog
     ["r1", "workspace_read", { path: "a.mjs" }],
     ["w1", "web_search", { query: "pi tui" }],
     ["f1", "web_fetch", { url: "https://pi.dev", prompt: "What is it?" }],
-    ["m1", "mcp__context7__query-docs", { query: "mouse region" }],
+    ["m1", "mcp__context7__query_docs", { query: "mouse region" }],
     ["d1", "subagent", { action: "list" }],
     ["a1", "subagent", { agent: "researcher", task: "Audit rows" }],
   ];
@@ -978,6 +990,7 @@ test("assistant bullets sit at column 0, a leading heading rides the bullet line
   assert.equal(bulletMarkdown("# Title\nbody", { messageType: "assistant" }), "• **Title**\n\nbody");
   assert.equal(bulletMarkdown("- one\n- two", { messageType: "assistant" }), "•\n- one\n- two");
   assert.equal(bulletMarkdown("plain", { messageType: "user" }), "❯ plain");
+  assert.equal(bulletMarkdown("```js\nx\n```", { messageType: "user" }), "❯\n```js\nx\n```");
   assert.equal(bulletMarkdown("  ", { messageType: "user" }), "  ");
   assert.equal(bulletMarkdown("  ", { messageType: "assistant" }), "  ");
   const lines = md => new Markdown(bulletMarkdown(md, { messageType: "assistant" }), 0, 0, getMarkdownTheme()).render(40).map(line => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());

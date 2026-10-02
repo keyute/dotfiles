@@ -1,7 +1,8 @@
 {{- /* pi-roles: render the shared role definitions as Pi's child contracts.
        input: dict "root" <template data>
        output: JSON map keyed by role name; roles scoped to other harnesses are omitted.
-       tools carries the source's mcp__<server>__<tool> entries as pi's own MCP tool names, and
+       tools carries the source's mcp__<server>__<tool> entries as pi's own MCP tool names (pi rewrites
+       every character outside [A-Za-z0-9_] to "_"), and
        mcp__* every mcp__ entry named across the pi roster */ -}}
 {{- $root := .root -}}
 {{- $agentDir := printf "%s/.pi/agent" $root.chezmoi.homeDir -}}
@@ -12,7 +13,7 @@
   {{- if or (not $harnesses) (has "pi" $harnesses) -}}
     {{- range splitList "," $meta.tools -}}
       {{- $sourceTool := trim . -}}
-      {{- if and (hasPrefix "mcp__" $sourceTool) (ne $sourceTool "mcp__*") -}}{{- $allMcp = append $allMcp $sourceTool -}}{{- end -}}
+      {{- if and (hasPrefix "mcp__" $sourceTool) (ne $sourceTool "mcp__*") -}}{{- $allMcp = append $allMcp (regexReplaceAll "[^A-Za-z0-9_]" $sourceTool "_") -}}{{- end -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
@@ -35,7 +36,7 @@
       {{- else if eq $sourceTool "WebSearch" -}}{{- $tools = append $tools "web_search" -}}
       {{- else if eq $sourceTool "WebFetch" -}}{{- $tools = append $tools "web_fetch" -}}
       {{- else if eq $sourceTool "mcp__*" -}}{{- $tools = concat $tools $allMcp -}}
-      {{- else if hasPrefix "mcp__" $sourceTool -}}{{- $tools = append $tools $sourceTool -}}
+      {{- else if hasPrefix "mcp__" $sourceTool -}}{{- $tools = append $tools (regexReplaceAll "[^A-Za-z0-9_]" $sourceTool "_") -}}
       {{- else -}}{{- fail (printf "%s: no pi mapping for %s" $name $sourceTool) -}}
       {{- end -}}
     {{- end -}}

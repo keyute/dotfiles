@@ -200,13 +200,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // pi-subagents drops a child's tool that the ceiling does not name; a
   // nesting child's descendants stay bounded by its own tools.
   const ceilingTools = isRoot ? [...new Set([...rootTools, ...Object.values(config.agents).flatMap(agent => agent.tools)])] : permittedTools;
-  // A mode change refreshes through an empty set, so the tools tool_search
-  // loaded earlier in the session are remembered and come back with it.
-  const loadedTools = new Set();
-  const refreshActiveTools = () => {
-    for (const name of pi.getActiveTools()) loadedTools.add(name);
-    pi.setActiveTools(activeToolNames(pi.getAllTools(), { ready, permitted, currentContext, active: [...loadedTools] }));
-  };
+  const refreshActiveTools = () => pi.setActiveTools(activeToolNames(pi.getAllTools(), { ready, permitted, currentContext, active: pi.getActiveTools() }));
 
   async function authorize(tool, args) {
     if (!ready) throw new Error("Managed workflow is not ready");
@@ -313,8 +307,11 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   async function setMode(mode, ctx, { cleanup = true } = {}) {
     if (!broker) throw new Error("Only the parent can change workflow mode");
     const generation = plans.generation;
+    // Declarations stay through the transition: the tool_call hook refuses
+    // every call while unready, and a turn prepared here would otherwise see
+    // every tool removed, which makes pi-ai re-declare the full list on every
+    // later request.
     ready = false;
-    refreshActiveTools();
     if (cleanup) {
       // Stop owners while unavailable, before the broker changes its policy:
       // shells settle normally, then detached plugin runners are stopped.
@@ -363,7 +360,6 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (isRoot) plans.restore(ctx);
     if (runtime.AgentSession) installManagedRun(runtime.AgentSession, assertManagedRun);
     shuttingDown = false;
-    loadedTools.clear();
     const mode = isRoot ? broker.policy.mode : (await requestBroker(env, role, { action: "state" })).mode;
     ceiling?.dispose();
     ceiling = registerSubagentCapabilityCeiling({ sessionId: ctx.sessionManager.getSessionId(), source: "managed-workflow", ceiling: { allowedAgents: allowedChildAgents(config, role, mode), allowedTools: ceilingTools } });

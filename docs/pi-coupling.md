@@ -29,8 +29,10 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   `tool_call` hook admits. *On red:* repair — the TUI's plugin rows, the quiet
   notices and the plugin boundaries ride it; a changed payload falls back to
   pi's shaded box by itself. *Retire:* the `subagent` override when the plugin
-  exposes a description option that can omit disabled workflow APIs and their
-  guidance; the send boundary when pi emits an extension event for appended
+  can limit both the `subagent` schema and its description, mandatory safety
+  block included, to named launches plus list, status, interrupt, stop and
+  steer (`disabledFeatures` cannot narrow the action or context enums, and
+  the safety block still teaches resume and debug); the send boundary when pi emits an extension event for appended
   custom messages. *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
   `integration.test.mjs`, `render.test.mjs`.
 - **Resumed MCP rows** (`index.mjs` `mcpPlaceholder`): pi builds a resumed
@@ -81,9 +83,9 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
 - **Fleet peek replay**: replays `<asyncDir>/events.jsonl`, whose event
   names, lifecycle record names and mirroring rule (`message_update` dropped)
   pi-subagents now documents (`docs/observability.md`); still undocumented are
-  the `subagent.events.truncated` marker, the steer receipt's `requestId` and
-  error fields, the steer message's prefix and trailer text, `observedAt`, and
-  `asyncDir` read back from the branch's `subagent` results after a resume.
+  the `subagent.events.truncated` marker, the steer receipt's error fields,
+  the steer message's prefix and trailer text, `observedAt`, a child's custom
+  entries mirrored as `entry_appended`, and `asyncDir` read back from the branch's `subagent` results after a resume.
   Peek's native editor is shaped at its bottom-border callback (undocumented).
   *Why:* rule 6's peek. *On red:* repair. *Retire:* each record seam when
   pi-subagents documents the shape or serves it over RPC; the render-shape seam

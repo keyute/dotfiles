@@ -34,12 +34,15 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   because the owned fleet (rule 6) replaces them, and `intercomBridge` is off
   so children report only through their completion, as Claude Code's
   subagents do.
-  The managed launch passes `--exclude-tools subagents_enable`: the plugin's
-  lazy loader re-adds itself to the active tools every turn, the managed tool
-  refresh removes it, and pi-ai resends the full tool list after any removal.
+  `toolActivation` is `eager`, so the plugin's lazy `subagents_enable` loader
+  is never registered on any launch path: it would re-add itself to the active
+  tools every turn, the managed tool refresh would remove it, and pi-ai
+  resends the full tool list after any removal. `disabledFeatures` trims the
+  plugin surfaces the workflow never calls, which halves a nesting child's own
+  `subagent` schema (built from this config, not narrowed by the root proxy).
   Re-judge when Pi ships native subagents.
 - MCP is pi's own, fed the managed servers. Accepted: a connect per server per session and per child; another extension's `pi.registerMcpServer()` adds an unmanaged server. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
-- `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), returns a cross-host redirect instead of following it, and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt. Reversal trigger: a maintained plugin's fetch fits with a one-line seam → adopt it, delete `web_fetch` and its three packages.
+- `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt. Reversal trigger: a maintained plugin's fetch fits with a one-line seam → adopt it, delete `web_fetch` and its three packages.
 - Nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; the `timeoutMs` backstop with its `checkpointBeforeDeadlineMs` steer (`extensions/subagent/config.json`) replaces the 30-minute cutoff. Revisit when upstream delivers completion-triggered turns to headless children.
 - `toolDescriptionMode` is `compact`: any explicit mode drops
   `promptSnippet`/`promptGuidelines` but keeps its fixed safety guidance, which

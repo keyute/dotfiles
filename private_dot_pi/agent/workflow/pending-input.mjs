@@ -1,6 +1,7 @@
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { PAD, PROMPT, TURN_GLYPH, padRow, shadedBlock } from "./rows.mjs";
+import { skillCommand } from "./skill-display.mjs";
 
 const INSTALLED = Symbol.for("pi-workflow:pending-input");
 
@@ -104,7 +105,7 @@ export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode
         lines.push(...wrapTextWithAnsi(theme.fg("dim", header), width - indent.length).map((line, i) => i ? `${indent}${line}` : line));
         for (const [messageIndex, text] of messages.entries()) {
           if (messageIndex) lines.push("");
-          const wrapped = text.split("\n").flatMap(line => wrapTextWithAnsi(line, Math.max(1, width - 2)));
+          const wrapped = skillCommand(text).split("\n").flatMap(line => wrapTextWithAnsi(line, Math.max(1, width - 2)));
           lines.push(...shadedBlock(theme, wrapped.map(line => theme.fg("userMessageText", line)), width, { prompt: PROMPT, fit: padRow }));
         }
       }
