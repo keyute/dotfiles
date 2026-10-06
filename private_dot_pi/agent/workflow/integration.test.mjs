@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
 import { Type } from "typebox";
-import { normalizeContext } from "@earendil-works/pi-ai";
+import { normalizeContext, validateToolArguments } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
@@ -248,7 +248,7 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.has("subagent"));
   assert.equal(tools.has("subagents_enable"), false);
   const subagentSchema = tools.get("subagent").parameters;
-  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "agentScope", "async", "capabilities", "context", "id", "index", "lines", "message", "mode", "runId", "steeringRecovery", "task", "view"].sort());
+  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "agentScope", "async", "capabilities", "context", "id", "index", "lines", "message", "mode", "runId", "steeringRecovery", "task", "title", "view"].sort());
   assert.equal(subagentSchema.additionalProperties, false);
   assert.deepEqual(subagentSchema.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
   assert.deepEqual(subagentSchema.properties.context.enum, ["fresh", "fork"]);
@@ -300,10 +300,19 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.equal(blocking.async, true);
   // Keys the upstream schema advertises are dropped, not refused: every observed
   // first launch carried some of them and the refusal cost a turn per batch.
-  const noisy = { ...args, cwd: "/elsewhere", toolBudget: { hard: 20 }, acceptance: false, context: "fork" };
+  const noisy = { ...args, title: "Fixture check", cwd: "/elsewhere", toolBudget: { hard: 20 }, acceptance: false, context: "fork" };
   await checkChildLaunch(noisy, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.deepEqual(Object.keys(noisy).sort(), ["agent", "agentScope", "async", "context", "task"]);
   assert.equal(noisy.context, "fork");
+  const titled = { action: "status", id: "run", title: "Fixture status" };
+  await checkChildLaunch(titled, config, "root", ctx, resolveSubagentLaunchContract, "plan");
+  assert.equal("title" in titled, false);
+  // pi validates a clone, so the stored toolCall keeps the display title the launch drops.
+  const toolCall = { type: "toolCall", id: "call-t", name: "subagent", arguments: { ...args, title: "Fixture check" } };
+  const validated = validateToolArguments(tools.get("subagent"), toolCall);
+  await checkChildLaunch(validated, config, "root", ctx, resolveSubagentLaunchContract, "plan");
+  assert.equal(toolCall.arguments.title, "Fixture check");
+  assert.equal("title" in validated, false);
   const profile = { ...args, context: "profile" };
   await checkChildLaunch(profile, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal("context" in profile, false);

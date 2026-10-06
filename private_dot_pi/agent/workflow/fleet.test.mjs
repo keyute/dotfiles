@@ -350,7 +350,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
 
   // A launch whose result carries an asyncDir opens the injected dialog
   // instead, with a live describe() sourced from the current poll.
-  events.tool_execution_start({ toolName: "subagent", toolCallId: "c5", args: { agent: "d", task: "Patch the config" } });
+  events.tool_execution_start({ toolName: "subagent", toolCallId: "c5", args: { agent: "d", task: "Patch the config", title: "Config patch" } });
   bus.entries = [{ agent: "d", tokens: { total: 2000 }, model: "openai-codex/m:medium", effort: "medium", startedAt: 7000 }];
   bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running" }];
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c5", result: { details: { mode: "async", runId: "run-d", asyncDir: "/tmp/x/run-d" } } });
@@ -361,11 +361,11 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.equal(opened[0].id, "run-d");
   assert.equal(opened[0].asyncDir, "/tmp/x/run-d");
   assert.deepEqual(opened[0].describe(), {
-    agent: "d", task: "Patch the config", model: "openai-codex/m:medium",
+    agent: "d", task: "Config patch", model: "openai-codex/m:medium",
     tokens: { total: 2000 }, startedAt: 7000, state: "running", terminal: false,
   });
   assert.equal(fleet.focused(), true);
-  assert.equal(fleet.render(60, theme)[0], "  *❭* d › Patch the config · 2k tokens · m");
+  assert.equal(fleet.render(60, theme)[0], "  *❭* d › Config patch · 2k tokens · m");
   // Once the run leaves the async snapshot, describe() reports it terminal.
   bus.runs = [];
   await sleep(20);
@@ -379,7 +379,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   fleet.handleKey("confirm");
   await sleep(50);
   shift = null;
-  assert.deepEqual(fleet.render(60, theme), ["  ○ c", "  *❭* d › Patch the config"]);
+  assert.deepEqual(fleet.render(60, theme), ["  ○ c", "  *❭* d › Config patch"]);
 
   // Same-agent siblings: focus already sits on the first row, so Down alone
   // reaches the second run.
@@ -430,14 +430,17 @@ test("rows poll while children run, name the task from the launch, peek each sib
   bus.emit("subagent:async-complete", { runId: "run-b", success: false, interrupted: true, state: "partial", results: [{ agent: "b", status: "paused" }] });
   bus.emit("subagent:async-complete", { runId: "run-b", success: false, state: "failed", results: [{ status: "completed" }, { status: "failed" }] });
   bus.emit("subagent:async-complete", { runId: "late-1", success: true, durationMs: 134_000 });
+  bus.emit("subagent:async-complete", { runId: "run-d", success: true });
   assert.deepEqual(entries.map(entry => [entry.kind, entry.data.agent, entry.data.status]), [
     ["workflow-child", "stray", "completed"],
     ["workflow-child", "b", "stopped"],
     ["workflow-child", "b", "paused"],
     ["workflow-child", "b", "failed"],
     ["workflow-child", "subagent", "completed"],
+    ["workflow-child", "d", "completed"],
   ]);
   assert.equal(entries[1].data.task, "Review the diff\n  for correctness");
+  assert.equal(entries[5].data.task, "Config patch");
   // The result file's run-level duration rides along; a payload without one leaves it out.
   assert.equal(entries[4].data.durationMs, 134_000);
   assert.equal(entries[0].data.durationMs, undefined);
@@ -483,7 +486,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
 test("launchesFromBranch pairs a subagent toolCall with its toolResult's runId and asyncDir", () => {
   const branch = [
     { type: "message", id: "m1", message: { role: "assistant", content: [
-      { type: "toolCall", id: "call-r", name: "subagent", arguments: { agent: "worker", task: "Review the diff" } },
+      { type: "toolCall", id: "call-r", name: "subagent", arguments: { agent: "worker", task: "Review the diff", title: "Diff review" } },
     ] } },
     { type: "message", id: "m2", message: { role: "toolResult", toolCallId: "call-r", toolName: "subagent", details: { runId: "run-r", asyncDir: "/tmp/x/run-r" } } },
     // No asyncDir: not peekable, so it is dropped.
@@ -492,7 +495,7 @@ test("launchesFromBranch pairs a subagent toolCall with its toolResult's runId a
     { type: "message", id: "m4", message: { role: "toolResult", toolCallId: "call-noid", toolName: "subagent", details: { asyncDir: "/tmp/x/no-id" } } },
   ];
   const launches = launchesFromBranch(branch);
-  assert.deepEqual([...launches.entries()], [["run-r", { agent: "worker", task: "Review the diff", asyncDir: "/tmp/x/run-r" }]]);
+  assert.deepEqual([...launches.entries()], [["run-r", { agent: "worker", task: "Diff review", asyncDir: "/tmp/x/run-r" }]]);
 
   // A toolResult whose call is missing from the branch is still peekable.
   const orphan = launchesFromBranch([

@@ -103,7 +103,7 @@ export function launchesFromBranch(entries) {
   for (const entry of entries ?? []) {
     for (const part of entry?.message?.content ?? []) {
       if (part?.type === "toolCall" && part.name === "subagent" && part.id) {
-        calls.set(part.id, { agent: part.arguments?.agent, task: String(part.arguments?.task ?? "") });
+        calls.set(part.id, { agent: part.arguments?.agent, task: String(part.arguments?.title || part.arguments?.task || "") });
       }
     }
   }
@@ -209,7 +209,7 @@ export function installFleet(pi, ctx, {
   // result also carries the run's artifact directory (`asyncDir`), the peek's
   // way into its events.jsonl.
   pi.on("tool_execution_start", event => {
-    if (event.toolName === "subagent" && event.args?.agent) state.pending.set(event.toolCallId, { agent: event.args.agent, task: String(event.args.task ?? "") });
+    if (event.toolName === "subagent" && event.args?.agent) state.pending.set(event.toolCallId, { agent: event.args.agent, task: String(event.args.title || event.args.task || "") });
     // pi's non-overlay ctx.ui.custom clears the composer slot under whatever
     // is already there: a question or plan approval opening while the peek
     // holds the slot would otherwise orphan it (its promise never resolves,

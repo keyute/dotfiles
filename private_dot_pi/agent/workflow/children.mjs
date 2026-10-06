@@ -17,6 +17,7 @@ export function narrowSubagentSchema(schema) {
       action: { ...properties.action, enum: [...managementActions] },
       context: { ...properties.context, enum: [...launchContexts] },
       agentScope: { ...properties.agentScope, enum: [...agentScopes] },
+      title: { type: "string", description: "3–6 word label for this launch, shown in the transcript and fleet" },
     },
     additionalProperties: false,
   };
@@ -28,6 +29,8 @@ export function allowedChildAgents(config, role, mode) {
 
 export async function checkChildLaunch(args, config, role, ctx, resolveContract, mode) {
   if (!new Set(["plan", "execute"]).has(mode)) throw new Error("An authoritative workflow mode is required");
+  // The display-only `title` stops here: pi validates a structuredClone, so the stored call keeps it.
+  delete args.title;
   if (args.action) {
     if (args.action === "list") {
       if (Object.keys(args).some(key => !listKeys.has(key))) throw new Error("This child management operation is not enabled");

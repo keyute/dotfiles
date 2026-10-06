@@ -41,13 +41,14 @@ test("the subagent schema exposes only the managed launch and control surface", 
   const supported = ["agent", "task", "async", "context", "agentScope", "action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery", "capabilities"];
   const upstream = { type: "object", description: "upstream safety description", properties: Object.fromEntries([...supported, "model", "cwd", "workflowScript"].map(name => [name, { description: `${name} definition` }])) };
   const narrowed = narrowSubagentSchema(upstream);
-  assert.deepEqual(Object.keys(narrowed.properties).sort(), supported.slice().sort());
+  assert.deepEqual(Object.keys(narrowed.properties).sort(), [...supported, "title"].sort());
   assert.equal(narrowed.additionalProperties, false);
   assert.deepEqual(narrowed.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
   assert.deepEqual(narrowed.properties.context.enum, ["fresh", "fork"]);
   assert.deepEqual(narrowed.properties.agentScope.enum, ["user"]);
   assert.equal(narrowed.description, "upstream safety description");
   assert.equal(narrowed.properties.task.description, "task definition");
+  assert.equal(narrowed.properties.title.type, "string");
 });
 
 test("the plugin API narrows only the subagent definition and preserves its executor", () => {

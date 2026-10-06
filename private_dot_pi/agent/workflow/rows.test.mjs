@@ -30,6 +30,7 @@ test("plugin titles name the server and tool, or the child and its task", () => 
   assert.equal(pluginTitle("mcp__ctx__q__x", {}, []), "ctx › q__x");
   assert.equal(pluginTitle("mcp__playwright__browser_click", { ref: "e1" }, ["playwright"]), 'playwright › browser_click "e1"');
   assert.equal(pluginTitle("subagent", { agent: "explore-deep", task: "Audit the\n last commits" }), "explore-deep › Audit the last commits");
+  assert.equal(pluginTitle("subagent", { agent: "explore-deep", task: "Audit the\n last commits", title: "Commit audit" }), "explore-deep › Commit audit");
   assert.equal(pluginTitle("subagent", { action: "status", id: "r1" }), "subagent status r1");
   assert.equal(pluginTitle("subagent", {}), "subagent");
   assert.equal(pluginTitle("bg_wait", { id: "eeeb8e9f", timeoutMs: 30000 }), 'bg wait "eeeb8e9f"');

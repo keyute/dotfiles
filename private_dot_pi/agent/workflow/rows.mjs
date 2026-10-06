@@ -123,7 +123,7 @@ const preview = args => {
 export function pluginTitle(name, args = {}, servers = []) {
   if (name === "subagent") {
     if (args.action) return `subagent ${args.action}${args.id ? ` ${args.id}` : ""}`;
-    const task = shortTitle(args.task, PREVIEW_WIDTH);
+    const task = shortTitle(args.title || args.task, PREVIEW_WIDTH);
     return `${args.agent ?? "subagent"}${task ? ` › ${task}` : ""}`;
   }
   if (name.startsWith("mcp__")) return `${mcpName(name.slice("mcp__".length), servers)}${preview(args)}`;

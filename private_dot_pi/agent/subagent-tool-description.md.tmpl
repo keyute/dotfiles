@@ -1,4 +1,4 @@
-Delegate one bounded task to one named child: { agent, task }. Children always run in the background. One writer owns each write scope; do not give concurrent children the same files or worktree.
+Delegate one bounded task to one named child: { agent, task, title }. Children always run in the background. One writer owns each write scope; do not give concurrent children the same files or worktree.
 
 Agents (models are pinned; don't pass model):
 {{ range $name, $_ := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
