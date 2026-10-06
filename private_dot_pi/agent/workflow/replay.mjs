@@ -1,9 +1,9 @@
 import { Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import {
-  DONE, PAD, TURN_VERBS,
+  DONE, TURN_VERBS,
   addCompletion, addFold, bulletMarkdown, callTitle, closeFolds, closeLive, completionLine, createFolds, createTurnClock,
-  foldGroup, foldKey, formatTurn, glyph, groupLines, isMcp, liveGroup, pluginTitle,
+  foldGroup, foldKey, formatTurn, glyph, groupLines, isMcp, liveGroup, noteLine, pluginTitle,
   rowLines, settleFold, shadedBlock, taskTitle,
 } from "./rows.mjs";
 import { workerTools } from "./policy.mjs";
@@ -18,7 +18,8 @@ const WORKSPACE_TOOLS = new Set(workerTools);
 // A large tool result would otherwise hold the whole run's output in memory
 // for the life of the peek; only the fields the renderers actually read
 // survive off of `details`.
-const MAX_TEXT = 32 * 1024;
+// Above pi's DEFAULT_MAX_BYTES (50 KB), so a built-in tool's result is never cut.
+const MAX_TEXT = 64 * 1024;
 const capText = text => (text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}… truncated` : text);
 function capResult(result) {
   if (!result) return result;
@@ -53,9 +54,10 @@ function steerBody(text) {
 
 const messageText = message => (message.content ?? []).filter(part => part.type === "text").map(part => part.text ?? "").join("\n");
 
-// pi's red line under an assistant message (assistant-message.js), drawn on the
-// conditions rows.mjs's `tails` closes a group for: a length stop always, an
-// error or abort only when no tool row reports it instead.
+// pi's red line under an assistant message (assistant-message.js): a length
+// stop always, an error or abort only when no tool row reports it instead. An
+// errored or aborted message's tool calls get no tool events, so the peek draws
+// no row for them and, unlike rows.mjs's `tails`, nothing closes there.
 function tailText({ stopReason, errorMessage, content = [] }) {
   if (stopReason === "length") return "Response was truncated before completion.";
   if (content.some(part => part.type === "toolCall")) return "";
@@ -136,6 +138,7 @@ function handleRecord(state, record) {
     case "subagent.steer.failed": {
       const reason = record.reason ?? record.error;
       state.rows.push({ kind: "note", text: `steer failed${reason ? ` · ${reason}` : ""}` });
+      closeFolds(state.folds);
       return;
     }
     case "entry_appended": {
@@ -154,6 +157,7 @@ function handleRecord(state, record) {
     }
     case "subagent.events.truncated": {
       state.rows.push({ kind: "note", text: "further activity not recorded (event log limit)" });
+      closeFolds(state.folds);
       return;
     }
     case "agent_start": {
@@ -293,7 +297,7 @@ function renderRow(row, width, theme) {
       case "user":
         return userRowLines(row, width, theme);
       case "note":
-        return [`${PAD}${theme.fg("muted", `↳ ${row.text}`)}`];
+        return [noteLine(row.text, theme)];
       case "turn":
         return [formatTurn(row, theme)];
       case "error":

@@ -91,7 +91,7 @@ test("working progress has a blank separator above it and a trailing gap before 
 test("long task yields to model, tokens and terminal state in a narrow header", async () => {
   const dir = makeDir();
   fs.writeFileSync(path.join(dir, "events.jsonl"), "");
-  const { dialog } = makeDialog({ dir, describeState: { task: "A long and complicated task with many unnecessary words and details", state: "completed", terminal: true } });
+  const { dialog } = makeDialog({ dir, describeState: { task: "A long and complicated task with many unnecessary words and details", state: "complete", terminal: true } });
   await dialog.ready;
   const header = dialog.render(74)[1];
   assert.match(header, /peek/);
@@ -99,11 +99,11 @@ test("long task yields to model, tokens and terminal state in a narrow header", 
   assert.match(header, /…/);
   assert.match(header, /claude/);
   assert.match(header, /12\.4k tokens/);
-  assert.match(header, /completed/);
+  assert.match(header, /complete/);
   assert.match(header, /esc back/);
   assert.ok(visibleWidth(header) <= 74);
   const compact = dialog.render(40)[1];
-  assert.match(compact, /completed/);
+  assert.match(compact, /complete/);
   assert.match(compact, /esc back/);
   assert.ok(visibleWidth(compact) <= 40);
   dialog.dispose();
@@ -393,10 +393,13 @@ test("/stop then confirm stops the run; Esc backs out keeping the draft", async 
   await failing.dialog.ready;
   type(failing.dialog, "/stop");
   failing.dialog.handleInput(KEYS["tui.select.confirm"]);
+  const renders = failing.renderCount();
   await failing.dialog.handleInput(KEYS["tui.select.confirm"]);
   await failing.dialog.pending;
   assert.deepEqual(failing.doneCalls, []);
   assert.equal(failing.dialog.mode, "compose");
+  // The failure is asynchronous: it must ask for a redraw, not wait for an unrelated one.
+  assert.ok(failing.renderCount() > renders);
   assert.ok(failing.dialog.render(160).some(l => l.includes("stop failed")));
 });
 
@@ -454,17 +457,21 @@ test("ctrl+o expands a tool body without moving the scroll", async () => {
   assert.ok(dialog.render(160).some(l => l.includes("31 passing")));
 });
 
-test("a terminal describe() prints the state word, stops the interval, and never calls done", async () => {
+test("a terminal describe() prints the state word in the success tone, keeps model and tokens, stops the interval, and never calls done", async () => {
   const dir = makeDir();
   fs.writeFileSync(path.join(dir, "events.jsonl"), "");
   const state = { terminal: false };
-  const { dialog, doneCalls } = makeDialog({ dir, describeState: state });
+  const palette = { ...theme, fg: (c, t) => `<${c}>${t}` };
+  const { dialog, doneCalls } = makeDialog({ dir, describeState: state, palette });
   await dialog.ready;
-  state.terminal = true;
-  state.state = "completed";
+  // pi-subagents normalizes a finished run to "complete"; the run has left the fleet's entries.
+  Object.assign(state, { terminal: true, state: "complete", model: undefined, tokens: undefined });
   await dialog.tick();
   assert.equal(dialog.timer, undefined);
-  assert.ok(dialog.render(160).some(l => l.includes("completed")));
+  const header = dialog.render(160)[1];
+  assert.match(header, /<success> · complete/);
+  assert.match(header, /claude/);
+  assert.match(header, /12\.4k tokens/);
   assert.deepEqual(doneCalls, []);
 });
 

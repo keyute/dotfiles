@@ -79,13 +79,20 @@ export class PeekDialog extends Dialog {
       // lands; a timer started here would poll a closed peek.
       if (this.disposed) return;
       this.loaded = true;
-      this.info = this.describe();
+      this.refreshInfo();
       this.syncWorking();
       this.lastShape = this.shapeKey();
       this.timer = setInterval(() => void this.tick(), tickMs);
       this.timer.unref?.();
       this.tui.requestRender();
     });
+  }
+
+  // describe() loses model and tokens once the run leaves the fleet's entries;
+  // the header keeps the last ones it saw.
+  refreshInfo() {
+    const next = this.describe();
+    this.info = { ...next, model: next.model ?? this.info?.model, tokens: next.tokens ?? this.info?.tokens };
   }
 
   editingNow() { return this.mode !== "confirm"; }
@@ -159,7 +166,7 @@ export class PeekDialog extends Dialog {
     // Esc during the read: syncWorking would otherwise start a spinner
     // interval nothing stops, dispose having already run.
     if (this.disposed) return;
-    this.info = this.describe();
+    this.refreshInfo();
     this.syncWorking();
     const shape = this.shapeKey();
     if (shape !== this.lastShape) {
@@ -188,7 +195,7 @@ export class PeekDialog extends Dialog {
     const model = modelLabel(info.model);
     const tokens = formatTokens(info.tokens?.total ?? info.tokens);
     const state = info.terminal && info.state ? info.state : "";
-    const tone = state === "completed" ? "success" : ["failed", "stopped"].includes(state) ? "error" : "warning";
+    const tone = state === "complete" ? "success" : ["failed", "stopped"].includes(state) ? "error" : "warning";
     const parts = [model, tokens && `${tokens} tokens`].filter(Boolean);
     const cue = "esc back";
     const agent = info.agent ?? "";

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { createTasks } from "./tasks.mjs";
 
 // A task whose exec is a promise the test settles; `close` records the worker shutdown.
@@ -95,6 +96,16 @@ test("a task reports its tail and duration when it ends, and counts as live unti
   assert.equal(h.tasks.output(id), "completed (exit 0)\nline 1\nline 2\n");
 });
 
+test("a single huge output line reaches the completion notice only up to pi's byte cap", async () => {
+  const h = harness();
+  const { exec } = h.start("cat bundle.min.json");
+  exec.onChunk("x".repeat(200_000));
+  exec.resolve({ exitCode: 0 });
+  await h.settle();
+  assert.ok(Buffer.byteLength(h.notices[0]) <= DEFAULT_MAX_BYTES + 200);
+  assert.ok(h.notices[0].endsWith("x"));
+});
+
 test("output past the bash tool's line cap reaches the model as its tail behind a one-line note", async () => {
   const h = harness();
   const { id, exec } = h.start("seq 3000");
@@ -107,6 +118,15 @@ test("output past the bash tool's line cap reaches the model as its tail behind 
   const { output } = await settled;
   assert.ok(output.startsWith(shown));
   assert.ok(output.endsWith("\n3000"));
+});
+
+test("the completion notice keeps only the last 20 output lines", async () => {
+  const h = harness();
+  const { exec } = h.start("seq 30");
+  exec.onChunk(Array.from({ length: 30 }, (_, i) => `${i + 1}`).join("\n"));
+  exec.resolve({ exitCode: 0 });
+  await h.settle();
+  assert.deepEqual(h.notices[0].split("\n").slice(1), Array.from({ length: 20 }, (_, i) => `${i + 11}`));
 });
 
 test("a non-zero exit fails; a stop or a worker abort reads as stopped; unknown ids throw", async () => {

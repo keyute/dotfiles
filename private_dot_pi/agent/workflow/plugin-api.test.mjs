@@ -139,15 +139,9 @@ test("a quiet customType is sent with display off, everything else untouched", (
   sendMessage({ customType: "other", content: "c", display: true });
   assert.deepEqual(sent[0], [{ customType: "subagent-notify", content: "Background task failed: **x**", display: false }, { triggerTurn: true }]);
   assert.deepEqual(sent[1], [{ customType: "other", content: "c", display: true }, undefined]);
-  // A wait subscription is quiet only when it repeats the fleet's completion line.
-  const wait = outcome => ({ customType: "subagent-wait-subscription", content: `Wait subscription w1 fired for run r1: ${outcome}. Detail.`, display: true, details: { token: "w1", runId: "r1", outcome } });
-  sendMessage(wait("completed"), { triggerTurn: true });
-  sendMessage(wait("timed out"), { triggerTurn: true });
-  assert.equal(sent[2][0].display, false);
-  assert.equal(sent[3][0].display, true);
   // A customType that names an Object prototype member is not a quiet check.
   sendMessage({ customType: "constructor", content: "c", display: true });
-  assert.equal(sent[4][0].display, true);
+  assert.equal(sent[2][0].display, true);
 });
 
 test("a displayed message pi appends outside the agent stream ends the group where it draws", () => {
@@ -234,11 +228,6 @@ test("pi-subagents' default-box notices draw as unshaded rows, and an unknown pa
   assert.deepEqual(render("subagent_watchdog_clarification", { content: "Main watchdog clarification:\nWhich branch?\nEvidence: two remotes" }),
     ["<accent>π <muted>Main watchdog clarification:", "  <muted>Which branch?", "  <muted>Evidence: two remotes"]);
   assert.equal(render("subagent_watchdog_clarification", { content: [] }), undefined);
-  assert.deepEqual(render("subagent-wait-subscription", { content: "Wait subscription w1 fired for run r1: timed out. The targeted run may still be active.", details: { token: "w1", runId: "r1", outcome: "timed out" } }),
-    ["<warning>• <toolTitle>run r1 timed out", "  <muted>The targeted run may still be active."]);
-  assert.deepEqual(render("subagent-wait-subscription", { content: "Wait subscription w1 fired for run r1: failed. Inspect it.", details: { runId: "r1", outcome: "failed" } }),
-    ["<error>• <toolTitle>run r1 failed", "  <muted>Inspect it."]);
-  assert.equal(render("subagent-wait-subscription", { content: "c", details: { token: "w1" } }), undefined);
 });
 
 test("shutdown retains child results without requesting a new model turn", () => {

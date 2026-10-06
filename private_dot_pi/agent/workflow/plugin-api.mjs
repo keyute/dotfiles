@@ -48,14 +48,8 @@ export const controlNotice = (message, _options, theme) => {
 export const INCREMENTAL_CHILD = "subagent-incremental-child-notify";
 export const RESULT_WRITE_FAILED = "subagent-workflow-result-write-failed";
 export const WATCHDOG_CLARIFICATION = "subagent_watchdog_clarification";
-// bg_wait's non-blocking subscription firing. A completed outcome repeats the
-// completion line the fleet draws, so it is sent quiet; any other outcome
-// (timed out, needs attention, unreconciled, failed) is the only record of why
-// the agent woke.
-export const WAIT_SUBSCRIPTION = "subagent-wait-subscription";
 export const QUIET_MESSAGES = {
   [SUBAGENT_NOTIFY]: () => true,
-  [WAIT_SUBSCRIPTION]: message => message.details?.outcome === "completed",
 };
 const textOf = content => typeof content === "string" ? content
   : Array.isArray(content) ? content.filter(part => part?.type === "text").map(part => part.text).join("\n") : "";
@@ -73,14 +67,6 @@ export const NOTICE_RENDERERS = {
   [WATCHDOG_CLARIFICATION]: (message, _options, theme) => {
     const [first, ...rest] = textOf(message?.content).trim().split("\n");
     return first ? notice(noteLine(first, theme), rest, theme) : undefined;
-  },
-  [WAIT_SUBSCRIPTION]: (message, _options, theme) => {
-    const { runId, outcome } = message?.details ?? {};
-    if (typeof runId !== "string" || typeof outcome !== "string") return undefined;
-    const text = textOf(message.content);
-    const marker = `: ${outcome}. `;
-    const detail = text.includes(marker) ? text.slice(text.indexOf(marker) + marker.length) : "";
-    return notice(completionLine({ agent: `run ${runId}`, status: outcome }, theme), detail.split("\n"), theme);
   },
 };
 

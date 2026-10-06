@@ -6,7 +6,7 @@ const fileTools = ["read", "write", "edit", "grep", "find", "ls"];
 export const workerTools = [...fileTools, "bash"];
 export const publicToolName = name => workerTools.includes(name) ? `workspace_${name}` : name;
 // The parent session's tool set; children get theirs from the roster config.
-export const rootTools = [...workerTools.map(publicToolName), "workspace_task", "tool_search", "subagent", "bg_wait", "ask_user_question", "submit_plan", "web_search", "web_fetch"];
+export const rootTools = [...workerTools.map(publicToolName), "workspace_task", "tool_search", "subagent", "ask_user_question", "submit_plan", "web_search", "web_fetch"];
 // Mirrors pi's MCP tool naming.
 export const mcpToolName = (server, tool) => `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/g, "_");
 // The root reaches every configured MCP server; a child those its roster names a tool of.

@@ -502,13 +502,11 @@ const speaks = event => event.message?.role === "assistant" && (event.message.co
 // session appends outside the stream (`_appendCustomMessage`: idle without a
 // turn, the deferred flush) emits no `message_end`; plugin-api closes for those.
 const displays = event => Boolean(event.message?.customType) && Boolean(event.message.display);
-// pi's red tail under an assistant message (assistant-message.js): a length
-// stop always, an error or abort only when no tool row reports it instead.
-const tails = event => {
-  const { role, stopReason, content = [] } = event.message ?? {};
-  if (role !== "assistant") return false;
-  return stopReason === "length" || ((stopReason === "error" || stopReason === "aborted") && !content.some(c => c.type === "toolCall"));
-};
+// pi's red lines under an assistant message: its tail (assistant-message.js),
+// or for an error or abort with tool calls the red rows pi draws for them —
+// pi-agent-core ends that message with no tool results, so no tool event
+// adds a fact for those rows.
+const tails = event => event.message?.role === "assistant" && ["length", "error", "aborted"].includes(event.message.stopReason);
 
 // A pending tool must stay outside the collapsed success group; a boundary
 // after it would hold the whole group open until it settles. Shared by

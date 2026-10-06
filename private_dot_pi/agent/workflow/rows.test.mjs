@@ -511,7 +511,7 @@ test("tool search and background-task management join the group; their member li
     ["r1", "workspace_read", { path: "a.mjs" }, ""],
     ["q1", "tool_search", { query: "slack" }, "Loaded 2 tools. They are available from your next call:\n- slack_post"],
     ["w1", "web_search", { query: "pi tui" }, "Answer line one\nmore"],
-    ["f1", "web_fetch", { url: "https://pi.dev/docs" }, "It is pi.\nmore"],
+    ["f1", "web_fetch", { url: "https://pi.dev/docs" }, "It is pi.\nmore\n\nSource: https://pi.dev/docs"],
     ["k1", "workspace_task", { action: "output", id: "t1" }, "running\npartial output"],
     ["k2", "workspace_task", { action: "stop", id: "t1" }, "Stopping task t1"],
     ["k3", "workspace_task", { action: "list" }, "t1 · running · npm test"],
@@ -585,13 +585,14 @@ test("the question row neither joins nor closes a group, and a user message clos
   assert.deepEqual(foldGroup(folds, "r1").counts, { read: 4 });
 });
 
-test("pi's red tail under an assistant message is a boundary on exactly the conditions pi draws it", () => {
+test("pi's red lines under an assistant message are a boundary on exactly the conditions pi draws them", () => {
   const cases = [
     [{ stopReason: "error", content: [] }, true],
     [{ stopReason: "aborted", content: [{ type: "thinking", thinking: "hm" }] }, true],
     [{ stopReason: "length", content: [{ type: "toolCall", id: "t", name: "read", arguments: {} }] }, true],
-    // A tool row reports an error or abort that carried a call; pi draws no tail.
-    [{ stopReason: "error", content: [{ type: "toolCall", id: "t", name: "read", arguments: {} }] }, false],
+    // No tail, but pi draws the call's row red and no tool event adds a fact for it.
+    [{ stopReason: "error", content: [{ type: "toolCall", id: "t", name: "read", arguments: {} }] }, true],
+    [{ stopReason: "aborted", content: [{ type: "toolCall", id: "t", name: "read", arguments: {} }] }, true],
     [{ stopReason: "toolUse", content: [] }, false],
   ];
   for (const [message, closes] of cases) {

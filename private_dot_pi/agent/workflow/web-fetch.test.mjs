@@ -41,11 +41,11 @@ function fixture(routes, dns = {}) {
   return { run, seen, calls };
 }
 
-test("an html page reaches the search-tier model as markdown, untrusted, and the answer leads with the URL", async () => {
+test("an html page reaches the search-tier model as markdown, untrusted, and the answer cites the URL last", async () => {
   const body = `<html><head><title>T</title><script>steal()</script></head><body><nav>Menu</nav><article><h1>Hello</h1><p>Some <b>long</b> paragraph text that is long enough to count as article content, repeated. Some long paragraph text that is long enough.</p><p>More text, more text, more text, more text, more text.</p></article></body></html>`;
   const { run, calls } = fixture({ "https://example.com/post": { headers: { "content-type": "text/html; charset=utf-8" }, body } });
   const result = await run("https://example.com/post");
-  assert.equal(result.content[0].text, "https://example.com/post\nThe answer");
+  assert.equal(result.content[0].text, "The answer\n\nSource: https://example.com/post");
   assert.equal(result.details.url, "https://example.com/post");
   assert.equal(result.details.status, 200);
   assert.ok(result.details.chars > 0);
@@ -131,12 +131,12 @@ test("redirects are followed up to the cap, across hosts too", async () => {
   });
   const followed = await run("http://example.com/a");
   assert.deepEqual(seen, ["http://example.com/a", "https://example.com/b", "https://example.com/c"]);
-  assert.equal(followed.content[0].text.split("\n")[0], "https://example.com/c");
+  assert.equal(followed.details.url, "https://example.com/c");
   await assert.rejects(run("https://example.com/loop"), /More than 5 redirects/);
   seen.length = 0;
   const away = await run("https://example.com/away");
   assert.deepEqual(seen, ["https://example.com/away", "https://other.example.org/x"]);
-  assert.equal(away.content[0].text.split("\n")[0], "https://other.example.org/x");
+  assert.equal(away.details.url, "https://other.example.org/x");
   assert.equal(calls.length, 2);
 });
 

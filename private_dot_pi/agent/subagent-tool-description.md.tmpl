@@ -8,4 +8,4 @@ Notes:
 - Launch by name from the list above.
 - Plan mode launches read-only agents only.
 - Children start with fresh context. Pass context:"fork" only when the child should reason over what this session already read.
-- In an interactive root, consume native completion notifications: work outside the child's scope or yield, rather than polling or blocking on bg_wait. Read artifacts only for missing or truncated results. Use bg_wait for work without native notification or required headless/nested waits. Controls: status (fleet or transcript), interrupt, stop, steer.{{/* completion_delivery: a dependency is not a reason for a second retrieval path; waiting then reading an artifact before its native notification duplicated work */}}
+- In an interactive root, consume native completion notifications: work outside the child's scope or yield, rather than polling. Read artifacts only for missing or truncated results. Controls: status (fleet or transcript), interrupt, stop, steer.{{/* completion_delivery: a dependency is not a reason for a second retrieval path; waiting then reading an artifact before its native notification duplicated work */}}

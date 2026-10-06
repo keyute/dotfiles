@@ -117,7 +117,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
   assert.doesNotMatch(description, /workflowScript|runs\.|guide|resume|CLI/);
   assert.match(description, /consume native completion notifications/);
-  assert.match(description, /required headless\/nested waits/);
+  assert.doesNotMatch(description, /bg_wait/);
   assert.equal(JSON.parse(run("cat", target(".pi/agent/extensions/subagent/config.json"))).toolActivation, "eager");
   // one entry per distinct tier model: tiers may share a pin
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);

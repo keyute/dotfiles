@@ -52,7 +52,7 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
         // A session replaced while the task ran leaves a stale pi API that throws; the line is lost, not the process.
         try {
           record({ id, command, status, durationMs: now() - task.startedAt });
-          const tail = task.output.split("\n").filter(line => line.trim()).slice(-TAIL_LINES).join("\n");
+          const tail = truncateTail(task.output.split("\n").filter(line => line.trim()).join("\n"), { maxLines: TAIL_LINES, maxBytes: DEFAULT_MAX_BYTES }).content;
           notify(`Background task ${id} ${status} (${reason(task)}): ${command}\n${tail || "(no output)"}`);
         } catch {}
       })();

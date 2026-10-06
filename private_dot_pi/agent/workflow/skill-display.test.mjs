@@ -74,7 +74,7 @@ test("bundled extension entry installs skill, pending-input and reasoning displa
     events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); }, getAllTools: () => [...tools.values()], getActiveTools: () => [...tools.keys()],
-    registerCommand() {}, registerFlag() {}, getFlag() {}, registerEntryRenderer() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {},
+    registerCommand() {}, registerFlag() {}, getFlag() {}, registerEntryRenderer() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {},
     setActiveTools() {},
   };
   await start(pi);

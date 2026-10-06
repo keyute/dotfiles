@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_MAX_BYTES, initTheme } from "@earendil-works/pi-coding-agent";
 import { foldGroup } from "./rows.mjs";
 import { EARLIER_NOTE, createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
@@ -210,7 +210,7 @@ test("an mcp__ tool takes pluginTitle", () => {
   assert.match(lines[0], /server › tool/);
 });
 
-test("a 100 KiB result text is capped at 32 KiB in the stored row", () => {
+test("a 100 KiB result text is capped at 64 KiB in the stored row", () => {
   const big = "x".repeat(100 * 1024);
   const state = feed(
     { type: "tool_execution_start", toolCallId: "c1", toolName: "workspace_read", args: { path: "a.txt" } },
@@ -219,7 +219,14 @@ test("a 100 KiB result text is capped at 32 KiB in the stored row", () => {
   const stored = state.rows[0].result.content[0].text;
   assert.ok(stored.length < big.length);
   assert.ok(stored.endsWith("… truncated"));
-  assert.ok(stored.length <= 32 * 1024 + "… truncated".length);
+  assert.ok(stored.length <= 64 * 1024 + "… truncated".length);
+  // A built-in tool's result, already cut to pi's cap, is stored whole.
+  const whole = "x".repeat(DEFAULT_MAX_BYTES);
+  const kept = feed(
+    { type: "tool_execution_start", toolCallId: "c2", toolName: "workspace_read", args: { path: "b.txt" } },
+    { type: "tool_execution_end", toolCallId: "c2", toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: whole }] } },
+  );
+  assert.equal(kept.rows[0].result.content[0].text, whole);
 });
 
 const readOk = (id, path) => [
@@ -404,7 +411,17 @@ test("a trimmed completion row stops counting toward the group", () => {
   const state = feedDeterministic(taskDone("s1", "completed"), ...readOk("r1", "a"), ...readOk("r2", "b"), says("Done"));
   trimRows(state, 3);
   assert.equal(state.folds.timeline.some(fact => fact.id === "s1"), false);
-  assert.deepEqual(plain(render(state)), ["  ↳ earlier activity not shown", "", "▸ Read 2 files", "", "• Done"]);
+  assert.deepEqual(plain(render(state)), ["π earlier activity not shown", "", "▸ Read 2 files", "", "• Done"]);
+});
+
+test("a steer-failed note is the harness voice and closes the group", () => {
+  const state = feedDeterministic(...readOk("r1", "a"), ...readOk("r2", "b"), { type: "subagent.steer.failed", reason: "child gone" }, ...readOk("r3", "c"), ...readOk("r4", "d"));
+  assert.deepEqual(plain(render(state)), ["▸ Read 2 files", "", "π steer failed · child gone", "", "• Read 2 files", "  ↳ Read c · 1 line", "  ↳ Read d · 1 line"]);
+});
+
+test("the event-log truncation note closes the group", () => {
+  const state = feedDeterministic(...readOk("r1", "a"), ...readOk("r2", "b"), { type: "subagent.events.truncated" }, ...readOk("r3", "c"), ...readOk("r4", "d"));
+  assert.deepEqual(plain(render(state)), ["▸ Read 2 files", "", "π further activity not recorded (event log limit)", "", "• Read 2 files", "  ↳ Read c · 1 line", "  ↳ Read d · 1 line"]);
 });
 
 test("a child's failed background task stays visible and closes the group", () => {

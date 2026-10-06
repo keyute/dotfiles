@@ -35,18 +35,6 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   the safety block still teaches resume and debug); the send boundary when pi emits an extension event for appended
   custom messages. *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
   `integration.test.mjs`, `render.test.mjs`.
-- **Resumed MCP rows** (`index.mjs` `mcpPlaceholder`): pi builds a resumed
-  tool row with the definition registered when it renders, before MCP
-  connects and registers, so a hidden placeholder carrying the row renderers is
-  registered on the raw API for each `mcp__*` name in the branch (startup
-  renders after `session_start`) and, at load, for each name met earlier in
-  the process (an in-process switch renders before it); MCP's own
-  registration replaces it by name. *Why:* rule 9 — pi's fallback is a shaded
-  card. *Residual:* a name first met in a session never live in this process
-  keeps the card. *On red:* fall back to pi's card for resumed MCP calls,
-  deleting the placeholders. *Retire:* when pi re-resolves a row's definition
-  or MCP registers before the first render. *Pin:* `stability.test.mjs`,
-  `integration.test.mjs`.
 - **Skill display**: wraps `InteractiveMode`'s undocumented
   `getUserMessageText` once, turning a native `parseSkillBlock` match back into
   `/skill:name` plus arguments; the host class comes from pi's virtual modules,

@@ -176,7 +176,7 @@ export function webFetchTool(config, { request, lookup } = {}) {
         const text = toText(page.type, page.body);
         if (!text) throw new Error(`No readable text at ${page.url.href}`);
         const reply = await answer(ctx, config, page.url.href, text, args.prompt, signal);
-        return { content: [{ type: "text", text: `${page.url.href}\n${reply.text}` }], details: { url: page.url.href, status: page.status, chars: text.length }, usage: reply.usage };
+        return { content: [{ type: "text", text: `${reply.text}\n\nSource: ${page.url.href}` }], details: { url: page.url.href, status: page.status, chars: text.length }, usage: reply.usage };
       } catch (error) { throw new Error(`${error.message}. ${FALLBACK}`); }
     },
   };

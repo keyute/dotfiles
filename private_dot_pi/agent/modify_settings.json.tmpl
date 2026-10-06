@@ -11,7 +11,7 @@
       "themes" (list (printf "%s/node_modules/catppuccin-pi-theme/themes" .chezmoi.sourceDir)) -}}
 {{- /* startup selection and model cycling offer only the pi tiers */ -}}
 {{- $_ := set $managed "enabledModels" ($enabledModels | uniq | sortAlpha) -}}
-{{- /* fullscreen TUI enables mouse input (click-to-expand tool rows) */ -}}
+{{- /* pins the default fullscreen TUI against /settings' persisted toggle; its mouse input drives click-to-expand rows */ -}}
 {{- $_ := set $managed "tuiMode" "fullscreen" -}}
 {{- /* fullscreen exit prints a resume hint, not the whole transcript */ -}}
 {{- $_ := set $managed "fullscreenExitOutput" "resume-hint" -}}
