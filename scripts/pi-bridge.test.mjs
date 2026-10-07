@@ -12,7 +12,6 @@ import {
   assertCompleted,
   assertNoPendingMigration,
   assertOutsideSandboxRoots,
-  assertOwnGitDir,
   assertRepoRoot,
   checkCwd,
   composeReviewPrompt,
@@ -338,38 +337,6 @@ test("the bridge refuses a sandbox-writable cwd and its git invocation defuses a
   }
 });
 
-test("assertOwnGitDir refuses a .git file or a .git/commondir pointing elsewhere", () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-bridge-gitdir-")));
-  const own = join(root, "own");
-  const linked = join(root, "linked");
-  const common = join(root, "common");
-  git(root, ["init", "-q", own]);
-  git(root, ["init", "-q", `--separate-git-dir=${join(root, "elsewhere")}`, linked]);
-  git(root, ["init", "-q", common]);
-  const dirs = (cwd) => git(cwd, gitInvocation(["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"]).args).trim().split("\n");
-  assert.doesNotThrow(() => assertOwnGitDir(own, ...dirs(own)));
-  assert.throws(() => assertOwnGitDir(linked, ...dirs(linked)), /git dir/);
-  assert.throws(() => assertOwnGitDir(own, undefined), /git dir/);
-  writeFileSync(join(common, ".git", "commondir"), join(root, "own", ".git"));
-  assert.throws(() => assertOwnGitDir(common, ...dirs(common)), /git dir/);
-});
-
-test("pinned git ignores a .git/commondir planted after the root check", () => {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "pi-bridge-pinned-")));
-  git(cwd, ["init", "-q"]);
-  git(cwd, ["config", "user.name", "own"]);
-  const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "pi-bridge-elsewhere-")));
-  git(elsewhere, ["init", "-q"]);
-  git(elsewhere, ["config", "user.name", "planted"]);
-  writeFileSync(join(cwd, ".git", "commondir"), join(elsewhere, ".git"));
-  const name = (root) => {
-    const { args, env } = gitInvocation(["config", "user.name"], process.env, root);
-    return git(cwd, args, env).trim();
-  };
-  assert.equal(name(undefined), "planted"); // control: the planted file redirects plain git
-  assert.equal(name(cwd), "own");
-});
-
 test("sandboxPolicy takes Claude's Read() denies and allowWrite, and fails closed without either", () => {
   const settings = JSON.stringify({
     sandbox: { filesystem: { allowWrite: ["~/.npm/_cacache", "/opt/gocache"] } },
@@ -429,22 +396,35 @@ test("sandboxed git runs a hostile clean filter without writes or denied reads",
   // the clean filter's stdout becomes the diffed content, so a canary it
   // reads surfaces in the diff text that reaches the model
   const filter = (marker) => `touch '${marker}'; cat '${join(secret, "canary")}' '${join(cwd, ".env")}'; cat`;
-  // one filter in the repo's own config (only srt stops it), one reached
-  // through a planted commondir (the pinned GIT_COMMON_DIR stops it)
+  // one filter in the repo's own config, one reached through a planted
+  // commondir; srt alone stops both
   const common = join(root, "common");
   git(root, ["clone", "-q", "--bare", cwd, common]);
+  // a linked worktree root (a .git file) passes the root check
+  const worktree = join(root, "wt");
+  git(cwd, ["worktree", "add", "-q", worktree]);
   git(cwd, ["config", "filter.evil.clean", filter(join(root, "marker-own"))]);
   git(common, ["config", "filter.evil.clean", filter(join(root, "marker-common"))]);
-  writeFileSync(join(cwd, ".git", "commondir"), common);
+  const policy = { writableRoots: [], denyRead: [secret], denyNames: [".env"] };
+  await assertRepoRoot(worktree, policy);
 
+  // the own-config filter runs only until a commondir redirects config
+  spawnSync("git", ["diff", "HEAD"], { cwd });
+  assert.ok(existsSync(join(root, "marker-own")));
+  rmSync(join(root, "marker-own"));
+  const own = await gatherDiff(undefined, cwd, policy);
+  assert.match(own, /a\.txt/);
+  assert.doesNotMatch(own, /CANARY/);
+  assert.equal(existsSync(join(root, "marker-own")), false);
+
+  writeFileSync(join(cwd, ".git", "commondir"), common);
   // control: plain git runs the commondir filter and leaks both canaries
   const plain = spawnSync("git", ["diff", "HEAD"], { cwd, encoding: "utf8" });
   assert.ok(existsSync(join(root, "marker-common")));
   assert.match(plain.stdout, /CANARY-OUTSIDE/);
   rmSync(join(root, "marker-common"));
 
-  const policy = { writableRoots: [], denyRead: [secret], denyNames: [".env"] };
-  await assert.rejects(assertRepoRoot(cwd, policy), /git dir/);
+  await assertRepoRoot(cwd, policy);
   let seen = "";
   for (const base of ["base", undefined]) {
     try {

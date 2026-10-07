@@ -61,9 +61,10 @@ function sandboxWritableRoots(settings, home) {
 // no-write profile.
 const GIT_OVERRIDES = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "diff.external=", "-c", "core.pager=cat"];
 // git runs with no writes beyond srt's own default paths (/tmp/claude,
-// ~/.npm/_logs) and offline under srt as a second layer for any repo
-// hook the overrides miss — a repo-local filter.<x>.clean still runs under
-// status/diff — so it also gets Claude's read-deny list: the Read() rules in
+// ~/.npm/_logs) and offline under srt, the boundary for any repo config
+// hook the overrides miss — a filter.<x>.clean, in .git/config or one a
+// .git file or .git/commondir points at, still runs under status/diff — so
+// it also gets Claude's read-deny list: the Read() rules in
 // the rendered settings, which settings.json.tmpl makes the one list. Missing
 // or empty fails closed.
 const readRules = (settings) =>
@@ -251,25 +252,11 @@ export function assertNoPendingMigration(cwd) {
 }
 
 // the guard confines reads to cwd, so cwd itself must be a repository root
-// rather than any directory a caller names (/, ~/.pi/agent). Runs unpinned:
-// a pinned GIT_WORK_TREE would make --show-toplevel pass trivially.
+// rather than any directory a caller names (/, ~/.pi/agent)
 export async function assertRepoRoot(cwd, policy) {
-  const out = await gitOutput(["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"], cwd, policy, { pinned: false });
-  const [top, gitDir, commonDir] = out.trim().split("\n");
+  const top = (await gitOutput(["rev-parse", "--path-format=absolute", "--show-toplevel"], cwd, policy)).trim();
   if (!top || realpathSync(top) !== cwd) {
     throw new Error(`cwd is not a git worktree root: ${cwd}`);
-  }
-  assertOwnGitDir(cwd, gitDir, commonDir);
-}
-
-// a `.git` file (gitdir:, linked worktrees) or a `.git/commondir` (which
-// sandboxed Bash may write) points git at a config outside cwd, which the
-// toplevel check alone accepts
-export function assertOwnGitDir(cwd, gitDir, commonDir) {
-  for (const dir of [gitDir, commonDir]) {
-    if (!dir || realpathSync(dir) !== join(cwd, ".git")) {
-      throw new Error(`refusing: git dir of ${cwd} is not ${cwd}/.git: ${dir}`);
-    }
   }
 }
 
@@ -286,11 +273,8 @@ async function checkSession(threadId, cwd) {
   }
 }
 
-// root, once checked, pins git's directories so a .git or .git/commondir
-// swapped in after the check cannot redirect its config
-export function gitInvocation(args, environment = process.env, root) {
+export function gitInvocation(args, environment = process.env) {
   const env = Object.fromEntries(Object.entries(environment).filter(([key]) => !key.startsWith("GIT_")));
-  if (root) Object.assign(env, { GIT_DIR: join(root, ".git"), GIT_COMMON_DIR: join(root, ".git"), GIT_WORK_TREE: root });
   return { args: [...GIT_OVERRIDES, ...args], env };
 }
 
@@ -315,8 +299,8 @@ async function sandboxed(command, cwd, policy) {
   return manager.wrapWithSandbox(command, "bash", gitSandboxProfile(policy, cwd));
 }
 
-export async function gitOutput(args, cwd, policy, { pinned = true } = {}) {
-  const invocation = gitInvocation(args, process.env, pinned ? cwd : undefined);
+export async function gitOutput(args, cwd, policy) {
+  const invocation = gitInvocation(args);
   const command = await sandboxed(["git", ...invocation.args].map(quoteArg).join(" "), cwd, policy);
   return new Promise((resolvePromise, reject) => {
     const child = spawn("bash", ["-c", command], { cwd, env: invocation.env, stdio: ["ignore", "pipe", "pipe"] });
