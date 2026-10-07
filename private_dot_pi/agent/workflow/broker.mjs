@@ -57,7 +57,7 @@ export async function startBroker(config, cwd, review) {
     reviewQueue = pending.catch(() => {});
     const allowed = await pending;
     if (closed || policy.transitioning || epoch !== policy.epoch) throw new Error("Policy changed while approval was pending");
-    return allowed === true ? grant(request) : { ok: false, error: "Action not approved" };
+    return allowed === true ? grant(request) : { ok: false, error: `Action not approved: ${allowed}. Do not pursue the same outcome another way; finish what you can, then tell the user what you need.` };
   }
 
   const server = createServer(socket => {

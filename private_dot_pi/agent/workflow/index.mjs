@@ -157,6 +157,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let releaseChild;
   let childRevoked = false;
   let broker;
+  // Children's reviews route through the root broker, so one count covers the fleet.
+  const denials = { count: 0 };
   let env;
   const jiti = createJiti(import.meta.url);
   const { registerSubagentCapabilityCeiling } = await jiti.import("pi-subagents/capability-ceiling");
@@ -166,7 +168,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // child arriving after a later epoch, so root must refresh this on every bump.
   const publishEpoch = () => { process.env.PI_WORKFLOW_EPOCH = String(broker.policy.epoch); };
   if (isRoot) {
-    broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request, () => fleet?.closePeek()));
+    broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request, () => fleet?.closePeek(), denials));
     env = broker.env;
     Object.assign(process.env, env);
     publishEpoch();
@@ -303,6 +305,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     }
     if (generation !== plans.generation) throw new Error("Mode transition superseded by a session change");
     await broker.setMode(mode, () => generation === plans.generation);
+    // Denials under the previous mode's policy say nothing about this one.
+    denials.count = 0;
     publishEpoch();
     ceiling?.update({ allowedAgents: allowedChildAgents(config, role, broker.policy.mode), allowedTools: ceilingTools });
     ready = true;

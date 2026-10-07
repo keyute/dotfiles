@@ -199,6 +199,13 @@ test("broker does not expose its credential to the classifier and invalidates pe
   await assert.rejects(requestBroker({ ...broker.env, PI_WORKFLOW_TOKEN: "invalid" }, "root", { action: "state" }), /Unavailable/);
 });
 
+test("a denied authorization tells the requester the review's reason", { skip }, async t => {
+  const { root, config } = fixture(t);
+  const broker = await startBroker(config, root, async () => "it pushes to a remote");
+  t.after(() => broker.close());
+  await assert.rejects(requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "git push" } }), /Action not approved: it pushes to a remote\. Do not pursue the same outcome another way/);
+});
+
 test("broker cannot enable execution after its plan/session or transition is superseded", { skip }, async t => {
   const { root, config } = fixture(t);
   const broker = await startBroker(config, root, async () => true);
