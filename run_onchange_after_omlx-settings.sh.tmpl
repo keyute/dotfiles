@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+
+# oMLX reads settings.json only at startup, so a settings change restarts it.
+# Settings hash: {{ includeTemplate "dot_omlx/private_settings.json.tmpl" . | sha256sum }}
+
+brew services restart omlx

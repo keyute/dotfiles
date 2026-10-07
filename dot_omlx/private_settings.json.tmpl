@@ -1,3 +1,4 @@
+{{- $apiKey := onepasswordRead "op://Personal/oMLX/password" -}}
 {
   "version": "1.0",
   "server": {
@@ -46,9 +47,13 @@
     "initial_cache_blocks": 256
   },
   "auth": {
-    "api_key": null,
-    "secret_key": {{ list .chezmoi.hostname "omlx" | join "|" | sha256sum | quote }},
+    {{- /* admin login password; /admin/chat injects it, and admin login is refused while it is null */}}
+    "api_key": {{ $apiKey | toJson }},
+    {{- /* signs admin session cookies: derived from the key, since anything guessable lets a login be forged */}}
+    "secret_key": {{ list $apiKey "omlx-session" | join "|" | sha256sum | toJson }},
     "skip_api_key_verification": false,
+    {{- /* /v1 inference stays keyless for minuet's dummy key; admin, status and load/unload still need the key */}}
+    "allow_unauthenticated_inference": true,
     "sub_keys": []
   },
   "mcp": {
