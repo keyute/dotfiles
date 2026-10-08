@@ -47,7 +47,7 @@ agents:
       - "Agent(isolation:remote)"
       # Agent-tool aliases with no small/top pin; the frontier pin's alias is
       # rendered from subagent_tiers, so children run only tier pins
-      - "Agent(model:haiku)"
+      - "Agent(model:sonnet)"
       # a speed bump under the never-commit/push rule, not a boundary: prefix
       # rules miss `git -C x commit` and `sh -c` forms
       - "Bash(git push:*)"
@@ -91,7 +91,7 @@ subagents:
   # exact name).
   Explore:
     tier: small
-    effort: low
+    effort: high
     readonly: true
     omit_instructions: true
     tools: "Read, Bash"
@@ -165,7 +165,7 @@ subagents:
 # explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
 subagent_tiers:
   claude:
-    small: claude-sonnet-5-5
+    small: claude-haiku-5-5
     top: claude-opus-5-5
     # settings.json renders this pin's Agent(model:…) alias deny
     frontier: claude-fable-5-1

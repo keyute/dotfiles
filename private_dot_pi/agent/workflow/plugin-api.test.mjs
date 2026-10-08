@@ -136,9 +136,10 @@ test("a quiet customType is sent with display off, everything else untouched", (
   const pi = { on() {}, sendMessage(message, options) { sent.push([message, options]); } };
   const styled = pluginApi(pi, () => ({}), {}, QUIET_MESSAGES);
   const { sendMessage } = styled; // a plugin may extract the function
-  sendMessage({ customType: "subagent-notify", content: "Background task failed: **x**", display: true }, { triggerTurn: true });
+  // An idle parent's notice arrives without a turn; the wake that follows carries it.
+  sendMessage({ customType: "subagent-notify", content: "Background task failed: **x**", display: true }, { triggerTurn: false });
   sendMessage({ customType: "other", content: "c", display: true });
-  assert.deepEqual(sent[0], [{ customType: "subagent-notify", content: "Background task failed: **x**", display: false }, { triggerTurn: true }]);
+  assert.deepEqual(sent[0], [{ customType: "subagent-notify", content: "Background task failed: **x**", display: false }, { triggerTurn: false }]);
   assert.deepEqual(sent[1], [{ customType: "other", content: "c", display: true }, undefined]);
   // A customType that names an Object prototype member is not a quiet check.
   sendMessage({ customType: "constructor", content: "c", display: true });
@@ -243,6 +244,23 @@ test("shutdown retains child results without requesting a new model turn", () =>
   assert.equal(sent[1][1].triggerTurn, false);
   assert.equal(sent[1][0].content, message.content);
   assert.equal(sent[1][0].display, false);
+});
+
+test("pi-subagents' parent wake is sent as a quiet custom message and dropped at shutdown, every other user message untouched", () => {
+  const sent = [];
+  const users = [];
+  let shuttingDown = false;
+  const pi = { on() {}, sendMessage: (message, options) => sent.push([message, options]), sendUserMessage: (content, options) => users.push([content, options]) };
+  const { sendUserMessage } = pluginApi(pi, () => ({}), {}, QUIET_MESSAGES, undefined, () => shuttingDown);
+  sendUserMessage("Subagent updates above.", { deliverAs: "steer" });
+  sendUserMessage("Subagent updates above.");
+  sendUserMessage("relayed", { deliverAs: "steer" });
+  shuttingDown = true;
+  sendUserMessage("Subagent updates above.", { deliverAs: "steer" });
+  assert.deepEqual(sent, [
+    [{ customType: "subagent-wake", content: "Subagent updates above.", display: false }, { deliverAs: "steer", triggerTurn: true }],
+  ]);
+  assert.deepEqual(users, [["Subagent updates above.", undefined], ["relayed", { deliverAs: "steer" }]]);
 });
 
 test("the control notice row is built from the event pi-subagents puts in details", () => {

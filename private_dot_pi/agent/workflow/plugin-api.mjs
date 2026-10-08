@@ -33,6 +33,7 @@ export const CONTROL_NOTICE = "subagent_control_notice";
 // only when `display` is truthy, so the wrapper sends it quiet; the content,
 // session-file path included, still reaches the model.
 export const SUBAGENT_NOTIFY = "subagent-notify";
+const PARENT_WAKE = "Subagent updates above.";
 export const controlNotice = (message, _options, theme) => {
   const event = message?.details?.event;
   if (!event?.agent || !event.message) return undefined;
@@ -131,6 +132,14 @@ export function pluginApi(pi, renderersFor, messageRenderers = {}, quietMessages
           else if (options?.triggerTurn === false) deferred += 1;
         }
         return target.sendMessage(message, options);
+      };
+      // pi-subagents wakes an idle parent with a user prompt so the run gets
+      // before_agent_start; installManagedRun gives a triggered custom message
+      // that too, with no user box to end the group. At shutdown the notice is
+      // already kept, so the wake is dropped.
+      if (key === "sendUserMessage") return (content, options) => {
+        if (content !== PARENT_WAKE || options?.deliverAs !== "steer") return target.sendUserMessage(content, options);
+        if (!isShuttingDown()) target.sendMessage({ customType: "subagent-wake", content, display: false }, { deliverAs: "steer", triggerTurn: true });
       };
       // appendVisible places the boundary where pi mounts the entry, above a reply still streaming.
       if (key === "appendEntry") return (type, data) => Object.hasOwn(DRAWN_ENTRIES, type) && DRAWN_ENTRIES[type](data)

@@ -523,12 +523,13 @@ test("a typed prompt while waiting on children closes the turn", () => {
   h.done();
 });
 
-test("an interrupted run closes immediately", () => {
-  const h = harness();
+test("an interrupted run closes immediately, even with children running", () => {
+  const h = harness({ active: 1 });
   h.fire("agent_start");
-  h.fire("agent_end", { messages: [{ role: "assistant", stopReason: "aborted" }] });
+  h.fire("agent_end");
+  h.fire("agent_settled", { aborted: true });
   assert.deepEqual([h.entries.length, h.entries[0].data.aborted], [1, true]);
-  h.fire("agent_settled");
+  h.fire("agent_settled", { aborted: true });
   assert.equal(h.entries.length, 1);
   h.done();
 });

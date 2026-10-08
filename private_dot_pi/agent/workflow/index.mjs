@@ -84,8 +84,9 @@ function installManagedRun(AgentSession, guard) {
   const state = { guard };
   const original = prototype._runAgentPrompt;
   // What the original's finally does for a run that never reached agent.prompt.
+  // The abort flag stays set, as the original leaves it: the emit reports it
+  // as `aborted`, and the next run clears it on starting.
   const settle = async session => {
-    session._agentRunAbortRequested = false;
     session._runSystemPromptOptions = undefined;
     session._flushPendingBashMessages();
     session._flushPendingCustomMessages();
@@ -109,7 +110,9 @@ function installManagedRun(AgentSession, guard) {
     catch (error) { this._runSystemPromptOptions = undefined; keep(); throw error; }
     if (!this._runSystemPromptOptions) {
       // Marked active before the first await, as the original does, so a
-      // second idle trigger queues instead of starting a parallel run.
+      // second idle trigger queues instead of starting a parallel run. A run
+      // deferred to the last one's settle starts with its abort flag still set.
+      this._agentRunAbortRequested = false;
       this._isAgentRunActive = true;
       try {
         messages = [...caller];

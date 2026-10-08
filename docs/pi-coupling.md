@@ -23,6 +23,9 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   closes the activity group for a displayed message `_appendCustomMessage`
   draws outside the agent stream (no extension event sees it); its
   `appendEntry` closes for an entry whose plugin renderer guard says it draws.
+  Its `sendUserMessage` turns pi-subagents' idle-parent wake (the literal
+  `Subagent updates above.` sent as a steer) into a hidden custom message that
+  triggers the turn, dropped while shutting down; other user text passes through.
   Owned renderers parse pi-subagents' payloads for its four unrendered notice
   types (`NOTICE_RENDERERS`), answering undefined on an unknown one. *Why:*
   rules 2, 4, 9 and 10 for plugin output, and the model sees only calls the
@@ -33,7 +36,8 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   block included, to named launches plus list, status, interrupt, stop and
   steer (`disabledFeatures` cannot narrow the action or context enums, and
   the safety block still teaches resume and debug); the send boundary when pi emits an extension event for appended
-  custom messages. *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
+  custom messages; the wake branch when pi can draw an extension's user message
+  quietly. A changed wake literal falls back to a visible wake box by itself. *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
   `integration.test.mjs`, `render.test.mjs`.
 - **Skill display**: wraps `InteractiveMode`'s undocumented
   `getUserMessageText` once, turning a native `parseSkillBlock` match back into
@@ -98,7 +102,7 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   `stability.test.mjs`, `rows.test.mjs`, `transcript.test.mjs`.
 - **Managed agent runs** (`index.mjs` `installManagedRun`): wraps the host `AgentSession`'s
   `_runAgentPrompt`. *Why:* an idle triggerTurn skips `before_agent_start`, and pi swallows
-  handler throws. *On red:* repair. *Retire:* upstream routes triggerTurn through
+  handler throws; the owned triggers and the re-sent subagent wake start runs that way. *On red:* repair. *Retire:* upstream routes triggerTurn through
   `before_agent_start` and lets a handler block. *Pin:* `stability.test.mjs`, `integration.test.mjs`.
 - **Usage segments** (`footer.mjs`): Pi's documented
   `after_provider_response` (Codex context only) and `provider_stream_event`

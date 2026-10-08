@@ -7,7 +7,7 @@ Module map (`private_dot_pi/agent/workflow/*.mjs`), one responsibility each:
 
 - `index` (TUI): the extension entry — config, broker connection, managed tool registration and gating, modes and commands, and wiring the other modules into pi's session lifecycle.
 - `editor` (TUI): the composer — `CaretEditor`'s rule 5 shape, shell-mode prefix and fleet entry, and Tab argument completion.
-- `plugin-api` (TUI): what plugins see of the extension API — the registration Proxy (renderers, `subagent` schema and description, quiet notices, the control-notice row, MCP tool identity) and the MCP server configuration handed to pi's MCP factory.
+- `plugin-api` (TUI): what plugins see of the extension API — the registration Proxy (renderers, `subagent` schema and description, quiet notices and the subagent wake, the control-notice row, MCP tool identity) and the MCP server configuration handed to pi's MCP factory.
 - `skill-display` (TUI): a sent skill invocation shown as its `/skill:` command (rule 5).
 - `pending-input` (TUI): native queued steer/follow-up input, its rule 5 blocks and interrupt-and-send action.
 - `rows` (TUI): the transcript's row grammar, the activity-group fold engine and the reasoning hide (rules 1, 2, 8), and the shared glyph/row kit the other TUI modules import.

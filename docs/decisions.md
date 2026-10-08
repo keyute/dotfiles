@@ -65,7 +65,7 @@ a tier nothing uses is dropped.
 
 | key | why | revisit when |
 |---|---|---|
-| subagent_tiers.claude.small | benchmark: AA low 36 vs Haiku 4.5's 17 at ~2× $/task; Explore is ~0.4% of Claude spend | successor or retirement (Events); a newer Haiku ships → compare at matched $/task; the Claude pool binds with Explore's cost per dispatch above explore-deep's → Haiku |
+| subagent_tiers.claude.small | benchmark: AA at high 38 ($0.08/task) vs the previous small pin's 36 at low ($0.35–0.42), below it on AutomationBench tool use at every effort; Explore is ~0.4% of Claude spend | successor or retirement (Events); an observed Explore miss the previous small pin catches → a tier between small and top |
 | subagent_tiers.claude.top | benchmark: AA $/task nominated it; no paired replay | successor or retirement (Events); an unattended text-only turn ends → the previous top pin |
 | subagent_tiers.claude.frontier | preference: escalation-only under its 50% weekly cap | the cap is lifted → re-open the driver; successor or retirement (Events) |
 | agents.claude.defaults.tier | preference: top at effort high | the Claude pool binds → lower effort, then tier |
@@ -75,7 +75,7 @@ a tier nothing uses is dropped.
 | agents.pi.search_tier | preference: each search is one extra request on the pool, so the small tier | an observed search miss the top tier catches → top |
 | setting.native_coverage | measured: covered lines are in Claude Code's driver and subagent prompts or pi's subagent-tool-description; docs_mcp in context7's server instructions (Claude); initiative is driver-only: a child cannot check back | a Claude Code release lacks a covered line → unshave it; a context7 bump → re-check docs_mcp |
 | agent_mcp_servers.pi.args | preference: review and advice are recall-critical, so `--reasoning-effort high` | the pi pool binds with the bridge origin a visible share in agent-usage → medium |
-| measure.role_matrix | preference: top/medium default; lookups lower, recall-critical roles higher (values in agents.yaml) | an observed Explore miss → medium; a lens miss a later review catches → high; a small re-pin → probe a role at small |
+| measure.role_matrix | preference: top/medium default, lookups lower, recall-critical higher; benchmark: Explore at high, where the small pin first matches the old pin; pi unmeasured | an observed Explore miss → a mid tier; Explore slower than explore-deep → medium; a lens miss a later review catches → high; a small re-pin → probe a role at small |
 | parity.researcher_no_bash | forced: upstream release-note hosts are off the shared Bash allowlist, so curl there fails confusingly; WebFetch/WebSearch reach them without widening every role's Bash | the allowlist covers upstream hosts, or a fetch tool fails on them → Bash |
 | subagents.infra-reviewer | preference: chart/CRD/GitOps hazards are not inferable from surrounding manifests | a manifest review where diff-reviewer's lens finds the same hazards → fold in |
 | subagents.diff-reviewer | preference: one any-language reviewer; the go/python/ts/shell presets were generic checklists dispatched only by ship-check | a shipped language-specific defect the correctness lens missed → restore that preset |

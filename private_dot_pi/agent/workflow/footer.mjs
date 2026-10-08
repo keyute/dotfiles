@@ -296,13 +296,13 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   pi.on("message_end", event => {
     if (event.message.role === "assistant" || event.message.role === "toolResult") void refreshUsage();
   });
-  pi.on("agent_end", (event, eventCtx) => {
+  pi.on("agent_end", (_event, eventCtx) => {
     void refreshUsage();
     void refreshGit(eventCtx.cwd);
-    if (event.messages?.findLast(message => message.role === "assistant")?.stopReason === "aborted") close({ aborted: true });
   });
-  pi.on("agent_settled", () => {
+  pi.on("agent_settled", event => {
     if (!clock.running()) return;
+    if (event?.aborted) return close({ aborted: true });
     if ((fleet?.activeCount?.() ?? 0) + (tasks?.live?.() ?? 0) > 0) {
       state.waiting = clock.settledLabel();
       clearTick();
