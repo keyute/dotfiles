@@ -84,10 +84,35 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   when Editor offers a borderless, height-bounded render API. *Pin:* `stability.test.mjs`.
 - **Working row**: a pi-tui `Loader` subclass docked through `setWidget`'s
   component form above the editor; it stands down for pi's compaction indicator,
-  and pi's auto-retry countdown shows alongside it. *Why:* rule 3. *On red:*
-  fall back to pi's own working row (`setWorkingVisible` left on); lost: the
-  column-0 row with a trailing blank line and the frozen settled-root snapshot.
-  *Pin:* `stability.test.mjs`.
+  and pi's auto-retry countdown shows alongside it. The frozen row closes when
+  the last child or shell ends with the root idle (`ctx.isIdle()` after a 250 ms
+  grace): a child is live from `subagent:async-started` until both its
+  completion line and its observed process exit (or until 10 s after its exit
+  when no completion follows). An idle parent's wake is a steered
+  `sendUserMessage` whose run starts only after pi's `input` and
+  `before_agent_start` handlers, so the footer holds the close from that wake's
+  extension `input` until its `agent_start` (at most 10 s). *Why:* rules 3 and 4. *On red:* fall back to pi's own working row
+  (`setWorkingVisible` left on); lost: the column-0 row with a trailing blank
+  line and the frozen settled-root snapshot. On the ordering pins, close only
+  at `agent_settled`; lost: the close when the last work ends with no wake.
+  *Pin:* `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`.
+- **Prompt span** (`dialog.mjs` `openView`/`openWait`/`blocksUser`): pi wraps
+  every `ctx.ui.custom` in one `custom` prompt span, emits `ui_prompt_*` only
+  for the outermost prompt, and its end carries that prompt's kind; its own
+  terminal status never marks a custom dialog blocked. A custom dialog is a
+  view unless `openWait` mounts it (plan approval, the questionnaire); the
+  herdr forward and `Waiting for you…` take only native prompts and waits, each
+  pairing the end with its own flag. A dialog opened inside a view's span (the
+  peek, `/plan show`) would go unreported, so views mount through `openView`
+  and `closeView` returns the mount, settled after pi's span closes; `openWait`
+  and the broker confirm await it. A native prompt another extension opens
+  over a view (pi-subagents' authority and spawn-budget confirms) has no such
+  hook and goes unreported. *Why:* opening a peek marked herdr blocked
+  and swapped the working row's clock. *On red:* fall back to forwarding every
+  prompt; lost: a view marks herdr blocked and shows `Waiting for you…`. *Pin:*
+  `stability.test.mjs`, `integration.test.mjs`, `footer.test.mjs`,
+  `fleet.test.mjs`, `approval.test.mjs`, `plan-approval.test.mjs`,
+  `questionnaire.test.mjs`.
 - **Hidden reasoning** (`rows.mjs` `installReasoningHide`): wraps the
   exported `AssistantMessageComponent.prototype.updateContent` once, on the
   host class the extension entry passes, drawing from a copy without

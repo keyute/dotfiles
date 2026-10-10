@@ -123,7 +123,7 @@ export async function readUsage(pi, ctx, { readLimits = readRateLimits, now = Da
   };
 }
 
-const percent = (part, whole) => `${whole ? Math.round((100 * part) / whole) : 0}%`;
+const percent = (part, whole, digits = 0) => `${(whole ? (100 * part) / whole : 0).toFixed(digits)}%`;
 const bar = (fraction, width, theme, colour = "accent") => {
   const used = Math.max(0, Math.min(width, Math.round(fraction * width)));
   return theme.fg(colour, "━".repeat(used)) + theme.fg("dim", "─".repeat(width - used));
@@ -146,8 +146,8 @@ function planLines({ at, limits }, theme, width) {
 
 function contextLines({ model, window, used, estimated, parts }, theme, width) {
   const narrow = width < NARROW;
-  const row = (label, tokens, tail) => fit(`${PAD}${pad(label, 16)}${theme.fg("muted", `${tokenText(tokens).padStart(7)}${narrow ? "" : percent(tokens, window).padStart(6)}${tail ? `   ${tail}` : ""}`)}`, width);
-  const headline = `${estimated ? "~" : ""}${tokenText(used)} / ${tokenText(window)} tokens (${percent(used, window)})`;
+  const row = (label, tokens, tail) => fit(`${PAD}${pad(label, 16)}${theme.fg("muted", `${tokenText(tokens).padStart(7)}${narrow ? "" : percent(tokens, window, 1).padStart(8)}${tail ? `   ${tail}` : ""}`)}`, width);
+  const headline = `${estimated ? "~" : ""}${tokenText(used)} / ${tokenText(window)} tokens (${percent(used, window, 1)})`;
   return [
     fit(head("Context", [modelLabel(model), headline].filter(Boolean).join(SEP), theme), width),
     `${PAD}${bar(window ? used / window : 0, Math.max(0, Math.min(62, width - PAD.length)), theme)}`,

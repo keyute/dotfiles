@@ -1,3 +1,4 @@
+import { freeSlot } from "./dialog.mjs";
 import { unsandboxed } from "./policy.mjs";
 
 // The user task the classifier sees, newest characters kept; the task
@@ -39,7 +40,7 @@ async function classify(ctx, config, stage, content) {
 
 // Returns true when approved, else the reason shown to the agent. denials is
 // the root's consecutive classifier-deny count, shared across the fleet.
-export async function reviewAction(ctx, config, task, request, beforeConfirm, denials) {
+export async function reviewAction(ctx, config, task, request, denials) {
   let decision = "ask";
   let reason;
   let overridden = false;
@@ -65,8 +66,11 @@ export async function reviewAction(ctx, config, task, request, beforeConfirm, de
   // visible. In the TUI the dialog and herdr's blocked flag carry it, and pi's
   // warning would be a stale, unfolded line in the transcript.
   if (ctx.mode !== "tui") ctx.ui.notify?.(`Awaiting approval${escalated ? " (unsandboxed)" : ""}: ${action.slice(0, 80)}`, "warning");
-  // pi's confirm takes the composer slot; whatever holds it (the fleet peek) must close first.
-  beforeConfirm?.();
+  // pi's confirm takes the composer slot; whatever view holds it (the fleet
+  // peek, /plan show) must close first, and fully: pi reports only the
+  // outermost prompt, so a confirm opened inside the view's span would never
+  // mark the user blocked.
+  await freeSlot();
   const denied = overridden ? ` the classifier denied${reason ? ` (${JSON.stringify(reason)})` : ""}` : "";
   if (!await ctx.ui.confirm(`Approve this ${escalated ? "unsandboxed " : ""}action${denied} once?`, action.slice(0, 12_000))) return "the user declined it";
   if (request.approval === "auto") denials.count = 0;

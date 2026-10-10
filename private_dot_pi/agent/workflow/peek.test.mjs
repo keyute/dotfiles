@@ -21,6 +21,8 @@ const KEYS = {
 };
 const keybindings = { matches: (data, action) => KEYS[action] === data };
 
+const plain = text => text.replace(/\x1b\[[0-9;]*m/g, "");
+
 function line(record) { return `${JSON.stringify(record)}\n`; }
 
 function makeDir() {
@@ -60,6 +62,8 @@ test("open shows the live header and replayed rows", async () => {
   await dialog.ready;
   const lines = dialog.render(160);
   const header = lines[1];
+  assert.match(plain(header), / {2,}esc back$/);
+  assert.equal(visibleWidth(header), 160);
   assert.match(header, /reviewer/);
   assert.match(header, /Review the diff/);
   assert.match(header, /claude · 12\.4k tokens/);
@@ -100,12 +104,12 @@ test("long task yields to model, tokens and terminal state in a narrow header", 
   assert.match(header, /claude/);
   assert.match(header, /12\.4k tokens/);
   assert.match(header, /complete/);
-  assert.match(header, /esc back/);
-  assert.ok(visibleWidth(header) <= 74);
+  assert.match(plain(header), / {2,}esc back$/);
+  assert.equal(visibleWidth(header), 74);
   const compact = dialog.render(40)[1];
   assert.match(compact, /complete/);
-  assert.match(compact, /esc back/);
-  assert.ok(visibleWidth(compact) <= 40);
+  assert.match(plain(compact), / {2,}esc back$/);
+  assert.equal(visibleWidth(compact), 40);
   dialog.dispose();
 });
 

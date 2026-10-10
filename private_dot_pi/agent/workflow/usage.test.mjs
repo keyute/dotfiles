@@ -165,14 +165,14 @@ test("the entry renders three π blocks at width 70", async () => {
     `  Session   ${"━".repeat(9)}${"─".repeat(15)}   37%   resets ${formatReset(1_800_000_000)} (in 2h 13m)`,
     `  Weekly    ${"━".repeat(14)}${"─".repeat(10)}   58%   resets ${formatReset(1_800_300_000, { weekday: true })}`,
     "",
-    "π Context · gpt-5.5 · 84.2k / 272k tokens (31%)",
+    "π Context · gpt-5.5 · 84.2k / 272k tokens (31.0%)",
     `  ${"━".repeat(19)}${"─".repeat(43)}`,
-    "  System prompt      1.1k    0%",
-    "  Tools              2.5k    1%   subagent 2k · workspace_bash 511",
-    "  Project context    1.5k    1%   AGENTS.md ×2",
-    "  Skills              200    0%",
-    "  Messages          78.8k   29%   tool results 49.3k · assistant 19.7…",
-    "  Free             187.8k   69%",
+    "  System prompt      1.1k    0.4%",
+    "  Tools              2.5k    0.9%   subagent 2k · workspace_bash 511",
+    "  Project context    1.5k    0.6%   AGENTS.md ×2",
+    "  Skills              200    0.1%",
+    "  Messages          78.8k   29.0%   tool results 49.3k · assistant 19…",
+    "  Free             187.8k   69.0%",
     "",
     "π Cost · $2.67",
     "  Main           $1.52   10k in · 200 out · 90% cached",
@@ -198,4 +198,9 @@ test("every line fits a narrow terminal, and the % column is the first to go", a
   const data = await readUsage({ events: bus({ ping: ping(), cost: costReport }) }, ctx(84_200, fixture()), { readLimits: async () => limits });
   for (const line of usageLines(data, plain, 30)) assert.ok(visibleWidth(line) <= 30, line);
   assert.equal(usageLines(data, plain, 40).find(line => line.includes("Free")), "  Free             187.8k");
+  // The widest share still leaves a gap after the token count.
+  const full = { model: "gpt-5.5", window: 272_000, used: 272_000, estimated: false, parts: [{ label: "Messages", tokens: 272_000 }] };
+  const lines = usageLines({ at: 0, limits: null, context: full, cost: sessionCost([], report([])) }, plain, 70);
+  assert.match(lines.find(line => line.includes("Messages")), /272k {2}100\.0%$/);
+  assert.match(lines[2], /\(100\.0%\)$/);
 });

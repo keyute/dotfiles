@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { buildRow, createFleetState, formatTokens, installFleet, launchesFromBranch, modelLabel, navigate, renderFleet, runIdFor, setEntries } from "./fleet.mjs";
+import { closeView, openWait } from "./dialog.mjs";
 import { shortTitle } from "./rows.mjs";
 
 test("rows are the agent, a word-boundary title, compact tokens and the model; the agent alone when the title is missing", () => {
@@ -267,6 +268,57 @@ test("completed event-owned runs stay tracked until their process exits", async 
   await fleet.stopAll();
   assert.deepEqual(bus.requests.filter(request => request.method === "stop").map(request => request.params.id), ["closing"]);
   assert.equal(fleet.activeCount(), 0);
+});
+
+test("a child stays owed from launch to its completion line, past its exit, and a lost completion expires", async () => {
+  const bus = fakeBus();
+  const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { quietMs: 0, owedMs: 20 });
+  let changes = 0;
+  fleet.onChange(() => changes++);
+  bus.emit("subagent:async-started", { id: "a" });
+  bus.emit("subagent:process-terminal", { runId: "a", state: "observed" });
+  assert.equal(fleet.activeCount(), 1, "exited, its completion not yet delivered");
+  bus.emit("subagent:async-complete", { runId: "a", success: true });
+  assert.equal(fleet.activeCount(), 0);
+  assert.equal(changes, 3);
+  bus.emit("subagent:async-started", { id: "b" });
+  bus.emit("subagent:process-terminal", { runId: "b", state: "observed" });
+  assert.equal(fleet.activeCount(), 1);
+  await sleep(40);
+  assert.equal(fleet.activeCount(), 0);
+  assert.equal(changes, 6);
+});
+
+test("session shutdown clears owed expiries, arms none after, and notifies no listener", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const fleet = installFleet({ events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} }, null, { quietMs: 0, owedMs: 20 });
+  let changes = 0;
+  fleet.onChange(() => changes++);
+  bus.emit("subagent:async-started", { id: "a" });
+  bus.emit("subagent:async-started", { id: "b" });
+  bus.emit("subagent:process-terminal", { runId: "a", state: "observed" });
+  assert.equal(changes, 3);
+  hooks.session_shutdown();
+  bus.emit("subagent:process-terminal", { runId: "b", state: "observed" });
+  bus.emit("subagent:async-complete", { runId: "b", success: true });
+  await sleep(40);
+  assert.equal(changes, 3);
+  assert.equal(fleet.activeCount(), 0);
+});
+
+test("a restored run's close, seen only by the poll, notifies listeners", async () => {
+  const bus = fakeBus();
+  bus.entries = [{ agent: "restored" }];
+  const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0, timeoutMs: 10 });
+  let changes = 0;
+  fleet.onChange(() => changes++);
+  fleet.wake();
+  await sleep(1);
+  assert.deepEqual([fleet.activeCount(), changes], [1, 1]);
+  bus.entries = [];
+  await sleep(30);
+  assert.deepEqual([fleet.activeCount(), changes], [0, 2]);
 });
 
 test("peek opens the intended active sibling after a completed sibling drops", async () => {
@@ -551,15 +603,14 @@ test("attachContext never overwrites a launch this process already recorded from
   assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["run-r", "/tmp/live/run-r"]]);
 });
 
-test("a slot dialog (ask_user_question) aborts a live peek, freeing the slot before the new dialog opens", async () => {
+test("a wait aborts a live peek, freeing the slot before the new dialog opens", async () => {
   const bus = fakeBus();
   const hooks = {};
   const opened = [];
   const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
   const ctx = { mode: "tui", hasUI: true, ui: { notify() {} } };
   // Stands in for the real dialog's onAbort → finish() → done(): the peek's
-  // own promise settles once its signal fires, so the fleet's `finally` can
-  // clear state.peek.
+  // own promise settles once its signal fires, so the view tracker clears.
   const openPeek = async (_ctx, options) => { opened.push(options); await new Promise(resolve => options.signal.addEventListener("abort", resolve)); };
   const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek });
   hooks.tool_execution_start({ toolName: "subagent", toolCallId: "c1", args: { agent: "worker", task: "t" } });
@@ -572,14 +623,41 @@ test("a slot dialog (ask_user_question) aborts a live peek, freeing the slot bef
   await sleep(10);
   const signal = opened.at(-1).signal;
   assert.equal(signal.aborted, false);
-  hooks.tool_execution_start({ toolName: "ask_user_question", toolCallId: "q1" });
+  const custom = async () => {};
+  const waited = openWait({ ui: { custom } }, () => {});
   assert.equal(signal.aborted, true);
-  await sleep(0);
-  // A second slot-taking tool_execution_start with nothing left to abort is harmless.
-  hooks.tool_execution_start({ toolName: "submit_plan", toolCallId: "p1" });
+  await waited;
+  // A second wait with nothing left to abort is harmless.
+  await openWait({ ui: { custom } }, () => {});
 });
 
-test("closePeek ends the text-tail fallback in the slot and leaves fleet focus alone", async () => {
+test("a wait mounts only once the closed peek's mount has settled", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {} } };
+  let settled = false;
+  // The delay after abort stands in for pi closing the prompt span after done().
+  const openPeek = async (_ctx, options) => {
+    await new Promise(resolve => options.signal.addEventListener("abort", resolve));
+    await sleep(5);
+    settled = true;
+  };
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek });
+  hooks.tool_execution_start({ toolName: "subagent", toolCallId: "c1", args: { agent: "worker", task: "t" } });
+  hooks.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { runId: "run1", asyncDir: "/tmp/run1" } } });
+  bus.runs.push({ id: "run1", label: "worker", state: "running", startedAt: 1000 });
+  bus.entries.push({ key: "fleet-1", agent: "worker", startedAt: 1000 });
+  await sleep(20);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  let settledAtMount;
+  await openWait({ ui: { custom: async () => { settledAtMount = settled; } } }, () => {});
+  assert.equal(settledAtMount, true);
+});
+
+test("closeView ends the text-tail fallback in the slot and leaves fleet focus alone", async () => {
   const bus = fakeBus();
   const pi = { events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} };
   const rendered = [];
@@ -603,10 +681,10 @@ test("closePeek ends the text-tail fallback in the slot and leaves fleet focus a
   const lines = rendered[0];
   assert.equal(lines[0], "─".repeat(40));
   assert.equal(lines.at(-1), lines[0]);
-  assert.equal(lines[1], "  *restored*");
-  assert.equal(lines.at(-2), "  ~esc back~");
+  assert.equal(lines[1], `  *restored*${" ".repeat(18)}~esc back~`);
+  assert.equal(lines.at(-2), "");
   assert.equal(settled, false);
-  fleet.closePeek();
+  closeView();
   assert.equal(settled, true);
   await sleep(0);
   assert.equal(fleet.focused(), false);
@@ -633,11 +711,11 @@ test("a second Enter while a peek is still opening ends the first, so only one c
   assert.equal(opened.length, 2);
   assert.equal(opened[0].signal.aborted, true);
   assert.equal(opened[1].signal.aborted, false);
-  fleet.closePeek();
+  closeView();
   assert.equal(opened[1].signal.aborted, true);
 });
 
-test("closePeek landing while the live peek's module is still importing mounts nothing", async () => {
+test("closeView landing while the live peek's module is still importing mounts nothing", async () => {
   const bus = fakeBus();
   const hooks = {};
   let mounted = 0;
@@ -653,7 +731,7 @@ test("closePeek landing while the live peek's module is still importing mounts n
   await sleep(20);
   fleet.handleKey("enter");
   fleet.handleKey("confirm");
-  fleet.closePeek();
+  closeView();
   await sleep(20);
   assert.equal(mounted, 0);
   fleet.handleKey("enter");
@@ -662,20 +740,21 @@ test("closePeek landing while the live peek's module is still importing mounts n
   assert.equal(mounted, 1, "the same path mounts when nothing aborts it");
 });
 
-test("closePeek before the text-tail's status reply mounts nothing and notifies nothing", async () => {
+test("closeView before the text-tail's status reply mounts nothing and notifies nothing", async () => {
   const bus = fakeBus();
   const pi = { events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} };
   const calls = [];
   const ctx = { hasUI: true, mode: "tui", ui: { custom: async () => calls.push("custom"), notify: () => calls.push("notify") } };
   bus.entries = [{ agent: "restored", tokens: { total: 0 }, startedAt: 1000 }];
   bus.runs = [{ id: "run-r", label: "restored", startedAt: 1000, state: "running" }];
-  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 30, timeoutMs: 10 });
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 30, timeoutMs: 1_000 });
   fleet.attach({ requestRender() {} });
   await sleep(20);
-  bus.delayMs = 5;
+  bus.delayMs = 200;
   fleet.handleKey("enter");
   fleet.handleKey("confirm");
-  fleet.closePeek();
-  await sleep(20);
+  const closed = await Promise.race([closeView().then(() => "closed"), sleep(50).then(() => "pending")]);
+  assert.equal(closed, "closed", "the close does not wait on the status reply");
+  await sleep(250);
   assert.deepEqual(calls, []);
 });

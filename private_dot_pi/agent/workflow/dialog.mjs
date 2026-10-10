@@ -9,6 +9,52 @@ export const editorTheme = theme => ({
   },
 });
 
+// The view holding the composer slot (the fleet peek, /plan show). pi's
+// non-overlay ctx.ui.custom clears the slot under whatever is there, orphaning
+// it, and reports only the outermost prompt span, so anything taking the slot
+// closes the view first. `mount(signal)` runs at once and is aborted by the
+// next view or closeView; a mount may still be preparing (an import, an RPC)
+// and must then mount nothing.
+let view;
+export function openView(mount) {
+  closeView();
+  const controller = new AbortController();
+  const open = { controller, mounted: undefined };
+  view = open;
+  open.mounted = (async () => mount(controller.signal))().finally(() => { if (view === open) view = undefined; });
+  return open.mounted;
+}
+// Aborting finishes the view synchronously, freeing the slot; the returned
+// mount settles once pi's prompt span has closed too. A mount error is the
+// view's own to report. A second caller arriving before then waits on the same
+// close, or its dialog would open inside the closing span.
+let closing;
+export function closeView() {
+  const open = view;
+  view = undefined;
+  if (open) {
+    open.controller.abort();
+    const settled = open.mounted.catch(() => {}).finally(() => { if (closing === settled) closing = undefined; });
+    closing = settled;
+  }
+  return closing;
+}
+// A view can open while an earlier one is still closing; the slot is free only once none remains.
+export async function freeSlot() { while (view || closing) await closeView(); }
+
+// pi wraps every ctx.ui.custom in one `custom` prompt span, a peek or a plan
+// view as much as a question; a custom dialog is a view unless it mounts here.
+let waits = 0;
+export async function openWait(ctx, factory) {
+  // Mounts synchronously when no view holds the slot.
+  if (view || closing) await freeSlot();
+  waits++;
+  try { return await ctx.ui.custom(factory); } finally { waits--; }
+}
+// Whether a ui_prompt_start is something the user must answer. pi's end event
+// carries the outermost prompt's kind, so consumers pair it with their own flag.
+export const blocksUser = event => event?.kind !== "custom" || waits > 0;
+
 // Rule 11: every dialog is one frame, one cursor, one accent. This is that rule in code.
 export class Dialog {
   constructor(tui, theme, keybindings, done, signal, cancelValue) {

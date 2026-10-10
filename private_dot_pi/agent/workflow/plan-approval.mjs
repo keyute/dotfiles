@@ -1,6 +1,6 @@
 import { Markdown, visibleWidth } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Dialog } from "./dialog.mjs";
+import { Dialog, openView, openWait } from "./dialog.mjs";
 import { TASK_CHARS } from "./approval.mjs";
 
 export const PLAN_APPROVED = "approved";
@@ -107,8 +107,8 @@ export class PlanState {
 }
 
 class PlanViewComponent extends Dialog {
-  constructor(tui, theme, keybindings, done, snapshot) {
-    super(tui, theme, keybindings, done);
+  constructor(tui, theme, keybindings, done, snapshot, signal) {
+    super(tui, theme, keybindings, done, signal);
     this.snapshot = snapshot;
     this.markdown = new Markdown(snapshot.plan, 2, 0, getMarkdownTheme());
     this.offset = 0;
@@ -137,7 +137,7 @@ class PlanViewComponent extends Dialog {
 export async function showPlan(ctx, snapshot) {
   if (!snapshot) return ctx.ui.notify("No current plan", "info");
   if (ctx.mode !== "tui") return ctx.ui.notify(`Plan · revision ${snapshot.revision}\n\n${snapshot.plan}`, "info");
-  return ctx.ui.custom((tui, theme, keybindings, done) => new PlanViewComponent(tui, theme, keybindings, done, snapshot));
+  return openView(signal => ctx.ui.custom((tui, theme, keybindings, done) => new PlanViewComponent(tui, theme, keybindings, done, snapshot, signal)));
 }
 
 class PlanApprovalComponent extends Dialog {
@@ -216,5 +216,5 @@ class PlanApprovalComponent extends Dialog {
 
 export async function requestPlanApproval(ctx, signal) {
   if (ctx.mode !== "tui") return { decision: PLAN_CANCELLED };
-  return ctx.ui.custom((tui, theme, keybindings, done) => new PlanApprovalComponent(tui, theme, keybindings, done, signal));
+  return openWait(ctx, (tui, theme, keybindings, done) => new PlanApprovalComponent(tui, theme, keybindings, done, signal));
 }

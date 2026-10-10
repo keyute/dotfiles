@@ -64,6 +64,14 @@ export function shade(theme, line, background = "userMessageBg", foreground) {
 export const pad = (text, width) => text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 export const padRow = (text, width) => truncateToWidth(text, width, "", true);
 
+// `right` flush against `width`, at least `gap` columns clear of `left`; the
+// left side yields, so the right never clips.
+export function alignRight(left, right, width, gap = 2) {
+  const rightWidth = visibleWidth(right);
+  const head = truncateToWidth(left, Math.max(0, width - rightWidth - gap), "…");
+  return head + " ".repeat(Math.max(gap, width - visibleWidth(head) - rightWidth)) + right;
+}
+
 // The user box's shaded block (docs/pi-design.md rule 5). `foreground` is the
 // colour `shade` re-opens after a reset; `fit` is pad or truncate per surface.
 export function shadedBlock(theme, lines, width, { prompt, promptColour = "accent", background = "userMessageBg", foreground, fit = pad } = {}) {
@@ -962,8 +970,15 @@ export function noteLine(text, theme) {
   return `${theme.fg("accent", TURN_GLYPH)} ${theme.fg("muted", text)}`;
 }
 
-export function formatTurn({ verb, ms, endedAt, aborted }, theme) {
-  return noteLine(aborted ? `Interrupted after ${formatDuration(ms)}` : `${verb} for ${formatDuration(ms)} · done ${new Date(endedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase()}`, theme);
+// `running` marks a turn the user's typing closed while work was still live:
+// its line names that work instead of claiming done. Entries from before it
+// existed carry none.
+export function formatTurn({ verb, ms, endedAt, aborted, running }, theme) {
+  if (aborted) return noteLine(`Interrupted after ${formatDuration(ms)}`, theme);
+  const tail = running
+    ? `${[running.agents && plural(running.agents, "agent"), running.shells && plural(running.shells, "shell")].filter(Boolean).join(", ")} still running`
+    : `done ${new Date(endedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase()}`;
+  return noteLine(`${verb} for ${formatDuration(ms)} · ${tail}`, theme);
 }
 
 // One turn from agent_start until the footer decides it is over (see
@@ -985,9 +1000,9 @@ export function createTurnClock(verbs = TURN_VERBS, pick = () => Math.floor(Math
     settledLabel(now = Date.now()) {
       return startedAt == null ? "" : `${verb[1]} for ${formatDuration(now - startedAt)}`;
     },
-    stop(now = Date.now(), { aborted = false } = {}) {
+    stop(now = Date.now(), { aborted = false, running } = {}) {
       if (startedAt == null) return null;
-      const turn = { verb: verb[1], ms: now - startedAt, endedAt: now, aborted };
+      const turn = { verb: verb[1], ms: now - startedAt, endedAt: now, aborted, ...(running && { running }) };
       startedAt = null;
       return turn;
     },

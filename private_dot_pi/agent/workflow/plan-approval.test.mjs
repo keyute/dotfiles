@@ -14,6 +14,8 @@ import {
   requestPlanApproval,
   showPlan,
 } from "./plan-approval.mjs";
+import { reviewAction } from "./approval.mjs";
+import { blocksUser, closeView } from "./dialog.mjs";
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const assistant = (content, stopReason = "toolUse") => ({ role: "assistant", content, api: "openai-codex-responses", provider: "openai-codex", model: "fixture", usage, stopReason, timestamp: Date.now() });
@@ -444,6 +446,61 @@ test("plan show reuses Markdown work across repaint and scroll, but rerenders on
   assert.equal(renderToken.mock.callCount(), themedWork);
   component.handleInput("\x1b");
   assert.equal(await shown, undefined);
+});
+
+// pi's span: ui_prompt_* only for the outermost prompt, closed after done().
+function spannedUi(reported) {
+  let depth = 0;
+  const span = async (kind, open) => {
+    if (depth++ === 0) reported.push(`start ${blocksUser({ kind }) ? "blocked" : "view"}`);
+    try { return await open(); } finally { if (--depth === 0) reported.push("end"); }
+  };
+  const components = [];
+  return {
+    components,
+    custom: factory => span("custom", () => new Promise(resolve => components.push(factory({ terminal: { rows: 20 }, requestRender() {} }, theme, keybindings, resolve)))),
+    confirm: () => span("confirm", async () => true),
+    notify() {},
+  };
+}
+
+test("plan show closes before a wait mounts, so the wait's prompt reports blocked", async () => {
+  const reported = [];
+  const ui = spannedUi(reported);
+  const ctx = { mode: "tui", hasUI: true, ui };
+  const shown = showPlan(ctx, { plan: "Change A", revision: 1 });
+  const approval = requestPlanApproval(ctx);
+  assert.equal(await shown, undefined);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(reported, ["start view", "end", "start blocked"]);
+  ui.components.at(-1).handleInput("\r");
+  assert.deepEqual(await approval, { decision: PLAN_APPROVED });
+});
+
+test("a wait arriving while another caller is still closing the view waits for that close", async () => {
+  const reported = [];
+  const ui = spannedUi(reported);
+  const ctx = { mode: "tui", hasUI: true, ui };
+  const shown = showPlan(ctx, { plan: "Change A", revision: 1 });
+  const first = closeView();
+  const approval = requestPlanApproval(ctx);
+  await first;
+  assert.equal(await shown, undefined);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(reported, ["start view", "end", "start blocked"]);
+  ui.components.at(-1).handleInput("\r");
+  assert.deepEqual(await approval, { decision: PLAN_APPROVED });
+});
+
+test("the broker confirm closes an open plan view before it asks", async () => {
+  const reported = [];
+  const ui = spannedUi(reported);
+  const ctx = { mode: "tui", hasUI: true, modelRegistry: { find: () => undefined }, ui };
+  const shown = showPlan(ctx, { plan: "Change A", revision: 1 });
+  const config = { models: { provider: "openai-codex" } };
+  assert.equal(await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } }), true);
+  assert.equal(await shown, undefined);
+  assert.deepEqual(reported, ["start view", "end", "start blocked", "end"]);
 });
 
 test("read calls do not isolate sibling tools", () => {

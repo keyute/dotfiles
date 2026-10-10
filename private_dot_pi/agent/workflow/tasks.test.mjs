@@ -157,7 +157,7 @@ test("list retains every task id, status, and command after completion", async (
   await h.tasks.stopAll({ silent: true });
 });
 
-test("stopAll normally records and notifies, while shutdown-silent stops retain status without either", async () => {
+test("stopAll normally records and notifies, while shutdown-silent stops retain status without either or a change", async () => {
   const normal = harness();
   normal.start("a");
   normal.start("b");
@@ -167,12 +167,15 @@ test("stopAll normally records and notifies, while shutdown-silent stops retain 
   assert.equal(normal.notices.length, 2);
 
   const shutdown = harness();
+  let changes = 0;
+  shutdown.tasks.onChange(() => changes++);
   shutdown.start("c");
   shutdown.start("d");
   await shutdown.tasks.stopAll({ silent: true });
   assert.equal(shutdown.tasks.live(), 0);
   assert.deepEqual(shutdown.records, []);
   assert.deepEqual(shutdown.notices, []);
+  assert.equal(changes, 0, "the outgoing session's listeners hear nothing");
   assert.deepEqual(shutdown.tasks.list(), [
     { id: "t1", status: "stopped", command: "c" },
     { id: "t2", status: "stopped", command: "d" },
@@ -202,4 +205,20 @@ test("stopAll gives up on a task whose worker never answers the abort", async ()
   tasks.start({ command: "wedged", run: () => new Promise(() => {}) });
   await tasks.stopAll({ timeoutMs: 5 });
   assert.equal(tasks.live(), 1);
+});
+
+test("onChange fires once each task ends, answered inline or notified", async () => {
+  const h = harness();
+  let changes = 0;
+  h.tasks.onChange(() => { changes++; assert.equal(h.tasks.live(), 2 - changes); });
+  const inline = h.start("true");
+  const later = h.start("npm run dev");
+  const settled = h.tasks.settle(inline.id, 10_000);
+  inline.exec.resolve({ exitCode: 0 });
+  await settled;
+  assert.equal(changes, 1);
+  later.exec.resolve({ exitCode: 0 });
+  await h.settle();
+  assert.equal(changes, 2);
+  assert.equal(h.notices.length, 1);
 });

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, taskTitle, toolRenderers } from "./rows.mjs";
+import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, taskTitle, toolRenderers } from "./rows.mjs";
 import { createShellRunner } from "./shell.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
@@ -12,6 +12,11 @@ const theme = { fg: (color, text) => `<${color}>${text}`, bold: text => text };
 const result =(text, details) => ({ content: [{ type: "text", text }], details });
 const context = (overrides = {}) => ({ toolCallId: "c1", isPartial: false, isError: false, expanded: false, state: {}, invalidate() {}, ...overrides });
 const rendered = component => component.render(80).map(line => line.trimEnd());
+
+test("alignRight puts the right side flush at the width and yields the left", () => {
+  assert.equal(alignRight("peek", "esc back", 20), "peek        esc back");
+  assert.equal(alignRight("a long left side", "esc back", 20).replace(/\x1b\[[0-9;]*m/g, ""), "a long le…  esc back");
+});
 
 test("row titles name the action and the target", () => {
   assert.equal(callTitle("bash", { command: "git status\n# trailing" }), "Ran git status");
@@ -1046,6 +1051,8 @@ test("answers, completion and turn lines format", () => {
   assert.equal(formatDuration(3_720_000), "1h 02m");
   assert.match(formatTurn({ verb: "Integrated", ms: 512_000, endedAt: Date.UTC(2026, 8, 7, 10, 50) }, theme), /^<accent>π <muted>Integrated for 8m 32s · done \d{1,2}:\d{2} [ap]m$/);
   assert.equal(formatTurn({ verb: "Integrated", ms: 214_000, endedAt: 0, aborted: true }, theme), "<accent>π <muted>Interrupted after 3m 34s");
+  assert.equal(formatTurn({ verb: "Interpolated", ms: 82_000, endedAt: 0, aborted: false, running: { agents: 1, shells: 0 } }, theme), "<accent>π <muted>Interpolated for 1m 22s · 1 agent still running");
+  assert.equal(formatTurn({ verb: "Interpolated", ms: 82_000, endedAt: 0, aborted: false, running: { agents: 1, shells: 2 } }, theme), "<accent>π <muted>Interpolated for 1m 22s · 1 agent, 2 shells still running");
 });
 
 test("the turn clock draws one verb per turn and ignores nested starts", () => {
@@ -1060,6 +1067,8 @@ test("the turn clock draws one verb per turn and ignores nested starts", () => {
   assert.equal(clock.stop(), null);
   clock.start(0);
   assert.equal(clock.stop(1000, { aborted: true }).aborted, true);
+  clock.start(0);
+  assert.deepEqual(clock.stop(1000, { running: { agents: 0, shells: 1 } }).running, { agents: 0, shells: 1 });
 });
 
 test("a failed row is never folded: no handle above it, and its body renders in full", () => {

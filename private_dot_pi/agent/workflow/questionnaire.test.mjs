@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { CURSOR_MARKER, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { QuestionnaireComponent, questionnaireResult, registerQuestionnaire, validateQuestionnaire } from "./questionnaire.mjs";
+import { blocksUser, openView } from "./dialog.mjs";
 
 const theme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: text => text, italic: text => text, strikethrough: text => text, underline: text => text };
 const keybindings = { matches(data, action) { return ({ "tui.select.cancel": ["escape"], "tui.select.up": ["up"], "tui.select.down": ["down"], "tui.select.confirm": ["enter"], "tui.input.submit": ["enter"], "tui.input.tab": ["tab"], "tui.input.newLine": ["shift+enter", "ctrl+j"] }[action] ?? []).some(key => matchesKey(data, key)); } };
@@ -427,4 +428,48 @@ test("abort, host teardown and final cleanup release the listener only once", ()
   component.handleInput("\r");
   assert.equal(completed, 1);
   assert.equal(removed, 1);
+});
+
+// pi's span: ui_prompt_* only for the outermost prompt, closed after done().
+function spannedUi(reported) {
+  let depth = 0;
+  const components = [];
+  return {
+    components,
+    custom: async factory => {
+      if (depth++ === 0) reported.push(`start ${blocksUser({ kind: "custom" }) ? "blocked" : "view"}`);
+      try { return await new Promise(resolve => components.push(factory({ terminal: { rows: 20 }, requestRender() {} }, theme, keybindings, resolve))); } finally { if (--depth === 0) reported.push("end"); }
+    },
+  };
+}
+
+test("a question's prompt span reports blocked, after any open view has closed", async () => {
+  let tool;
+  registerQuestionnaire({ registerTool(value) { tool = value; } });
+  const reported = [];
+  const ui = spannedUi(reported);
+  const ctx = { mode: "tui", hasUI: true, ui };
+  const view = openView(signal => ui.custom((_tui, _theme, _keybindings, done) => {
+    signal.addEventListener("abort", () => done(), { once: true });
+    return { render: () => [], invalidate() {} };
+  }));
+  const asked = tool.execute("x", { questions: [questions[0]] }, undefined, undefined, ctx);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(reported, ["start view", "end", "start blocked"]);
+  assert.equal(await view, undefined);
+  ui.components.at(-1).handleInput("\x1b");
+  assert.equal((await asked).details.cancelled, true);
+  assert.deepEqual(reported, ["start view", "end", "start blocked", "end"]);
+});
+
+test("a question with no view open mounts at once and reports blocked", async () => {
+  let tool;
+  registerQuestionnaire({ registerTool(value) { tool = value; } });
+  const reported = [];
+  const ui = spannedUi(reported);
+  const asked = tool.execute("x", { questions: [questions[0]] }, undefined, undefined, { mode: "tui", hasUI: true, ui });
+  assert.deepEqual(reported, ["start blocked"]);
+  ui.components.at(-1).handleInput("\x1b");
+  assert.equal((await asked).details.cancelled, true);
+  assert.deepEqual(reported, ["start blocked", "end"]);
 });

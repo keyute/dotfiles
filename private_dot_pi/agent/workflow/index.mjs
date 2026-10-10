@@ -20,6 +20,7 @@ import { applyPlanDecision, isolatePlanApproval, PlanState, requestPlanApproval,
 import { registerQuestionnaire } from "./questionnaire.mjs";
 import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installFolding, installReasoningHide, isMcp, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
+import { blocksUser } from "./dialog.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
 import { webFetchTool } from "./web-fetch.mjs";
@@ -171,7 +172,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // child arriving after a later epoch, so root must refresh this on every bump.
   const publishEpoch = () => { process.env.PI_WORKFLOW_EPOCH = String(broker.policy.epoch); };
   if (isRoot) {
-    broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request, () => fleet?.closePeek(), denials));
+    broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request, denials));
     env = broker.env;
     Object.assign(process.env, env);
     publishEpoch();
@@ -283,9 +284,19 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   // herdr's pi extension reports `blocked` only on this bus event; pi's prompt
   // span is the one signal covering plan approval, questions and broker confirms.
+  // Views (the peek, /plan show) open spans too and are not forwarded.
   // Drop once herdr's extension subscribes to ui_prompt_* itself, or each prompt counts twice.
-  pi.on("ui_prompt_start", event => pi.events.emit("herdr:blocked", { active: true, label: event.title }));
-  pi.on("ui_prompt_end", () => pi.events.emit("herdr:blocked", { active: false }));
+  let blocked = false;
+  pi.on("ui_prompt_start", event => {
+    if (!blocksUser(event)) return;
+    blocked = true;
+    pi.events.emit("herdr:blocked", { active: true, label: event.title });
+  });
+  pi.on("ui_prompt_end", () => {
+    if (!blocked) return;
+    blocked = false;
+    pi.events.emit("herdr:blocked", { active: false });
+  });
 
   // Mode and approval reach the status line as one string so the two can never
   // drift; the footer paints it, where the theme is live.

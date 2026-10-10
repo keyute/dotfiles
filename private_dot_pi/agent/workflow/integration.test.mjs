@@ -14,6 +14,7 @@ import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { activeToolNames } from "./index.mjs";
+import { openWait } from "./dialog.mjs";
 
 // Unix sockets are unavailable in some sandboxes (EPERM on listen); probe once
 // up front so every test in this file can share one skip reason.
@@ -279,9 +280,15 @@ test("pinned upstream packages register against the managed extension and prefli
   }
   const blocked = [];
   events.on("herdr:blocked", data => blocked.push(data));
-  for (const handler of handlers.get("ui_prompt_start")) handler({ type: "ui_prompt_start", kind: "custom", title: "Plan" });
-  for (const handler of handlers.get("ui_prompt_end")) handler({ type: "ui_prompt_end", kind: "custom" });
-  assert.deepEqual(blocked, [{ active: true, label: "Plan" }, { active: false }]);
+  const prompt = (kind, title) => {
+    for (const handler of handlers.get("ui_prompt_start")) handler({ type: "ui_prompt_start", kind, ...(title ? { title } : {}) });
+    for (const handler of handlers.get("ui_prompt_end")) handler({ type: "ui_prompt_end", kind });
+  };
+  prompt("custom");
+  assert.deepEqual(blocked, [], "a bare custom dialog is a view");
+  prompt("confirm", "Approve");
+  await openWait({ ui: { custom: async () => prompt("custom") } }, () => {});
+  assert.deepEqual(blocked, [{ active: true, label: "Approve" }, { active: false }, { active: true, label: undefined }, { active: false }]);
   await assert.rejects(tools.get("workspace_read").execute("test", { path: "fixture" }), /not ready/);
   // The unsandboxed flag is offered to root and withheld from a read-only role (policy refuses it regardless).
   assert.ok(tools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox);

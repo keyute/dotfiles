@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { CURSOR_MARKER, Markdown, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { Dialog } from "./dialog.mjs";
+import { Dialog, openWait } from "./dialog.mjs";
 import { pad } from "./rows.mjs";
 
 const CUSTOM_LABEL = "Type something.";
@@ -348,7 +348,7 @@ export function registerQuestionnaire(pi) {
       if (signal?.aborted) return questionnaireResult(params.questions, [], true);
       let component;
       try {
-        const drafts = await ctx.ui.custom((tui, theme, keybindings, done) => {
+        const drafts = await openWait(ctx, (tui, theme, keybindings, done) => {
           component = new QuestionnaireComponent(tui, theme, keybindings, done, params.questions, signal);
           return component;
         });

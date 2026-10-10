@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
-import { CHILD, CURSOR, appendVisible, defaultFolds, doneEntryRenderer, frameRule, oneLine, shortTitle, slotHeight } from "./rows.mjs";
+import { closeView, openView } from "./dialog.mjs";
+import { CHILD, CURSOR, alignRight, appendVisible, defaultFolds, doneEntryRenderer, frameRule, oneLine, shortTitle, slotHeight } from "./rows.mjs";
 
 // The row format is docs/pi-design.md rule 6.
 // Worst child status wins a multi-result completion (single runs carry one).
@@ -161,7 +162,7 @@ export function rpcCall(events, method, params = {}, timeoutMs = 2_000) {
 // The rows render inside the footer (attach/render): pi's dock order is fixed
 // with the footer last, so a widget could only sit above the status line.
 export function installFleet(pi, ctx, {
-  pollMs = 1_000, quietMs = 10_000, timeoutMs = 2_000, cleanupTimeoutMs = 5_000, folds = defaultFolds,
+  pollMs = 1_000, quietMs = 10_000, timeoutMs = 2_000, cleanupTimeoutMs = 5_000, owedMs = 10_000, folds = defaultFolds,
   openPeek = async (ctx, opts) => {
     const { openPeek: open } = await import("./peek.mjs");
     // A slot dialog can close the peek during this import; an aborted signal
@@ -170,17 +171,19 @@ export function installFleet(pi, ctx, {
     return open(ctx, opts);
   },
 } = {}) {
-  const state = { ...createFleetState(), pending: new Map(), active: new Set(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
-  // The one way a live peek closes from outside: aborting finishes the dialog
-  // synchronously, so pi's composer slot is free before whatever comes next.
-  const closePeek = () => { state.peek?.abort(); state.peek = undefined; };
+  const state = { ...createFleetState(), pending: new Map(), active: new Set(), owed: new Map(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
+  const listeners = new Set();
+  // A stopped fleet's listeners belong to a torn-down session.
+  const changed = () => { if (!state.stopped) for (const listener of listeners) listener(); };
 
   // Must key every rendered segment, or the no-change check below freezes it.
   const shape = () => [state.totalActive, ...state.entries.map(entry => `${entry.agent}|${entry.status}|${entry.goal}|${entry.tokens?.total ?? entry.tokens}`)].join("\n");
   const show = (fleet, snapshot) => {
     const before = shape();
+    const total = state.totalActive;
     setEntries(state, fleet, snapshot);
     if (shape() !== before) state.tui?.requestRender();
+    if (state.totalActive !== total) changed();
   };
   const poll = async () => {
     state.timer = undefined;
@@ -210,13 +213,6 @@ export function installFleet(pi, ctx, {
   // way into its events.jsonl.
   pi.on("tool_execution_start", event => {
     if (event.toolName === "subagent" && event.args?.agent) state.pending.set(event.toolCallId, { agent: event.args.agent, task: String(event.args.title || event.args.task || "") });
-    // pi's non-overlay ctx.ui.custom clears the composer slot under whatever
-    // is already there: a question or plan approval opening while the peek
-    // holds the slot would otherwise orphan it (its promise never resolves,
-    // its tick keeps polling, and its later close would put the editor back
-    // over the new dialog). The action-approval confirm reaches closePeek
-    // through the broker's review path instead; it is not a pi event.
-    if (event.toolName === "ask_user_question" || event.toolName === "submit_plan") closePeek();
   });
   pi.on("tool_execution_end", event => {
     if (event.toolName !== "subagent") return;
@@ -230,10 +226,27 @@ export function installFleet(pi, ctx, {
   // Live children are counted from the launch events themselves: the status
   // poll lags agent_settled, where the footer asks whether a turn is over.
   pi.events.on("subagents:rpc:v1:ready", wake);
-  pi.events.on("subagent:async-started", payload => { if (payload?.id) state.active.add(payload.id); wake(); });
-  pi.events.on("subagent:process-terminal", proof => {
-    if (proof?.state === "observed" && proof?.runId) state.active.delete(proof.runId);
+  // A child is also owed from launch until its completion line: pi-subagents
+  // emits async-complete only once the wake has reached pi (the run is active
+  // by then), and the process can exit well before that. A completion that
+  // never comes stops being owed a while after the exit.
+  pi.events.on("subagent:async-started", payload => {
+    if (payload?.id) { state.active.add(payload.id); state.owed.set(payload.id, undefined); }
     wake();
+    changed();
+  });
+  pi.events.on("subagent:process-terminal", proof => {
+    if (proof?.state === "observed" && proof?.runId) {
+      state.active.delete(proof.runId);
+      if (state.stopped) state.owed.delete(proof.runId);
+      else if (state.owed.has(proof.runId) && !state.owed.get(proof.runId)) {
+        const timer = setTimeout(() => { state.owed.delete(proof.runId); changed(); }, owedMs);
+        timer.unref?.();
+        state.owed.set(proof.runId, timer);
+      }
+    }
+    wake();
+    changed();
   });
   // The completion payload spreads the result file (`success`, `state`,
   // `agent`, `durationMs` from launch to end) plus `runId` and, per result,
@@ -247,13 +260,18 @@ export function installFleet(pi, ctx, {
       ?? (payload?.state === "paused" || payload?.state === "stopped" ? payload.state : payload?.success === true ? "completed" : "failed");
     const durationMs = typeof payload?.durationMs === "number" ? payload.durationMs : undefined;
     appendVisible(pi, "workflow-child", { agent: launch?.agent ?? payload?.agent ?? "subagent", task: launch?.task ?? "", status, durationMs }, folds);
+    clearTimeout(state.owed.get(id));
+    state.owed.delete(id);
     wake();
+    changed();
   });
   pi.registerEntryRenderer("workflow-child", doneEntryRenderer("workflow-child", folds));
   pi.on("session_shutdown", () => {
     state.stopped = true;
     clearTimeout(state.timer);
-    closePeek();
+    // An expiry firing after teardown would reach the old session's listeners.
+    for (const [id, timer] of state.owed) if (timer) { clearTimeout(timer); state.owed.delete(id); }
+    closeView();
     show(null);
     state.bindings.clear();
   });
@@ -344,51 +362,47 @@ export function installFleet(pi, ctx, {
   // slot over its events.jsonl when this process saw the launch (`asyncDir`
   // came back with it) and pi is rendering a TUI, otherwise pi-subagents' own
   // transcript tail in the same slot — and says so when there is none yet,
-  // Enter is never silent. Resolves to whether closePeek ended it.
+  // Enter is never silent. Resolves to whether closeView ended it.
   const peek = async entry => {
     const current = state.ctx;
     if (!current) return false;
     const id = runIdFor(state, entry);
     const launch = id ? state.launches.get(id) : undefined;
     // Fleet keys still reach the editor while a peek awaits its import or RPC;
-    // a second Enter then must end the first, or it mounts later unowned.
-    closePeek();
-    const controller = new AbortController();
-    state.peek = controller;
-    try {
+    // opening a view ends the first, so a second Enter cannot mount it later unowned.
+    return openView(async signal => {
       if (current.mode === "tui" && launch?.asyncDir) {
-        await openPeek(current, {
-          id, asyncDir: launch.asyncDir, describe: () => describe(id), events: pi.events, rpcCall, timeoutMs,
-          signal: controller.signal,
-        });
-        return controller.signal.aborted;
+        await openPeek(current, { id, asyncDir: launch.asyncDir, describe: () => describe(id), events: pi.events, rpcCall, timeoutMs, signal });
+        return signal.aborted;
       }
-      const reply = id ? await rpcCall(pi.events, "status", { id, view: "transcript", lines: 40 }, timeoutMs) : null;
-      if (controller.signal.aborted) return true;
+      // The status reply can take timeoutMs; a closed peek must not hold up the dialog taking the slot.
+      const reply = id ? await Promise.race([
+        rpcCall(pi.events, "status", { id, view: "transcript", lines: 40 }, timeoutMs),
+        new Promise(resolve => signal.addEventListener("abort", resolve, { once: true })),
+      ]) : null;
+      if (signal.aborted) return true;
       if (!reply?.text || !current.hasUI) { current.ui.notify(`No transcript yet for ${entry.agent}`, "info"); return false; }
       const { agent, goal, model } = rowFor(state, entry);
       const header = [goal ? `${agent}${NAME_SEP}${oneLine(goal)}` : agent, modelLabel(model)].filter(Boolean).join(" · ");
       await current.ui.custom((tui, theme, _keybindings, done) => {
-        controller.signal.addEventListener("abort", () => done(), { once: true });
+        signal.addEventListener("abort", () => done(), { once: true });
         const body = new Text(reply.text, 2, 0);
         return {
           // The live peek's frame and height (rules 11 and 6): the tail is cut
           // to fit, since pi's dock clips an oversized slot from the bottom,
-          // hint and rule first.
+          // rule first.
           render: width => {
             const height = slotHeight(tui.terminal?.rows ?? 24);
             const rule = frameRule(theme, width);
-            const tail = body.render(width).slice(-(height - 6));
-            return [rule, `  ${theme.fg("accent", header)}`, "", ...tail, "", `  ${theme.fg("dim", "esc back")}`, rule].map(line => truncateToWidth(line, width, ""));
+            const tail = body.render(width).slice(-(height - 5));
+            return [rule, `  ${alignRight(theme.fg("accent", header), theme.fg("dim", "esc back"), width - 2)}`, "", ...tail, "", rule].map(line => truncateToWidth(line, width, ""));
           },
           invalidate: () => body.invalidate(),
           handleInput: () => done(),
         };
       });
-      return controller.signal.aborted;
-    } finally {
-      if (state.peek === controller) state.peek = undefined;
-    }
+      return signal.aborted;
+    });
   };
   const handleKey = action => {
     const consumed = navigate(state, action, entry => {
@@ -396,7 +410,7 @@ export function installFleet(pi, ctx, {
       // cursor to the peeked row once the peek settles, so Down/Up resume
       // without another Enter. The row is found again by the DTO's opaque
       // key (a sibling can land above it while the peek is open), the saved
-      // index clamped to the panel is the fallback. A peek that closePeek
+      // index clamped to the panel is the fallback. A peek that closeView
       // ended leaves focus alone: another dialog holds the slot, and the
       // fleet's ❭ under it would be a second cursor.
       const { key } = entry;
@@ -415,22 +429,24 @@ export function installFleet(pi, ctx, {
   let stopping;
   return {
     wake,
-    closePeek,
     stopAll: () => stopping ??= stopAll().finally(() => { stopping = undefined; }),
     attachContext: current => {
-      closePeek(); state.bindings.clear(); state.ctx = current; state.stopped = false;
+      closeView(); state.bindings.clear(); state.ctx = current; state.stopped = false;
       // A live launch recorded from this process's own events wins over the
       // branch's replay of the same run.
       for (const [id, launch] of launchesFromBranch(current?.sessionManager?.getBranch?.())) {
         if (!state.launches.has(id)) state.launches.set(id, launch);
       }
       wake();
+      changed();
     },
     handleKey,
     // Runs restored with the session never emit async-started; the poll's
     // count covers them (it lags a completion by one poll, so the event set
     // is the fast path).
-    activeCount: () => Math.max(state.active.size, state.totalActive),
+    activeCount: () => Math.max(new Set([...state.active, ...state.owed.keys()]).size, state.totalActive),
+    // Fires whenever activeCount may have changed.
+    onChange: listener => { listeners.add(listener); },
     focused: () => state.focused,
     attach: tui => { state.tui = tui; },
     render: (width, theme) => renderFleet(state, width, theme),

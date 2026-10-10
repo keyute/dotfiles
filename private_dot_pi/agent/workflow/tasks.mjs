@@ -17,6 +17,7 @@ function shown(output) {
 
 export function createTasks({ notify, record, now = Date.now, setTimer = setTimeout }) {
   const tasks = new Map();
+  const listeners = new Set();
   let next = 1;
   const running = () => [...tasks.values()].filter(task => task.status === "running");
   const find = id => {
@@ -46,6 +47,8 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
         // Live until the worker has closed: the turn line and session shutdown both wait on live tasks.
         try { await close?.(); } catch {}
         task.status = status;
+        // A silent stop is shutdown's: the listeners belong to the outgoing session.
+        if (!task.silent) for (const listener of listeners) listener();
         // A caller still holding the tool call open takes the result as that call's
         // reply; the message and the line exist to reach a model that has moved on.
         if (task.claimed || task.silent) return;
@@ -88,6 +91,8 @@ export function createTasks({ notify, record, now = Date.now, setTimer = setTime
       return true;
     },
     live: () => running().length,
+    // Fires whenever live() may have dropped.
+    onChange: listener => { listeners.add(listener); },
     // Bounded: session shutdown awaits this, and a worker that never answers
     // the abort must not hold it; the broker's lease teardown kills it after.
     stopAll({ timeoutMs = 5_000, silent = false } = {}) {

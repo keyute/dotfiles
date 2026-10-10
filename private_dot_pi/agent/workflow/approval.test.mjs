@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseDecision, reviewAction } from "./approval.mjs";
+import { openView } from "./dialog.mjs";
 
 const config = { models: { provider: "openai-codex", classifierFilter: { model: "filter", reasoningEffort: "minimal" }, classifierJudge: { model: "judge", reasoningEffort: "medium" } } };
 
@@ -23,10 +24,10 @@ test("the classifier's reason is one line of at most 200 characters, or absent",
 
 test("classifier failure asks root UI and denies unattended requests", async () => {
   const ctx = { hasUI: false, modelRegistry: { find: () => undefined } };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, undefined, { count: 0 }), "it needs user approval and no UI is attached");
+  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }), "it needs user approval and no UI is attached");
   ctx.hasUI = true;
   ctx.ui = { confirm: async () => true };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, undefined, { count: 0 }), true);
+  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }), true);
 });
 
 test("an unsandboxed request is named as such in the notice and the dialog", async () => {
@@ -59,7 +60,7 @@ test("the classifier sees the session's shell history beside the action, and a f
   const answers = ['{"decision":"deny"}', '{"decision":"allow"}'];
   const ctx = { hasUI: false, sessionManager: { getSessionId: () => "s1" }, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async (model, request, options) => { calls.push({ model, request, options }); return { content: [{ type: "text", text: answers[calls.length - 1] }] }; } } };
   const history = [{ command: "gh pr list", sandboxed: true, exitCode: 1 }];
-  assert.equal(await reviewAction(ctx, config, "list the open PRs", { approval: "auto", tool: "bash", args: { command: "gh pr list", dangerouslyDisableSandbox: true }, history }, undefined, { count: 0 }), true);
+  assert.equal(await reviewAction(ctx, config, "list the open PRs", { approval: "auto", tool: "bash", args: { command: "gh pr list", dangerouslyDisableSandbox: true }, history }, { count: 0 }), true);
   assert.deepEqual(calls.map(call => [call.model.id, call.options.reasoningEffort]), [["filter", "minimal"], ["judge", "medium"]]);
   const content = JSON.parse(calls[0].request.messages[0].content);
   assert.deepEqual(content.history, history);
@@ -76,12 +77,12 @@ test("the classifier sees the session's shell history beside the action, and a f
 test("a filter allow ends the review, and a judge that cannot answer asks the UI", async () => {
   let calls = 0;
   const ctx = { hasUI: true, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async () => { calls++; return { content: [{ type: "text", text: '{"decision":"allow"}' }] }; } }, ui: { confirm: async () => { throw new Error("must not prompt"); } } };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, undefined, { count: 0 }), true);
+  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, { count: 0 }), true);
   assert.equal(calls, 1);
   const asked = [];
   ctx.modelRegistry.complete = async () => ({ content: [{ type: "text", text: "not json" }] });
   ctx.ui = { notify: () => {}, confirm: async title => { asked.push(title); return false; } };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, undefined, { count: 0 }), "the user declined it");
+  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, { count: 0 }), "the user declined it");
   assert.deepEqual(asked, ["Approve this action once?"]);
 });
 
@@ -89,8 +90,8 @@ test("a classifier deny returns the judge's reason, or a generic one", async () 
   const answers = ['{"decision":"deny","reason":"filter"}', '{"decision":"deny","reason":"It pushes to a remote."}', '{"decision":"deny"}', '{"decision":"deny"}'];
   const ctx = { hasUI: false, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async () => said(answers.shift()) } };
   const request = { approval: "auto", tool: "bash", args: { command: "git push" } };
-  assert.equal(await reviewAction(ctx, config, "test", request, undefined, { count: 0 }), "the classifier said \"It pushes to a remote\"");
-  assert.equal(await reviewAction(ctx, config, "test", request, undefined, { count: 0 }), "the classifier denied it");
+  assert.equal(await reviewAction(ctx, config, "test", request, { count: 0 }), "the classifier said \"It pushes to a remote\"");
+  assert.equal(await reviewAction(ctx, config, "test", request, { count: 0 }), "the classifier denied it");
 });
 
 test("after three consecutive classifier denials the next goes to the user until an allow resets the count", async () => {
@@ -99,7 +100,7 @@ test("after three consecutive classifier denials the next goes to the user until
   const asked = [];
   const ctx = { hasUI: true, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async () => said(answer) }, ui: { notify: () => {}, confirm: async title => { asked.push(title); return approve; } } };
   const denials = { count: 0 };
-  const review = () => reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, undefined, denials);
+  const review = () => reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, denials);
   for (let i = 0; i < 3; i++) assert.equal(await review(), "the classifier said \"unsafe\"");
   assert.equal(asked.length, 0);
   // A user decline leaves the count, so the next deny still reaches the user.
@@ -123,13 +124,36 @@ test("after three consecutive classifier denials the next goes to the user until
   assert.equal(await review(), "the classifier said \"unsafe\"");
   assert.equal(asked.length, 3);
   // Ask mode never touches the count.
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } }, undefined, denials);
+  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } }, denials);
   assert.equal(denials.count, 1);
 });
 
-test("the confirm's slot is cleared first: beforeConfirm runs before ctx.ui.confirm", async () => {
+// A view mount that holds the slot until aborted, then settles after `ms`.
+const holdSlot = (seen, name, ms = 0) => openView(signal => new Promise(resolve => signal.addEventListener("abort", () => { seen.push(name); setTimeout(resolve, ms); }, { once: true })));
+
+test("the confirm's slot is cleared first: an open view closes before ctx.ui.confirm", async () => {
   const seen = [];
   const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => {}, confirm: async () => { seen.push("confirm"); return true; } } };
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } }, () => seen.push("close"));
+  holdSlot(seen, "close");
+  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
   assert.deepEqual(seen, ["close", "confirm"]);
+});
+
+test("the confirm waits for the closing view to settle", async () => {
+  const seen = [];
+  const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => {}, confirm: async () => { seen.push("confirm"); return true; } } };
+  holdSlot([], "closing", 5).then(() => seen.push("closed"));
+  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  assert.deepEqual(seen, ["closed", "confirm"]);
+});
+
+test("a view opened while the confirm waits on a closing one is closed too before the confirm", async () => {
+  const seen = [];
+  const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => {}, confirm: async () => { seen.push("confirm"); return true; } } };
+  holdSlot(seen, "first", 5);
+  const review = reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  await new Promise(resolve => setTimeout(resolve, 1));
+  holdSlot(seen, "second", 5);
+  assert.equal(await review, true);
+  assert.deepEqual(seen, ["first", "second", "confirm"]);
 });

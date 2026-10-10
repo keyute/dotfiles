@@ -5,7 +5,7 @@ import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth } from "@earendil-
 import { Dialog, editorTheme } from "./dialog.mjs";
 import { formatTokens, modelLabel } from "./fleet.mjs";
 import { WorkingRow } from "./footer.mjs";
-import { PAD, PROMPT, oneLine, pad, shade, shadedBlock, slotHeight } from "./rows.mjs";
+import { PAD, PROMPT, alignRight, oneLine, pad, shade, shadedBlock, slotHeight } from "./rows.mjs";
 import { createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 // The fleet's Enter peek (docs/pi-design.md rule 6): a rule-11
@@ -208,7 +208,8 @@ export class PeekDialog extends Dialog {
     const budget = Math.max(0, free - visibleWidth(suffix()) - 3);
     const task = budget > 0 ? truncateToWidth(oneLine(info.task), budget, "…") : "";
     const nameWidth = Math.max(1, width - 2 - visibleWidth(`peek    ${cue}${suffix()}`));
-    return `${this.theme.fg("dim", "peek")}  ${this.theme.fg("accent", truncateToWidth(agent, nameWidth, "…"))}${task ? ` › ${task}` : ""}${parts.length ? this.theme.fg("muted", ` · ${parts.join(" · ")}`) : ""}${state ? this.theme.fg(tone, stateText) : ""}  ${this.theme.fg("dim", cue)}`;
+    const left = `${this.theme.fg("dim", "peek")}  ${this.theme.fg("accent", truncateToWidth(agent, nameWidth, "…"))}${task ? ` › ${task}` : ""}${parts.length ? this.theme.fg("muted", ` · ${parts.join(" · ")}`) : ""}${state ? this.theme.fg(tone, stateText) : ""}`;
+    return alignRight(left, this.theme.fg("dim", cue), width - 2);
   }
 
   confirmLine() {
