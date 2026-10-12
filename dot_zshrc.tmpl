@@ -180,6 +180,11 @@ export GOPRIVATE="git.keyute.io"
 export GOPATH="$HOME/.go"
 export PATH="$GOPATH/bin:$PATH"
 
+# React Native / Expo: Gradle builds with zulu@17 (Brewfile), not Android Studio's bundled JBR.
+export JAVA_HOME="/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home"
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools"
+
 export XDG_CONFIG_HOME="$HOME/.config"
 
 alias vim=nvim
