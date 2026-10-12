@@ -149,18 +149,20 @@ test("nested preflight retains bg_wait and loads the managed runtime backstop", 
   assert.ok(resolved.contract.tools.effectiveAllowlist.includes("bg_wait"));
   const { registerWaitTool } = await jiti.import(new URL("src/runs/background/wait-tool.js", import.meta.resolve("pi-subagents")).pathname);
   let wait;
-  registerWaitTool({ registerTool: tool => { wait = tool; } }, {}, true, undefined, undefined, { nestedRootRunId: "fixture" });
+  registerWaitTool({ on() {}, registerTool: tool => { wait = tool; } }, {}, true, undefined, undefined, { nestedRootRunId: "fixture" });
   assert.equal(wait.name, "bg_wait");
-  assert.match(wait.description, /This child runtime does not install the root session's native completion notifier/);
-  assert.match(wait.description, /Use blocking bg_wait/);
+  assert.match(wait.description, /This child runtime has no native completion notifier/);
+  assert.match(wait.description, /use blocking bg_wait/);
 });
 
 test("plan mode rejects configured writers before resolving a child contract", async t => {
   const { config } = fixture(t);
   let resolved = 0;
-  const ctx = { cwd: process.cwd(), model: { provider: "openai-codex", id: "gpt-5.6-sol" }, modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] } };
+  const ctx = { cwd: process.cwd(), isProjectTrusted: () => false, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] } };
   const resolve = async request => {
     resolved++;
+    // The preflight resolves the contract under the trust the launch uses.
+    assert.equal(request.projectTrusted, false);
     const child = config.agents[request.agent];
     return { ok: true, contract: { agent: { filePath: child.agentPath }, tools: { configuredExtensions: [child.extensionPath], effectiveAllowlist: child.tools }, digest: "fixture" } };
   };
@@ -256,11 +258,15 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.has("subagent"));
   assert.equal(tools.has("subagents_enable"), false);
   const subagentSchema = tools.get("subagent").parameters;
-  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "agentScope", "async", "capabilities", "context", "id", "index", "lines", "message", "mode", "runId", "steeringRecovery", "task", "title", "view"].sort());
+  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "context", "id", "message", "options", "task", "title"]);
   assert.equal(subagentSchema.additionalProperties, false);
-  assert.deepEqual(subagentSchema.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
-  assert.deepEqual(subagentSchema.properties.context.enum, ["fresh", "fork"]);
-  assert.deepEqual(subagentSchema.properties.agentScope.enum, ["user"]);
+  // pi validates every call against the registered schema before any hook runs.
+  const call = (id, args) => validateToolArguments(tools.get("subagent"), { type: "toolCall", id, name: "subagent", arguments: args });
+  call("v-launch", { agent: "fixture-reader", task: "Inspect fixture", title: "Fixture check", context: "fresh" });
+  call("v-status", { action: "status", id: "run", options: { view: "transcript", lines: 50 } });
+  // The shape pi-subagents' own control notice teaches.
+  call("v-steer", { action: "steer", id: "run", message: "Narrow the scope", options: { index: 0 } });
+  assert.throws(() => call("v-model", { agent: "fixture-reader", task: "Inspect fixture", model: "x" }), /additional properties/);
   assert.equal(tools.get("subagent").description, "Managed fixture: named asynchronous children only.");
   assert.doesNotMatch(tools.get("subagent").description, /workflowScript|runs\.|SAFETY-CRITICAL/);
   // pi's MCP tools register once their servers connect; deferred ones load through tool_search.
@@ -305,7 +311,7 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(docsHandlers.get("mcp_servers_change"), "pi's MCP extension is installed for the child");
   await docsHandlers.get("session_shutdown").find(handler => handler.name === "shutdown")();
   const { resolveSubagentLaunchContract } = await jiti.import("pi-subagents/preflight");
-  const ctx = { cwd: process.cwd(), modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [{ provider: "openai-codex", id: "gpt-5.6-luna" }] } };
+  const ctx = { cwd: process.cwd(), isProjectTrusted: () => true, modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [{ provider: "openai-codex", id: "gpt-5.6-luna" }] } };
   const args = { agent: "fixture-reader", task: "Inspect fixture" };
   await checkChildLaunch(args, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(args.agentScope, "user");
@@ -322,7 +328,7 @@ test("pinned upstream packages register against the managed extension and prefli
   await checkChildLaunch(titled, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal("title" in titled, false);
   // pi validates a clone, so the stored toolCall keeps the display title the launch drops.
-  const toolCall = { type: "toolCall", id: "call-t", name: "subagent", arguments: { ...args, title: "Fixture check" } };
+  const toolCall = { type: "toolCall", id: "call-t", name: "subagent", arguments: { agent: "fixture-reader", task: "Inspect fixture", title: "Fixture check" } };
   const validated = validateToolArguments(tools.get("subagent"), toolCall);
   await checkChildLaunch(validated, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(toolCall.arguments.title, "Fixture check");
@@ -330,14 +336,16 @@ test("pinned upstream packages register against the managed extension and prefli
   const profile = { ...args, context: "profile" };
   await checkChildLaunch(profile, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal("context" in profile, false);
-  const transcript = { action: "status", id: "run", view: "transcript", lines: 50 };
+  const transcript = { action: "status", id: "run", options: { view: "transcript", lines: 50 } };
   await checkChildLaunch(transcript, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(transcript.steeringRecovery, false);
-  await assert.rejects(checkChildLaunch({ action: "status", id: "run", view: "events" }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
-  const list = { action: "list", capabilities: true };
+  await assert.rejects(checkChildLaunch({ action: "status", id: "run", options: { view: "events" } }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
+  await assert.rejects(checkChildLaunch({ action: "status", id: "run", options: { dir: "/elsewhere" } }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
+  await assert.rejects(checkChildLaunch({ action: "status", id: "run", view: "fleet" }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
+  const list = { action: "list", options: { capabilities: true } };
   await checkChildLaunch(list, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal(list.agentScope, "user");
-  await assert.rejects(checkChildLaunch({ action: "list", view: "fleet" }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
+  await assert.rejects(checkChildLaunch({ action: "list", options: { view: "fleet" } }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
 
 });
 
@@ -898,11 +906,12 @@ test("only a server the config marks unsandboxed receives the managed null-profi
   assert.equal((await leaseServer("docs", "fixture-browser")).ok, false);
 });
 
-test("the tool renderer resolver draws an unregistered MCP call as a plugin row and defers other names", async t => {
+test("the tool renderer resolver draws plugin-registered and unregistered MCP calls as plugin rows, in every role, and defers other names", async t => {
   const { config } = fixture(t);
   config.models.classifierFilter = { model: "gpt-5.6-luna", reasoningEffort: "low" };
   config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
   config.mcp = { docs: { policy: { denied_tools: [] } } };
+  config.agents["fixture-search"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "web_search"] };
   const configPath = join(config.agentDir, "workflow.json");
   writeFileSync(configPath, JSON.stringify(config));
   const broker = { env: {}, policy: { mode: "plan", approval: "auto", epoch: 1, roots: new Map(), addableDirs: () => [] }, async setMode(mode) { this.policy.mode = mode; }, async close() {} };
@@ -918,6 +927,7 @@ test("the tool renderer resolver draws an unregistered MCP call as a plugin row 
     getFlag() { return false; }, getAllTools() { return []; }, getActiveTools() { return []; }, setActiveTools() {}, getMcpServers() { return []; },
   };
   const installSubagents = async api => {
+    api.registerTool({ name: "subagent", execute() {} });
     api.events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
       ? { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } }
       : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [] } } }));
@@ -930,6 +940,14 @@ test("the tool renderer resolver draws an unregistered MCP call as a plugin row 
   const theme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: text => text };
   const row = resolve("mcp__docs__search", () => assert.fail("an MCP name is not deferred"));
   assert.equal(row.renderCall({ query: "hooks" }, theme, { toolCallId: "c1", lastComponent: undefined, isPartial: false, executionStarted: true, state: {}, invalidate() {}, expanded: false, argsComplete: true, showImages: false, isError: false }).render(80)[0].trim(), "• docs › search \"hooks\"");
+  for (const name of ["subagent", "web_search"]) assert.equal(typeof resolve(name, () => assert.fail(`${name} is not deferred`)).renderCall, "function");
   const native = {};
   assert.equal(resolve("read", () => native), native);
+  // A child role keeps plugin rows for the plugins it loads.
+  resolvers.length = 0;
+  const childHandlers = new Map();
+  await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); } }, configPath, "fixture-search", { requestBroker: async () => ({ mode: broker.policy.mode, readonly: true }) });
+  t.after(async () => { for (const handler of childHandlers.get("session_shutdown")) await handler({ reason: "quit" }, {}); });
+  assert.equal(typeof resolve("web_search", () => assert.fail("web_search is not deferred")).renderCall, "function");
+  assert.equal(resolve("subagent", () => native), native);
 });

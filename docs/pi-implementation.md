@@ -27,26 +27,32 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
 - Security claim is scoped: effects and subprocess execution are sandboxed;
   path probes, diff generation, and output temp files stay host-side.
 - pi-subagents retains its executor; the existing registration proxy owns
-  presentation, narrowed schema and managed description. Launch
+  presentation, the owned schema and managed description. Launch
   policy stays in `tool_call` and broker leases. Scripts/arbitrary management
   stay disabled; `list`, named launches and lifecycle controls remain enabled.
   In `extensions/subagent/config.json`, `fleetView`/`asyncWidget` are off
   because the owned fleet (rule 6) replaces them, and `intercomBridge` is off
   so children report only through their completion, as Claude Code's
-  subagents do.
+  subagents do. `programStatus` is off so child runs report only through the
+  fleet and completion lines; pi's own OSC 7501 still reports the root.
+  `artifactDir` is `temp`: a child report past 2,000 characters is cut to a
+  pointer at its artifact file, and the default session directory sits under
+  `~/.pi/agent/sessions`, which the root may not read (`project` would write
+  `.pi/subagents` into every repo).
   `toolActivation` is `eager`, so the plugin's lazy `subagents_enable` loader
   is never registered on any launch path: it would re-add itself to the active
   tools every turn, the managed tool refresh would remove it, and pi-ai
-  resends the full tool list after any removal. `disabledFeatures` trims the
-  plugin surfaces the workflow never calls, which halves a nesting child's own
-  `subagent` schema (built from this config, not narrowed by the root proxy).
+  resends the full tool list after any removal. `disabledFeatures` makes
+  calls to plugin features the workflow never uses fail, and drops them from a
+  nesting child's own `subagent` description (built from this config, not
+  replaced by the root proxy).
   Re-judge when Pi ships native subagents.
 - MCP is pi's own, fed the managed servers. Accepted: a connect per server per session and per child; another extension's `pi.registerMcpServer()` adds an unmanaged server. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
 - `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt. Reversal trigger: a maintained plugin's fetch fits with a one-line seam → adopt it, delete `web_fetch` and its three packages.
 - Nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; the `timeoutMs` backstop with its `checkpointBeforeDeadlineMs` steer (`extensions/subagent/config.json`) replaces the 30-minute cutoff. Revisit when upstream delivers completion-triggered turns to headless children.
-- `toolDescriptionMode` is `compact`: any explicit mode drops
-  `promptSnippet`/`promptGuidelines` but keeps its fixed safety guidance, which
-  the managed description replaces.
+- `toolDescriptionMode` is `compact`: any explicit mode drops the plugin's
+  `promptSnippet`, which teaches workflow calls; the managed description
+  replaces its safety guidance.
 - Mode changes and shutdown stop detached children through
   session-owned RPC and require observed process-terminal proof, not a
   completion notification. Unverified cleanup blocks mode changes; shutdown

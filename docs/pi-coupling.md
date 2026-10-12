@@ -16,28 +16,39 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
 
 - **Plugin tool Proxy** (`plugin-api.mjs` `pluginApi`): pi-subagents,
   pi-web-search and pi's own MCP and tool-search factories get a Proxy of the
-  extension API whose `registerTool` applies the plugin row renderers to every
-  tool registered through it, and replaces the schema and description of
-  `subagent`; executors are kept. Its `sendMessage` sends the plugin's quiet
+  extension API whose `registerTool` records every tool name registered
+  through it, for the documented `registerToolRenderer` resolver that gives
+  those tools the plugin row, and replaces the schema of `subagent` with an
+  owned static one and its description; executors are kept. Its `sendMessage` sends the plugin's quiet
   notices with display off and, mirroring `sendCustomMessage`'s branches,
   closes the activity group for a displayed message `_appendCustomMessage`
   draws outside the agent stream (no extension event sees it); its
-  `appendEntry` closes for an entry whose plugin renderer guard says it draws.
-  Its `sendUserMessage` turns pi-subagents' idle-parent wake (the literal
-  `Subagent updates above.` sent as a steer) into a hidden custom message that
+  `appendEntry` closes for either entry type pi-subagents draws (it draws
+  every payload of those types). Its `sendUserMessage` turns pi-subagents'
+  idle-parent wake (a steer starting `Inspect subagent updates above.`) into
+  a hidden custom message that
   triggers the turn, dropped while shutting down; other user text passes through.
-  Owned renderers parse pi-subagents' payloads for its four unrendered notice
-  types (`NOTICE_RENDERERS`), answering undefined on an unknown one. *Why:*
+  Owned rows are composed over pi-subagents' shaded `[subagent]` renderer for
+  six notice types (`NOTICE_RENDERERS` and the steering and settle-reminder
+  rows), answering undefined on an unknown payload. *Why:*
   rules 2, 4, 9 and 10 for plugin output, and the model sees only calls the
-  `tool_call` hook admits. *On red:* repair — the TUI's plugin rows, the quiet
-  notices and the plugin boundaries ride it; a changed payload falls back to
-  pi's shaded box by itself. *Retire:* the `subagent` override when the plugin
-  can limit both the `subagent` schema and its description, mandatory safety
-  block included, to named launches plus list, status, interrupt, stop and
-  steer (`disabledFeatures` cannot narrow the action or context enums, and
-  the safety block still teaches resume and debug); the send boundary when pi emits an extension event for appended
+  `tool_call` hook admits. *Residual:* the settle reminders
+  (`subagent-completion-unanswered`/`-unhandled`) are appended at
+  `agent_before_settle`, outside the Proxy, so they do not end the group above
+  them, and an unanswered wake gets one extra turn. *On red:* repair — the
+  TUI's plugin rows, the quiet notices and the plugin boundaries ride it; a
+  changed payload falls back to the plugin's block by itself. *Retire:* the
+  `subagent` override when the plugin can limit both the `subagent` schema and
+  its description to named launches plus list, status, interrupt, stop and
+  steer (its model schema still exposes workflow, args, model, cwd, worktree
+  and output, `action` is a free string and `options` opaque, and
+  `toolDescriptionMode: custom` reads a project file first with no trust
+  check); the send boundary when pi emits an extension event for appended
   custom messages; the wake branch when pi can draw an extension's user message
-  quietly. A changed wake literal falls back to a visible wake box by itself. *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
+  quietly. A changed wake literal falls back to a visible wake box by itself;
+  an option key the plugin's hints teach beyond the owned schema's is rejected
+  by pi before the hook, so `integration.test.mjs` validates the hint shapes.
+  *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
   `integration.test.mjs`, `render.test.mjs`.
 - **Skill display**: wraps `InteractiveMode`'s undocumented
   `getUserMessageText` once, turning a native `parseSkillBlock` match back into

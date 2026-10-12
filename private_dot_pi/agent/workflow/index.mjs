@@ -9,7 +9,7 @@ import { startToolWorker, workerOperations, executeSandboxGrep } from "./operati
 import { rootTools, canonical, expand, publicToolName, unsandboxed, workerTools } from "./policy.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
 import { TASK_CHARS, reviewAction } from "./approval.mjs";
-import { allowedChildAgents, checkChildLaunch, narrowSubagentSchema } from "./children.mjs";
+import { SUBAGENT_SCHEMA, allowedChildAgents, checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
@@ -442,7 +442,13 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // Plugin rows take the transcript's shape (docs/pi-design.md); the
   // registrations themselves are the plugins' own.
   const rowsFor = name => pluginRenderers(name, { servers: Object.keys(config.mcp) });
-  const styled = pluginApi(pi, rowsFor, { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, narrowSubagentSchema, () => shuttingDown, subagentDescription, mcpTools, () => currentContext.isIdle());
+  const pluginTools = new Set();
+  const styled = pluginApi(pi, { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, SUBAGENT_SCHEMA, () => shuttingDown, subagentDescription, mcpTools, pluginTools, () => currentContext.isIdle());
+  // Resolvers run in registration order and pi's MCP extension, installed
+  // below through the same API, only fills in its card: registered first,
+  // this draws every plugin and mcp__ row, a resumed MCP one before its
+  // server connects.
+  pi.registerToolRenderer((name, next) => isMcp(name) || pluginTools.has(name) ? rowsFor(name) : next());
   // Fleet owns detached-run lifecycle for every root, including headless roots;
   // only its footer rendering is conditional on UI. Register our shutdown
   // before pi-subagents installs its hook, which disposes the RPC bridge.
@@ -532,13 +538,6 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       if (generation === plans.generation) plans.snapshot = { ...result.details };
       return result;
     } });
-    // pi-subagents registers no renderer for these, so ours are registered
-    // directly; the map above still composes ours over one it adds later.
-    for (const [type, renderer] of Object.entries(NOTICE_RENDERERS)) pi.registerMessageRenderer(type, renderer);
-    // Resolvers run in registration order and pi's MCP extension, installed
-    // below through the same API, only fills in its card: registered first,
-    // this draws every mcp__ row, a resumed one before its server connects.
-    pi.registerToolRenderer((name, next) => isMcp(name) ? rowsFor(name) : next());
     // Registered as documented; model-originated launches are validated (and
     // their args patched) by the blocking tool_call hook, the capability
     // ceiling bounds every launch path, and the broker's child leases enforce
@@ -548,7 +547,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   // Provider-native web search (OpenAI's server-side web_search tool on the
-  // same Responses endpoint and token as model calls). Its Gemini-only url_context
+  // same Responses endpoint and token as model calls). Its url_context
   // registers too and stays outside every role's tool list.
   if (permittedTools.includes("web_search")) {
     const webSearch = await jiti.import("pi-web-search", { default: true });

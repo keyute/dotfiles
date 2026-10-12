@@ -4,21 +4,23 @@ import { recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
 import { DRAWN_ENTRIES, NOTICE_RENDERERS, QUIET_MESSAGES, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
 import { addFold, appendVisible, closeFolds, createFolds } from "./rows.mjs";
 import { runnerPath } from "./operations.mjs";
-import { narrowSubagentSchema } from "./children.mjs";
+import { SUBAGENT_SCHEMA } from "./children.mjs";
 
-test("the plugin API decorates every registration and forwards everything else untouched", () => {
+test("the plugin API records every registered tool name and forwards everything else untouched", () => {
   const tools = new Map();
+  const names = new Set();
   const events = { on() {} };
   const pi = { events, on: () => "on", registerTool(tool) { tools.set(tool.name, tool); } };
-  const styled = pluginApi(pi, name => ({ renderShell: "self", renderCall: `ours:${name}`, renderResult: "ours" }));
+  const styled = pluginApi(pi, {}, {}, undefined, undefined, undefined, undefined, names);
   const { registerTool } = styled; // a plugin may extract the function
   const execute = () => {};
   registerTool({ name: "subagent", execute, parameters: { a: 1 }, renderCall: "theirs", renderResult: "theirs" });
   registerTool({ name: "mcp__docs_q", execute, renderCall: "theirs" });
   registerTool({ name: "bg_wait", execute });
-  assert.deepEqual(tools.get("subagent"), { name: "subagent", execute, parameters: { a: 1 }, renderShell: "self", renderCall: "ours:subagent", renderResult: "ours" });
-  assert.equal(tools.get("mcp__docs_q").renderCall, "ours:mcp__docs_q");
-  assert.equal(tools.get("bg_wait").renderCall, "ours:bg_wait");
+  // Rows ride the registerToolRenderer resolver; the registration is the plugin's own.
+  assert.deepEqual(tools.get("subagent"), { name: "subagent", execute, parameters: { a: 1 }, renderCall: "theirs", renderResult: "theirs" });
+  assert.equal(tools.get("mcp__docs_q").renderCall, "theirs");
+  assert.deepEqual([...names], ["subagent", "mcp__docs_q", "bg_wait"]);
   assert.equal(styled.events, events);
   assert.equal(styled.on, pi.on);
 });
@@ -28,7 +30,7 @@ test("the plugin API replaces only the subagent description without changing its
   const execute = () => {};
   const parameters = { type: "object", properties: { agent: {} } };
   const managed = "Managed subagent description.";
-  const styled = pluginApi({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, {}, undefined, undefined, managed);
+  const styled = pluginApi({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } }, {}, {}, undefined, undefined, managed);
   styled.registerTool({ name: "subagent", description: "upstream", parameters, execute });
   styled.registerTool({ name: "other", description: "other upstream", parameters, execute });
   assert.equal(tools.get("subagent").description, managed);
@@ -38,31 +40,28 @@ test("the plugin API replaces only the subagent description without changing its
 });
 
 test("the subagent schema exposes only the managed launch and control surface", () => {
-  const supported = ["agent", "task", "async", "context", "agentScope", "action", "id", "runId", "index", "message", "mode", "view", "lines", "steeringRecovery", "capabilities"];
-  const upstream = { type: "object", description: "upstream safety description", properties: Object.fromEntries([...supported, "model", "cwd", "workflowScript"].map(name => [name, { description: `${name} definition` }])) };
-  const narrowed = narrowSubagentSchema(upstream);
-  assert.deepEqual(Object.keys(narrowed.properties).sort(), [...supported, "title"].sort());
-  assert.equal(narrowed.additionalProperties, false);
-  assert.deepEqual(narrowed.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
-  assert.deepEqual(narrowed.properties.context.enum, ["fresh", "fork"]);
-  assert.deepEqual(narrowed.properties.agentScope.enum, ["user"]);
-  assert.equal(narrowed.description, "upstream safety description");
-  assert.equal(narrowed.properties.task.description, "task definition");
-  assert.equal(narrowed.properties.title.type, "string");
+  assert.deepEqual(Object.keys(SUBAGENT_SCHEMA.properties).sort(), ["action", "agent", "context", "id", "message", "options", "task", "title"]);
+  assert.equal(SUBAGENT_SCHEMA.additionalProperties, false);
+  assert.deepEqual(SUBAGENT_SCHEMA.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
+  assert.deepEqual(SUBAGENT_SCHEMA.properties.context.enum, ["fresh", "fork"]);
+  const { options } = SUBAGENT_SCHEMA.properties;
+  assert.deepEqual(Object.keys(options.properties).sort(), ["capabilities", "index", "lines", "mode", "view"]);
+  assert.equal(options.additionalProperties, false);
+  assert.deepEqual(options.properties.mode.enum, ["steer", "follow_up"]);
+  assert.deepEqual([options.properties.lines.minimum, options.properties.lines.maximum], [1, 500]);
 });
 
-test("the plugin API narrows only the subagent definition and preserves its executor", () => {
+test("the plugin API replaces only the subagent schema and preserves its executor", () => {
   const tools = new Map();
   const pi = { on() {}, registerTool(tool) { tools.set(tool.name, tool); } };
   const execute = () => {};
-  const schema = { type: "object", properties: { agent: {}, task: {}, async: {}, model: {}, context: {}, agentScope: {}, action: {}, id: {}, runId: {}, index: {}, message: {}, mode: {}, view: {}, lines: {}, steeringRecovery: {}, capabilities: {}, cwd: {} } };
-  const styled = pluginApi(pi, () => ({}), {}, {}, narrowSubagentSchema);
+  const schema = { type: "object", properties: { agent: {}, model: {}, cwd: {}, options: {} } };
+  const styled = pluginApi(pi, {}, {}, SUBAGENT_SCHEMA);
   styled.registerTool({ name: "subagent", parameters: schema, execute });
   styled.registerTool({ name: "other", parameters: schema, execute });
   assert.equal(tools.get("subagent").execute, execute);
+  assert.equal(tools.get("subagent").parameters, SUBAGENT_SCHEMA);
   assert.equal(tools.get("other").parameters, schema);
-  assert.equal(tools.get("subagent").parameters.additionalProperties, false);
-  assert.equal("cwd" in tools.get("subagent").parameters.properties, false);
 });
 
 const mcpFixture = () => ({
@@ -102,7 +101,7 @@ test("a child's MCP config holds only the servers its roster names a tool of, di
 test("the plugin API records each MCP tool's identity from its label", () => {
   const tools = new Map();
   const identities = new Map();
-  const styled = pluginApi({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } }, () => ({}), {}, {}, undefined, undefined, undefined, identities);
+  const styled = pluginApi({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } }, {}, {}, undefined, undefined, undefined, identities);
   const execute = () => {};
   styled.registerTool({ name: "mcp__context7__query_docs", label: "context7/query-docs", exposure: "deferred", execute });
   // A hash-shortened name keeps its identity in the label only.
@@ -120,7 +119,7 @@ test("the plugin API records each MCP tool's identity from its label", () => {
 test("a message renderer we own is composed over the plugin's, which stays as the fallback", () => {
   const registered = new Map();
   const pi = { on() {}, registerMessageRenderer(type, renderer) { registered.set(type, renderer); } };
-  const styled = pluginApi(pi, () => ({}), { ours: message => (message.details ? "row" : undefined) });
+  const styled = pluginApi(pi, { ours: message => (message.details ? "row" : undefined) });
   const { registerMessageRenderer } = styled;
   registerMessageRenderer("ours", () => "box");
   registerMessageRenderer("theirs", () => "box");
@@ -134,7 +133,7 @@ test("a message renderer we own is composed over the plugin's, which stays as th
 test("a quiet customType is sent with display off, everything else untouched", () => {
   const sent = [];
   const pi = { on() {}, sendMessage(message, options) { sent.push([message, options]); } };
-  const styled = pluginApi(pi, () => ({}), {}, QUIET_MESSAGES);
+  const styled = pluginApi(pi, {}, QUIET_MESSAGES);
   const { sendMessage } = styled; // a plugin may extract the function
   // An idle parent's notice arrives without a turn; the wake that follows carries it.
   sendMessage({ customType: "subagent-notify", content: "Background task failed: **x**", display: true }, { triggerTurn: false });
@@ -151,7 +150,7 @@ test("a displayed message pi appends outside the agent stream ends the group whe
   const folds = createFolds();
   let idle = true;
   const pi = { on: (name, fn) => handlers.set(name, fn), sendMessage() {} };
-  const styled = pluginApi(pi, () => ({}), {}, QUIET_MESSAGES, undefined, undefined, undefined, undefined, () => idle, folds);
+  const styled = pluginApi(pi, {}, QUIET_MESSAGES, undefined, undefined, undefined, undefined, undefined, () => idle, folds);
   const closedAfter = (message, options) => {
     addFold(folds, `t${folds.timeline.length}`, "read");
     styled.sendMessage(message, options);
@@ -179,11 +178,11 @@ test("a displayed message pi appends outside the agent stream ends the group whe
   assert.deepEqual([...handlers.keys()].sort(), ["agent_end", "agent_settled", "turn_start"]);
 });
 
-test("a plugin entry ends the group only when its renderer would draw it", () => {
+test("a plugin entry type pi-subagents draws ends the group above it", () => {
   const appended = [];
   const folds = createFolds();
   const pi = { on() {}, appendEntry(type, data) { appended.push([this, type, data]); } };
-  const styled = pluginApi(pi, () => ({}), {}, {}, undefined, undefined, undefined, undefined, undefined, folds);
+  const styled = pluginApi(pi, {}, {}, undefined, undefined, undefined, undefined, undefined, undefined, folds);
   const { appendEntry } = styled; // pi-subagents extracts it and calls it with its own receiver
   const closedAfter = (type, data) => {
     addFold(folds, `t${folds.timeline.length}`, "read");
@@ -193,19 +192,20 @@ test("a plugin entry ends the group only when its renderer would draw it", () =>
   const warning = { summary: "s", evidence: "e", recommendedAction: "a" };
   const reply = { requestId: "q", runId: "r", agent: "worker", message: "m", childIndex: 0, createdAt: 1 };
   assert.equal(closedAfter("subagent_watchdog_warning", warning), true);
-  assert.equal(closedAfter("subagent_watchdog_warning", { summary: "s" }), false);
+  // A payload it does not recognise still draws, under a fallback headline.
+  assert.equal(closedAfter("subagent_watchdog_warning", { summary: "s" }), true);
   assert.equal(closedAfter("subagent_supervisor_reply", reply), true);
-  assert.equal(closedAfter("subagent_supervisor_reply", { ...reply, childIndex: undefined }), false);
+  assert.equal(closedAfter("subagent_supervisor_reply", { ...reply, childIndex: undefined }), true);
   assert.equal(closedAfter("other", warning), false);
   assert.equal(closedAfter("constructor", warning), false);
   assert.ok(appended.every(([receiver]) => receiver === pi), "the raw function is called on the raw API");
   assert.equal(appended.length, 6);
-  assert.deepEqual(Object.keys(DRAWN_ENTRIES), ["subagent_watchdog_warning", "subagent_supervisor_reply"]);
+  assert.deepEqual([...DRAWN_ENTRIES], ["subagent_watchdog_warning", "subagent_supervisor_reply"]);
 });
 
 test("a plugin entry that lands while a reply streams ends the group above the reply, where pi mounts it", () => {
   const folds = createFolds();
-  const styled = pluginApi({ on() {}, appendEntry() {} }, () => ({}), {}, {}, undefined, undefined, undefined, undefined, undefined, folds);
+  const styled = pluginApi({ on() {}, appendEntry() {} }, {}, {}, undefined, undefined, undefined, undefined, undefined, undefined, folds);
   addFold(folds, "a", "read");
   addFold(folds, "b", "read");
   closeFolds(folds);
@@ -217,7 +217,7 @@ test("a plugin entry that lands while a reply streams ends the group above the r
   assert.deepEqual(kinds, ["a", "b", "|", done.seq, "reply"], "the completion folds below the warning, not into the reads");
 });
 
-test("pi-subagents' default-box notices draw as unshaded rows, and an unknown payload stays the plugin's", () => {
+test("pi-subagents' shaded notices draw as unshaded rows, and an unknown payload stays the plugin's", () => {
   const theme = { fg: (color, text) => `<${color}>${text}` };
   const render = (type, message) => NOTICE_RENDERERS[type](message, {}, theme)?.render(200).map(line => line.trimEnd());
   assert.deepEqual(render("subagent-incremental-child-notify", { content: "Workflow child paused (needs attention): **review**\nWorkflow run: w1\nStatus: workflow still running" }),
@@ -230,12 +230,28 @@ test("pi-subagents' default-box notices draw as unshaded rows, and an unknown pa
   assert.deepEqual(render("subagent_watchdog_clarification", { content: "Main watchdog clarification:\nWhich branch?\nEvidence: two remotes" }),
     ["<accent>π <muted>Main watchdog clarification:", "  <muted>Which branch?", "  <muted>Evidence: two remotes"]);
   assert.equal(render("subagent_watchdog_clarification", { content: [] }), undefined);
+  const steering = state => render("subagent_steering_notice", { content: "Steering partially delivered for run r1.", details: { runId: "r1", requestId: "q1", state } });
+  assert.deepEqual(steering("failed"), ["<error>• <toolTitle>steering for r1 failed", "  <muted>Steering partially delivered for run r1."]);
+  assert.deepEqual(steering("recovered"), ["<warning>• <toolTitle>steering for r1 recovered", "  <muted>Steering partially delivered for run r1."]);
+  assert.equal(steering("delivered"), undefined);
+  assert.equal(render("subagent_steering_notice", { content: "x" }), undefined);
+  assert.deepEqual(render("subagent-completion-unanswered", { content: "Completion wake ended silently." }),
+    ["<accent>π <muted>Completion results unanswered", "  <muted>Completion wake ended silently."]);
+  assert.deepEqual(render("subagent-completion-unhandled", { content: "UNHANDLED: no response." }),
+    ["<accent>π <muted>Completion results unhandled", "  <muted>UNHANDLED: no response."]);
+  assert.equal(render("subagent-completion-unhandled", { content: "" }), undefined);
+  // Composed over the plugin's block, which an unknown payload falls back to.
+  const registered = new Map();
+  const styled = pluginApi({ on() {}, registerMessageRenderer(type, renderer) { registered.set(type, renderer); } }, NOTICE_RENDERERS);
+  styled.registerMessageRenderer("subagent_steering_notice", () => "block");
+  assert.equal(registered.get("subagent_steering_notice")({ content: "x" }, {}, theme), "block");
+  assert.notEqual(registered.get("subagent_steering_notice")({ content: "x", details: { runId: "r1", state: "failed" } }, {}, theme), "block");
 });
 
 test("shutdown retains child results without requesting a new model turn", () => {
   const sent = [];
   let shuttingDown = false;
-  const styled = pluginApi({ on() {}, sendMessage: (message, options) => sent.push([message, options]) }, () => ({}), {}, QUIET_MESSAGES, undefined, () => shuttingDown);
+  const styled = pluginApi({ on() {}, sendMessage: (message, options) => sent.push([message, options]) }, {}, QUIET_MESSAGES, undefined, () => shuttingDown);
   const message = { customType: "subagent-notify", content: "Child stopped", display: true };
   styled.sendMessage(message, { triggerTurn: true });
   shuttingDown = true;
@@ -251,16 +267,18 @@ test("pi-subagents' parent wake is sent as a quiet custom message and dropped at
   const users = [];
   let shuttingDown = false;
   const pi = { on() {}, sendMessage: (message, options) => sent.push([message, options]), sendUserMessage: (content, options) => users.push([content, options]) };
-  const { sendUserMessage } = pluginApi(pi, () => ({}), {}, QUIET_MESSAGES, undefined, () => shuttingDown);
-  sendUserMessage("Subagent updates above.", { deliverAs: "steer" });
-  sendUserMessage("Subagent updates above.");
+  const { sendUserMessage } = pluginApi(pi, {}, QUIET_MESSAGES, undefined, () => shuttingDown);
+  const wake = "Inspect subagent updates above. Answer pending supervisor requests within your authority. For completed work, read saved results and resume the already-authorized parent task, or report completion. If approval is required, explicitly ask the user. Do not silently yield, rerun completed work, or infer new authorization.";
+  sendUserMessage(wake, { deliverAs: "steer" });
+  sendUserMessage(wake);
   sendUserMessage("relayed", { deliverAs: "steer" });
   shuttingDown = true;
-  sendUserMessage("Subagent updates above.", { deliverAs: "steer" });
+  sendUserMessage(wake, { deliverAs: "steer" });
+  // The whole wake reaches the model; only its box is hidden.
   assert.deepEqual(sent, [
-    [{ customType: "subagent-wake", content: "Subagent updates above.", display: false }, { deliverAs: "steer", triggerTurn: true }],
+    [{ customType: "subagent-wake", content: wake, display: false }, { deliverAs: "steer", triggerTurn: true }],
   ]);
-  assert.deepEqual(users, [["Subagent updates above.", undefined], ["relayed", { deliverAs: "steer" }]]);
+  assert.deepEqual(users, [[wake, undefined], ["relayed", { deliverAs: "steer" }]]);
 });
 
 test("the control notice row is built from the event pi-subagents puts in details", () => {
