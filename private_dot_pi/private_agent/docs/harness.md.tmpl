@@ -38,7 +38,7 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
 - Specialists under `~/.pi/agent/agents` render from the shared roster with an
   explicit model, tool list and policy extension; read-only ones stay read-only in
   execution. Only `general-purpose` may launch children, to Claude Code's depth.
-{{- $sub := include "private_dot_pi/agent/extensions/subagent/config.json" | fromJson }}
+{{- $sub := include "private_dot_pi/private_agent/extensions/subagent/config.json" | fromJson }}
 - Children run in the background, sharing the root policy, up to {{ .agents.pi.child_limit }} at once
   across the tree; they start fresh with no channel back (intercom off);
   batch independent launches.

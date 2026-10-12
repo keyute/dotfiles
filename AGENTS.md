@@ -31,7 +31,7 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
 - Code the harness spawns outside the sandbox (MCP servers, the bridge, hooks)
   treats caller-supplied paths, repos and arguments as hostile: pin its config,
   refuse sandbox-writable roots, and ship a malicious-input test.
-- Before adding to `private_dot_pi/agent/workflow/`, read the module map atop
+- Before adding to `private_dot_pi/private_agent/workflow/`, read the module map atop
   `docs/pi-design.md` (the whole doc for a module it marks TUI).
 - Leave `chezmoi apply` and 1Password signin to me. Resolved values belong
   only in applied private targets, never in source files, commits, or

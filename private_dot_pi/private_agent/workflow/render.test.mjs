@@ -325,7 +325,7 @@ test("every roster role and shared skill has its source stubs, and every stub a 
   const data = load();
   const stubDirs = {
     claude: [["private_dot_claude/exact_agents", ".md.tmpl"]],
-    pi: [["private_dot_pi/agent/exact_agents", ".md.tmpl"], ["private_dot_pi/agent/exact_policy-roles", ".ts.tmpl"]],
+    pi: [["private_dot_pi/private_agent/exact_agents", ".md.tmpl"], ["private_dot_pi/private_agent/exact_policy-roles", ".ts.tmpl"]],
   };
   for (const [harness, dirs] of Object.entries(stubDirs)) {
     const roles = rolesFor(data, harness);

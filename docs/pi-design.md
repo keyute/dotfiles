@@ -3,7 +3,7 @@
 Read this before editing a module the map below marks **TUI**. A rule is rewritten in place to its current state,
 keeping its *why*; history is `git log -p docs/pi-design.md`.
 
-Module map (`private_dot_pi/agent/workflow/*.mjs`), one responsibility each:
+Module map (`private_dot_pi/private_agent/workflow/*.mjs`), one responsibility each:
 
 - `index` (TUI): the extension entry — config, broker connection, managed tool registration and gating, modes and commands, and wiring the other modules into pi's session lifecycle.
 - `editor` (TUI): the composer — `CaretEditor`'s rule 5 shape, shell-mode prefix and fleet entry, and Tab argument completion.

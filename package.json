@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "test:pi": "node --test scripts/pi-bridge.test.mjs private_dot_pi/agent/workflow/*.test.mjs"
+    "test:pi": "node --test scripts/pi-bridge.test.mjs private_dot_pi/private_agent/workflow/*.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.79",
