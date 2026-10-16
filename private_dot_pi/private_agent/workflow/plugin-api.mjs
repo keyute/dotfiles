@@ -148,9 +148,9 @@ export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagen
         return target.sendMessage(message, options);
       };
       // pi-subagents wakes an idle parent with a user prompt so the run gets
-      // before_agent_start; installManagedRun gives a triggered custom message
-      // that too, with no user box to end the group. At shutdown the notice is
-      // already kept, so the wake is dropped.
+      // before_agent_start; a triggered custom message gets that natively, with
+      // no user box to end the group. At shutdown the notice is already kept,
+      // so the wake is dropped.
       if (key === "sendUserMessage") return (content, options) => {
         if (typeof content !== "string" || !content.startsWith(PARENT_WAKE) || options?.deliverAs !== "steer") return target.sendUserMessage(content, options);
         if (!isShuttingDown()) target.sendMessage({ customType: "subagent-wake", content, display: false }, { deliverAs: "steer", triggerTurn: true });

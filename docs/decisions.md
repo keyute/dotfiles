@@ -47,7 +47,8 @@ a tier nothing uses is dropped.
   Successor. Re-read the `parity.*` rows, pi-coupling *Retire*
   conditions and `docs/pi-implementation.md` triggers the changelog touches; a renamed config path moves in the same
   PR. After apply, re-check live: subscription login, root and child model
-  pins, auto approvals, cancellation, the fleet rows and peek, MCP queries.
+  pins, auto approvals, cancellation, a background child launch, the fleet
+  rows and peek, MCP queries.
   Then, as its own change after the bump lands, take for each owned
   module, coupling entry and plugin the changelog touches whichever of
   native, plugin or owned code leaves the least owned code and coupling at a

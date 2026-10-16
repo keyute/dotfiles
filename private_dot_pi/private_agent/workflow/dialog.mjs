@@ -1,4 +1,4 @@
-import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Key, matchesKey, renderFakeCursor, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { CURSOR, frameRule } from "./rows.mjs";
 
 export const editorTheme = theme => ({
@@ -117,7 +117,7 @@ export class Dialog {
     return text;
   }
   field({ width, active, text, placeholder }) {
-    if (!text && placeholder) return [this.theme.fg("dim", active ? `${CURSOR_MARKER}\x1b[7m${placeholder[0]}\x1b[27m${placeholder.slice(1)}` : placeholder)];
+    if (!text && placeholder) return [this.theme.fg("dim", active ? `${CURSOR_MARKER}${renderFakeCursor(placeholder[0])}${placeholder.slice(1)}` : placeholder)];
     // Keep native wrapping and navigation geometry; omit only its two borders.
     if (active) return this.editor.render(Math.max(1, width)).slice(1, -1);
     // The editor wraps one short of its width to keep a cursor cell; match it so losing focus does not reflow the draft.

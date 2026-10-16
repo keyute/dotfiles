@@ -25,9 +25,11 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   draws outside the agent stream (no extension event sees it); its
   `appendEntry` closes for either entry type pi-subagents draws (it draws
   every payload of those types). Its `sendUserMessage` turns pi-subagents'
-  idle-parent wake (a steer starting `Inspect subagent updates above.`) into
-  a hidden custom message that
-  triggers the turn, dropped while shutting down; other user text passes through.
+  idle-parent wake (a steer starting `Inspect subagent updates above.`, named
+  `PARENT_WAKE_TEXT` in the plugin's docs but not exported) into a hidden
+  custom message that triggers the turn, dropped while shutting down; other
+  user text passes through. After a UI abort the plugin sends no wake until the
+  parent's next run.
   Owned rows are composed over pi-subagents' shaded `[subagent]` renderer for
   six notice types (`NOTICE_RENDERERS` and the steering and settle-reminder
   rows), answering undefined on an unknown payload. *Why:*
@@ -61,13 +63,14 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
 - **Pending input**: replaces `InteractiveMode.updatePendingMessagesDisplay`
   on the same host class; pi keeps queue ownership. Ctrl+Enter awaits the native
   session's `abort()` without clearing either queue, transfers raw compaction
-  input through its native admission methods, then uses the already-managed
-  `_runAgentPrompt([])` entry: the agent's initial steering poll consumes the
-  queued messages before its first request, keeping follow-ups and attachments.
+  input through its native admission methods, then starts a run with a hidden,
+  empty `sendCustomMessage` trigger: the agent's initial steering poll consumes
+  the queued messages before its first request, keeping follow-ups and
+  attachments; the transcript keeps the hidden entry.
   The draft moves synchronously from the composer into that existing raw-input
   queue, so native submit/dequeue actions cannot resend a hidden captured copy.
-  `flushCompactionQueue` is held only through this action so `compaction_end`
-  cannot start a competing response during abort cleanup. The editor callback
+  `flushCompactionQueue` is held from the abort until the run starts, so
+  `compaction_end` cannot start a competing response during abort cleanup. The editor callback
   and lifecycle reset keep old-session work from reaching a replacement.
   *Why:* rule 5's queued-input layout and interrupt-and-send action. *On red:*
   fall back to pi's native pending display and Escape then Enter; lost: grouped
@@ -99,10 +102,11 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   the last child or shell ends with the root idle (`ctx.isIdle()` after a 250 ms
   grace): a child is live from `subagent:async-started` until both its
   completion line and its observed process exit (or until 10 s after its exit
-  when no completion follows). An idle parent's wake is a steered
-  `sendUserMessage` whose run starts only after pi's `input` and
-  `before_agent_start` handlers, so the footer holds the close from that wake's
-  extension `input` until its `agent_start` (at most 10 s). *Why:* rules 3 and 4. *On red:* fall back to pi's own working row
+  when no completion follows). pi-subagents' wake, converted to a triggered
+  custom message, is busy from the send; an extension's `sendUserMessage` wake
+  counts as busy only after pi's `input` handlers and auth check, so the footer
+  holds the close from that wake's extension `input` until its `agent_start`
+  (at most 10 s). *Why:* rules 3 and 4. *On red:* fall back to pi's own working row
   (`setWorkingVisible` left on); lost: the column-0 row with a trailing blank
   line and the frozen settled-root snapshot. On the ordering pins, close only
   at `agent_settled`; lost: the close when the last work ends with no wake.
@@ -137,9 +141,10 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   region return — and two text blocks with no thinking between sit flush. *Retire:* when pi can hide reasoning outright. *Pin:*
   `stability.test.mjs`, `rows.test.mjs`, `transcript.test.mjs`.
 - **Managed agent runs** (`index.mjs` `installManagedRun`): wraps the host `AgentSession`'s
-  `_runAgentPrompt`. *Why:* an idle triggerTurn skips `before_agent_start`, and pi swallows
-  handler throws; the owned triggers and the re-sent subagent wake start runs that way. *On red:* repair. *Retire:* upstream routes triggerTurn through
-  `before_agent_start` and lets a handler block. *Pin:* `stability.test.mjs`, `integration.test.mjs`.
+  `_startRun` with the model and workspace guard; a refused custom trigger is
+  appended without a turn. *Why:* pi swallows `before_agent_start` handler
+  throws, so no handler can block a run. *On red:* repair. *Retire:* upstream
+  lets a handler block a run. *Pin:* `stability.test.mjs`, `integration.test.mjs`.
 - **Usage segments** (`footer.mjs`): Pi's documented
   `after_provider_response` (Codex context only) and `provider_stream_event`
   (Codex provider only) expose stable but unversioned Codex limits. HTTP/SSE

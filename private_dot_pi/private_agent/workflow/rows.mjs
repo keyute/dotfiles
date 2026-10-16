@@ -1,5 +1,5 @@
 import { Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { AssistantMessageComponent, getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, formatReadLineRange, getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
 import { unsandboxed } from "./policy.mjs";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
@@ -51,7 +51,7 @@ const plural = (n, noun, nouns = `${noun}s`) => `${n} ${n === 1 ? noun : nouns}`
 const indent = line => `${PAD}${line}`;
 export const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
 
-// The editor's fake cursor ends in a full SGR reset, which also drops the
+// A full SGR reset inside the line (styled content) also drops the
 // background and any foreground the caller painted; re-open both after every
 // reset so the shade and the text colour span the line.
 export function shade(theme, line, background = "userMessageBg", foreground) {
@@ -104,7 +104,7 @@ export function callTitle(name, args = {}) {
   const where = args.path ? ` in ${args.path}` : "";
   switch (name) {
     case "bash": return `${args.run_in_background ? `Started ${firstLine(args.command) || "…"} in background` : `Ran ${firstLine(args.command) || "…"}`}${args.dangerouslyDisableSandbox ? " · unsandboxed" : ""}`;
-    case "read": return `Read ${args.path ?? ""}${args.offset ? `:${args.offset}` : ""}`;
+    case "read": return `Read ${args.path ?? ""}${formatReadLineRange(args.offset, args.limit)}`;
     case "edit": return `Edited ${args.path ?? ""}`;
     case "write": return `Wrote ${args.path ?? ""}`;
     case "grep": return `Search "${args.pattern ?? ""}"${where}`;

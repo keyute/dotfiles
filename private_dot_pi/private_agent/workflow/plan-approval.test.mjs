@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runAgentLoop } from "@earendil-works/pi-agent-core";
 import { SessionManager, initTheme } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, Markdown, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Markdown, matchesKey, renderFakeCursor, visibleWidth } from "@earendil-works/pi-tui";
 import {
   PLAN_APPROVED,
   PLAN_CANCELLED,
@@ -173,7 +173,7 @@ test("approval renders its placeholder inline and focuses No immediately", async
   component.handleInput("\x1b[B");
   const selected = component.render(80).join("\n");
   assert.equal(component.editor.focused, true);
-  assert.match(selected.replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /❭ No  What should change\?/);
+  assert.match(selected.replaceAll(CURSOR_MARKER, "").replace(/\x1b_pi:\/?fc\x07/g, ""), /❭ No  What should change\?/);
   assert.ok(selected.includes(CURSOR_MARKER));
   assert.equal(selected.split("\n").length, initial.split("\n").length, "No adds no editor spacer or box");
   component.handleInput("ab");
@@ -193,7 +193,7 @@ test("empty No shows a visible cursor and wrapped feedback keeps editor navigati
   const prompt = tuiApproval();
   const component = prompt.component();
   component.handleInput("\x1b[B");
-  assert.match(component.render(80).join("\n"), /\x1b\[7mW\x1b\[27m/);
+  assert.ok(component.render(80).join("\n").includes(renderFakeCursor("W")));
   component.handleInput("abc");
   component.handleInput("\x1b[13;2~");
   component.handleInput("0123456789012345");
@@ -215,7 +215,7 @@ test("inline draft replaces and restores the No placeholder without losing it on
   component.handleInput("\x7f");
   component.handleInput("\x7f");
   component.handleInput("\x7f");
-  assert.match(component.render(80).join("\n").replaceAll(CURSOR_MARKER, "").replace(/\x1b\[(?:7|27)m/g, ""), /❭ No  What should change\?/);
+  assert.match(component.render(80).join("\n").replaceAll(CURSOR_MARKER, "").replace(/\x1b_pi:\/?fc\x07/g, ""), /❭ No  What should change\?/);
   component.handleInput("draft");
   component.handleInput("\t");
   const onYes = component.render(80).join("\n");
@@ -232,7 +232,7 @@ test("inline No input wraps multiline Unicode text after its prefix", () => {
   component.handleInput("a👩‍💻");
   component.handleInput("\x1b[D");
   const unicodeCursor = component.render(18).join("\n");
-  assert.match(unicodeCursor, /\x1b\[7m👩‍💻\x1b\[(?:0|27)m/);
+  assert.ok(unicodeCursor.includes(renderFakeCursor("👩‍💻")), unicodeCursor);
   component.handleInput("e\u0301 long feedback");
   const focused = component.render(18).join("\n");
   assert.match(focused, /❭ No  /);

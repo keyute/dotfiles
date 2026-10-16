@@ -322,11 +322,12 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   // The last child or shell can end with no wake to follow (none owed, or its
   // wake declined); the frozen row then closes at that moment. The grace lets
   // a wake that is on its way start the root run first, which takes the turn.
-  // A wake whose extension input has arrived holds the close outright: pi marks
-  // its run active only after the input and before_agent_start handlers (the
-  // broker round trip among them), which can outlast the grace. A wake that
-  // never starts (handled, or failed) emits no agent_start, so the hold ends at
-  // wakeMs, pi-subagents' own WAKE_PENDING_MS.
+  // pi-subagents' wake, sent as a triggered custom message, is busy from the
+  // send. An extension's sendUserMessage wake holds the close outright once its
+  // input arrives: pi marks its run active only from _startRun, after the input
+  // handlers and the auth check, which can outlast the grace. A wake that never starts (handled, or
+  // failed) emits no agent_start, so the hold ends at wakeMs, pi-subagents' own
+  // WAKE_PENDING_MS.
   // After session_shutdown state.ctx is invalidated and isIdle() throws, which
   // inside a timer takes down the process; nothing is armed until re-attached.
   const closeIfDone = () => {

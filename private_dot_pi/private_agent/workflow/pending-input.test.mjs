@@ -150,8 +150,9 @@ function sender() {
     async abort() { this.isIdle = true; this.isStreaming = false; },
     async steer(value) { h.queue.steering.push(value); },
     async followUp(value) { h.queue.followUp.push(value); },
-    async _runAgentPrompt(messages) {
-      assert.deepEqual(messages, []);
+    async sendCustomMessage(message, options) {
+      assert.deepEqual(message, { customType: "workflow-send-now", content: [], display: false });
+      assert.deepEqual(options, { triggerTurn: true });
       starts.push([...h.queue.steering]);
       h.queue.steering.length = 0;
       h.mode.updatePendingMessagesDisplay();
@@ -212,6 +213,22 @@ test("send-now holds compaction flush through abort and transfers raw arrivals o
   assert.deepEqual(handled, ["compact steer", "compact follow-up"]);
   assert.deepEqual(h.starts, [["compact steer"]]);
   assert.deepEqual(h.queue.followUp, ["compact follow-up"]);
+  assert.deepEqual(h.mode.compactionQueuedMessages, []);
+});
+
+test("input queued during the send-now run's pre-run compaction flushes into that run", async () => {
+  const h = sender();
+  h.queue.steering.push("queued");
+  h.session.prompt = async (text, options) => { (options.streamingBehavior === "followUp" ? h.queue.followUp : h.queue.steering).push(text); };
+  h.session.sendCustomMessage = async () => {
+    h.mode.compactionQueuedMessages.push({ text: "typed during compaction", mode: "steer" });
+    await h.mode.flushCompactionQueue({ willRetry: false });
+    h.starts.push([...h.queue.steering]);
+    h.queue.steering.length = 0;
+    h.mode.updatePendingMessagesDisplay();
+  };
+  await h.send();
+  assert.deepEqual(h.starts, [["queued", "typed during compaction"]]);
   assert.deepEqual(h.mode.compactionQueuedMessages, []);
 });
 
@@ -312,7 +329,7 @@ test("a repeated key cannot start a second run before the initial steering poll"
   h.queue.steering.push("steer");
   let finish;
   let calls = 0;
-  h.session._runAgentPrompt = () => { calls++; return new Promise(resolve => { finish = resolve; }); };
+  h.session.sendCustomMessage = () => { calls++; return new Promise(resolve => { finish = resolve; }); };
   await h.send();
   await h.send();
   assert.equal(calls, 1);
@@ -322,14 +339,14 @@ test("a repeated key cannot start a second run before the initial steering poll"
   finish();
 });
 
-test("native empty-prompt run consumes steering before its first request and follow-ups only afterward", async () => {
+test("a hidden send-now run consumes steering before its first request and follow-ups only afterward", async () => {
   const user = text => ({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() });
   const steer = [user("first"), user("draft")];
   steer[0].content.push({ type: "image", mimeType: "image/png", data: "fixture" });
   const followUp = [user("later")];
   const requests = [];
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-  await runAgentLoop([], { messages: [], tools: [] }, {
+  await runAgentLoop([{ role: "custom", customType: "workflow-send-now", content: [], display: false, timestamp: Date.now() }], { messages: [], tools: [] }, {
     model: { provider: "openai-codex", id: "fixture" }, convertToLlm: messages => messages,
     getSteeringMessages: async () => steer.splice(0), getFollowUpMessages: async () => followUp.splice(0),
   }, async () => {}, undefined, async (_model, context) => {

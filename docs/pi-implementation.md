@@ -46,6 +46,11 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   calls to plugin features the workflow never uses fail, and drops them from a
   nesting child's own `subagent` description (built from this config, not
   replaced by the root proxy).
+  The refusing `contact_supervisor` the plugin registers at the root stays
+  undeclared there (not in `rootTools`), so a fork's first request misses the
+  parent's prompt cache; accepted, since most roles' tools differ from the
+  root's anyway. Reversal trigger: fork cache misses show up for a role whose
+  tools match the root's → add it to `rootTools`.
   Re-judge when Pi ships native subagents.
 - MCP is pi's own, fed the managed servers. Accepted: a connect per server per session and per child; another extension's `pi.registerMcpServer()` adds an unmanaged server. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
 - `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt. Reversal trigger: a maintained plugin's fetch fits with a one-line seam → adopt it, delete `web_fetch` and its three packages.

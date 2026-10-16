@@ -202,7 +202,7 @@ test("native in-memory safe boundary retains one visible entry and delays a canc
   session._isAgentRunActive = true;
   session._pendingCustomMessages = [];
   session._emit = event => events.push(event);
-  session._runAgentPrompt = () => { throw new Error("shell input must not start a model turn"); };
+  session._startRun = () => { throw new Error("shell input must not start a model turn"); };
   session._refreshFinalizedContext = () => { session.agent.state.messages = manager.buildSessionContext().messages; };
   const pi = {
     appendEntry: (type, data) => manager.appendCustomEntry(type, data),

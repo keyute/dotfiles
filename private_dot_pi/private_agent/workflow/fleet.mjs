@@ -10,8 +10,9 @@ const SEP = " · ";
 const NAME_SEP = " › ";
 const TOK_FMT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1, minimumFractionDigits: 1 });
 const VISIBLE_ROWS = 5;
-// The fleet DTO's `model` is the launch string (provider/model:thinking); the
-// thinking suffix is dropped, since a child's level is its role's.
+// The fleet DTO's `model` is the launch string (provider/model:thinking) until
+// the child's first reply, then the model replies came from; the thinking
+// suffix is dropped, since a child's level is its role's.
 const EFFORT_SUFFIX = /:([a-z]+)$/;
 
 export function formatTokens(n) {

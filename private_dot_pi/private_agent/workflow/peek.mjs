@@ -1,7 +1,7 @@
 import { open, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, renderFakeCursor, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Dialog, editorTheme } from "./dialog.mjs";
 import { formatTokens, modelLabel } from "./fleet.mjs";
 import { WorkingRow } from "./footer.mjs";
@@ -15,6 +15,7 @@ import { createReplay, renderRows, replayEvents, trimRows } from "./replay.mjs";
 
 const CHUNK = 1024 * 1024;
 const MAX_ROWS = 1000;
+const FAKE_CURSOR = renderFakeCursor("\0").split("\0")[0];
 const stopCompletion = {
   async getSuggestions(lines, line, col) {
     const prefix = lines[0]?.slice(0, col) ?? "";
@@ -46,7 +47,7 @@ class PeekEditor extends Editor {
     const count = Math.max(1, height - menu.length - 2);
     // Native scrolling budgets 30% of the terminal, not the space left in
     // this pane. Clip its visible block around the cursor, never by colour.
-    const cursor = content.findIndex(line => line.includes(CURSOR_MARKER) || line.includes("\x1b[7m"));
+    const cursor = content.findIndex(line => line.includes(CURSOR_MARKER) || line.includes(FAKE_CURSOR));
     const start = Math.max(0, Math.min(cursor, content.length - count));
     return [...shadedBlock(this.palette, content.slice(start, start + count), width, { prompt: PROMPT }), ...menu.map(line => `  ${line}`)];
   }

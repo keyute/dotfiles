@@ -60,11 +60,13 @@ export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode
         // A notification may already have started a response during abort cleanup.
         // Its native initial steering poll owns delivery; never start a second run.
         if (session.isStreaming) return;
-        // Reuse the managed run entry rather than prompt(""): its initial poll
-        // drains steering before the first request, without a fake user message,
-        // re-expanding queued text, or promoting follow-ups into steering.
+        // A triggered hidden message with empty content rather than prompt(""):
+        // the run's initial steering poll drains the steers before the first
+        // request, without a fake user message, re-expanding queued text, or
+        // promoting follow-ups into steering. The empty content never reaches
+        // the model on the Responses API; the transcript keeps one hidden entry.
         action.starting = true;
-        void session._runAgentPrompt([]).catch(error => {
+        void session.sendCustomMessage({ customType: "workflow-send-now", content: [], display: false }, { triggerTurn: true }).catch(error => {
           if (current()) host.showError(`Send now failed: ${error instanceof Error ? error.message : error}`);
         }).finally(() => {
           if (this.sending === action) this.sending = null;
@@ -82,7 +84,9 @@ export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode
   const flush = prototype.flushCompactionQueue;
   prototype.flushCompactionQueue = function (...args) {
     // compaction_end would otherwise start a response while abort is settling.
-    if (state.sending?.host === this && state.sending.session === this.session) return Promise.resolve();
+    // Once the send-now run is starting the session is busy, so input queued
+    // during its pre-run compaction flushes natively into that run.
+    if (state.sending?.host === this && state.sending.session === this.session && !state.sending.starting) return Promise.resolve();
     return flush.apply(this, args);
   };
   const display = function () {

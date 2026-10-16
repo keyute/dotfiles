@@ -13,7 +13,7 @@ import { streamSimple } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
-import { activeToolNames } from "./index.mjs";
+import { activeToolNames, taskNotifier } from "./index.mjs";
 import { openWait } from "./dialog.mjs";
 
 // Unix sockets are unavailable in some sandboxes (EPERM on listen); probe once
@@ -71,6 +71,26 @@ test("a refresh never declares a deferred or hidden tool and keeps one tool_sear
   // Permission still decides first: a loaded tool outside the scope is retracted.
   assert.deepEqual(activeToolNames(tools, { ready: true, permitted: name => name !== "mcp__context7__query_docs", currentContext: { mode: "tui", hasUI: true }, active: ["mcp__context7__query_docs"] }), ["workspace_read", "tool_search", "mcp__exa__web_fetch_exa"]);
   assert.deepEqual(activeToolNames(tools, { ready: false, permitted: () => true, currentContext: { mode: "tui", hasUI: true }, active: ["mcp__context7__query_docs"] }), []);
+});
+
+test("a task notice after the user stops a run is only appended until the next run or session starts", () => {
+  const handlers = {};
+  const sent = [];
+  const notify = taskNotifier({ on: (name, fn) => { handlers[name] = fn; }, sendMessage: (_message, options) => sent.push(options.triggerTurn) });
+  const end = (hasUI, aborted) => handlers.agent_end({}, { hasUI, signal: { aborted } });
+  notify("done");
+  end(true, false);
+  notify("done");
+  end(false, true);
+  notify("done");
+  end(true, true);
+  notify("done");
+  handlers.agent_start();
+  notify("done");
+  end(true, true);
+  handlers.session_start();
+  notify("done");
+  assert.deepEqual(sent, [true, true, true, false, true, true]);
 });
 
 test("Subscription Responses payloads retain distinct workflow and project-context patches across mode switches", async () => {
@@ -429,8 +449,8 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
   assert.match(promptEvent.systemPromptOptions.sections.skills, /Use the workspace_read tool[^]*<name>fixture-skill<\/name>/);
   assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
-  // An idle triggerTurn reaches _runAgentPrompt without prompt(); the wrapper
-  // emits before_agent_start and guards the model itself.
+  // An idle triggerTurn starts a run without prompt(); pi prepares it with
+  // before_agent_start and the wrapper guards the model itself.
   const session = Object.create(AgentSession.prototype);
   const prompted = [];
   const appended = [];
@@ -438,63 +458,38 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     _pendingNextTurnMessages: [], _baseSystemPromptOptions: { ...promptEvent.systemPromptOptions, sections: {}, selectedTools: [] },
     _extensionRunner: {
       createContext: () => ctx,
-      async emitBeforeAgentStart(prompt, _images, base) {
+      async emitBeforeAgentStart(trigger, base) {
         const options = structuredClone(base);
+        const prompt = trigger.messageType === "custom" ? trigger.message.content : trigger.prompt;
         for (const handler of handlers.get("before_agent_start")) await handler({ prompt, systemPromptOptions: options }, ctx);
-        if (prompt === "abort me") session._agentRunAbortRequested = true;
         return { messages: [], systemPromptOptions: options };
       },
     },
-    agent: { prompt: async messages => prompted.push({ messages, options: session._runSystemPromptOptions }) },
+    agent: { state: { messages: [] }, prompt: async messages => prompted.push({ messages, options: session._runSystemPromptOptions }) },
     getActiveToolNames: () => ["workspace_read"], _preparePromptAndToolLoadout: () => undefined,
     _pendingToolNames: new Set(), _recordSelection() {}, _handlePostAgentRun: async () => false, _runBeforeSettleBoundary: async () => false,
-    _flushPendingBashMessages() {}, _flushPendingCustomMessages() {}, _emitAgentSettled: async () => {}, _appendCustomMessage: message => appended.push(message.content),
+    _flushPendingBashMessages() {}, _flushPendingCustomMessages() {}, _emitAgentSettled: async () => { session._isAgentRunActive = false; }, _appendCustomMessage: message => appended.push(message.content),
   });
   await session.sendCustomMessage({ customType: "workflow-shell", content: "Ran `pwd`", display: false }, { triggerTurn: true });
   assert.equal(prompted.length, 1);
   assert.match(prompted[0].options.sections.workflow, /Workflow mode: plan/);
   assert.match(prompted[0].options.sections.skills, /<name>fixture-skill<\/name>/);
   assert.equal(session._runSystemPromptOptions, undefined);
-  session._isAgentRunActive = false;
   // A second idle trigger while the first is still preparing queues behind it.
   const queued = [];
   session.agent.followUp = message => queued.push(message);
   await Promise.all([1, 2].map(n => session.sendCustomMessage({ customType: "workflow-shell", content: `Ran ${n}`, display: false }, { triggerTurn: true, deliverAs: "followUp" })));
   assert.equal(prompted.length, 2);
   assert.deepEqual(queued.map(message => message.content), ["Ran 2"]);
-  session._isAgentRunActive = false;
-  // An abort while the run is being prepared settles it without a model call.
-  let settled = 0;
-  let settledAborted, pendingAtSettle;
-  // pi runs actions deferred during the emit, such as a subagent wake, before the flag is cleared.
-  session._emitAgentSettled = async () => {
-    settled++;
-    session._isAgentRunActive = false;
-    if (settled > 1) return;
-    settledAborted = session._agentRunAbortRequested;
-    pendingAtSettle = session._pendingNextTurnMessages.map(message => message.content);
-    await session._runAgentPrompt({ role: "custom", customType: "subagent-wake", content: "wake", display: false });
-  };
-  // The caller's notice is kept without a turn, and next-turn messages wait for a run that starts.
-  session._pendingNextTurnMessages = [{ role: "custom", customType: "workflow-shell", content: "next turn" }];
-  await session.sendCustomMessage({ customType: "workflow-shell", content: "abort me", display: false }, { triggerTurn: true });
-  assert.equal(prompted.length, 3, "the wake deferred to the aborted run's settle reaches the model");
-  assert.deepEqual(prompted[2].messages.map(message => message.content), ["wake", "next turn"]);
-  assert.deepEqual(appended, ["abort me"]);
-  assert.deepEqual(pendingAtSettle, ["next turn"]);
-  assert.deepEqual(session._pendingNextTurnMessages, []);
-  assert.equal(settled, 2);
-  assert.equal(settledAborted, true, "agent_settled reports the abort");
-  assert.equal(session._agentRunAbortRequested, false);
-  assert.equal(session._runSystemPromptOptions, undefined);
+  // A refused custom trigger keeps its notice without a turn.
   ctx.model = { provider: "openai-codex", id: "unmanaged" };
   await assert.rejects(session.sendCustomMessage({ customType: "workflow-shell", content: "Ran `pwd`", display: false }, { triggerTurn: true }), /Select an available managed OpenAI subscription model/);
-  assert.equal(prompted.length, 3, "a refused run never reaches agent.prompt");
-  assert.deepEqual(appended, ["abort me", "Ran `pwd`"]);
-  assert.equal(session._runSystemPromptOptions, undefined);
+  assert.equal(prompted.length, 2, "a refused run never reaches agent.prompt");
+  assert.deepEqual(appended, ["Ran `pwd`"]);
+  assert.equal(session.isStreaming, false);
   ctx.model = { provider: "openai-codex", id: "gpt-5.6-sol" };
-  // Ordinary prompt() prepares the run before the wrapper guards it; the
-  // wrapper must reject disallowed models without preparing an allowed run twice.
+  // Ordinary prompt() starts through the same entry: a disallowed model is
+  // refused before the run is prepared.
   const ordinary = Object.create(AgentSession.prototype);
   const preparation = [];
   const ordinaryPrompts = [];
@@ -527,16 +522,12 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   ctx.model = { provider: "openai-codex", id: "unmanaged" };
   await assert.rejects(ordinary.prompt("Ordinary unmanaged prompt"), /Select an available managed OpenAI subscription model/);
   assert.equal(ordinaryPrompts.length, 0);
-  assert.deepEqual(preparation, ["before_agent_start", "loadout"]);
-  assert.equal(ordinary._runSystemPromptOptions, undefined);
-  preparation.length = 0;
+  assert.deepEqual(preparation, []);
   ctx.model = { provider: "openai-codex", id: "gpt-5.6-sol" };
   ctx.modelRegistry.isUsingOAuth = () => false;
   await assert.rejects(ordinary.prompt("Ordinary API prompt"), /Select an available managed OpenAI subscription model/);
   assert.equal(ordinaryPrompts.length, 0);
-  assert.deepEqual(preparation, ["before_agent_start", "loadout"]);
-  assert.equal(ordinary._runSystemPromptOptions, undefined);
-  preparation.length = 0;
+  assert.deepEqual(preparation, []);
   ctx.modelRegistry.isUsingOAuth = () => true;
   await ordinary.prompt("Ordinary subscription prompt");
   assert.deepEqual(preparation, ["before_agent_start", "loadout", "agent.prompt"]);
@@ -638,7 +629,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: broker.policy.mode, readonly: false }), installSubagents, AgentSession });
   for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
   await session.sendCustomMessage({ customType: "workflow-shell", content: "reinstalled", display: false }, { triggerTurn: true });
-  assert.equal(prompted.length, 4, "the reinstall's guard, not the shut-down one, decides");
+  assert.equal(prompted.length, 3, "the reinstall's guard, not the shut-down one, decides");
   for (const handler of handlers.get("session_shutdown")) await handler({ reason: "quit" }, ctx);
 });
 

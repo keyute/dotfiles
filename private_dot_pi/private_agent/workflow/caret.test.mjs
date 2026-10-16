@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Theme } from "@earendil-works/pi-coding-agent";
-import { CombinedAutocompleteProvider, CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
+import { CombinedAutocompleteProvider, CURSOR_MARKER, renderFakeCursor, visibleWidth } from "@earendil-works/pi-tui";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 
 const keybindings = { matches: (data, id) => ({ "app.interrupt": "\x1b", "tui.editor.cursorUp": "\x1b[A", "tui.editor.cursorDown": "\x1b[B", "tui.editor.cursorLineStart": "\x01", "tui.editor.deleteCharBackward": "\x7f", "tui.select.down": "\x1b[B", "tui.select.up": "\x1b[A", "tui.select.confirm": "\r", "tui.select.cancel": "\x1b", "tui.input.submit": "\r", "app.message.followUp": "\x1b\r", "tui.input.tab": "\t" })[id] === data };
@@ -45,14 +45,15 @@ test("Ctrl+Enter does not send from shell mode or steal fleet focus", () => {
   assert.deepEqual(normal, []);
 });
 
-test("composer is the user box's shape: shaded rows instead of rules, the prompt at column 0, bg re-opened after the cursor reset", () => {
+test("composer is the user box's shape: shaded rows instead of rules, the prompt at column 0, the shade spanning the fake cursor", () => {
   const lines = editor().render(40);
   assert.equal(lines[0], `${BG}${" ".repeat(40)}\x1b[49m`);
   assert.equal(lines.at(-1), lines[0]);
   assert.equal(lines.length, 3);
   assert.ok(lines[1].startsWith(`${BG}<accent>❯ `), lines[1]);
-  assert.match(lines[1], /\x1b\[0m\x1b\[48;5;1m/);
-  assert.ok(lines[1].endsWith("\x1b[49m"));
+  assert.ok(lines[1].includes(renderFakeCursor(" ")), lines[1]);
+  assert.doesNotMatch(lines[1], /\x1b\[0m/);
+  assert.equal(lines[1].indexOf("\x1b[49m"), lines[1].length - "\x1b[49m".length, "the shade closes only at the row end");
 });
 
 test("the working status is not embedded: the top shaded row is blank, or the scroll count", () => {
@@ -340,7 +341,7 @@ test("both Catppuccin variants tint the whole shell box and keep command text re
   }
 });
 
-test("shell-mode command text keeps its colour after the cursor's reset mid-command", () => {
+test("shell-mode command text keeps its shade and colour across the fake cursor mid-command", () => {
   const caret = editor();
   caret.setText("!echo hi");
   caret.handleInput("\x1b[D");
@@ -350,7 +351,9 @@ test("shell-mode command text keeps its colour after the cursor's reset mid-comm
   caret.palette = theme;
   caret.invalidate();
   const row = caret.render(40)[1];
-  assert.ok(row.includes(`\x1b[0m${theme.getBgAnsi("toolErrorBg")}${theme.getFgAnsi("userMessageText")}i`), row);
+  assert.ok(row.startsWith(theme.getBgAnsi("toolErrorBg")), row);
+  assert.ok(row.includes(`${theme.getFgAnsi("userMessageText")}echo ${renderFakeCursor("h")}i`), row);
+  assert.doesNotMatch(row, /\x1b\[0m/);
 });
 
 test("down enters fleet navigation only when the editor could not move, and other keys fall back to typing", () => {

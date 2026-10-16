@@ -47,6 +47,19 @@ export function trimHistory(history, budget = 16 * 1024) {
   while (kept.length && JSON.stringify(kept).length > budget) kept.shift();
   return kept;
 }
+// Background tasks end in a steer message (heard with the next tool result,
+// or as a new turn when idle, as Claude Code's task notification is) and one
+// completion line; the message is not displayed, the line is its record.
+// After the user stops a run (Esc), until the next run or session starts, the
+// message is only appended, as pi-subagents holds its parent wake; agent_end
+// still sees the stopped run's signal. Exported for its test.
+export function taskNotifier(pi) {
+  let held = false;
+  pi.on("agent_end", (_event, ctx) => { if (ctx.hasUI && ctx.signal?.aborted) held = true; });
+  pi.on("agent_start", () => { held = false; });
+  pi.on("session_start", () => { held = false; });
+  return text => pi.sendMessage({ customType: "workflow-task", content: text, display: false }, { deliverAs: "steer", triggerTurn: !held });
+}
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 
 // `readonly` is also every read-only role's state in execute mode, so the
@@ -72,70 +85,34 @@ export function activeToolNames(tools, { ready, permitted, currentContext, activ
     && (!["deferred", "hidden"].includes(exposure) || active.includes(name))).map(tool => tool.name);
 }
 
-// Every agent run passes through _runAgentPrompt, but only prompt() emits
-// before_agent_start first, and pi swallows a handler's throw: an idle
-// triggerTurn ran without the workflow sections and past the model guard
-// (docs/pi-coupling.md, Managed agent runs). The guard throws here, on every
-// run, and a run prompt() did not prepare gets prompt()'s preparation.
+// pi swallows a before_agent_start handler's throw, so the model and
+// workspace guard cannot block a run from there; it throws here instead, on
+// every run, including an idle triggerTurn (docs/pi-coupling.md, Managed agent
+// runs).
 const MANAGED_RUN = Symbol.for("pi-workflow:managed-run");
 function installManagedRun(AgentSession, guard) {
   const prototype = AgentSession.prototype;
-  const installed = prototype._runAgentPrompt[MANAGED_RUN];
+  const installed = prototype._startRun[MANAGED_RUN];
   if (installed) { installed.guard = guard; return; }
   const state = { guard };
-  const original = prototype._runAgentPrompt;
-  // What the original's finally does for a run that never reached agent.prompt.
-  // The abort flag stays set, as the original leaves it: the emit reports it
-  // as `aborted`, and the next run clears it on starting.
-  const settle = async session => {
-    session._runSystemPromptOptions = undefined;
-    session._flushPendingBashMessages();
-    session._flushPendingCustomMessages();
-    await session._emitAgentSettled();
-  };
-  const run = async function (messages) {
-    const caller = [messages].flat();
-    // The original records the caller's messages via agent.prompt; a run that
-    // never reaches it appends them without a turn, as a non-triggering
-    // sendCustomMessage would, so an idle notice is not lost.
-    // `_appendCustomMessage` reaches no extension event, so a displayed one
-    // ends the activity group here.
-    const keep = () => {
-      for (const message of caller) {
-        if (message.role !== "custom") continue;
-        if (message.display) closeFolds(defaultFolds);
-        this._appendCustomMessage(message);
-      }
-    };
+  const original = prototype._startRun;
+  const run = async function (trigger, onStarted) {
     try { state.guard(this._extensionRunner.createContext()); }
-    catch (error) { this._runSystemPromptOptions = undefined; keep(); throw error; }
-    if (!this._runSystemPromptOptions) {
-      // Marked active before the first await, as the original does, so a
-      // second idle trigger queues instead of starting a parallel run. A run
-      // deferred to the last one's settle starts with its abort flag still set.
-      this._agentRunAbortRequested = false;
-      this._isAgentRunActive = true;
-      try {
-        messages = [...caller];
-        const text = messages.map(({ content }) => typeof content === "string" ? content : content.filter(part => part.type === "text").map(part => part.text).join("\n")).join("\n");
-        const before = this._baseSystemPromptOptions.selectedTools;
-        const result = await this._extensionRunner.emitBeforeAgentStart(text, undefined, this._baseSystemPromptOptions);
-        const options = result.systemPromptOptions;
-        if (options.selectedTools.length === before.length && options.selectedTools.every((name, index) => name === before[index])) options.selectedTools = this.getActiveToolNames();
-        messages.push(...this._pendingNextTurnMessages, ...result.messages.map(({ customType, content, display, details }) => ({ role: "custom", customType, content: content ?? [], display, details, timestamp: Date.now() })));
-        const update = this._preparePromptAndToolLoadout(options);
-        this._runSystemPromptOptions = options;
-        if (update) messages.unshift(update);
-      } catch (error) { keep(); await settle(this); throw error; }
-      // An abort during preparation finds no model call to cancel; the
-      // original would clear its flag and start the turn anyway.
-      if (this._agentRunAbortRequested) { keep(); return settle(this); }
-      this._pendingNextTurnMessages = [];
+    catch (error) {
+      // A refused custom trigger is kept without a turn, as a non-triggering
+      // sendCustomMessage would, so an idle notice is not lost.
+      // `_appendCustomMessage` reaches no extension event, so a displayed one
+      // ends the activity group here.
+      if (trigger.messageType === "custom") {
+        if (trigger.message.display) closeFolds(defaultFolds);
+        this._appendCustomMessage(trigger.message);
+      }
+      throw error;
     }
-    return original.call(this, messages);
+    return original.call(this, trigger, onStarted);
   };
   run[MANAGED_RUN] = state;
-  prototype._runAgentPrompt = run;
+  prototype._startRun = run;
 }
 
 export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "workflow.json"), role = "root", runtime = {}) {
@@ -198,11 +175,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const toolFactory = name => sdk[`create${name[0].toUpperCase()}${name.slice(1)}ToolDefinition`];
   const workerEnv = { ...env, PI_WORKFLOW_ROLE: role };
 
-  // Background tasks end in a steer message (heard with the next tool result,
-  // or as a new turn when idle, as Claude Code's task notification is) and one
-  // completion line; the message is not displayed, the line is its record.
   const tasks = createTasks({
-    notify: text => pi.sendMessage({ customType: "workflow-task", content: text, display: false }, { deliverAs: "steer", triggerTurn: true }),
+    notify: taskNotifier(pi),
     record: entry => appendVisible(pi, "workflow-task", entry),
   });
   pi.registerEntryRenderer("workflow-task", doneEntryRenderer("workflow-task"));
