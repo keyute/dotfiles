@@ -25,7 +25,7 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
 {{ range $name, $role := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 | {{ $name }} | `{{ $role.model }}` | {{ $role.thinking }} |
 {{ end }}
-- `workflow/children.mjs` rejects frontier children. Every tier pin is in the SDK's subscription
+- `workflow/children.mjs` rejects frontier children, `tier` overrides included. Every tier pin is in the SDK's subscription
   catalog (the startup probe checks each); if one is dropped, fail unavailable, not an alias or API billing.
 - All models draw one plan allowance at their own rate ([live rate card](https://learn.chatgpt.com/docs/pricing));
   API task cost is not Pro allowance; compare completed tasks including retries.
@@ -42,7 +42,9 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
 - Children run in the background, sharing the root policy, up to {{ .agents.pi.child_limit }} at once
   across the tree; they start fresh with no channel back (intercom off);
   batch independent launches.
-- Scripts/chains, role overrides, revival and mutating management are refused; status, stop,
+- `orchestrate` runs a workflow script (`agent()`/`parallel()`/`pipeline()`, schema results;
+  any non-frontier tier per call) when the prompt says ultracode, blocking until it returns.
+- Chains, role overrides, revival and mutating management are refused; status, stop,
   interrupt and steer work. Runs stop after {{ div $sub.timeoutMs 60000 }} minutes, with a checkpoint steer
   {{ div $sub.checkpointBeforeDeadlineMs 60000 }} minutes before.
 - Skills are listed in the root's system prompt and load by `/skill:name` or on the model's own

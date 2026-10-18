@@ -32,6 +32,7 @@ function fixture(t) {
   const agentDir = join(root, "agent");
   mkdirSync(join(agentDir, "agents"), { recursive: true });
   writeFileSync(join(agentDir, "subagent-tool-description.md"), "Managed fixture: named asynchronous children only.\n");
+  writeFileSync(join(agentDir, "orchestrate-tool-description.md"), "Managed fixture: workflow scripts.\n");
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = agentDir;
   t.after(() => {
@@ -49,7 +50,7 @@ function fixture(t) {
   writeFileSync(role.agentPath, `---\nname: fixture-reader\ndescription: Fixture\nmodel: ${role.model}\nthinking: low\ntools: workspace_read\nextensions: ${role.extensionPath}\n---\nRead only.\n`);
   writeFileSync(writer.extensionPath, "export default function () {}\n");
   writeFileSync(writer.agentPath, `---\nname: fixture-writer\ndescription: Fixture\nmodel: ${writer.model}\nthinking: low\ntools: workspace_read\nextensions: ${writer.extensionPath}\n---\nWrite enabled.\n`);
-  const config = { version: 1, agentDir, models: { provider: "openai-codex", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {}, childLimit: 3 };
+  const config = { version: 1, agentDir, models: { provider: "openai-codex", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {}, childLimit: 3, orchestrateConcurrency: 2 };
   return { root, config };
 }
 
@@ -150,6 +151,9 @@ test("missing or empty managed descriptions stop root installation before broker
   await assert.rejects(installWorkflow({}, configPath, "root", runtime), /ENOENT/);
   writeFileSync(descriptionPath, "  \n");
   await assert.rejects(installWorkflow({}, configPath, "root", runtime), /description is empty/);
+  writeFileSync(descriptionPath, "Managed fixture.\n");
+  writeFileSync(join(config.agentDir, "orchestrate-tool-description.md"), "  \n");
+  await assert.rejects(installWorkflow({}, configPath, "root", runtime), /orchestrate description is empty/);
 });
 
 test("nested preflight retains bg_wait and loads the managed runtime backstop", async t => {
@@ -184,7 +188,7 @@ test("plan mode rejects configured writers before resolving a child contract", a
     // The preflight resolves the contract under the trust the launch uses.
     assert.equal(request.projectTrusted, false);
     const child = config.agents[request.agent];
-    return { ok: true, contract: { agent: { filePath: child.agentPath }, tools: { configuredExtensions: [child.extensionPath], effectiveAllowlist: child.tools }, digest: "fixture" } };
+    return { ok: true, contract: { agent: { filePath: child.agentPath }, model: request.model ?? child.model, tools: { configuredExtensions: [child.extensionPath], effectiveAllowlist: child.tools }, digest: "fixture" } };
   };
   await checkChildLaunch({ agent: "fixture-reader", task: "Inspect fixture" }, config, "root", ctx, resolve, "plan");
   await assert.rejects(checkChildLaunch({ agent: "fixture-writer", task: "Implement fixture" }, config, "root", ctx, resolve, "plan"), /plan mode/i);
@@ -196,6 +200,34 @@ test("plan mode rejects configured writers before resolving a child contract", a
   config.agents["fixture-frontier"] = { ...config.agents["fixture-reader"], model: "openai-codex/gpt-6-astra" };
   await assert.rejects(checkChildLaunch({ agent: "fixture-frontier", task: "Inspect fixture" }, config, "root", ctx, resolve, "plan"), /frontier/);
   assert.equal(resolved, 2);
+});
+
+test("owned launch options keep an output schema and run any non-frontier tier pin", async t => {
+  const { config } = fixture(t);
+  const jiti = createJiti(import.meta.url);
+  const { resolveSubagentLaunchContract } = await jiti.import("pi-subagents/preflight");
+  const available = Object.values(config.models.tiers).map(id => ({ provider: "openai-codex", id }));
+  const ctx = { cwd: process.cwd(), isProjectTrusted: () => true, modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => available } };
+  const launch = () => ({ agent: "fixture-reader", task: "Inspect fixture" });
+  const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] };
+  let contract;
+  const capture = async request => { const result = await resolveSubagentLaunchContract(request); contract = result.contract; return result; };
+  const structured = launch();
+  await checkChildLaunch(structured, config, "root", ctx, capture, "plan", { outputSchema: schema });
+  assert.equal(structured.outputSchema, schema);
+  assert.ok(contract.tools.effectiveAllowlist.includes("structured_output"));
+  // Without the option, the internal tool is outside the role's scope.
+  const schemaLaunch = request => resolveSubagentLaunchContract({ ...request, outputSchema: schema });
+  await assert.rejects(checkChildLaunch(launch(), config, "root", ctx, schemaLaunch, "plan"), /tool scope differs/);
+  const top = launch();
+  await checkChildLaunch(top, config, "root", ctx, capture, "plan", { model: "openai-codex/gpt-5.6-sol" });
+  assert.equal(top.model, "openai-codex/gpt-5.6-sol");
+  assert.match(contract.model, /^openai-codex\/gpt-5\.6-sol(:|$)/);
+  await assert.rejects(checkChildLaunch(launch(), config, "root", ctx, capture, "plan", { model: "openai-codex/gpt-6-astra" }), /Children never run the frontier tier/);
+  await assert.rejects(checkChildLaunch(launch(), config, "root", ctx, capture, "plan", { model: "openai-codex/gpt-5.6-unknown" }), /outside the OpenAI tier policy/);
+  // A preflight that resolves another model than the checked one is refused.
+  const unpinned = async request => resolveSubagentLaunchContract({ ...request, model: undefined });
+  await assert.rejects(checkChildLaunch(launch(), config, "root", ctx, unpinned, "plan", { model: "openai-codex/gpt-5.6-sol" }), /unpinned model/);
 });
 
 test("broker does not expose its credential to the classifier and invalidates pending approval", { skip }, async t => {
@@ -292,8 +324,13 @@ test("pinned upstream packages register against the managed extension and prefli
   // pi's MCP tools register once their servers connect; deferred ones load through tool_search.
   assert.ok(tools.has("tool_search"));
   assert.equal(tools.has("codemode"), false);
+  assert.ok(tools.has("orchestrate"));
+  const orchestrateSchema = tools.get("orchestrate").parameters;
+  assert.deepEqual(Object.keys(orchestrateSchema.properties).sort(), ["args", "script", "title"]);
+  assert.equal(orchestrateSchema.additionalProperties, false);
   assert.ok(tools.has("submit_plan"));
   assert.equal(tools.get("submit_plan").executionMode, "sequential");
+  assert.equal(tools.get("orchestrate").executionMode, "sequential");
   assert.match(tools.get("submit_plan").description, /Read the current plan/);
   assert.ok(tools.has("ask_user_question"));
   assert.ok(!tools.has("ask_user"));
@@ -340,10 +377,13 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.equal(blocking.async, true);
   // Keys the upstream schema advertises are dropped, not refused: every observed
   // first launch carried some of them and the refusal cost a turn per batch.
-  const noisy = { ...args, title: "Fixture check", cwd: "/elsewhere", toolBudget: { hard: 20 }, acceptance: false, context: "fork" };
-  await checkChildLaunch(noisy, config, "root", ctx, resolveSubagentLaunchContract, "plan");
+  // model and outputSchema are owned launch options, never the model's own args.
+  const noisy = { ...args, title: "Fixture check", cwd: "/elsewhere", toolBudget: { hard: 20 }, acceptance: false, context: "fork", model: "openai-codex/gpt-5.6-sol", outputSchema: { type: "object" } };
+  let contract;
+  await checkChildLaunch(noisy, config, "root", ctx, async request => { const result = await resolveSubagentLaunchContract(request); contract = result.contract; return result; }, "plan");
   assert.deepEqual(Object.keys(noisy).sort(), ["agent", "agentScope", "async", "context", "task"]);
   assert.equal(noisy.context, "fork");
+  assert.match(contract.model, /^openai-codex\/gpt-5\.6-luna(:|$)/);
   const titled = { action: "status", id: "run", title: "Fixture status" };
   await checkChildLaunch(titled, config, "root", ctx, resolveSubagentLaunchContract, "plan");
   assert.equal("title" in titled, false);
@@ -367,6 +407,131 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.equal(list.agentScope, "user");
   await assert.rejects(checkChildLaunch({ action: "list", options: { view: "fleet" } }, config, "root", ctx, resolveSubagentLaunchContract, "plan"), /not enabled/);
 
+});
+
+test("orchestrate runs through the root wiring: owned notices drop while busy, and a mode change stops a live run before the broker switches", async t => {
+  const { config } = fixture(t);
+  config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const handlers = new Map();
+  const tools = new Map();
+  const commands = new Map();
+  const sent = [];
+  const order = [];
+  const events = new EventEmitter();
+  const pi = {
+    events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
+    on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool(tool) { tools.set(tool.name, tool); }, registerCommand(name, command) { commands.set(name, command); },
+    registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+    sendMessage: (message, options) => { sent.push({ message, options }); },
+    getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
+    getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, getMcpServers() { return []; },
+  };
+  const spawned = [];
+  let onSpawn;
+  events.on("subagents:rpc:v1:request", ({ requestId, method, params }) => {
+    const reply = data => events.emit(`subagents:rpc:v1:reply:${requestId}`, { success: true, data });
+    if (method === "spawn") { const runId = `run-${spawned.push(params)}`; reply({ details: { runId, asyncDir: `/tmp/async/${runId}` } }); onSpawn?.(); }
+    else if (method === "ping") reply({ capabilities: { stop: true } });
+    else if (method === "status") reply({ asyncSnapshot: { version: 1, runs: [] }, details: {} });
+    else if (method === "stop") {
+      order.push(`stop:${params.id}`);
+      reply({ runId: params.id, state: "stopping" });
+      events.emit("subagent:process-terminal", { state: "observed", runId: params.id });
+      events.emit("subagent:async-complete", { runId: params.id, success: false, state: "stopped", results: [{ status: "stopped" }] });
+    }
+  });
+  const policy = { mode: "plan", epoch: 1, approval: "auto" };
+  const broker = { env: {}, policy, setMode: async mode => { order.push(`mode:${mode}`); policy.mode = mode; }, close: async () => { order.push("close"); } };
+  let captured;
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: policy.mode }), installSubagents: styled => { captured = styled; } });
+  t.after(() => handlers.get("session_shutdown").find(handler => handler.name === "shutdown")());
+  let idle = true;
+  const available = Object.values(config.models.tiers).map(id => ({ provider: "openai-codex", id }));
+  // The root installs its TUI surfaces only for a UI session start; the
+  // orchestrate gate reads hasUI from the tool call's ctx.
+  const ctx = {
+    cwd: process.cwd(), hasUI: false, isIdle: () => idle, isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => "orchestrate-root", getBranch: () => [] },
+    modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => available },
+    ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
+  };
+  for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
+  ctx.hasUI = true;
+  order.length = 0;
+  const run = () => tools.get("orchestrate").execute("o1", { script: 'return await agent("look", { agentType: "fixture-reader", label: "Look" })' }, new AbortController().signal, undefined, ctx);
+  const input = (text, source = "user") => { for (const handler of handlers.get("input")) handler({ source, text, streamingBehavior: "followUp" }); };
+  const deliver = text => { for (const handler of handlers.get("message_start")) handler({ message: { role: "user", content: [{ type: "text", text }] } }); };
+  const arm = () => { input("ultracode: run it"); deliver("ultracode: run it"); };
+  // Text an extension injects never arms the opt-in, even once delivered.
+  input("ultracode", "extension");
+  deliver("ultracode");
+  await assert.rejects(run(), /prompt says ultracode/);
+  // A queued prompt arms only at its delivery, its user message_start.
+  input("ultracode: queued");
+  await assert.rejects(run(), /prompt says ultracode/);
+  deliver("ultracode: queued");
+  assert.match((await tools.get("orchestrate").execute("o0", { script: "return 1" }, new AbortController().signal, undefined, ctx)).content[0].text, /^0 agents · completed/);
+  arm();
+  // A tree move or a new session disarms the opt-in.
+  for (const handler of handlers.get("session_tree")) await handler({}, ctx);
+  await assert.rejects(run(), /prompt says ultracode/);
+  arm();
+  ctx.hasUI = false;
+  for (const handler of handlers.get("session_start")) await handler({ reason: "new" }, ctx);
+  ctx.hasUI = true;
+  await assert.rejects(run(), /prompt says ultracode/);
+  arm();
+  order.length = 0;
+  const launched = () => new Promise(resolve => { onSpawn = () => setImmediate(resolve); });
+  idle = false;
+  let spawn = launched();
+  const first = run();
+  await spawn;
+  assert.equal(spawned[0].agent, "fixture-reader");
+  assert.equal(spawned[0].agentScope, "user");
+  assert.equal(spawned[0].async, true);
+  assert.equal("title" in spawned[0], false);
+  events.emit("subagent:async-complete", { runId: "run-1", success: true, results: [{ status: "completed", output: "seen" }] });
+  const result = await first;
+  assert.match(result.content[0].text, /seen/);
+  assert.equal(result.details.runs[0].runId, "run-1");
+  // index.mjs hands orchestrate's ownership to the Proxy: the notice pi-subagents
+  // sends after the completion is dropped while the root is busy; an unowned one is forwarded.
+  captured.sendMessage({ customType: "subagent-notify", content: "x", display: true, details: { runs: [{ runId: "run-1" }] } }, { triggerTurn: true });
+  assert.equal(sent.length, 0);
+  captured.sendMessage({ customType: "subagent-notify", content: "x", display: true, details: { runs: [{ runId: "other" }] } }, { triggerTurn: true });
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].message.details.runs, [{ runId: "other" }]);
+  // Through the root check and the live broker mode, still plan.
+  onSpawn = () => setImmediate(() => events.emit("subagent:async-complete", { runId: `run-${spawned.length}`, success: true, results: [{ status: "completed", output: "ok", structuredOutput: { ok: true } }] }));
+  const planned = await tools.get("orchestrate").execute("o2", { script: 'let refused; try { await agent("x", { agentType: "fixture-writer" }) } catch (e) { refused = e.message } return [refused, await agent("x", { agentType: "fixture-reader", tier: "top" }), await agent("x", { agentType: "fixture-reader", schema: { type: "object" } })]' }, new AbortController().signal, undefined, ctx);
+  const [refused, top, typed] = JSON.parse(planned.content[0].text.split("\n\n")[1]);
+  assert.match(refused, /plan mode/i);
+  assert.deepEqual([top, typed], ["ok", { ok: true }]);
+  assert.deepEqual(spawned.slice(1).map(params => params.agent), ["fixture-reader", "fixture-reader"]);
+  assert.equal(spawned[1].model, "openai-codex/gpt-5.6-sol");
+  assert.deepEqual(spawned[2].outputSchema, { type: "object" });
+  // A mode change aborts the live run, stops its child and only then switches the broker.
+  spawn = launched();
+  const second = run().then(result => { order.push("settled"); return result; });
+  await spawn;
+  await commands.get("execute").handler("", ctx);
+  const interrupted = await second;
+  assert.equal(interrupted.isError, true);
+  assert.match(interrupted.content[0].text, /Workflow interrupted/);
+  assert.deepEqual(interrupted.details.runs.map(run => [run.runId, run.status]), [["run-4", "stopped"]]);
+  assert.deepEqual(order, ["stop:run-4", "settled", "mode:execute"]);
+  // Shutdown ends a live run and stops its child before the broker closes.
+  spawn = launched();
+  const third = run();
+  await spawn;
+  await handlers.get("session_shutdown").find(handler => handler.name === "shutdown")();
+  assert.match((await third).content[0].text, /Workflow interrupted/);
+  assert.ok(order.includes("stop:run-5") && order.indexOf("stop:run-5") < order.indexOf("close"), order.join(","));
 });
 
 test("headless root cleanup uses plugin RPC before its shutdown hook and still closes the broker on stop failure", async t => {
@@ -529,12 +694,21 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.equal(ordinaryPrompts.length, 0);
   assert.deepEqual(preparation, []);
   ctx.modelRegistry.isUsingOAuth = () => true;
+  // The frontier tier is the root's own.
+  ctx.model = { provider: "openai-codex", id: "gpt-6-astra" };
   await ordinary.prompt("Ordinary subscription prompt");
   assert.deepEqual(preparation, ["before_agent_start", "loadout", "agent.prompt"]);
   assert.equal(ordinaryPrompts.length, 1);
   assert.deepEqual(ordinaryPrompts[0].map(message => ({ role: message.role, content: message.content })), [{ role: "user", content: [{ type: "text", text: "Ordinary subscription prompt" }] }]);
   assert.equal(ordinary._runSystemPromptOptions, undefined);
-  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "submit_plan", "subagent", "web_search", "web_fetch"]);
+  ctx.model = { provider: "openai-codex", id: "gpt-5.6-sol" };
+  assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "orchestrate", "submit_plan", "subagent", "web_search", "web_fetch"]);
+  let orchestrateVerdict;
+  for (const handler of handlers.get("tool_call")) orchestrateVerdict ??= await handler({ toolName: "orchestrate", input: { script: "return 1" } }, ctx);
+  assert.equal(orchestrateVerdict, undefined, "the root's tool_call hook admits orchestrate; its execute gates the run");
+  let structuredVerdict;
+  for (const handler of handlers.get("tool_call")) structuredVerdict ??= await handler({ toolName: "structured_output", input: {} }, ctx);
+  assert.equal(structuredVerdict?.block, true, "structured_output is a child's tool only");
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
   for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);
   const completed = {
@@ -751,7 +925,7 @@ test("a child's MCP calls reach the broker only for the tools its roster names",
     return { ok: true };
   };
   const { installWorkflow } = await import("./index.mjs");
-  await installWorkflow(pi, configPath, "fixture-docs", { requestBroker });
+  await installWorkflow(pi, configPath, "fixture-docs", { requestBroker, AgentSession });
   // Registered as pi's MCP extension does: the identity is the label.
   for (const name of ["search", "other"]) styled.registerTool({ name: `mcp__docs__${name}`, label: `docs/${name}`, exposure: "direct", parameters: Type.Object({}), async execute() {} });
   const ctx = {
@@ -762,6 +936,9 @@ test("a child's MCP calls reach the broker only for the tools its roster names",
   };
   for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
   t.after(async () => { for (const handler of handlers.get("session_shutdown")) await handler({ reason: "quit" }, ctx); });
+  // A child run on the frontier pin is refused even off the tool_call path (RPC spawn, /run).
+  const run = Object.assign(Object.create(AgentSession.prototype), { _extensionRunner: { createContext: () => ({ ...ctx, model: { provider: "openai-codex", id: "gpt-6-astra" } }) } });
+  await assert.rejects(run._startRun({ messageType: "user" }), /Children never run the frontier tier/);
   assert.deepEqual(activeTools.at(-1).filter(name => name.startsWith("mcp__")), ["mcp__docs__search"]);
   const call = async (toolName, input = {}) => {
     let verdict;
@@ -769,6 +946,8 @@ test("a child's MCP calls reach the broker only for the tools its roster names",
     return verdict;
   };
   assert.equal((await call("mcp__docs__other"))?.block, true);
+  assert.equal((await call("orchestrate", { script: "return 1" }))?.block, true, "orchestrate is root-only");
+  assert.equal(await call("structured_output", { value: 1 }), undefined, "a child may record its structured output");
   assert.deepEqual(asked, [], "an unrostered tool never reaches the broker");
   assert.equal(await call("mcp__docs__search", { query: "hooks" }), undefined);
   assert.deepEqual(asked, [{ role: "fixture-docs", action: "mcp", server: "docs", tool: "search", args: { query: "hooks" } }]);

@@ -117,7 +117,15 @@ export const DRAWN_ENTRIES = new Set(["subagent_watchdog_warning", "subagent_sup
 // closes just before it; a streaming send with triggerTurn false is flushed
 // after the turn_end handlers or at run end, so the group closes at the first
 // event after that flush. Every other branch draws through the agent stream.
-export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagentSchema, isShuttingDown = () => false, subagentDescription, mcpTools = new Map(), pluginTools = new Set(), isIdle = () => true, folds = defaultFolds) {
+//
+// A completion notice whose every run claimRuns claims is dropped while the
+// root is busy: the orchestrating tool call consumed those results, and the
+// root, busy inside it, got the notice as a plain steer with no wake
+// (parent-wake.js). An idle root's notice is followed by a wake, so a late
+// owned one is forwarded hidden rather than leaving that wake empty. A batch
+// with any unowned run is forwarded whole. Ownership ends at the notice, not
+// the completion event, because pi-subagents batches and defers the notice.
+export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagentSchema, isShuttingDown = () => false, subagentDescription, mcpTools = new Map(), pluginTools = new Set(), isIdle = () => true, folds = defaultFolds, claimRuns = () => false) {
   let deferred = 0;
   const drain = () => {
     if (!deferred) return;
@@ -138,6 +146,8 @@ export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagen
         });
       };
       if (key === "sendMessage") return (message, options) => {
+        const runs = message?.customType === SUBAGENT_NOTIFY ? message.details?.runs : undefined;
+        if (Array.isArray(runs) && runs.length && claimRuns(runs.map(run => run?.runId)) && !isIdle()) return;
         if (Object.hasOwn(quietMessages, message?.customType) && quietMessages[message.customType](message)) {
           return target.sendMessage({ ...message, display: false }, isShuttingDown() ? { ...options, triggerTurn: false } : options);
         }

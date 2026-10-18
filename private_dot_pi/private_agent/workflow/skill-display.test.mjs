@@ -50,6 +50,7 @@ test("bundled extension entry installs skill, pending-input and reasoning displa
     rmSync(root, { recursive: true, force: true });
   });
   writeFileSync(join(root, "subagent-tool-description.md"), "Fixture children.");
+  writeFileSync(join(root, "orchestrate-tool-description.md"), "Fixture workflows.");
   writeFileSync(join(root, "workflow.json"), JSON.stringify({ models: { provider: "openai-codex", tiers: { frontier: "gpt-6-astra" }, classifierFilter: { model: "gpt-6-sol" }, classifierJudge: { model: "gpt-6-sol" } }, agents: {}, mcp: {} }));
   const path = join(root, "workflow.ts");
   writeFileSync(path, entry.replace(/\{\{[^\n]+\}\}/, '"fixture:workflow"'));

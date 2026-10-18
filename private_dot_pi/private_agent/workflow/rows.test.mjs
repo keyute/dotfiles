@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, noticeLine, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, taskTitle, toolRenderers } from "./rows.mjs";
+import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, foldKey, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, noticeLine, orchestrateRenderers, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, taskTitle, toolRenderers } from "./rows.mjs";
 import { createShellRunner } from "./shell.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
@@ -533,6 +533,27 @@ test("tool search and background-task management join the group; their member li
   assert.equal(taskTitle({ action: "list" }), "Listed background tasks");
   assert.equal(taskTitle({ action: "output", id: "t1" }), "Task t1 output");
   assert.equal(taskTitle({ action: "stop", id: "t1" }), "Stopped task t1");
+});
+
+test("an orchestrate run is a titled row that groups as a workflow; a failed run stands alone", () => {
+  assert.equal(foldKey("orchestrate", { script: "x" }), "orchestrate");
+  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ title: "Review the auth flow", script: "x" }, theme, context({ toolCallId: "o0" }))), ["<success>• <toolTitle>Orchestrated Review the auth flow"]);
+  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ script: "x" }, theme, context({ toolCallId: "o00" }))), ["<success>• <toolTitle>Orchestrated workflow"]);
+  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ title: "", script: "x" }, theme, context({ toolCallId: "o000" }))), ["<success>• <toolTitle>Orchestrated workflow"]);
+  const folds = createFolds(() => false);
+  const handlers = {};
+  installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
+  for (const [id, tool, args] of [["r1", "workspace_read", { path: "a" }], ["o1", "orchestrate", { title: "Audit", script: "x" }], ["o2", "orchestrate", { title: "Broken", script: "x" }]]) {
+    handlers.tool_execution_start({ toolName: tool, toolCallId: id, args });
+  }
+  handlers.tool_execution_end({ toolCallId: "r1", isError: false, result: result("", {}) });
+  handlers.tool_execution_end({ toolCallId: "o1", isError: false, result: result("{\"ok\":true}\nmore", { runs: [] }) });
+  handlers.tool_execution_end({ toolCallId: "o2", isError: true, result: result("boom", { runs: [] }) });
+  closeFolds(folds);
+  const group = foldGroup(folds, "r1");
+  assert.deepEqual(group.entries.map(entry => entry.id), ["r1", "o1"]);
+  assert.equal(summarise(group.counts), "Read 1 file, ran 1 workflow");
+  assert.equal(foldGroup(folds, "o2"), null);
 });
 
 test("a background bash call answered inside its grace period reads as the foreground call it was, on its row and as a member", async () => {

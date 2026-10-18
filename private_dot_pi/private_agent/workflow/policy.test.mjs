@@ -226,3 +226,9 @@ test("removed tools and calls during tightening fail closed", t => {
   p.transitioning = true;
   assert.throws(() => p.inspect("root", "read", { path: "file" }), /transition/);
 });
+
+test("orchestrate is a root tool, outside every child's roster", t => {
+  const p = fixture(t);
+  assert.ok(p.role("root").tools.includes("orchestrate"));
+  assert.equal(p.role("reviewer").tools.includes("orchestrate"), false);
+});

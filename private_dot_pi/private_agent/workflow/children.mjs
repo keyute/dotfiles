@@ -40,7 +40,10 @@ export function allowedChildAgents(config, role, mode) {
   return Object.entries(config.agents).filter(([, child]) => child.readonly || (mode !== "plan" && (role === "root" || !config.agents[role].readonly))).map(([name]) => name);
 }
 
-export async function checkChildLaunch(args, config, role, ctx, resolveContract, mode) {
+// `outputSchema` and `model` come only from owned launch paths (orchestrate);
+// the model's own subagent schema has neither. A model override passes the same
+// frontier, tier and OAuth checks as a role's pin.
+export async function checkChildLaunch(args, config, role, ctx, resolveContract, mode, { outputSchema, model: modelOverride } = {}) {
   if (!new Set(["plan", "execute"]).has(mode)) throw new Error("An authoritative workflow mode is required");
   // The display-only `title` stops here: pi validates a structuredClone, so the stored call keeps it.
   delete args.title;
@@ -59,6 +62,8 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   }
   // Launch-only extras stay silently dropped; the execution contract admits only launchKeys.
   for (const key of Object.keys(args)) if (!launchKeys.has(key)) delete args[key];
+  if (outputSchema) args.outputSchema = outputSchema;
+  if (modelOverride) args.model = modelOverride;
   const child = config.agents[args.agent];
   if (!child || typeof args.task !== "string" || !args.task.trim()) throw new Error("A configured agent and bounded task are required");
   if (!allowedChildAgents(config, role, mode).includes(args.agent)) {
@@ -67,7 +72,7 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   }
   args.agentScope = "user";
   if (args.context !== undefined && !launchContexts.has(args.context)) delete args.context;
-  const modelName = child.model;
+  const modelName = args.model ?? child.model;
   // The frontier tier is the driver's alone: a child on it is the measured
   // quota failure the tier policy exists to stop.
   const { frontier } = config.models.tiers;
@@ -87,6 +92,9 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
   if (canonical(contract.agent.filePath) !== canonical(child.agentPath)
     || !extensions.includes(canonical(child.extensionPath))
     || extensions.some(path => path !== canonical(child.extensionPath))) throw new Error("Child launch does not load the managed policy definition");
-  if (contract.tools.effectiveAllowlist.some(tool => !child.tools.includes(tool))) throw new Error("Child tool scope differs from its managed role");
+  // The resolved model may carry a `:thinking` suffix.
+  if (contract.model !== modelName && !contract.model?.startsWith(`${modelName}:`)) throw new Error("Child launch resolved to an unpinned model");
+  // structured_output is pi-subagents' internal child tool, registered only for an outputSchema launch.
+  if (contract.tools.effectiveAllowlist.some(tool => !child.tools.includes(tool) && !(tool === "structured_output" && args.outputSchema))) throw new Error("Child tool scope differs from its managed role");
   return contract.digest;
 }

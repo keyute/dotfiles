@@ -13,12 +13,13 @@ import { SUBAGENT_SCHEMA, allowedChildAgents, checkChildLaunch } from "./childre
 import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
+import { createOrchestrate } from "./orchestrate.mjs";
 import { installShell } from "./shell.mjs";
 import { installPendingInput } from "./pending-input.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, PlanState, requestPlanApproval, showPlan } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installFolding, installReasoningHide, isMcp, noteLine, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installFolding, installReasoningHide, isMcp, noteLine, orchestrateRenderers, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { blocksUser } from "./dialog.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
@@ -122,6 +123,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const isRoot = role === "root";
   const subagentDescription = isRoot ? readFileSync(join(sdk.getAgentDir(), "subagent-tool-description.md"), "utf8").trim() : undefined;
   if (isRoot && !subagentDescription) throw new Error("Managed subagent description is empty");
+  const orchestrateDescription = isRoot ? readFileSync(join(sdk.getAgentDir(), "orchestrate-tool-description.md"), "utf8").trim() : undefined;
+  if (isRoot && !orchestrateDescription) throw new Error("Managed orchestrate description is empty");
   let currentContext;
   let userTask = "";
   const plans = new PlanState();
@@ -134,6 +137,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let installed = false;
   let ceiling;
   let fleet;
+  let orchestrate;
   let surfaces;
   let releaseChild;
   let childRevoked = false;
@@ -161,7 +165,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // Server and tool of every registered MCP tool, by pi tool name (pluginApi).
   const mcpTools = new Map();
   const configuredMcp = name => mcpTools.has(name) && Object.hasOwn(config.mcp, mcpTools.get(name).server);
-  const permitted = name => permittedTools.includes(name) || (isRoot && configuredMcp(name));
+  // structured_output: pi-subagents' internal child tool for an outputSchema launch; it records one value, no workspace effect.
+  const permitted = name => permittedTools.includes(name) || (isRoot && configuredMcp(name)) || (!isRoot && name === "structured_output");
   // pi-subagents drops a child's tool that the ceiling does not name; a
   // nesting child's descendants stay bounded by its own tools.
   const ceilingTools = isRoot ? [...new Set([...rootTools, ...Object.values(config.agents).flatMap(agent => agent.tools)])] : permittedTools;
@@ -287,6 +292,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (cleanup) {
       // Stop owners while unavailable, before the broker changes its policy:
       // shells settle normally, then detached plugin runners are stopped.
+      await orchestrate.stopAll();
       await tasks.stopAll();
       if (tasks.live()) throw new Error("Background shell cleanup did not finish; workflow remains unavailable");
       await fleet.stopAll();
@@ -313,6 +319,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       try { await action(); }
       catch (error) { failures.push(`${label}: ${error instanceof Error ? error.message : String(error)}`); }
     };
+    if (isRoot) await attempt("workflows", () => orchestrate?.stopAll());
     await attempt("background shells", () => tasks.stopAll({ silent: true }));
     if (tasks.live()) failures.push("background shells: cleanup timed out");
     if (isRoot) {
@@ -330,7 +337,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("session_start", async (_event, ctx) => {
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     currentContext = ctx;
-    if (isRoot) plans.restore(ctx);
+    if (isRoot) { plans.restore(ctx); orchestrate.disarm(); }
     if (runtime.AgentSession) installManagedRun(runtime.AgentSession, assertManagedRun);
     shuttingDown = false;
     const mode = isRoot ? broker.policy.mode : (await requestBroker(env, role, { action: "state" })).mode;
@@ -379,18 +386,25 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("session_tree", async (_event, ctx) => {
     currentContext = ctx;
     pendingInput?.reset();
-    if (isRoot) { plans.restore(ctx); await setMode("plan", ctx); }
+    if (isRoot) { plans.restore(ctx); orchestrate.disarm(); await setMode("plan", ctx); }
   });
+  // pi fires `input` at queue time and the user message_start at delivery;
+  // deciding the opt-in from the delivered text, as pi's own queue splice
+  // matches by text, keeps queued, dequeued, retried and RPC-sent messages aligned.
   pi.on("input", event => {
     if (isRoot && event.source !== "extension") userTask = `${userTask}\n${event.text}`.slice(-TASK_CHARS);
+    if (isRoot && event.source === "extension") orchestrate.noteExtensionInput(event.text);
     return { action: "continue" };
   });
+  if (isRoot) pi.on("message_start", event => { if (event.message?.role === "user") orchestrate.delivered(event.message); });
   pi.on("agent_end", () => { if (childRevoked) releaseChild?.(); });
   const assertManagedRun = ctx => {
     // Not `ready`: setMode clears it briefly, and a task notice sent meanwhile must still run.
     if (childRevoked || shuttingDown || canonical(ctx.cwd) !== canonical(currentContext.cwd)) throw new Error("Restart the managed workflow after changing workspace");
     const model = ctx.model;
     if (!model || model.provider !== config.models.provider || !Object.values(config.models.tiers).includes(model.id) || !ctx.modelRegistry.isUsingOAuth(model)) throw new Error("Select an available managed OpenAI subscription model; API fallback is disabled");
+    // Backs checkChildLaunch on launch paths that skip the tool_call hook (RPC spawn, /run).
+    if (!isRoot && model.id === config.models.tiers.frontier) throw new Error("Children never run the frontier tier; it is the driver's tier alone");
   };
   pi.on("before_agent_start", async event => {
     const state = await requestBroker(env, role, { action: "state" });
@@ -417,7 +431,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // registrations themselves are the plugins' own.
   const rowsFor = name => pluginRenderers(name, { servers: Object.keys(config.mcp) });
   const pluginTools = new Set();
-  const styled = pluginApi(pi, { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, SUBAGENT_SCHEMA, () => shuttingDown, subagentDescription, mcpTools, pluginTools, () => currentContext.isIdle());
+  const styled = pluginApi(pi, { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, SUBAGENT_SCHEMA, () => shuttingDown, subagentDescription, mcpTools, pluginTools, () => currentContext.isIdle(), defaultFolds, ids => orchestrate?.claim(ids) ?? false);
   // Resolvers run in registration order and pi's MCP extension, installed
   // below through the same API, only fills in its card: registered first,
   // this draws every plugin and mcp__ row, a resumed MCP one before its
@@ -426,7 +440,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // Fleet owns detached-run lifecycle for every root, including headless roots;
   // only its footer rendering is conditional on UI. Register our shutdown
   // before pi-subagents installs its hook, which disposes the RPC bridge.
-  if (isRoot) fleet = installFleet(pi, null);
+  if (isRoot) {
+    fleet = installFleet(pi, null);
+    // Blocking by design: see orchestrate.mjs.
+    orchestrate = createOrchestrate({ pi, config, fleet, check: (args, options) => checkChildLaunch(args, config, "root", currentContext, resolveSubagentLaunchContract, broker.policy.mode, options), isReady: () => ready, description: orchestrateDescription, resultDir: join(sdk.getAgentDir(), "orchestrate") });
+    pi.registerTool({ ...orchestrate.tool, ...orchestrateRenderers });
+  }
   pi.on("session_shutdown", shutdown);
   if (isRoot) {
     pi.registerCommand("plan", { description: "Stop sandbox work and enter read-only planning", getArgumentCompletions: prefix => "show".startsWith(prefix) ? [{ value: "show", label: "show" }] : [], handler: (args, ctx) => args?.trim() === "show" ? showPlan(ctx, plans.snapshot) : setMode("plan", ctx) });

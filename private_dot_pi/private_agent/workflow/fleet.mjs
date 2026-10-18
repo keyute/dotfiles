@@ -119,6 +119,13 @@ export function launchesFromBranch(entries) {
     const call = calls.get(message.toolCallId) ?? {};
     launches.set(id, { agent: call.agent, task: call.task ?? "", asyncDir: details.asyncDir });
   }
+  for (const entry of entries ?? []) {
+    const message = entry?.message;
+    if (message?.role !== "toolResult" || message.toolName !== "orchestrate" || !Array.isArray(message.details?.runs)) continue;
+    for (const run of message.details.runs) {
+      if (run?.runId && typeof run.asyncDir === "string") launches.set(run.runId, { agent: run.agent, task: run.task ?? "", asyncDir: run.asyncDir });
+    }
+  }
   return launches;
 }
 
@@ -148,14 +155,23 @@ export function renderFleet(state, width, theme) {
   return lines;
 }
 
+export function completionStatus(payload) {
+  const statuses = (payload?.results ?? []).map(result => result?.status).filter(Boolean);
+  return (statuses.length ? STATUS_ORDER.find(s => statuses.includes(s)) ?? statuses[0] : null)
+    ?? (payload?.state === "paused" || payload?.state === "stopped" ? payload.state : payload?.success === true ? "completed" : "failed");
+}
+
 // pi-subagents' documented in-process RPC (docs/extension-api.md): the reply
 // channel is per request, so the listener is dropped as soon as it answers.
-export function rpcCall(events, method, params = {}, timeoutMs = 2_000) {
+// A spawn runs as tool call "rpc-spawn-<requestId>", so a caller that supplies
+// the id can recover a lost reply by status. `raw` resolves the whole reply
+// (success, data or error) instead of folding an error reply into null, for a
+// caller that must tell a refused launch from a lost one.
+export function rpcCall(events, method, params = {}, timeoutMs = 2_000, requestId = randomUUID(), raw = false) {
   return new Promise(resolve => {
-    const requestId = randomUUID();
     const done = value => { clearTimeout(timer); off(); resolve(value); };
     const timer = setTimeout(() => done(null), timeoutMs);
-    const off = events.on(`subagents:rpc:v1:reply:${requestId}`, reply => done(reply?.success ? reply.data : null));
+    const off = events.on(`subagents:rpc:v1:reply:${requestId}`, reply => done(raw ? reply ?? null : reply?.success ? reply.data : null));
     events.emit("subagents:rpc:v1:request", { version: 1, requestId, method, params });
   });
 }
@@ -256,9 +272,7 @@ export function installFleet(pi, ctx, {
   pi.events.on("subagent:async-complete", payload => {
     const id = payload?.runId ?? payload?.id;
     const launch = state.launches.get(id);
-    const statuses = (payload?.results ?? []).map(result => result?.status).filter(Boolean);
-    const status = (statuses.length ? STATUS_ORDER.find(s => statuses.includes(s)) ?? statuses[0] : null)
-      ?? (payload?.state === "paused" || payload?.state === "stopped" ? payload.state : payload?.success === true ? "completed" : "failed");
+    const status = completionStatus(payload);
     const durationMs = typeof payload?.durationMs === "number" ? payload.durationMs : undefined;
     appendVisible(pi, "workflow-child", { agent: launch?.agent ?? payload?.agent ?? "subagent", task: launch?.task ?? "", status, durationMs }, folds);
     clearTimeout(state.owed.get(id));
@@ -278,21 +292,68 @@ export function installFleet(pi, ctx, {
   });
   if (ctx) wake();
 
+  // Proof is collected from subscription on, so a caller that subscribes
+  // before its own RPCs keeps a proof that lands before the stops.
+  const watchTerminal = () => {
+    const watch = { terminal: new Set(), wakeSettlement: undefined };
+    watch.observe = proof => {
+      if (proof?.state !== "observed" || !proof.runId) return;
+      watch.terminal.add(proof.runId);
+      state.active.delete(proof.runId);
+      watch.wakeSettlement?.();
+    };
+    watch.off = pi.events.on("subagent:process-terminal", watch.observe);
+    return watch;
+  };
+  const stopWatched = async (ordered, watch) => {
+    const { terminal, observe } = watch;
+    const failures = [];
+    const stops = new Map(await Promise.all(ordered.map(async id => [id, await rpcCall(pi.events, "stop", { id }, timeoutMs)])));
+    const inspect = () => Promise.all(ordered.filter(id => !terminal.has(id)).map(async id => {
+      const reply = await rpcCall(pi.events, "status", { id }, timeoutMs);
+      const proof = reply?.details?.lifecycleStatus?.processTerminal;
+      if (proof?.runId === id) observe(proof);
+    }));
+    await inspect();
+    if (!ordered.every(id => terminal.has(id))) {
+      await new Promise(resolve => {
+        const timer = setTimeout(resolve, cleanupTimeoutMs);
+        watch.wakeSettlement = () => {
+          if (!ordered.every(id => terminal.has(id))) return;
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+      await inspect();
+    }
+    for (const id of ordered) {
+      // A natural exit can beat stop's state check. Its observed close is
+      // sufficient; neither a stop acknowledgment nor completion is.
+      if (terminal.has(id)) continue;
+      const reply = stops.get(id);
+      failures.push(`${id}: ${reply?.runId === id && reply.state === "stopping" ? "terminal state was not established" : "stop request failed; terminal state was not established"}`);
+    }
+    return failures;
+  };
+  // Stops the given run ids and resolves to the failures; never rejects.
+  const stopRuns = async ids => {
+    const watch = watchTerminal();
+    try {
+      return await stopWatched([...ids], watch);
+    } catch (error) {
+      return [String(error?.message ?? error)];
+    } finally {
+      watch.off?.();
+    }
+  };
+
   // Stop only current-session top-level async run IDs. The fresh public
   // snapshot supplies restored ownership; launch events cover runs that have
   // not reached that bounded projection yet. Fleet entry keys are display-only
   // and are never treated as control IDs.
   const stopAll = async () => {
     const failures = [];
-    const terminal = new Set();
-    let wakeSettlement;
-    const observe = proof => {
-      if (proof?.state !== "observed" || !proof.runId) return;
-      terminal.add(proof.runId);
-      state.active.delete(proof.runId);
-      wakeSettlement?.();
-    };
-    const offProof = pi.events.on("subagent:process-terminal", observe);
+    const watch = watchTerminal();
     try {
       const ping = await rpcCall(pi.events, "ping", {}, timeoutMs);
       if (!ping?.capabilities?.stop) failures.push("subagent stop RPC is unavailable");
@@ -305,31 +366,7 @@ export function installFleet(pi, ctx, {
         for (const run of snapshot.runs) if (run?.id && ACTIVE_RUN_STATES.has(run.state)) ids.add(run.id);
       }
       const ordered = [...ids].sort();
-      const stops = new Map(await Promise.all(ordered.map(async id => [id, await rpcCall(pi.events, "stop", { id }, timeoutMs)])));
-      const inspect = () => Promise.all(ordered.filter(id => !terminal.has(id)).map(async id => {
-        const reply = await rpcCall(pi.events, "status", { id }, timeoutMs);
-        const proof = reply?.details?.lifecycleStatus?.processTerminal;
-        if (proof?.runId === id) observe(proof);
-      }));
-      await inspect();
-      if (!ordered.every(id => terminal.has(id))) {
-        await new Promise(resolve => {
-          const timer = setTimeout(resolve, cleanupTimeoutMs);
-          wakeSettlement = () => {
-            if (!ordered.every(id => terminal.has(id))) return;
-            clearTimeout(timer);
-            resolve();
-          };
-        });
-        await inspect();
-      }
-      for (const id of ordered) {
-        // A natural exit can beat stop's state check. Its observed close is
-        // sufficient; neither a stop acknowledgment nor completion is.
-        if (terminal.has(id)) continue;
-        const reply = stops.get(id);
-        failures.push(`${id}: ${reply?.runId === id && reply.state === "stopping" ? "terminal state was not established" : "stop request failed; terminal state was not established"}`);
-      }
+      failures.push(...await stopWatched(ordered, watch));
       if (validSnapshot && snapshot.omitted?.runs > 0) {
         // The snapshot caps history, not active runs. Historical omissions
         // alone are harmless; any remaining active work is not accounted for.
@@ -337,7 +374,7 @@ export function installFleet(pi, ctx, {
         if (remaining?.fleet?.totalActive !== 0) failures.push(`async status snapshot omitted ${snapshot.omitted.runs} runs; cleanup of omitted or restored work could not be established`);
       }
     } finally {
-      offProof?.();
+      watch.off?.();
     }
     if (failures.length) throw new Error(`Subagent cleanup failed: ${failures.join("; ")}`);
   };
@@ -431,6 +468,10 @@ export function installFleet(pi, ctx, {
   return {
     wake,
     stopAll: () => stopping ??= stopAll().finally(() => { stopping = undefined; }),
+    stopRuns,
+    // A launch an extension made over RPC never passes the subagent tool's
+    // execution events, so its row title and peek asyncDir are recorded here.
+    adopt: (id, { agent, task, asyncDir }) => { state.launches.set(id, { agent, task, asyncDir }); },
     attachContext: current => {
       closeView(); state.bindings.clear(); state.ctx = current; state.stopped = false;
       // A live launch recorded from this process's own events wins over the

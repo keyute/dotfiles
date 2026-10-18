@@ -28,8 +28,14 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   path probes, diff generation, and output temp files stay host-side.
 - pi-subagents retains its executor; the existing registration proxy owns
   presentation, the owned schema and managed description. Launch
-  policy stays in `tool_call` and broker leases. Scripts/arbitrary management
-  stay disabled; `list`, named launches and lifecycle controls remain enabled.
+  policy stays in `tool_call` and broker leases. pi-subagents' scripts are off
+  (`workflow-scripts` in `disabledFeatures`): its vm hands the script
+  worker-realm objects (`runs`, `emit`, `console`, `Promise`), so
+  `emit.constructor("return process")()` runs model code in the root process
+  outside SRT — reproduced; the cost is that a nesting child's plugin-built
+  description names the legacy `chain`/`tasks` inputs its hook strips.
+  Arbitrary management stays disabled; `list`, named launches and lifecycle
+  controls remain enabled.
   In `extensions/subagent/config.json`, `fleetView`/`asyncWidget` are off
   because the owned fleet (rule 6) replaces them, and `intercomBridge` is off
   so children report only through their completion, as Claude Code's
@@ -52,6 +58,27 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   root's anyway. Reversal trigger: fork cache misses show up for a role whose
   tools match the root's → add it to `rootTools`.
   Re-judge when Pi ships native subagents.
+- Model workflow scripts run only through the owned `orchestrate` runner: the
+  plugin's `runs.run` children skip `checkChildLaunch` and its vm is not a
+  boundary; pi-codemode's QuickJS VM is (only `agent` and `log` reachable,
+  every argument validated host-side). Each `agent()` passes
+  `checkChildLaunch`, then launches through the plugin's RPC `spawn`. The tool
+  call blocks until the script returns: a busy root takes pi-subagents'
+  no-wake steer branch, so owned completion notices are dropped with no wake or
+  reservation path to own; a late owned notice reaching an idle root, or one
+  batching an owned and an unowned run, is forwarded hidden with its wake, and the notifier's pending-delivery flag stays set for
+  dropped notices, read only by the pi-web liveness provider. A `tier`
+  override may name any non-frontier tier, enforced in `checkChildLaunch` and
+  the child-side managed-run guard. Children may call `structured_output`: its
+  capture file is a harness artifact write, not a workspace effect, so every
+  child workspace write stays broker-authorized. Structured delegation stays
+  unusable: an in-process foreground child's shim would replace the root's
+  managed-run guard. No journal or resume (trigger: a late-failing workflow
+  re-run from scratch twice → a write-ahead journal on `sandbox.start()`) and
+  no worktree isolation (trigger: a need for parallel writers → worktrees need
+  their own boundary). Reversal trigger: pi-subagents gains a per-launch host
+  policy hook and a realm-safe script sandbox → move to its engine and delete
+  `orchestrate.mjs`.
 - MCP is pi's own, fed the managed servers. Accepted: a connect per server per session and per child; another extension's `pi.registerMcpServer()` adds an unmanaged server. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
 - `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt. Reversal trigger: a maintained plugin's fetch fits with a one-line seam → adopt it, delete `web_fetch` and its three packages.
 - Nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; the `timeoutMs` backstop with its `checkpointBeforeDeadlineMs` steer (`extensions/subagent/config.json`) replaces the 30-minute cutoff. Revisit when upstream delivers completion-triggered turns to headless children.

@@ -63,6 +63,9 @@ agents:
     search_tier: small
     # most subagent sessions live at once, across the whole tree (broker lease cap)
     child_limit: 20
+    # in-flight agent() launches per orchestrate run; kept below child_limit so
+    # direct launches keep their leases
+    orchestrate_concurrency: 8
     defaults:
       provider: &pi_provider openai-codex
       tier: frontier
@@ -174,6 +177,9 @@ subagent_tiers:
     # anchored: the Claude->pi review/advice bridge pins this tier
     top: &openai_top gpt-6.1-sol
     frontier: gpt-6-astra
+# advisory fan-out size both drivers' workflow tools show: small <5 agents,
+# medium <10, large <50
+workflow_size: small
 agent_sandbox:
   filesystem:
     paths:

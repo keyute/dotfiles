@@ -262,6 +262,48 @@ test("shutdown retains child results without requesting a new model turn", () =>
   assert.equal(sent[1][0].display, false);
 });
 
+test("a completion notice is dropped only when an orchestration owns every run in it and the root is busy; seeing it releases the runs", () => {
+  const sent = [];
+  const owned = new Set(["run-a", "run-b", "run-c", "run-d"]);
+  let idle = false;
+  const claimRuns = ids => { const all = ids.every(id => owned.has(id)); for (const id of ids) owned.delete(id); return all; };
+  const styled = pluginApi({ on() {}, sendMessage: (message, options) => sent.push([message, options]) }, {}, QUIET_MESSAGES,
+    undefined, undefined, undefined, undefined, undefined, () => idle, undefined, claimRuns);
+  const notify = runs => ({ customType: "subagent-notify", content: "Background task completed", display: true, ...(runs ? { details: { runs } } : {}) });
+  const forwarded = () => sent.map(([message]) => message.details?.runs?.map(run => run.runId));
+  assert.equal(styled.sendMessage(notify([{ runId: "run-a", status: "completed" }, { runId: "run-b", status: "failed" }]), { deliverAs: "steer" }), undefined);
+  assert.equal(sent.length, 0);
+  // A claimed run is released: a second notice for it is forwarded.
+  styled.sendMessage(notify([{ runId: "run-a" }]), { deliverAs: "steer" });
+  assert.deepEqual(forwarded(), [["run-a"]]);
+  assert.equal(sent[0][0].display, false);
+  sent.length = 0;
+  // An idle root's notice is followed by a wake, so a late owned one is forwarded hidden, and released.
+  idle = true;
+  styled.sendMessage(notify([{ runId: "run-c" }]), { triggerTurn: false });
+  idle = false;
+  styled.sendMessage(notify([{ runId: "run-c" }]), { deliverAs: "steer" });
+  assert.deepEqual(forwarded(), [["run-c"], ["run-c"]]);
+  assert.equal(sent[0][0].display, false);
+  sent.length = 0;
+  // Any unowned run forwards the whole batch, releasing its owned runs, as does a notice naming no runs.
+  styled.sendMessage(notify([{ runId: "run-d" }, { runId: "run-x" }]), { deliverAs: "steer" });
+  styled.sendMessage(notify([{ runId: "run-d" }]), { deliverAs: "steer" });
+  styled.sendMessage(notify([]));
+  styled.sendMessage(notify());
+  assert.deepEqual(forwarded(), [["run-d", "run-x"], ["run-d"], [], undefined]);
+  assert.equal(sent[0][0].display, false);
+  // Only the completion notice is matched; another customType with owned runs is untouched.
+  owned.add("run-a");
+  styled.sendMessage({ customType: "other", content: "c", details: { runs: [{ runId: "run-a" }] } });
+  assert.deepEqual(sent[4], [{ customType: "other", content: "c", details: { runs: [{ runId: "run-a" }] } }, undefined]);
+  assert.equal(owned.has("run-a"), true);
+  // Without a claimRuns every notice is forwarded.
+  const plain = [];
+  pluginApi({ on() {}, sendMessage: message => plain.push(message) }, {}, QUIET_MESSAGES).sendMessage(notify([{ runId: "run-a" }]));
+  assert.equal(plain.length, 1);
+});
+
 test("pi-subagents' parent wake is sent as a quiet custom message and dropped at shutdown, every other user message untouched", () => {
   const sent = [];
   const users = [];

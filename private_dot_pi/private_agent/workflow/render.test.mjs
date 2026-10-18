@@ -10,7 +10,7 @@ import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // byte budgets (single owner):
-// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, pi's subagent tool description
+// harness projections, on-demand docs, Claude's generated sandbox doc, repo AGENTS.md, pi's subagent and orchestrate tool descriptions
 const PROJECTION_MAX_BYTES = 5300;
 const ON_DEMAND_DOC_MAX_BYTES = 6000;
 const REPO_AGENTS_MAX_BYTES = 4900;
@@ -118,7 +118,14 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.doesNotMatch(description, /workflowScript|runs\.|guide|resume|CLI/);
   assert.match(description, /consume native completion notifications/);
   assert.doesNotMatch(description, /bg_wait/);
-  assert.equal(JSON.parse(run("cat", target(".pi/agent/extensions/subagent/config.json"))).toolActivation, "eager");
+  const subagentConfig = JSON.parse(run("cat", target(".pi/agent/extensions/subagent/config.json")));
+  assert.equal(subagentConfig.toolActivation, "eager");
+  // the plugin's scripted workflows run model code in an escapable node:vm; orchestrate replaces them
+  assert.ok(subagentConfig.disabledFeatures.includes("workflow-scripts"));
+  assert.equal(workflow.orchestrateConcurrency, data.agents.pi.orchestrate_concurrency);
+  const orchestrateDescription = run("cat", target(".pi/agent/orchestrate-tool-description.md"));
+  assert.match(orchestrateDescription, /ultracode/);
+  for (const tier of Object.keys(data.subagent_tiers.pi).filter(tier => tier !== "frontier")) assert.match(orchestrateDescription, new RegExp(`\\b${tier}\\b`), `orchestrate description misses tier ${tier}`);
   // one entry per distinct tier model: tiers may share a pin
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
   const models = JSON.parse(run("cat", target(".pi/agent/models.json")));
@@ -148,6 +155,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     [".pi/agent/docs/sandbox.md", piSandboxDoc, ON_DEMAND_DOC_MAX_BYTES],
     [".claude/docs/sandbox.md", claudeSandboxDoc, ON_DEMAND_DOC_MAX_BYTES],
     [".pi/agent/subagent-tool-description.md", description, SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES],
+    [".pi/agent/orchestrate-tool-description.md", orchestrateDescription, SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES],
     // chezmoi-ignored, so read from source: it loads in every session in this repo
     ["AGENTS.md", readSource("AGENTS.md"), REPO_AGENTS_MAX_BYTES],
   ]) {
@@ -164,6 +172,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     [".pi/agent/docs/harness.md", piHarness, ""],
     [".claude/docs/sandbox.md", claudeSandboxDoc, ""],
     [".pi/agent/docs/sandbox.md", piSandboxDoc, ""],
+    [".pi/agent/orchestrate-tool-description.md", orchestrateDescription, ""],
     // comments carry no pin ids, so a lowercase family name is caught too
     [".chezmoidata/agents.yaml comments", yamlComments(readSource(".chezmoidata/agents.yaml")).join("\n"), "i"],
   ]) {
@@ -194,6 +203,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     }
   }
   assert.equal(claudeSettings.model, data.subagent_tiers.claude[data.agents.claude.defaults.tier]);
+  assert.equal(claudeSettings.workflowSizeGuideline, data.workflow_size === "unrestricted" ? undefined : data.workflow_size);
   assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, data.subagent_tiers.claude.top);
   // the cross-model bridge stays prompt-free in plan mode only via these rules; auto-approval is per
   // read-only tool on both harnesses, never a whole server

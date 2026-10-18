@@ -112,8 +112,10 @@
   "disableAgentView": true,
   {{- /* alternate-screen TUI, as pi's managed launch */}}
   "tui": "fullscreen",
-  {{- /* advisory fan-out size the Workflow tool shows the driver */}}
-  "workflowSizeGuideline": "small",
+  {{- /* advisory fan-out size the Workflow tool shows the driver; unrestricted leaves it unset */}}
+  {{- if ne .workflow_size "unrestricted" }}
+  "workflowSizeGuideline": {{ .workflow_size | quote }},
+  {{- end }}
   {{- /* Internal one-time consent flag for the auto-mode workflow prompt; the
          CLI writes it into this chezmoi-owned file, so without it every apply
          brings the prompt back. */}}

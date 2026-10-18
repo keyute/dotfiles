@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import { buildRow, createFleetState, formatTokens, installFleet, launchesFromBranch, modelLabel, navigate, renderFleet, runIdFor, setEntries } from "./fleet.mjs";
+import { buildRow, createFleetState, formatTokens, installFleet, launchesFromBranch, modelLabel, navigate, renderFleet, rpcCall, runIdFor, setEntries } from "./fleet.mjs";
 import { closeView, openWait } from "./dialog.mjs";
 import { shortTitle } from "./rows.mjs";
 
@@ -257,6 +257,35 @@ test("observed natural exit racing a stop is successful and repeated cleanup is 
   await fleet.stopAll();
   await fleet.stopAll();
   assert.equal(bus.requests.filter(request => request.method === "stop").length, 1);
+});
+
+test("stopRuns stops only the given ids and returns failures without throwing, while stopAll still throws", async () => {
+  const runs = [{ id: "bad", state: "running" }, { id: "good", state: "running" }, { id: "other", state: "running" }];
+  const bus = cleanupBus({ runs, failStop: new Set(["bad"]) });
+  const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { timeoutMs: 20, cleanupTimeoutMs: 5 });
+  assert.deepEqual(await fleet.stopRuns(new Set(["good"])), []);
+  assert.deepEqual(await fleet.stopRuns(["bad"]), ["bad: stop request failed; terminal state was not established"]);
+  assert.deepEqual(bus.requests.filter(request => request.method === "stop").map(request => request.params.id), ["good", "bad"]);
+  await assert.rejects(fleet.stopAll(), /^Error: Subagent cleanup failed: bad: stop request failed/);
+});
+
+test("rpcCall sends and answers on a caller-supplied request id", async () => {
+  const handlers = new Map();
+  const sent = [];
+  const events = {
+    on(channel, handler) { handlers.set(channel, handler); return () => handlers.delete(channel); },
+    emit(_channel, message) { sent.push(message); handlers.get(`subagents:rpc:v1:reply:${message.requestId}`)?.({ success: true, data: { ok: message.requestId } }); },
+  };
+  assert.deepEqual(await rpcCall(events, "spawn", { agent: "worker" }, 20, "req-1"), { ok: "req-1" });
+  assert.deepEqual(sent, [{ version: 1, requestId: "req-1", method: "spawn", params: { agent: "worker" } }]);
+  assert.equal(handlers.size, 0);
+  await rpcCall(events, "ping", {}, 20);
+  assert.match(sent[1].requestId, /^[0-9a-f-]{36}$/);
+  // raw hands back the whole reply, so an error reply is distinguishable from a lost one.
+  assert.deepEqual(await rpcCall(events, "spawn", {}, 20, "req-2", true), { success: true, data: { ok: "req-2" } });
+  events.emit = (_channel, message) => handlers.get(`subagents:rpc:v1:reply:${message.requestId}`)?.({ success: false, error: { code: "invalid_params", message: "no" } });
+  assert.deepEqual(await rpcCall(events, "spawn", {}, 20, "req-3", true), { success: false, error: { code: "invalid_params", message: "no" } });
+  assert.equal(await rpcCall(events, "spawn", {}, 20, "req-4"), null);
 });
 
 test("completed event-owned runs stay tracked until their process exits", async () => {
@@ -557,6 +586,45 @@ test("launchesFromBranch pairs a subagent toolCall with its toolResult's runId a
 
   assert.deepEqual([...launchesFromBranch(null).entries()], []);
   assert.deepEqual([...launchesFromBranch([{}, { message: {} }, { message: { role: "toolResult" } }]).entries()], []);
+});
+
+test("launchesFromBranch reads each orchestrate run with an asyncDir from its toolResult", () => {
+  const launches = launchesFromBranch([
+    { type: "message", message: { role: "toolResult", toolCallId: "call-o", toolName: "orchestrate", details: { runs: [
+      { runId: "run-1", agent: "worker", label: "Patch config", task: "Patch config", asyncDir: "/tmp/x/run-1", status: "completed" },
+      // Unlabelled: the task is the prompt's first line.
+      { runId: "run-2", agent: "scout", task: "check the logs", asyncDir: "/tmp/x/run-2", status: "stopped" },
+      // Not peekable without an asyncDir.
+      { runId: "run-3", agent: "worker", label: "Patch docs", status: "completed" },
+    ] } } },
+    { type: "message", message: { role: "toolResult", toolCallId: "call-bad", toolName: "orchestrate", details: { runs: "nope" } } },
+    // A failed run returns its error result with details, so its children restore too.
+    { type: "message", message: { role: "toolResult", toolCallId: "call-failed", toolName: "orchestrate", isError: true, details: { runs: [
+      { runId: "run-4", agent: "scout", task: "t", asyncDir: "/tmp/x/run-4", status: "running" },
+    ] } } },
+  ]);
+  assert.deepEqual([...launches.entries()], [
+    ["run-1", { agent: "worker", task: "Patch config", asyncDir: "/tmp/x/run-1" }],
+    ["run-2", { agent: "scout", task: "check the logs", asyncDir: "/tmp/x/run-2" }],
+    ["run-4", { agent: "scout", task: "t", asyncDir: "/tmp/x/run-4" }],
+  ]);
+});
+
+test("an adopted RPC launch titles its row and opens the live peek on its asyncDir", async () => {
+  const bus = fakeBus();
+  const opened = [];
+  const pi = { events: bus, on: () => {}, appendEntry() {}, registerEntryRenderer() {} };
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {} } };
+  bus.entries = [{ key: "fleet-a", agent: "worker", startedAt: 1000 }];
+  bus.runs = [{ id: "run-a", label: "worker", state: "running", startedAt: 1000 }];
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek: async (_ctx, options) => { opened.push(options); } });
+  fleet.adopt("run-a", { agent: "worker", task: "Patch the config", asyncDir: "/tmp/x/run-a" });
+  await sleep(20);
+  assert.deepEqual(fleet.render(60, theme), ["  ○ worker › Patch the config"]);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["run-a", "/tmp/x/run-a"]]);
 });
 
 test("attachContext rehydrates launches from the session branch, so a restored run's peek opens the live dialog", async () => {

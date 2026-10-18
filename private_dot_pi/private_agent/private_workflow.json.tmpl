@@ -15,6 +15,8 @@
 {{- range $mcp -}}{{- $domains = concat $domains .policy.domains -}}{{- end -}}
 {{- $domains = $domains | uniq | sortAlpha -}}
 {{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
+{{- /* a run's in-flight launches must leave leases for direct launches */ -}}
+{{- if ge $pi.orchestrate_concurrency $pi.child_limit -}}{{- fail "agents.pi.orchestrate_concurrency must be below child_limit" -}}{{- end -}}
 {{- $cls := $pi.defaults.classifier -}}
 {{- $clsModel := get .subagent_tiers.pi $cls.tier -}}
 {{- if not $clsModel -}}{{- fail (printf "classifier: unknown tier %s" $cls.tier) -}}{{- end -}}
@@ -23,6 +25,7 @@
 {{- dict
       "agentDir" $agentDir
       "childLimit" $pi.child_limit
+      "orchestrateConcurrency" $pi.orchestrate_concurrency
       "models" (dict
           "provider" $pi.defaults.provider
           "classifierFilter" (dict "model" $clsModel "reasoningEffort" $cls.filter_effort)

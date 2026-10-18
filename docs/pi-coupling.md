@@ -145,6 +145,22 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   appended without a turn. *Why:* pi swallows `before_agent_start` handler
   throws, so no handler can block a run. *On red:* repair. *Retire:* upstream
   lets a handler block a run. *Pin:* `stability.test.mjs`, `integration.test.mjs`.
+- **Orchestration launches** (`orchestrate.mjs`): the RPC `spawn` reply's
+  `details.runId`/`asyncId`/`asyncDir`, status recovery on
+  `rpc-spawn-<requestId>` after a lost reply, the `subagent:async-complete`
+  payload's `results[0]` `status`/`structuredOutput`/`output`, the busy-parent
+  no-wake branch of `parent-wake.js`, the internal `structured_output` tool
+  name in the contract allowlist, and pi-codemode's `DEFAULT_TIMEOUT_MS`.
+  *Why:* the blocking runner and schema results. *Residual:* a notice batching
+  an owned and an unowned run, or a late owned one reaching an idle root, is
+  forwarded hidden with its wake; a child completing before its spawn reply
+  registers it still has its notice forwarded; the notifier's
+  pending-delivery flag stays set for dropped notices (pi-web liveness only).
+  *On red:* repair; fall back to one `subagent` launch per child with its
+  completion notice — lost: schema results and the blocking consolidated
+  result. *Retire:* each seam when pi-subagents documents it or offers a
+  host-consumed-completion seam. *Pin:* `stability.test.mjs`,
+  `orchestrate.test.mjs`.
 - **Usage segments** (`footer.mjs`): Pi's documented
   `after_provider_response` (Codex context only) and `provider_stream_event`
   (Codex provider only) expose stable but unversioned Codex limits. HTTP/SSE

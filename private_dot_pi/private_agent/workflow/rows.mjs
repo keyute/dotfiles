@@ -236,6 +236,7 @@ const WORDS = {
   fetch: ["fetched", "page"],
   discovery: ["ran", "agent discovery", "agent discoveries"],
   agent: ["launched", "agent"],
+  orchestrate: ["ran", "workflow"],
   steer: ["steered", "agent"],
   check: ["checked on", "agent"],
   stop: ["stopped", "agent"],
@@ -268,11 +269,12 @@ export const foldKey = (name, args = {}) => {
   if (name === "web_search") return "web";
   if (name === "web_fetch") return "fetch";
   if (name === "tool_search") return "toolSearch";
+  if (name === "orchestrate") return "orchestrate";
   return name.startsWith("workspace_") ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null;
 };
 // The name a member's summary is computed under, where its fold key differs
 // from the name its plain row renders with (`pluginRenderers`, `taskRenderers`).
-const SUMMARY_NAME = { web: "plugin", fetch: "plugin", toolSearch: "plugin", taskCheck: "plugin", taskStop: "plugin", taskList: "plugin" };
+const SUMMARY_NAME = { web: "plugin", fetch: "plugin", toolSearch: "plugin", taskCheck: "plugin", taskStop: "plugin", taskList: "plugin", orchestrate: "plugin" };
 
 // One row behind one header line hides nothing and draws a caret over content
 // that is not there, so a run needs two rows to be worth a handle.
@@ -768,6 +770,7 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 // The background-task tool: its result is a status line and the task's output.
 export const taskTitle = args => (args.action === "list" ? "Listed background tasks" : args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`);
 export const taskRenderers = rowRenderers({ name: "plugin", title: taskTitle });
+export const orchestrateRenderers = rowRenderers({ name: "plugin", title: args => `Orchestrated ${shortTitle(args.title || "workflow")}` });
 
 // Pending results carry the assembled draft; call arguments may contain only edits.
 export const planRenderers = {
