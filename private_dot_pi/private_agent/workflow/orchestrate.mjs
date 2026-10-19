@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
 import { completionStatus, rpcCall } from "./fleet.mjs";
+import { saysUltracode } from "./keywords.mjs";
 
 // The root-only `orchestrate` tool: a model-written script runs in
 // pi-codemode's QuickJS VM, and each agent() is a roster child launched by
@@ -14,8 +15,6 @@ import { completionStatus, rpcCall } from "./fleet.mjs";
 // lasts until the Proxy claims the child's notice.
 // The VM settling does not wait for host work: execute() stops and settles
 // every launch itself afterwards.
-
-export const OPT_IN = /\bultracode\b/i;
 
 const KiB = 1024;
 const MAX_SCRIPT = 256 * KiB;
@@ -304,7 +303,9 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       if (count) { if (count > 1) extensionInput.set(text, count - 1); else extensionInput.delete(text); return; }
       // A /skill: prompt is decided by its args, not the expanded skill body.
       const skill = parseSkillBlock(text);
-      armed = OPT_IN.test(skill ? skill.userMessage ?? "" : text);
+      const authored = skill ? skill.userMessage ?? "" : text;
+      armed = saysUltracode(authored);
+      return authored;
     },
     disarm: () => { armed = false; extensionInput.clear(); },
     // True iff every id is owned; releases each owned one, since a run's

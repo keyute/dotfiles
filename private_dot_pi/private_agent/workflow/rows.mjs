@@ -1,5 +1,6 @@
 import { Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, formatReadLineRange, getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
+import { highlightProse } from "./keywords.mjs";
 import { unsandboxed } from "./policy.mjs";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
@@ -815,15 +816,16 @@ export function bulletMarkdown(markdown, { messageType }, palette) {
   // A sent message opens with the composer's glyph at the same column: pi's
   // user box renders its content at outputPad, which is 0. The glyph takes the
   // box's own colour rather than the accent — the box colours its content
-  // through one function, so the skill command's inner colour must explicitly
-  // restore the user foreground for its arguments.
+  // through one function, so the skill command's and each keyword's inner
+  // colour must explicitly restore the user foreground after it.
   if (messageType === "user") {
     if (!markdown.trim()) return markdown;
     const body = markdown.trimStart();
+    const mark = text => highlightProse(palette, text, "userMessageText");
     const skill = palette && body.match(/^(\/skill:[^\s]+)(?=\s|$)/);
-    if (skill) return `${PROMPT} ${palette.fg("accent", skill[1])}${palette.fg("userMessageText", body.slice(skill[1].length))}`;
-    if (/^(```|~~~)/.test(body)) return `${PROMPT}\n${body}`;
-    return `${PROMPT} ${body}`;
+    if (skill) return `${PROMPT} ${palette.fg("accent", skill[1])}${palette.fg("userMessageText", mark(body.slice(skill[1].length)))}`;
+    if (/^(```|~~~)/.test(body)) return `${PROMPT}\n${mark(body)}`;
+    return `${PROMPT} ${mark(body)}`;
   }
   if (messageType !== "assistant") return markdown;
   const body = markdown.trimStart();

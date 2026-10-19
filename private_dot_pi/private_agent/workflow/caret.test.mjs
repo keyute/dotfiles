@@ -56,6 +56,21 @@ test("composer is the user box's shape: shaded rows instead of rules, the prompt
   assert.equal(lines[1].indexOf("\x1b[49m"), lines[1].length - "\x1b[49m".length, "the shade closes only at the row end");
 });
 
+test("prompt keywords take the accent in the composer, the cursor inside one included, but not in code", () => {
+  // A closing tag, so accent spill past the word shows.
+  const caret = editor({ palette: { ...palette, fg: (color, text) => `<${color}>${text}</>` } });
+  caret.setText("go ultracode now");
+  assert.match(caret.render(40)[1], /go <accent>ultracode<\/> now/);
+  for (let i = 0; i < 6; i++) caret.handleInput("\x1b[D");
+  assert.ok(caret.render(40)[1].includes(`<accent>ultraco${renderFakeCursor("d")}e</> now`));
+  caret.setText("go\n  ultracode now");
+  assert.ok(caret.render(40)[2].includes("<accent>ultracode</> now"), "an indented continuation line is still prose");
+  for (const text of ["go `ultracode` now", "go [ultracode](x) now", "```\nultracode\n```"]) {
+    caret.setText(text);
+    assert.ok(!caret.render(40).join("\n").includes("<accent>ultracode"), text);
+  }
+});
+
 test("the working status is not embedded: the top shaded row is blank, or the scroll count", () => {
   const caret = editor();
   // pi hands the indicator to the editor only when it asks for it; the row

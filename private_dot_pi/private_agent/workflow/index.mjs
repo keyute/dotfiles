@@ -14,6 +14,7 @@ import { installFooter } from "./footer.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createOrchestrate } from "./orchestrate.mjs";
+import { createUltrathink } from "./keywords.mjs";
 import { installShell } from "./shell.mjs";
 import { installPendingInput } from "./pending-input.mjs";
 import { createTasks } from "./tasks.mjs";
@@ -128,6 +129,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let currentContext;
   let userTask = "";
   const plans = new PlanState();
+  const ultrathink = createUltrathink(pi);
   let pendingInput;
   // This process's recent shell commands (command, sandboxed, exit code; never
   // output), sent with every bash authorization as the classifier's evidence.
@@ -309,6 +311,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   async function shutdown() {
+    // pi persists each level change and a resume restores the last one.
+    if (isRoot) ultrathink.end();
     plans.generation++;
     pendingInput?.reset();
     ready = false;
@@ -396,7 +400,12 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (isRoot && event.source === "extension") orchestrate.noteExtensionInput(event.text);
     return { action: "continue" };
   });
-  if (isRoot) pi.on("message_start", event => { if (event.message?.role === "user") orchestrate.delivered(event.message); });
+  if (isRoot) pi.on("message_start", event => {
+    if (event.message?.role !== "user") return;
+    const text = orchestrate.delivered(event.message);
+    if (text !== undefined) ultrathink.delivered(text);
+  });
+  if (isRoot) pi.on("agent_settled", () => ultrathink.end());
   pi.on("agent_end", () => { if (childRevoked) releaseChild?.(); });
   const assertManagedRun = ctx => {
     // Not `ready`: setMode clears it briefly, and a task notice sent meanwhile must still run.

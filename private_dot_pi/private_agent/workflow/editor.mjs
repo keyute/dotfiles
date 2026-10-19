@@ -1,5 +1,6 @@
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
+import { highlightProse, saysUltracode, saysUltrathink } from "./keywords.mjs";
 import { parseShellInput } from "./shell.mjs";
 import { PAD, PROMPT, padRow, shade } from "./rows.mjs";
 
@@ -225,10 +226,15 @@ export class CaretEditor extends sdk.CustomEditor {
     // bottom one and stays unshaded.
     const end = lines.lastIndexOf(this.bottomRow);
     const shell = this.shellMode();
+    // A keyword takes the accent only when the draft as sent would trigger it.
+    const text = this.getText();
+    const words = [saysUltracode(text) && "ultracode", saysUltrathink(text) && "ultrathink"].filter(Boolean);
     for (let i = 1; i < end; i++) {
       const prompt = i === 1 && lines[i].startsWith(" ".repeat(PROMPT_PADDING));
       const content = prompt ? lines[i].slice(PROMPT_PADDING) : lines[i];
-      lines[i] = this.shade((prompt ? this.palette.fg(shell ? "error" : "accent", `${shell ? "!" : PROMPT} `) : "") + (shell ? this.palette.fg("userMessageText", content) : content));
+      // Each layout line keeps the editor's padding, which would read as indented code.
+      const indent = content.length - content.trimStart().length;
+      lines[i] = this.shade((prompt ? this.palette.fg(shell ? "error" : "accent", `${shell ? "!" : PROMPT} `) : "") + (shell ? this.palette.fg("userMessageText", content) : content.slice(0, indent) + highlightProse(this.palette, content.slice(indent), undefined, words)));
     }
     return lines;
   }

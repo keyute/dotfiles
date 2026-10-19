@@ -1019,6 +1019,14 @@ test("assistant bullets sit at column 0, a leading heading rides the bullet line
   assert.equal(bulletMarkdown("# Title\nbody", { messageType: "assistant" }), "• **Title**\n\nbody");
   assert.equal(bulletMarkdown("- one\n- two", { messageType: "assistant" }), "•\n- one\n- two");
   assert.equal(bulletMarkdown("plain", { messageType: "user" }), "❯ plain");
+  assert.equal(bulletMarkdown("ultracode it", { messageType: "user" }, theme), "❯ <accent>ultracode<userMessageText> it");
+  // Code and link destinations stay unmarked; prose after a closed fence and skill args do not.
+  assert.equal(bulletMarkdown("```js\nconst ultrathink = 1;\n```\nultrathink", { messageType: "user" }, theme), "❯\n```js\nconst ultrathink = 1;\n```\n<accent>ultrathink<userMessageText>");
+  assert.equal(bulletMarkdown("~~~\nultrathink", { messageType: "user" }, theme), "❯\n~~~\nultrathink");
+  assert.equal(bulletMarkdown("run `ultracode` now", { messageType: "user" }, theme), "❯ run `ultracode` now");
+  assert.equal(bulletMarkdown("see [x](https://x.io/ultracode)", { messageType: "user" }, theme), "❯ see [x](https://x.io/ultracode)");
+  for (const text of ["see [ultrathink](https://x.io) now", "see [ultrathink][a]\n\n[a]: https://x.io/ultracode", "mail ultracode@x.com", "https://x.io/s?q=ultracode", "<https://x.io/ultrathink>"]) assert.equal(bulletMarkdown(text, { messageType: "user" }, theme), `❯ ${text}`);
+  assert.equal(bulletMarkdown("/skill:x ultrathink", { messageType: "user" }, theme), "❯ <accent>/skill:x<userMessageText> <accent>ultrathink<userMessageText>");
   assert.equal(bulletMarkdown("```js\nx\n```", { messageType: "user" }), "❯\n```js\nx\n```");
   assert.equal(bulletMarkdown("  ", { messageType: "user" }), "  ");
   assert.equal(bulletMarkdown("  ", { messageType: "assistant" }), "  ");

@@ -420,7 +420,9 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   const sent = [];
   const order = [];
   const events = new EventEmitter();
+  let level = "low";
   const pi = {
+    getThinkingLevel: () => level, setThinkingLevel: next => { level = next; },
     events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); }, registerCommand(name, command) { commands.set(name, command); },
@@ -466,6 +468,15 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   const input = (text, source = "user") => { for (const handler of handlers.get("input")) handler({ source, text, streamingBehavior: "followUp" }); };
   const deliver = text => { for (const handler of handlers.get("message_start")) handler({ message: { role: "user", content: [{ type: "text", text }] } }); };
   const arm = () => { input("ultracode: run it"); deliver("ultracode: run it"); };
+  // ultrathink holds through agent_end (retries and continuations re-run the loop) until the prompt settles.
+  deliver("ultrathink it");
+  assert.equal(level, "max");
+  input("ultracode", "extension");
+  deliver("ultracode");
+  for (const handler of handlers.get("agent_end")) handler({}, ctx);
+  assert.equal(level, "max");
+  for (const handler of handlers.get("agent_settled")) handler({}, ctx);
+  assert.equal(level, "low");
   // Text an extension injects never arms the opt-in, even once delivered.
   input("ultracode", "extension");
   deliver("ultracode");
@@ -525,11 +536,15 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.match(interrupted.content[0].text, /Workflow interrupted/);
   assert.deepEqual(interrupted.details.runs.map(run => [run.runId, run.status]), [["run-4", "stopped"]]);
   assert.deepEqual(order, ["stop:run-4", "settled", "mode:execute"]);
-  // Shutdown ends a live run and stops its child before the broker closes.
+  // Shutdown ends a live run and stops its child before the broker closes,
+  // and puts back a level ultrathink raised.
   spawn = launched();
   const third = run();
   await spawn;
+  deliver("ultrathink it");
+  assert.equal(level, "max");
   await handlers.get("session_shutdown").find(handler => handler.name === "shutdown")();
+  assert.equal(level, "low");
   assert.match((await third).content[0].text, /Workflow interrupted/);
   assert.ok(order.includes("stop:run-5") && order.indexOf("stop:run-5") < order.indexOf("close"), order.join(","));
 });

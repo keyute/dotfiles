@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { rpcCall } from "./fleet.mjs";
-import { OPT_IN, createOrchestrate } from "./orchestrate.mjs";
+import { saysUltracode } from "./keywords.mjs";
+import { createOrchestrate } from "./orchestrate.mjs";
 
 const roster = { scout: { readonly: true }, worker: { readonly: false } };
 const config = (concurrency = 8) => ({ models: { provider: "openai", tiers: { small: "s-id", top: "t-id", frontier: "f-id" } }, orchestrateConcurrency: concurrency, agents: roster });
@@ -132,7 +133,7 @@ test("log() lines, console output, args and an exported meta reach the result", 
 
 test("opt-in: unarmed calls are refused; arming lasts until a prompt without the word", async () => {
   const h = harness();
-  assert.ok(OPT_IN.test("use ULTRACODE here") && !OPT_IN.test("ultracoder"));
+  assert.ok(saysUltracode("use ULTRACODE here") && !saysUltracode("ultracoder"));
   await h.run(`return 1`);
   await h.run(`return 2`);
   h.orchestrate.delivered({ role: "user", content: [{ type: "text", text: "just a question" }] });
@@ -164,6 +165,10 @@ test("opt-in: the delivered text decides; extension text is consumed once; a ski
   assert.equal(await armed(), false);
   deliver(skill("ultracode the auth flow"));
   assert.equal(await armed(), true);
+  // The decided text is the return value: a skill's args, nothing for extension input.
+  assert.equal(deliver(skill("ultrathink it")), "ultrathink it");
+  h.orchestrate.noteExtensionInput("ultrathink");
+  assert.equal(deliver("ultrathink"), undefined);
   h.orchestrate.noteExtensionInput("ultracode");
   h.orchestrate.disarm();
   deliver("ultracode");
