@@ -34,7 +34,34 @@ export function buildRow({ agent, goal, tokens, model }) {
 }
 
 export function createFleetState() {
-  return { entries: [], totalActive: 0, runs: [], bindings: new Map(), launches: new Map(), focused: false, cursor: 0 };
+  return { entries: [], totalActive: 0, runs: [], groups: [], bindings: new Map(), launches: new Map(), focused: false, cursor: 0 };
+}
+
+const RUNNING_RECORD = new Set(["launching", "running"]);
+
+// A live workflow's children fold into its one overview row (rule 6): a row
+// whose bound run id belongs to a tracked group's records is hidden.
+export function fleetRows(state) {
+  if (!state.groups.length) return state.entries;
+  const owned = new Set(state.groups.flatMap(group => group.records.map(record => record.runId)).filter(Boolean));
+  return [...state.groups, ...state.entries.filter(entry => !owned.has(runIdFor(state, entry)))];
+}
+
+// `stopped` and `unknown` count with failed; the phase is the latest live
+// launch's, else the last launch's.
+export function groupRow({ title, records }) {
+  const running = records.filter(record => RUNNING_RECORD.has(record.status)).length;
+  const done = records.filter(record => record.status === "completed").length;
+  const failed = records.length - running - done;
+  const phase = (records.findLast(record => RUNNING_RECORD.has(record.status)) ?? records.at(-1))?.phase;
+  const name = title ? `workflow${NAME_SEP}${shortTitle(title)}` : "workflow";
+  return [name, phase, `${running} running`, `${done} done`, failed && `${failed} failed`].filter(Boolean).join(SEP);
+}
+
+function clamp(state) {
+  const count = fleetRows(state).length;
+  state.cursor = Math.min(state.cursor, Math.max(0, count - 1));
+  if (!count) state.focused = false;
 }
 
 const ACTIVE_RUN_STATES = new Set(["queued", "running"]);
@@ -45,8 +72,7 @@ export function setEntries(state, fleet, snapshot) {
   const keys = new Set(state.entries.map(entry => entry.key).filter(key => key != null));
   for (const key of state.bindings.keys()) if (!keys.has(key)) state.bindings.delete(key);
   state.totalActive = Math.max(fleet?.totalActive ?? 0, state.entries.length);
-  state.cursor = Math.min(state.cursor, Math.max(0, state.entries.length - 1));
-  if (!state.entries.length) state.focused = false;
+  clamp(state);
 }
 
 // Navigation is an editor-owned mode: the editor keeps input focus and routes
@@ -54,15 +80,16 @@ export function setEntries(state, fleet, snapshot) {
 // not move down), "down", "up", "confirm", "cancel", "other". Returns true
 // when the key was consumed.
 export function navigate(state, action, open) {
+  const rows = fleetRows(state);
   if (!state.focused) {
-    if (action !== "enter" || !state.entries.length) return false;
+    if (action !== "enter" || !rows.length) return false;
     state.focused = true;
     state.cursor = 0;
     return true;
   }
-  if (action === "down") { state.cursor = Math.min(state.cursor + 1, state.entries.length - 1); return true; }
+  if (action === "down") { state.cursor = Math.min(state.cursor + 1, rows.length - 1); return true; }
   if (action === "up") { if (state.cursor > 0) state.cursor--; else state.focused = false; return true; }
-  const selected = state.entries[state.cursor];
+  const selected = rows[state.cursor];
   state.focused = false;
   // Confirm hands the row to the caller's open callback and leaves focus
   // cleared; the caller restores focus and the cursor once its peek settles,
@@ -138,19 +165,23 @@ function rowFor(state, entry) {
 // A window of child rows with a selection cursor and overflow markers instead
 // of a growing list; queued children render dim.
 export function renderFleet(state, width, theme) {
-  if (!state.entries.length) return [];
+  const rows = fleetRows(state);
+  if (!rows.length) return [];
   const dim = text => theme.fg("dim", text);
   const lines = [];
   const start = Math.max(0, state.cursor - (VISIBLE_ROWS - 1));
-  const shown = state.entries.slice(start, start + VISIBLE_ROWS);
+  const shown = rows.slice(start, start + VISIBLE_ROWS);
   if (start > 0) lines.push(dim(`  ↑ ${start} more`));
   shown.forEach((entry, index) => {
     const selected = state.focused && start + index === state.cursor;
     const marker = selected ? theme.fg("accent", CURSOR) : CHILD;
-    const row = buildRow(rowFor(state, entry));
+    const group = state.groups.includes(entry);
+    const row = group ? groupRow(entry) : buildRow(rowFor(state, entry));
     lines.push(truncateToWidth(`  ${marker} ${entry.status === "pending" ? dim(row) : row}`, width));
   });
-  const hidden = state.totalActive - (start + shown.length);
+  // The active count less the folded children, plus one per group.
+  const folded = state.entries.length - (rows.length - state.groups.length);
+  const hidden = state.totalActive - folded + state.groups.length - (start + shown.length);
   if (hidden > 0) lines.push(dim(`  ↓ ${hidden} more`));
   return lines;
 }
@@ -184,6 +215,11 @@ export function installFleet(pi, ctx, {
     const { openPeek: open } = await import("./peek.mjs");
     // A slot dialog can close the peek during this import; an aborted signal
     // must not mount one (Dialog finishes in its constructor, into pi's slot).
+    if (opts.signal?.aborted) return;
+    return open(ctx, opts);
+  },
+  openWorkflowView = async (ctx, opts) => {
+    const { openWorkflowView: open } = await import("./workflow-view.mjs");
     if (opts.signal?.aborted) return;
     return open(ctx, opts);
   },
@@ -401,6 +437,40 @@ export function installFleet(pi, ctx, {
   // came back with it) and pi is rendering a TUI, otherwise pi-subagents' own
   // transcript tail in the same slot — and says so when there is none yet,
   // Enter is never silent. Resolves to whether closeView ended it.
+  // `row` names the text tail's header: { agent, goal, model }.
+  const showPeek = async (current, id, asyncDir, row, signal) => {
+    if (current.mode === "tui" && asyncDir) {
+      await openPeek(current, { id, asyncDir, describe: () => describe(id), events: pi.events, rpcCall, timeoutMs, signal });
+      return signal.aborted;
+    }
+    // The status reply can take timeoutMs; a closed peek must not hold up the dialog taking the slot.
+    const reply = id ? await Promise.race([
+      rpcCall(pi.events, "status", { id, view: "transcript", lines: 40 }, timeoutMs),
+      new Promise(resolve => signal.addEventListener("abort", resolve, { once: true })),
+    ]) : null;
+    if (signal.aborted) return true;
+    const { agent, goal, model } = row();
+    if (!reply?.text || !current.hasUI) { current.ui.notify(`No transcript yet for ${agent}`, "info"); return false; }
+    const header = [goal ? `${agent}${NAME_SEP}${oneLine(goal)}` : agent, modelLabel(model)].filter(Boolean).join(" · ");
+    await current.ui.custom((tui, theme, _keybindings, done) => {
+      signal.addEventListener("abort", () => done(), { once: true });
+      const body = new Text(reply.text, 2, 0);
+      return {
+        // The live peek's frame and height (rules 11 and 6): the tail is cut
+        // to fit, since pi's dock clips an oversized slot from the bottom,
+        // rule first.
+        render: width => {
+          const height = slotHeight(tui.terminal?.rows ?? 24);
+          const rule = frameRule(theme, width);
+          const tail = body.render(width).slice(-(height - 5));
+          return [rule, `  ${alignRight(theme.fg("accent", header), theme.fg("dim", "esc back"), width - 2)}`, "", ...tail, "", rule].map(line => truncateToWidth(line, width, ""));
+        },
+        invalidate: () => body.invalidate(),
+        handleInput: () => done(),
+      };
+    });
+    return signal.aborted;
+  };
   const peek = async entry => {
     const current = state.ctx;
     if (!current) return false;
@@ -408,37 +478,22 @@ export function installFleet(pi, ctx, {
     const launch = id ? state.launches.get(id) : undefined;
     // Fleet keys still reach the editor while a peek awaits its import or RPC;
     // opening a view ends the first, so a second Enter cannot mount it later unowned.
+    return openView(signal => showPeek(current, id, launch?.asyncDir, () => rowFor(state, entry), signal));
+  };
+  // Enter on a workflow row opens its view; a pick there peeks the record by
+  // its own run id and asyncDir (runIdFor knows active runs only, so a
+  // finished child stays peekable). Esc-back without a dialog stack: the view
+  // and its peek take turns in this one mount, and Esc in the view ends it.
+  const workflow = group => {
+    const current = state.ctx;
+    if (!current) return false;
     return openView(async signal => {
-      if (current.mode === "tui" && launch?.asyncDir) {
-        await openPeek(current, { id, asyncDir: launch.asyncDir, describe: () => describe(id), events: pi.events, rpcCall, timeoutMs, signal });
-        return signal.aborted;
+      let selected;
+      while (!signal.aborted) {
+        selected = await openWorkflowView(current, { group, signal, selected });
+        if (!selected || signal.aborted) break;
+        await showPeek(current, selected.runId, selected.asyncDir, () => ({ agent: selected.agent, goal: selected.task }), signal);
       }
-      // The status reply can take timeoutMs; a closed peek must not hold up the dialog taking the slot.
-      const reply = id ? await Promise.race([
-        rpcCall(pi.events, "status", { id, view: "transcript", lines: 40 }, timeoutMs),
-        new Promise(resolve => signal.addEventListener("abort", resolve, { once: true })),
-      ]) : null;
-      if (signal.aborted) return true;
-      if (!reply?.text || !current.hasUI) { current.ui.notify(`No transcript yet for ${entry.agent}`, "info"); return false; }
-      const { agent, goal, model } = rowFor(state, entry);
-      const header = [goal ? `${agent}${NAME_SEP}${oneLine(goal)}` : agent, modelLabel(model)].filter(Boolean).join(" · ");
-      await current.ui.custom((tui, theme, _keybindings, done) => {
-        signal.addEventListener("abort", () => done(), { once: true });
-        const body = new Text(reply.text, 2, 0);
-        return {
-          // The live peek's frame and height (rules 11 and 6): the tail is cut
-          // to fit, since pi's dock clips an oversized slot from the bottom,
-          // rule first.
-          render: width => {
-            const height = slotHeight(tui.terminal?.rows ?? 24);
-            const rule = frameRule(theme, width);
-            const tail = body.render(width).slice(-(height - 5));
-            return [rule, `  ${alignRight(theme.fg("accent", header), theme.fg("dim", "esc back"), width - 2)}`, "", ...tail, "", rule].map(line => truncateToWidth(line, width, ""));
-          },
-          invalidate: () => body.invalidate(),
-          handleInput: () => done(),
-        };
-      });
       return signal.aborted;
     });
   };
@@ -451,13 +506,16 @@ export function installFleet(pi, ctx, {
       // index clamped to the panel is the fallback. A peek that closeView
       // ended leaves focus alone: another dialog holds the slot, and the
       // fleet's ❭ under it would be a second cursor.
+      // A group row is found again by identity.
+      const group = state.groups.includes(entry);
       const { key } = entry;
       const index = state.cursor;
-      void peek(entry).catch(error => state.ctx?.ui?.notify?.(String(error?.message ?? error), "error")).then(aborted => {
+      void (group ? workflow(entry) : peek(entry)).catch(error => state.ctx?.ui?.notify?.(String(error?.message ?? error), "error")).then(aborted => {
         if (aborted) return;
-        state.focused = state.entries.length > 0;
-        const at = key === undefined ? -1 : state.entries.findIndex(candidate => candidate.key === key);
-        state.cursor = at >= 0 ? at : Math.min(index, Math.max(0, state.entries.length - 1));
+        const rows = fleetRows(state);
+        state.focused = rows.length > 0;
+        const at = group ? rows.indexOf(entry) : key === undefined ? -1 : rows.findIndex(candidate => candidate.key === key);
+        state.cursor = at >= 0 ? at : Math.min(index, Math.max(0, rows.length - 1));
         state.tui?.requestRender();
       });
     });
@@ -472,6 +530,29 @@ export function installFleet(pi, ctx, {
     // A launch an extension made over RPC never passes the subagent tool's
     // execution events, so its row title and peek asyncDir are recorded here.
     adopt: (id, { agent, task, asyncDir }) => { state.launches.set(id, { agent, task, asyncDir }); },
+    // A blocking workflow's overview row, live until end(). `records` is the
+    // run's own array, mutated in place; the caller calls changed() after
+    // each status change. The workflow view holds the group after end().
+    track: ({ title, records }) => {
+      const listeners = new Set();
+      const group = {
+        title, records, startedAt: Date.now(), endedAt: undefined,
+        onChange: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+        changed: () => {
+          clamp(state);
+          state.tui?.requestRender();
+          for (const listener of listeners) listener();
+        },
+        end: () => {
+          group.endedAt = Date.now();
+          state.groups = state.groups.filter(other => other !== group);
+          group.changed();
+        },
+      };
+      state.groups.push(group);
+      group.changed();
+      return group;
+    },
     attachContext: current => {
       closeView(); state.bindings.clear(); state.ctx = current; state.stopped = false;
       // A live launch recorded from this process's own events wins over the

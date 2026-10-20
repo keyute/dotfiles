@@ -5,7 +5,8 @@
 Run a workflow script: plain JavaScript in an isolated VM that launches children and returns one consolidated result (its return value, as JSON). title (a few words) names the run's row. Use it only when the user's prompt said ultracode; otherwise the call is refused. For one bounded task, use subagent.
 
 The script reaches only:
-- agent(prompt, { agentType, tier?, schema?, label? }): launches one child and resolves to its final text, or with schema (a JSON Schema object) to the validated value; it rejects when the child fails. agentType is an agent from the subagent tool's list. tier runs that agent on another pin: one of {{ $tiers | join ", " }}; frontier is refused, and the default is the agent's own tier. label (a few words) titles its fleet row. model, effort and isolation are refused.
+- agent(prompt, { agentType, tier?, schema?, label?, phase? }): launches one child and resolves to its final text, or with schema (a JSON Schema object) to the validated value; it rejects when the child fails. agentType is an agent from the subagent tool's list. tier runs that agent on another pin: one of {{ $tiers | join ", " }}; frontier is refused, and the default is the agent's own tier. label (a few words) titles its row. phase (a few words) lists it under that phase, overriding phase(). model, effort and isolation are refused.
+- phase(title): later agent() calls default to this phase, as a stage heading.
 - parallel([() => agent(...), ...]): runs the thunks concurrently; results in order, null where one failed.
 - pipeline(items, ...stages): each item runs through stage(previous, item, index) on its own, with no barrier between stages; null where a stage failed.
 - log(message): adds a line to the result, as console.log does.
@@ -18,4 +19,4 @@ Notes:
 {{- end }}
 - Plan mode admits read-only agents only.
 - One writer per write scope: broker approval is not write isolation, so give concurrent writers disjoint files.
-- The call blocks until the run ends; its children show in the fleet. Esc interrupts it; Ctrl+Enter interrupts and sends a typed steer, and typed steers reach you only after it returns.
+- The call blocks until the run ends; the run shows as one fleet row; Enter on it lists its agents by phase. Esc interrupts it; Ctrl+Enter interrupts and sends a typed steer, and typed steers reach you only after it returns.

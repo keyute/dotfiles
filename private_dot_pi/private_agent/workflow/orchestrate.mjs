@@ -25,7 +25,7 @@ const MAX_RESULT = 64 * KiB;
 const MAX_CALLS = 1000;
 const MAX_LOG_CHARS = 2000;
 const MAX_LOGS = 1000;
-const OPT_KEYS = new Set(["agentType", "tier", "schema", "label"]);
+const OPT_KEYS = new Set(["agentType", "tier", "schema", "label", "phase"]);
 const META = /^(\s*)export\s+(const\s+meta\b)/m;
 
 const clean = (text, max) => String(text).replace(/[\r\n\t]+/g, " ").replace(/[\p{Cc}]/gu, "").slice(0, max);
@@ -33,8 +33,9 @@ const firstLine = text => clean(String(text).trim().split("\n")[0], 120);
 const isObject = value => typeof value === "object" && value !== null && !Array.isArray(value);
 
 // One line, so VM line numbers equal the script's. Bounds are in the VM because
-// the host sees only single agent() calls.
-const PRELUDE = 'const log = (...a) => console.log(...a); const agent = (prompt, opts) => tools.agent({ prompt, opts: opts ?? {} }); const __bound = items => { if (!Array.isArray(items) || items.length > 4096) throw new RangeError("parallel takes an array of at most 4096 items"); }; const parallel = thunks => { __bound(thunks); return Promise.all(thunks.map(t => Promise.resolve().then(() => typeof t === "function" ? t() : t).catch(() => null))); }; const __failed = Symbol("failed"); const pipeline = (items, ...stages) => { __bound(items); return Promise.all(items.map((item, i) => stages.reduce((p, stage) => p.then(prev => prev === __failed ? prev : stage(prev, item, i)), Promise.resolve(item)).catch(() => __failed).then(v => v === __failed ? null : v))); }; ';
+// the host sees only single agent() calls. phase() sets the default that an
+// explicit opts.phase overrides on the host.
+const PRELUDE = 'const log = (...a) => console.log(...a); let __phase; const phase = title => { __phase = title; }; const agent = (prompt, opts) => tools.agent({ prompt, opts: opts ?? {}, phase: __phase }); const __bound = items => { if (!Array.isArray(items) || items.length > 4096) throw new RangeError("parallel takes an array of at most 4096 items"); }; const parallel = thunks => { __bound(thunks); return Promise.all(thunks.map(t => Promise.resolve().then(() => typeof t === "function" ? t() : t).catch(() => null))); }; const __failed = Symbol("failed"); const pipeline = (items, ...stages) => { __bound(items); return Promise.all(items.map((item, i) => stages.reduce((p, stage) => p.then(prev => prev === __failed ? prev : stage(prev, item, i)), Promise.resolve(item)).catch(() => __failed).then(v => v === __failed ? null : v))); }; ';
 
 // Control characters out of text the VM or a child wrote, newlines kept.
 const scrub = text => String(text).replace(/[\p{Cc}]/gu, c => (c === "\n" ? c : ""));
@@ -50,17 +51,18 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
   const nonFrontier = () => Object.keys(config.models.tiers).filter(key => key !== "frontier");
 
   function validate(input) {
-    const { prompt, opts } = isObject(input) ? input : {};
+    const { prompt, opts, phase: current } = isObject(input) ? input : {};
     if (typeof prompt !== "string" || !prompt.trim()) throw new Error("agent() needs a non-empty prompt");
     if (prompt.length > MAX_PROMPT) throw new Error("agent() prompt exceeds 1 MiB");
     if (!isObject(opts)) throw new Error("agent() options must be an object");
     for (const key of Object.keys(opts)) if (!OPT_KEYS.has(key)) throw new Error(`agent() option ${key} is not supported`);
-    const { agentType, tier, schema, label } = opts;
+    const { agentType, tier, schema, label, phase = current } = opts;
     if (typeof agentType !== "string" || !agentType) throw new Error("agent() needs opts.agentType");
     if (tier !== undefined && !nonFrontier().includes(tier)) throw new Error(`tier must be one of ${nonFrontier().join(", ")}`);
     if (schema !== undefined && (!isObject(schema) || JSON.stringify(schema).length > MAX_SCHEMA)) throw new Error("agent() schema must be an object of at most 64 KiB");
     if (label !== undefined && typeof label !== "string") throw new Error("agent() label must be a string");
-    return { prompt, agentType, tier, schema, label: label === undefined ? undefined : clean(label, 120) };
+    if (phase !== undefined && typeof phase !== "string") throw new Error("agent() phase must be a string");
+    return { prompt, agentType, tier, schema, label: label === undefined ? undefined : clean(label, 120), phase: phase === undefined ? undefined : clean(phase, 60) };
   }
 
   function startRun() {
@@ -121,7 +123,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     // rejection: the VM records every host call, so a loop of refused calls
     // would grow the host's memory without bound.
     if (++run.calls > MAX_CALLS) run.end(`A workflow runs at most ${MAX_CALLS} agent() calls`);
-    const { prompt, agentType, tier, schema, label } = validate(input);
+    const { prompt, agentType, tier, schema, label, phase } = validate(input);
     while (run.inflight >= config.orchestrateConcurrency) await new Promise(resolve => run.waiters.push(resolve));
     run.inflight++;
     try {
@@ -131,8 +133,9 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       await check(args, { outputSchema: schema, model: tier ? `${config.models.provider}/${config.models.tiers[tier]}` : undefined });
       if (signal.aborted) throw new Error("Workflow interrupted");
       const task = label ?? firstLine(prompt);
-      const record = { runId: undefined, agent: agentType, label, task, asyncDir: undefined, status: "launching" };
+      const record = { runId: undefined, agent: agentType, label, phase, task, asyncDir: undefined, status: "launching" };
       run.records.push(record);
+      run.group.changed();
       const requestId = randomUUID();
       const alias = `rpc-spawn-${requestId}`;
       const reply = await rpc(pi.events, "spawn", args, 30_000, requestId, true);
@@ -141,13 +144,14 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       // lost one, may follow a spawned child (the executor's post-spawn budget
       // step can throw), so the run is recovered by the spawn's tool-call alias,
       // never redispatched, and a recovered child of a failed launch is stopped.
-      if (refused !== undefined && reply.error?.code === "invalid_params") { record.status = "failed"; throw new Error(`${agentType} launch refused: ${refused}`); }
+      if (refused !== undefined && reply.error?.code === "invalid_params") { record.status = "failed"; run.group.changed(); throw new Error(`${agentType} launch refused: ${refused}`); }
       let details = reply?.data?.details;
       if (!(details?.runId ?? details?.asyncId)) details = (await rpc(pi.events, "status", { id: alias }, 5_000))?.details;
       const started = [...run.started.values()].find(payload => payload.toolCallId === alias);
       const id = details?.runId ?? details?.asyncId ?? started?.id;
       if (!id) {
         record.status = refused !== undefined ? "failed" : "unknown";
+        run.group.changed();
         // The child may still register under the alias; execute() stops it then.
         run.lost.push({ alias, record });
         run.unverified.push(`launch outcome unknown: ${agentType}`);
@@ -157,6 +161,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       }
       const asyncDir = details?.asyncDir ?? run.started.get(id)?.asyncDir;
       Object.assign(record, { runId: id, asyncDir, status: "running" });
+      run.group.changed();
       owned.add(id);
       fleet.adopt(id, { agent: agentType, task, asyncDir });
       run.track(id, agentType);
@@ -166,10 +171,11 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       }
       // An observed end without a completion failed; an aborted wait stays
       // running so stop() still stops the child.
-      const payload = await run.completion(id, signal).catch(error => { if (run.done.has(id)) record.status = "failed"; throw error; });
+      const payload = await run.completion(id, signal).catch(error => { if (run.done.has(id)) { record.status = "failed"; run.group.changed(); } throw error; });
       const r = payload.results?.[0];
       const status = completionStatus(payload);
       record.status = status;
+      run.group.changed();
       if (status !== "completed") throw new Error(`${agentType} ${status}${r?.summary ? `: ${firstLine(r.summary)}` : ""}`);
       if (!schema) return r?.output ?? "";
       if (r.structuredOutput === undefined) throw new Error(`${agentType} returned no structured output`);
@@ -187,6 +193,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     const failures = await fleet.stopRuns(pending.map(record => record.runId));
     run.unverified.push(...failures.map(failure => `unverified cleanup: ${failure}`));
     for (const record of pending) if (record.status === "running" && !failures.some(failure => failure.startsWith(`${record.runId}:`))) record.status = "stopped";
+    run.group.changed();
   }
 
   const statusLines = run => [...run.records.map(record => `${record.label ?? record.agent} · ${record.status}`), ...run.unverified];
@@ -229,6 +236,8 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
         return call;
       } }],
     });
+    // The run's one fleet row, live exactly as long as this call.
+    run.group = fleet.track({ title: params?.title, records: run.records });
     let result;
     try {
       const code = `const args = JSON.parse(${JSON.stringify(argsJson)}); ${PRELUDE}${script.replace(META, "$1$2")}`;
@@ -242,11 +251,13 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
         const payload = [...run.started.values()].find(payload => payload.toolCallId === alias);
         if (!payload) continue;
         Object.assign(record, { runId: payload.id, asyncDir: payload.asyncDir, status: "running" });
+        run.group.changed();
         owned.add(payload.id);
         fleet.adopt(payload.id, { agent: record.agent, task: record.task, asyncDir: payload.asyncDir });
       }
       await stop(run, run.records);
     } finally {
+      run.group.end();
       run.finished = true;
       run.buffer.clear();
       run.terminal.clear();

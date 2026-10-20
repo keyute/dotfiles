@@ -46,6 +46,32 @@ test("panel: child marker, dim queued rows, cursor row, and overflow markers", (
   assert.deepEqual(renderFleet(createFleetState(), 80, theme), []);
 });
 
+test("a workflow group folds its children into one overview row with its phase and counts", () => {
+  const state = createFleetState();
+  const records = [
+    { runId: "r1", agent: "scout", status: "completed", phase: "Survey" },
+    { runId: "r2", agent: "worker", status: "running", phase: "Fix" },
+    { runId: "r3", agent: "worker", status: "stopped", phase: "Fix" },
+    { runId: undefined, agent: "worker", status: "unknown", phase: "Fix" },
+  ];
+  state.groups.push({ title: "Audit the config", records });
+  // Drawn with no fleet entries at all (between phases, while launching).
+  assert.deepEqual(renderFleet(state, 80, theme), ["  ○ workflow › Audit the config · Fix · 1 running · 1 done · 2 failed"]);
+  const others = Array.from({ length: 5 }, (_, i) => ({ key: `k${i}`, agent: `a${i}`, startedAt: 3000 + i }));
+  setEntries(state, { entries: [{ key: "child", agent: "worker", startedAt: 2000 }, ...others], totalActive: 8 }, { runs: [{ id: "r2", label: "worker", state: "running", startedAt: 2000 }] });
+  // 8 active less the folded child, plus the group, less the 5 shown.
+  assert.deepEqual(renderFleet(state, 80, theme), [
+    "  ○ workflow › Audit the config · Fix · 1 running · 1 done · 2 failed",
+    "  ○ a0", "  ○ a1", "  ○ a2", "  ○ a3",
+    "~  ↓ 3 more~",
+  ]);
+  records[1].status = "completed";
+  records[1].phase = "Verify";
+  assert.equal(renderFleet(state, 80, theme)[0], "  ○ workflow › Audit the config · Fix · 0 running · 2 done · 2 failed", "all terminal: the last launch's phase");
+  state.groups = [{ records: [{ status: "launching" }] }];
+  assert.equal(renderFleet(state, 80, theme)[0], "  ○ workflow · 1 running · 0 done", "no phases, no title");
+});
+
 test("navigation is an editor-owned mode: enter on a stuck cursor, move, open, leave", () => {
   const state = createFleetState();
   const opens = [];
@@ -608,6 +634,34 @@ test("launchesFromBranch reads each orchestrate run with an asyncDir from its to
     ["run-2", { agent: "scout", task: "check the logs", asyncDir: "/tmp/x/run-2" }],
     ["run-4", { agent: "scout", task: "t", asyncDir: "/tmp/x/run-4" }],
   ]);
+});
+
+test("Enter on a workflow row opens its view, a pick peeks the record by its own run, and Esc returns focus to the row", async () => {
+  const bus = fakeBus();
+  const pi = { events: bus, on: () => {}, appendEntry() {}, registerEntryRenderer() {} };
+  const ctx = { mode: "tui", hasUI: true, ui: { notify() {} } };
+  const views = [];
+  const peeks = [];
+  // Finished and absent from the fleet's runs: still peeked on its own run id.
+  const record = { runId: "done-1", agent: "scout", task: "Survey", asyncDir: "/tmp/done-1", status: "completed" };
+  const picks = [record, undefined];
+  const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10,
+    openPeek: async (_ctx, options) => { peeks.push(options); },
+    openWorkflowView: async (_ctx, options) => { views.push({ ...options }); return picks.shift(); } });
+  bus.entries = [{ key: "fleet-x", agent: "other", startedAt: 1000 }];
+  const group = fleet.track({ title: "Audit", records: [record] });
+  await sleep(20);
+  assert.deepEqual(fleet.render(80, theme), ["  ○ workflow › Audit · 0 running · 1 done", "  ○ other"]);
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(10);
+  assert.deepEqual(views.map(view => [view.group === group, view.selected]), [[true, undefined], [true, record]], "the view reopens on the peeked record");
+  assert.deepEqual(peeks.map(({ id, asyncDir }) => [id, asyncDir]), [["done-1", "/tmp/done-1"]]);
+  assert.equal(views[0].signal, peeks[0].signal);
+  assert.equal(fleet.focused(), true);
+  assert.equal(fleet.render(80, theme)[0], "  *❭* workflow › Audit · 0 running · 1 done");
+  group.end();
+  assert.deepEqual(fleet.render(80, theme), ["  *❭* other"]);
 });
 
 test("an adopted RPC launch titles its row and opens the live peek on its asyncDir", async () => {

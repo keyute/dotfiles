@@ -20,7 +20,7 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
   const emitter = new EventEmitter();
   emitter.setMaxListeners(0);
   const events = { on: (name, fn) => { emitter.on(name, fn); return () => emitter.off(name, fn); }, emit: (name, data) => emitter.emit(name, data) };
-  const h = { events, mode: "execute", spawns: [], log: [], held: [], inflight: 0, maxInflight: 0, adopted: [], stopped: [], ready: true };
+  const h = { events, mode: "execute", spawns: [], log: [], held: [], inflight: 0, maxInflight: 0, adopted: [], stopped: [], groups: [], ready: true };
   const reply = (requestId, data) => events.emit(`subagents:rpc:v1:reply:${requestId}`, { version: 1, requestId, success: true, data });
   h.complete = (id, result, extra = {}) => {
     events.emit("subagent:process-terminal", { state: "observed", runId: id });
@@ -54,6 +54,12 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
   });
   const fleet = {
     adopt: (id, launch) => h.adopted.push({ id, ...launch }),
+    // Each change is logged as the statuses at that moment.
+    track: ({ title, records }) => {
+      const group = { title, records, log: [] };
+      h.groups.push(group);
+      return { changed: () => group.log.push(records.map(record => record.status).join(",")), end: () => group.log.push("end") };
+    },
     stopRuns: async ids => { h.stopped.push(...ids); return ids.flatMap(stopFailures); },
   };
   const check = async (args, { outputSchema, model } = {}) => {
@@ -129,6 +135,24 @@ test("log() lines, console output, args and an exported meta reach the result", 
   assert.equal(value(result), "demo3");
   assert.match(text, /\nhello \]0;t there next\n\{"n":3\}\nc1$/);
   assert.doesNotMatch(text, /[\x1b\x07]/);
+});
+
+test("phase() and opts.phase reach the records, the explicit option winning; a non-string phase is refused", async () => {
+  const h = harness();
+  await h.run(`await agent("a", { agentType: "scout" }); phase("Review\\nnow"); await parallel([() => agent("b", { agentType: "scout" }), () => agent("c", { agentType: "scout", phase: "Fix" })]); return 1`);
+  assert.deepEqual(h.groups[0].records.map(({ task, phase }) => [task, phase]), [["a", undefined], ["b", "Review now"], ["c", "Fix"]]);
+  const refused = await h.run(`try { await agent("x", { agentType: "scout", phase: 3 }) } catch (e) { return e.message }`);
+  assert.equal(value(refused), "agent() phase must be a string");
+  const viaPhase = await h.run(`phase(3); try { await agent("x", { agentType: "scout" }) } catch (e) { return e.message }`);
+  assert.equal(value(viaPhase), "agent() phase must be a string");
+});
+
+test("a run tracks one fleet group: its title, each status change, and its end", async () => {
+  const h = harness({ behave: params => params.task === "b" ? { status: "failed" } : { status: "completed", output: "" } });
+  await h.orchestrate.tool.execute("call-1", { title: "Audit", script: `await agent("a", { agentType: "scout" }); await parallel([() => agent("b", { agentType: "scout" })]); return 1` }, undefined, undefined, { hasUI: true });
+  assert.equal(h.groups.length, 1);
+  assert.equal(h.groups[0].title, "Audit");
+  assert.deepEqual(h.groups[0].log, ["launching", "running", "completed", "completed,launching", "completed,running", "completed,failed", "end"]);
 });
 
 test("opt-in: unarmed calls are refused; arming lasts until a prompt without the word", async () => {
@@ -212,6 +236,7 @@ test("an abort before the spawn reply stops the run once its id is known", async
   assert.match(failure(result), /Workflow interrupted/);
   assert.equal(result.details.runs[0].status, "stopped");
   assert.deepEqual(h.stopped, ["run-1"]);
+  assert.deepEqual(h.groups[0].log.slice(-2), ["stopped", "end"]);
   assert.equal(h.orchestrate.claim(["run-1"]), true);
 });
 
@@ -376,6 +401,7 @@ test("a script error carries its kind, message, the children and the logs", asyn
   assert.match(failure(result), /^script: bad/);
   assert.match(failure(result), /\n\nbefore\nscout · completed$/);
   assert.equal(result.details.runs[0].runId, "run-1");
+  assert.equal(h.groups[0].log.at(-1), "end");
 });
 
 test("a result over 64 KiB is cut, its child lines kept, and written whole to result.txt", async () => {
