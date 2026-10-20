@@ -5,15 +5,18 @@ import { unsandboxed } from "./policy.mjs";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
 // line under a row, π for anything the harness says in its own voice, the
-// hollow circle only on fleet rows, a caret for a fold handle's state. A line
-// that opens with a glyph starts at column 0; a line without one (↳) sits at
-// the text column, and so the caret puts the handle's text there too.
-const BULLET = "•";
+// hollow circle only on fleet rows, a caret for a fold handle's state, filled
+// and empty cells for a bar. A line that opens with a glyph starts at column 0;
+// a line without one (↳) sits at the text column, and so the caret puts the
+// handle's text there too.
+export const BULLET = "•";
 export const CHILD = "○";
 export const TURN_GLYPH = "π";
 const SUB = "↳";
 const FOLD_OPEN = "▾";
 const FOLD_CLOSED = "▸";
+const FILLED = "▰";
+const EMPTY = "▱";
 export const PROMPT = "❯";
 export const CURSOR = "❭";
 export const PAD = "  ";
@@ -71,6 +74,31 @@ export function alignRight(left, right, width, gap = 2) {
   const rightWidth = visibleWidth(right);
   const head = truncateToWidth(left, Math.max(0, width - rightWidth - gap), "…");
   return head + " ".repeat(Math.max(gap, width - visibleWidth(head) - rightWidth)) + right;
+}
+
+// The TUI's one bar (docs/pi-design.md rule 1): `parts` are [colour, fraction]
+// segments in order, edges rounded cumulatively so the cells always sum to
+// `width`; the rest is dim empty cells.
+export function meter(theme, width, parts) {
+  let at = 0;
+  let sum = 0;
+  let out = "";
+  for (const [colour, fraction] of parts) {
+    sum += fraction;
+    const edge = Math.max(at, Math.min(width, Math.round(sum * width)));
+    if (edge > at) out += theme.fg(colour, FILLED.repeat(edge - at));
+    at = edge;
+  }
+  return at < width ? out + theme.fg("dim", EMPTY.repeat(width - at)) : out;
+}
+
+// A run's state colour, shared by completion lines and the workflow row and view.
+export function statusTone(status) {
+  if (status === "completed") return "success";
+  if (status === "running") return "accent";
+  if (status === "launching") return "dim";
+  if (status === "failed" || status === "stopped" || status === "unknown") return "error";
+  return "warning";
 }
 
 // The user box's shaded block (docs/pi-design.md rule 5). `foreground` is the
@@ -196,14 +224,33 @@ function summaryLine(name, summary, theme) {
   return `${theme.fg("muted", SUB)} ${paintCounts(summary, theme)}`;
 }
 
+// A duration only ever appears formatted this one way, in a completion's own
+// tail, a group member's or a workflow's outcome.
+const durationText = durationMs => (typeof durationMs === "number" ? formatDuration(durationMs) : null);
+
+// The orchestrate row is a workflow's one outcome (docs/pi-design.md rule 4), failed or not:
+// its agents, the outcome, pi's recorded time for the call and, on a completed run, the
+// children that failed in warning — a script may catch a child's failure (parallel,
+// pipeline) and still return, and its children draw no lines of their own. `stopped`
+// is left out: a script that returns early has its still-running children stopped.
+function workflowOutcome(result, isError, durationMs, theme) {
+  const runs = result?.details?.runs ?? [];
+  const failed = isError ? 0 : runs.filter(run => run?.status !== "completed" && run?.status !== "stopped").length;
+  const head = `${SUB} ${plural(runs.length, "agent")} · ${isError ? "failed" : "completed"}`;
+  const tail = durationText(durationMs);
+  if (!failed) return theme.fg("muted", tail ? `${head} · ${tail}` : head);
+  return `${theme.fg("muted", `${head} · `)}${theme.fg("warning", `${failed} failed`)}${tail ? theme.fg("muted", ` · ${tail}`) : ""}`;
+}
+
 // The lines a row's result draws: the summary line first when there is one,
 // then the body, each indented to the text column.
-export function rowLines(name, result, { expanded = false, isError = false } = {}, theme) {
+export function rowLines(name, result, { expanded = false, isError = false, durationMs } = {}, theme) {
   // A subagent launch answers with its run id and finishes later.
   if (name === "subagent" && !isError && result?.details?.asyncId) return [indent(theme.fg("muted", `${SUB} launched`))];
   const lines = [];
-  const summary = isError ? "" : resultSummary(name, result);
-  if (summary) lines.push(summaryLine(name, summary, theme));
+  const summary = isError || name === "orchestrate" ? "" : resultSummary(name, result);
+  if (name === "orchestrate") lines.push(workflowOutcome(result, isError, durationMs, theme));
+  else if (summary) lines.push(summaryLine(name, summary, theme));
   for (const line of bodyLines(name, result, { expanded, isError })) {
     if (isError && ELIDED.test(line)) lines.push(theme.fg("muted", line));
     else lines.push(name === "edit" && !isError ? line : theme.fg(isError ? "error" : "toolOutput", line));
@@ -237,7 +284,6 @@ const WORDS = {
   fetch: ["fetched", "page"],
   discovery: ["ran", "agent discovery", "agent discoveries"],
   agent: ["launched", "agent"],
-  orchestrate: ["ran", "workflow"],
   steer: ["steered", "agent"],
   check: ["checked on", "agent"],
   stop: ["stopped", "agent"],
@@ -270,12 +316,11 @@ export const foldKey = (name, args = {}) => {
   if (name === "web_search") return "web";
   if (name === "web_fetch") return "fetch";
   if (name === "tool_search") return "toolSearch";
-  if (name === "orchestrate") return "orchestrate";
   return name.startsWith("workspace_") ? name.slice("workspace_".length) : isMcp(name) ? "mcp" : null;
 };
 // The name a member's summary is computed under, where its fold key differs
 // from the name its plain row renders with (`pluginRenderers`, `taskRenderers`).
-const SUMMARY_NAME = { web: "plugin", fetch: "plugin", toolSearch: "plugin", taskCheck: "plugin", taskStop: "plugin", taskList: "plugin", orchestrate: "plugin" };
+const SUMMARY_NAME = { web: "plugin", fetch: "plugin", toolSearch: "plugin", taskCheck: "plugin", taskStop: "plugin", taskList: "plugin" };
 
 // One row behind one header line hides nothing and draws a caret over content
 // that is not there, so a run needs two rows to be worth a handle.
@@ -749,7 +794,7 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
       }
       const context = status(rawContext);
       if (hidden(folds, context.toolCallId)) return new Text("", 0, 0);
-      return withFollowingCompletions(new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError }, theme).join("\n"), 0, 0), folds, context.toolCallId, theme);
+      return withFollowingCompletions(new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError, durationMs: context.durationMs }, theme).join("\n"), 0, 0), folds, context.toolCallId, theme);
     },
   };
 }
@@ -771,7 +816,7 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 // The background-task tool: its result is a status line and the task's output.
 export const taskTitle = args => (args.action === "list" ? "Listed background tasks" : args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`);
 export const taskRenderers = rowRenderers({ name: "plugin", title: taskTitle });
-export const orchestrateRenderers = rowRenderers({ name: "plugin", title: args => `Orchestrated ${shortTitle(args.title || "workflow")}` });
+export const orchestrateRenderers = rowRenderers({ name: "orchestrate", title: args => `Orchestrated ${shortTitle(args.title || "workflow")}` });
 
 // Pending results carry the assembled draft; call arguments may contain only edits.
 export const planRenderers = {
@@ -866,19 +911,14 @@ export function answerLines(answers, theme) {
   return [head, ...answers.map(({ question, answer, notes }) => line(question, [answer, notes].filter(Boolean).join(" — ")))];
 }
 
-// A duration only ever appears formatted this one way, in a completion's own
-// tail or a group member's.
-const durationText = durationMs => (typeof durationMs === "number" ? formatDuration(durationMs) : null);
-
 // One line when an async child ends; pi-subagents' own notice shows only for
 // failures, so this is the transcript's record of a finished child and of how
 // long it took.
 export function completionLine({ agent, task, status, durationMs }, theme) {
   const ok = status === "completed";
-  const colour = ok ? "success" : status === "failed" || status === "stopped" ? "error" : "warning";
   const title = `${agent} ${ok ? "finished" : status}`;
   const tail = [task && shortTitle(task, SUMMARY_WIDTH), durationText(durationMs)].filter(Boolean).map(part => ` · ${part}`).join("");
-  return `${theme.fg(colour, BULLET)} ${theme.fg("toolTitle", title)}${tail ? theme.fg("muted", tail) : ""}`;
+  return `${theme.fg(statusTone(status), BULLET)} ${theme.fg("toolTitle", title)}${tail ? theme.fg("muted", tail) : ""}`;
 }
 
 // Successful completion entries use distinct count keys from launches while

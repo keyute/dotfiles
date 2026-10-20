@@ -119,12 +119,14 @@ export const paintSegment = (segment, theme) => {
 // scoped execution is success, a plan awaiting approval is warning. The word
 // carries the meaning, so nothing rests on the colour. The approval setting
 // rides beside it dim — /approvals changes what the broker prompts for and had
-// no visible trace anywhere.
+// no visible trace anywhere. Ultracode leads in accent while on, the colour
+// the keyword takes in the composer, so the typed word and its state read as one.
 export function paintMode(status, theme) {
   if (!status) return "";
-  const [mode, approval] = status.split(" ");
+  const [mode, approval, ultracode] = status.split(" ");
   const painted = theme.fg(mode === "execute" ? "success" : "warning", mode);
-  return approval ? `${painted}${theme.fg("dim", ` · ${approval}`)}` : painted;
+  const modeText = approval ? `${painted}${theme.fg("dim", ` · ${approval}`)}` : painted;
+  return ultracode ? `${theme.fg("accent", ultracode)}${theme.fg("dim", " · ")}${modeText}` : modeText;
 }
 
 export function parseGitChanges(shortstat) {

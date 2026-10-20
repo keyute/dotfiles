@@ -1,4 +1,4 @@
-// Prompt keywords: `ultracode` opts the prompt into the orchestrate tool,
+// Prompt keywords: `ultracode` turns the session's orchestrate opt-in on,
 // `ultrathink` raises the root's thinking level for it.
 const WORDS = ["ultracode", "ultrathink"];
 

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import { buildRow, createFleetState, formatTokens, installFleet, launchesFromBranch, modelLabel, navigate, renderFleet, rpcCall, runIdFor, setEntries } from "./fleet.mjs";
+import { buildRow, createFleetState, formatTokens, installFleet, launchesFromBranch, modelLabel, navigate, progressLine, renderFleet, rpcCall, runIdFor, setEntries } from "./fleet.mjs";
 import { closeView, openWait } from "./dialog.mjs";
 import { shortTitle } from "./rows.mjs";
 
@@ -46,7 +46,10 @@ test("panel: child marker, dim queued rows, cursor row, and overflow markers", (
   assert.deepEqual(renderFleet(createFleetState(), 80, theme), []);
 });
 
-test("a workflow group folds its children into one overview row with its phase and counts", () => {
+test("a workflow group folds its children into one overview row with its progress bar, counts, phase and elapsed", () => {
+  // accent *, dim ~, success +, error !, warning ?: each bar segment's colour shows.
+  const MARKS = { accent: "*", dim: "~", success: "+", error: "!", warning: "?" };
+  const theme = { fg: (colour, text) => (MARKS[colour] ? `${MARKS[colour]}${text}${MARKS[colour]}` : text) };
   const state = createFleetState();
   const records = [
     { runId: "r1", agent: "scout", status: "completed", phase: "Survey" },
@@ -54,22 +57,33 @@ test("a workflow group folds its children into one overview row with its phase a
     { runId: "r3", agent: "worker", status: "stopped", phase: "Fix" },
     { runId: undefined, agent: "worker", status: "unknown", phase: "Fix" },
   ];
-  state.groups.push({ title: "Audit the config", records });
+  state.groups.push({ title: "Audit the config", records, startedAt: Date.now() - 72_000 });
   // Drawn with no fleet entries at all (between phases, while launching).
-  assert.deepEqual(renderFleet(state, 80, theme), ["  ○ workflow › Audit the config · Fix · 1 running · 1 done · 2 failed"]);
+  assert.deepEqual(renderFleet(state, 90, theme), ["  ○ workflow › Audit the config  +▰▰▰▰+!▰▰▰▰▰▰▰▰!*▰▰▰▰*  1/4 · 2 failed · Fix · 1m 12s"]);
+  // Narrower, the title gives way first; below the room for `workflow` the bar goes whole.
+  assert.equal(renderFleet(state, 76, theme)[0], "  ○ workflow › Audit\x1b[0m…\x1b[0m  +▰▰▰▰+!▰▰▰▰▰▰▰▰!*▰▰▰▰*  1/4 · 2 failed · Fix · 1m 12s");
+  assert.equal(renderFleet(state, 50, theme)[0], "  ○ workflow › Aud\x1b[0m…\x1b[0m  1/4 · 2 failed · Fix · 1m 12s");
   const others = Array.from({ length: 5 }, (_, i) => ({ key: `k${i}`, agent: `a${i}`, startedAt: 3000 + i }));
   setEntries(state, { entries: [{ key: "child", agent: "worker", startedAt: 2000 }, ...others], totalActive: 8 }, { runs: [{ id: "r2", label: "worker", state: "running", startedAt: 2000 }] });
   // 8 active less the folded child, plus the group, less the 5 shown.
-  assert.deepEqual(renderFleet(state, 80, theme), [
-    "  ○ workflow › Audit the config · Fix · 1 running · 1 done · 2 failed",
+  assert.deepEqual(renderFleet(state, 90, theme), [
+    "  ○ workflow › Audit the config  +▰▰▰▰+!▰▰▰▰▰▰▰▰!*▰▰▰▰*  1/4 · 2 failed · Fix · 1m 12s",
     "  ○ a0", "  ○ a1", "  ○ a2", "  ○ a3",
     "~  ↓ 3 more~",
   ]);
   records[1].status = "completed";
   records[1].phase = "Verify";
-  assert.equal(renderFleet(state, 80, theme)[0], "  ○ workflow › Audit the config · Fix · 0 running · 2 done · 2 failed", "all terminal: the last launch's phase");
-  state.groups = [{ records: [{ status: "launching" }] }];
-  assert.equal(renderFleet(state, 80, theme)[0], "  ○ workflow · 1 running · 0 done", "no phases, no title");
+  assert.equal(renderFleet(state, 90, theme)[0], "  ○ workflow › Audit the config  +▰▰▰▰▰▰▰▰+!▰▰▰▰▰▰▰▰!  2/4 · 2 failed · Fix · 1m 12s", "all terminal: the last launch's phase");
+  state.groups = [{ records: [{ status: "launching" }], startedAt: Date.now() }];
+  assert.equal(renderFleet(state, 90, theme)[0], "  ○ workflow  ~▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱~  0/1 · 0s", "no phases, no title");
+});
+
+test("a progress line drops its bar whole before a cut would reach the word workflow", () => {
+  const plain = { fg: (_colour, text) => text };
+  const records = [{ status: "completed" }, { status: "running" }];
+  const line = width => progressLine("workflow › Audit the config", records, ["Fix", "1m 12s"], plain, width);
+  assert.equal(line(46), "workflow › Audit the conf\x1b[0m…\x1b[0m  1/2 · Fix · 1m 12s");
+  assert.equal(line(47), `workflow\x1b[0m…\x1b[0m  ${"▰".repeat(8)}${"▰".repeat(8)}  1/2 · Fix · 1m 12s`);
 });
 
 test("navigation is an editor-owned mode: enter on a stuck cursor, move, open, leave", () => {
@@ -630,9 +644,9 @@ test("launchesFromBranch reads each orchestrate run with an asyncDir from its to
     ] } } },
   ]);
   assert.deepEqual([...launches.entries()], [
-    ["run-1", { agent: "worker", task: "Patch config", asyncDir: "/tmp/x/run-1" }],
-    ["run-2", { agent: "scout", task: "check the logs", asyncDir: "/tmp/x/run-2" }],
-    ["run-4", { agent: "scout", task: "t", asyncDir: "/tmp/x/run-4" }],
+    ["run-1", { agent: "worker", task: "Patch config", asyncDir: "/tmp/x/run-1", workflow: true }],
+    ["run-2", { agent: "scout", task: "check the logs", asyncDir: "/tmp/x/run-2", workflow: true }],
+    ["run-4", { agent: "scout", task: "t", asyncDir: "/tmp/x/run-4", workflow: true }],
   ]);
 });
 
@@ -651,15 +665,17 @@ test("Enter on a workflow row opens its view, a pick peeks the record by its own
   bus.entries = [{ key: "fleet-x", agent: "other", startedAt: 1000 }];
   const group = fleet.track({ title: "Audit", records: [record] });
   await sleep(20);
-  assert.deepEqual(fleet.render(80, theme), ["  ○ workflow › Audit · 0 running · 1 done", "  ○ other"]);
+  assert.deepEqual(fleet.render(80, theme), [`  ○ workflow › Audit  ${"▰".repeat(16)}  1/1 · 0s`, "  ○ other"]);
   fleet.handleKey("enter");
   fleet.handleKey("confirm");
   await sleep(10);
   assert.deepEqual(views.map(view => [view.group === group, view.selected]), [[true, undefined], [true, record]], "the view reopens on the peeked record");
   assert.deepEqual(peeks.map(({ id, asyncDir }) => [id, asyncDir]), [["done-1", "/tmp/done-1"]]);
   assert.equal(views[0].signal, peeks[0].signal);
+  fleet.adopt("done-1", { agent: "scout", task: "Survey", asyncDir: "/tmp/done-1" });
+  assert.equal(views[0].describe("done-1").task, "Survey", "the view reads the fleet's live facts");
   assert.equal(fleet.focused(), true);
-  assert.equal(fleet.render(80, theme)[0], "  *❭* workflow › Audit · 0 running · 1 done");
+  assert.equal(fleet.render(80, theme)[0], `  *❭* workflow › Audit  ${"▰".repeat(16)}  1/1 · 0s`);
   group.end();
   assert.deepEqual(fleet.render(80, theme), ["  *❭* other"]);
 });
@@ -679,6 +695,43 @@ test("an adopted RPC launch titles its row and opens the live peek on its asyncD
   fleet.handleKey("confirm");
   await sleep(10);
   assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["run-a", "/tmp/x/run-a"]]);
+});
+
+test("a workflow's child draws no completion line, by its spawn alias, its adoption or its restored branch run; another child draws one", () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const entries = [];
+  const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry: (kind, data) => entries.push({ kind, data }), registerEntryRenderer() {} };
+  const branch = [
+    { type: "message", message: { role: "toolResult", toolCallId: "call-o", toolName: "orchestrate", details: { runs: [{ runId: "w3", agent: "scout", task: "Look", asyncDir: "/tmp/x/w3" }] } } },
+  ];
+  const fleet = installFleet(pi, null, { quietMs: 0, owedMs: 10_000 });
+  fleet.attachContext({ sessionManager: { getBranch: () => branch } });
+  // The completion beats the spawn reply: only the alias is known yet.
+  fleet.own("rpc-spawn-r1");
+  bus.emit("subagent:async-started", { id: "w1", toolCallId: "rpc-spawn-r1" });
+  bus.emit("subagent:process-terminal", { runId: "w1", state: "observed" });
+  assert.equal(fleet.activeCount(), 1);
+  bus.emit("subagent:async-complete", { runId: "w1", toolCallId: "rpc-spawn-r1", success: true });
+  assert.equal(fleet.activeCount(), 0, "the owed bookkeeping still runs");
+  fleet.adopt("w2", { agent: "worker", task: "Patch", asyncDir: "/tmp/x/w2" });
+  bus.emit("subagent:async-complete", { runId: "w2", success: false, state: "failed" });
+  bus.emit("subagent:async-complete", { runId: "w3", success: true });
+  assert.deepEqual(entries, []);
+  bus.emit("subagent:async-complete", { runId: "s1", agent: "scout", success: true });
+  assert.deepEqual(entries.map(entry => [entry.kind, entry.data.agent, entry.data.status]), [["workflow-child", "scout", "completed"]]);
+  hooks.session_shutdown();
+});
+
+test("a workflow child's recovery result, which has no toolCallId, draws no line before its adoption", () => {
+  const bus = fakeBus();
+  const entries = [];
+  const pi = { events: bus, on() {}, appendEntry: (kind, data) => entries.push({ kind, data }), registerEntryRenderer() {} };
+  const fleet = installFleet(pi, null, { quietMs: 0, owedMs: 10_000 });
+  fleet.own("rpc-spawn-r2");
+  bus.emit("subagent:async-started", { id: "w4", toolCallId: "rpc-spawn-r2" });
+  bus.emit("subagent:async-complete", { runId: "w4", agent: "worker", success: false, state: "failed" });
+  assert.deepEqual(entries, []);
 });
 
 test("attachContext rehydrates launches from the session branch, so a restored run's peek opens the live dialog", async () => {

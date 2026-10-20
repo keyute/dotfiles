@@ -162,11 +162,11 @@ test("the entry renders four π blocks at width 70", async () => {
   const lines = usageLines(data, plain, 70).map(line => line.replaceAll("\x1b[0m", ""));
   assert.deepEqual(lines, [
     "π Plan · ChatGPT",
-    `  Session   ${"━".repeat(9)}${"─".repeat(15)}   37%   resets ${formatReset(1_800_000_000)} (in 2h 13m)`,
-    `  Weekly    ${"━".repeat(14)}${"─".repeat(10)}   58%   resets ${formatReset(1_800_300_000, { weekday: true })}`,
+    `  Session   ${"▰".repeat(9)}${"▱".repeat(15)}   37%   resets ${formatReset(1_800_000_000)} (in 2h 13m)`,
+    `  Weekly    ${"▰".repeat(14)}${"▱".repeat(10)}   58%   resets ${formatReset(1_800_300_000, { weekday: true })}`,
     "",
     "π Context · gpt-5.5 · 84.2k / 272k tokens (31.0%)",
-    `  ${"━".repeat(19)}${"─".repeat(43)}`,
+    `  ${"▰".repeat(19)}${"▱".repeat(43)}`,
     "  System prompt      1.1k    0.4%",
     "  Tools              2.5k    0.9%   subagent 2k · workspace_bash 511",
     "  Project context    1.5k    0.6%   AGENTS.md ×2",
@@ -252,11 +252,11 @@ test("the plan block: one window, unavailable, and warning from 90%", () => {
   const render = windows => usageLines({ at: 0, limits: windows, context: contextUsage(ctx(1000)), cost: sessionCost([], report([])) }, colours, 70);
   // prolite reports only a weekly window, as primary.
   const weekly = render([{ usedPercent: 12, resetsAt: null, windowMins: 10_080 }]);
-  assert.match(weekly[1], /^ {2}Weekly {4}<accent>━+<dim>─+<muted> {3}12%$/);
+  assert.match(weekly[1], /^ {2}Weekly {4}<accent>▰+<dim>▱+<muted> {3}12%$/);
   assert.equal(weekly[2], "");
   assert.deepEqual(render(null).slice(0, 2), ["<dim>π Plan · unavailable", ""]);
-  assert.match(render([{ usedPercent: 91, resetsAt: null, windowMins: 300 }])[1], /<warning>━+<dim>─/);
-  assert.match(render([{ usedPercent: 89, resetsAt: null, windowMins: 300 }])[1], /<accent>━+<dim>─/);
+  assert.match(render([{ usedPercent: 91, resetsAt: null, windowMins: 300 }])[1], /<warning>▰+<dim>▱/);
+  assert.match(render([{ usedPercent: 89, resetsAt: null, windowMins: 300 }])[1], /<accent>▰+<dim>▱/);
 });
 
 test("every line fits a narrow terminal, and the % column is the first to go", async () => {

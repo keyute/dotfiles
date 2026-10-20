@@ -2,7 +2,7 @@
 {{- if not (or (hasKey $sizes .workflow_size) (eq .workflow_size "unrestricted")) -}}{{- fail (printf "workflow_size: unknown size %s" .workflow_size) -}}{{- end -}}
 {{- $tiers := list -}}
 {{- range $tier, $_ := .subagent_tiers.pi -}}{{- if ne $tier "frontier" -}}{{- $tiers = append $tiers $tier -}}{{- end -}}{{- end -}}
-Run a workflow script: plain JavaScript in an isolated VM that launches children and returns one consolidated result (its return value, as JSON). title (a few words) names the run's row. Use it only when the user's prompt said ultracode; otherwise the call is refused. For one bounded task, use subagent.
+Run a workflow script: plain JavaScript in an isolated VM that launches children and returns one consolidated result (its return value, as JSON). title (a few words) names the run's row. Ultracode is on when the <workflow> system-prompt section says so or the user's latest prompt says ultracode. While it is on, author and run a workflow for every substantive task; work solo only for conversational turns and trivial mechanical edits. While it is off, the call is refused. For one bounded task, use subagent.
 
 The script reaches only:
 - agent(prompt, { agentType, tier?, schema?, label?, phase? }): launches one child and resolves to its final text, or with schema (a JSON Schema object) to the validated value; it rejects when the child fails. agentType is an agent from the subagent tool's list. tier runs that agent on another pin: one of {{ $tiers | join ", " }}; frontier is refused, and the default is the agent's own tier. label (a few words) titles its row. phase (a few words) lists it under that phase, overriding phase(). model, effort and isolation are refused.

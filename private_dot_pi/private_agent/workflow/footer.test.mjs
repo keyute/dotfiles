@@ -347,9 +347,12 @@ test("the mode takes the plan row's approved/not-approved pair and carries its a
   assert.equal(paintMode("plan ask", theme), "<warning>plan<dim> · ask");
   assert.equal(paintMode("plan", theme), "<warning>plan");
   assert.equal(paintMode("", theme), "");
+  // Ultracode leads in the keyword's accent while on.
+  assert.equal(paintMode("execute auto ultracode", theme), "<accent>ultracode<dim> · <success>execute<dim> · auto");
   // The status line pads from this string too.
   const ansi = { fg: (_color, text) => `\x1b[32m${text}\x1b[39m` };
   assert.equal(visibleWidth(paintMode("execute auto", ansi)), "execute · auto".length);
+  assert.equal(visibleWidth(paintMode("execute auto ultracode", ansi)), "ultracode · execute · auto".length);
 });
 
 test("reset timestamps format as time, weekly with weekday", () => {
@@ -383,6 +386,9 @@ test("footer renders the status line first and the fleet rows under it", () => {
     assert.deepEqual(attached, [tui]);
     assert.equal(lines[0], "  gpt-5.6-sol · 27.2% · main" + " ".repeat(70 - 4 - 26 - 25) + "2 shells · execute · auto  ");
     assert.deepEqual(lines.slice(1), ["rows@70"]);
+    status = "execute auto ultracode";
+    assert.ok(render(70)[0].endsWith("2 shells · ultracode · execute · auto  "));
+    status = "execute auto";
     // Too narrow for both: the left gives way, so the mode and its approval
     // survive whole. Truncating the composed line clipped the right first, and
     // `· auto` and `· ask` clip to the same string — two states, one reading.

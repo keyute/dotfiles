@@ -346,6 +346,9 @@ test("the plan-mode research addendum is the root's alone, and execute mode carr
   // Execute mode replaces the investigate clause outright, so the addendum cannot ride it.
   const executing = workflowPrompt({ mode: "execute", readonly: false, isRoot: true });
   assert.equal(executing, "Workflow mode: execute. Execute only the user-approved task.");
+  // Ultracode rides the end of the section while on.
+  assert.equal(workflowPrompt({ mode: "execute", readonly: false, isRoot: true, ultracode: true }), "Workflow mode: execute. Execute only the user-approved task. Ultracode is on.");
+  assert.match(workflowPrompt({ ...base, isRoot: true, ultracode: true }), /launch them after\. Ultracode is on\.$/);
   // The section body is standalone: no base prompt riding in front of it.
   assert.match(root, /^Workflow mode:/);
 });

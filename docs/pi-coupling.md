@@ -101,7 +101,7 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   and pi's auto-retry countdown shows alongside it. The frozen row closes when
   the last child or shell ends with the root idle (`ctx.isIdle()` after a 250 ms
   grace): a child is live from `subagent:async-started` until both its
-  completion line and its observed process exit (or until 10 s after its exit
+  completion event and its observed process exit (or until 10 s after its exit
   when no completion follows). pi-subagents' wake, converted to a triggered
   custom message, is busy from the send; an extension's `sendUserMessage` wake
   counts as busy only after pi's `input` handlers and auth check, so the footer
@@ -148,10 +148,14 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
 - **Orchestration launches** (`orchestrate.mjs`): the RPC `spawn` reply's
   `details.runId`/`asyncId`/`asyncDir`, status recovery on
   `rpc-spawn-<requestId>` after a lost reply, the `subagent:async-complete`
-  payload's `results[0]` `status`/`structuredOutput`/`output`, the busy-parent
-  no-wake branch of `parent-wake.js`, the internal `structured_output` tool
+  payload's `results[0]` `status`/`structuredOutput`/`output`/`usage`, its
+  `durationMs`, and `subagent:async-started`'s `toolCallId` (the spawn alias),
+  by which the fleet draws no completion line for a workflow's child (else its
+  adopted run id),
+  the busy-parent no-wake branch of `parent-wake.js`, the internal `structured_output` tool
   name in the contract allowlist, and pi-codemode's `DEFAULT_TIMEOUT_MS`.
-  *Why:* the blocking runner and schema results. *Residual:* a notice batching
+  *Why:* the blocking runner and schema results, and the workflow view's
+  per-agent elapsed and tokens. *Residual:* a notice batching
   an owned and an unowned run, or a late owned one reaching an idle root, is
   forwarded hidden with its wake; a child completing before its spawn reply
   registers it still has its notice forwarded; the notifier's

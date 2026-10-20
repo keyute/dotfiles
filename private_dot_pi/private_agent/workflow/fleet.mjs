@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { closeView, openView } from "./dialog.mjs";
-import { CHILD, CURSOR, alignRight, appendVisible, defaultFolds, doneEntryRenderer, frameRule, oneLine, shortTitle, slotHeight } from "./rows.mjs";
+import { CHILD, CURSOR, alignRight, appendVisible, defaultFolds, doneEntryRenderer, formatDuration, frameRule, meter, oneLine, shortTitle, slotHeight, statusTone } from "./rows.mjs";
 
 // The row format is docs/pi-design.md rule 6.
 // Worst child status wins a multi-result completion (single runs carry one).
@@ -10,6 +10,10 @@ const SEP = " · ";
 const NAME_SEP = " › ";
 const TOK_FMT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1, minimumFractionDigits: 1 });
 const VISIBLE_ROWS = 5;
+const BAR_WIDTH = 16;
+// The bar's segment order; launching is the dim empty remainder.
+const SLICES = ["success", "error", "warning", "accent"];
+const MIN_NAME = "workflow".length;
 // The fleet DTO's `model` is the launch string (provider/model:thinking) until
 // the child's first reply, then the model replies came from; the thinking
 // suffix is dropped, since a child's level is its role's.
@@ -38,6 +42,7 @@ export function createFleetState() {
 }
 
 const RUNNING_RECORD = new Set(["launching", "running"]);
+const isLive = status => RUNNING_RECORD.has(status);
 
 // A live workflow's children fold into its one overview row (rule 6): a row
 // whose bound run id belongs to a tracked group's records is hidden.
@@ -47,15 +52,30 @@ export function fleetRows(state) {
   return [...state.groups, ...state.entries.filter(entry => !owned.has(runIdFor(state, entry)))];
 }
 
-// `stopped` and `unknown` count with failed; the phase is the latest live
-// launch's, else the last launch's.
-export function groupRow({ title, records }) {
-  const running = records.filter(record => RUNNING_RECORD.has(record.status)).length;
+// A workflow's progress (rule 6), shared by its fleet row and its view's
+// header: name, a bar with each launched agent's equal share in its state's
+// colour, done/launched, the failed count (every settled state but
+// completed), then `tail`. The name gives way first; once it cannot keep
+// MIN_NAME the bar goes whole. `paint` styles the counts and tail.
+export function progressLine(name, records, tail, theme, width, paint = text => text) {
+  const n = records.length;
   const done = records.filter(record => record.status === "completed").length;
-  const failed = records.length - running - done;
-  const phase = (records.findLast(record => RUNNING_RECORD.has(record.status)) ?? records.at(-1))?.phase;
+  const failed = records.filter(record => !isLive(record.status) && record.status !== "completed").length;
+  const meta = paint([`${done}/${n}`, failed && `${failed} failed`, ...tail].filter(Boolean).join(SEP));
+  const bar = meter(theme, BAR_WIDTH, n ? SLICES.map(colour => [colour, records.filter(record => statusTone(record.status) === colour).length / n]) : []);
+  const room = width - visibleWidth(bar) - visibleWidth(meta) - 4;
+  // A cut name needs a column for its ellipsis beyond MIN_NAME.
+  if (visibleWidth(name) <= room || room > MIN_NAME) return [truncateToWidth(name, room, "…"), bar, meta].join("  ");
+  return [truncateToWidth(name, Math.max(0, width - visibleWidth(meta) - 2), "…"), meta].join("  ");
+}
+
+// The phase is the latest live launch's, else the last launch's. No timer of
+// its own: the row lives only while orchestrate blocks the root turn, whose
+// working-row spinner repaints the footer, so the clock moves with it.
+export function groupRow({ title, records, startedAt }, theme, width, now = Date.now()) {
+  const phase = (records.findLast(record => isLive(record.status)) ?? records.at(-1))?.phase;
   const name = title ? `workflow${NAME_SEP}${shortTitle(title)}` : "workflow";
-  return [name, phase, `${running} running`, `${done} done`, failed && `${failed} failed`].filter(Boolean).join(SEP);
+  return progressLine(name, records, [phase, formatDuration(now - startedAt)], theme, width);
 }
 
 function clamp(state) {
@@ -150,7 +170,7 @@ export function launchesFromBranch(entries) {
     const message = entry?.message;
     if (message?.role !== "toolResult" || message.toolName !== "orchestrate" || !Array.isArray(message.details?.runs)) continue;
     for (const run of message.details.runs) {
-      if (run?.runId && typeof run.asyncDir === "string") launches.set(run.runId, { agent: run.agent, task: run.task ?? "", asyncDir: run.asyncDir });
+      if (run?.runId && typeof run.asyncDir === "string") launches.set(run.runId, { agent: run.agent, task: run.task ?? "", asyncDir: run.asyncDir, workflow: true });
     }
   }
   return launches;
@@ -176,7 +196,7 @@ export function renderFleet(state, width, theme) {
     const selected = state.focused && start + index === state.cursor;
     const marker = selected ? theme.fg("accent", CURSOR) : CHILD;
     const group = state.groups.includes(entry);
-    const row = group ? groupRow(entry) : buildRow(rowFor(state, entry));
+    const row = group ? groupRow(entry, theme, width - 4) : buildRow(rowFor(state, entry));
     lines.push(truncateToWidth(`  ${marker} ${entry.status === "pending" ? dim(row) : row}`, width));
   });
   // The active count less the folded children, plus one per group.
@@ -224,7 +244,7 @@ export function installFleet(pi, ctx, {
     return open(ctx, opts);
   },
 } = {}) {
-  const state = { ...createFleetState(), pending: new Map(), active: new Set(), owed: new Map(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
+  const state = { ...createFleetState(), pending: new Map(), active: new Set(), owed: new Map(), workflowCalls: new Set(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
   const listeners = new Set();
   // A stopped fleet's listeners belong to a torn-down session.
   const changed = () => { if (!state.stopped) for (const listener of listeners) listener(); };
@@ -285,6 +305,7 @@ export function installFleet(pi, ctx, {
   // never comes stops being owed a while after the exit.
   pi.events.on("subagent:async-started", payload => {
     if (payload?.id) { state.active.add(payload.id); state.owed.set(payload.id, undefined); }
+    if (payload?.id && state.workflowCalls.delete(payload.toolCallId)) state.launches.set(payload.id, { ...state.launches.get(payload.id), workflow: true });
     wake();
     changed();
   });
@@ -310,7 +331,11 @@ export function installFleet(pi, ctx, {
     const launch = state.launches.get(id);
     const status = completionStatus(payload);
     const durationMs = typeof payload?.durationMs === "number" ? payload.durationMs : undefined;
-    appendVisible(pi, "workflow-child", { agent: launch?.agent ?? payload?.agent ?? "subagent", task: launch?.task ?? "", status, durationMs }, folds);
+    // A workflow's child ends inside its orchestrate call, whose row is the workflow's
+    // one outcome (docs/pi-design.md rule 4): no line of its own. It is marked at
+    // async-started by its spawn alias, which precedes any completion (a recovery
+    // result carries no toolCallId), or by adopt or the restored branch.
+    if (!launch?.workflow) appendVisible(pi, "workflow-child", { agent: launch?.agent ?? payload?.agent ?? "subagent", task: launch?.task ?? "", status, durationMs }, folds);
     clearTimeout(state.owed.get(id));
     state.owed.delete(id);
     wake();
@@ -490,7 +515,7 @@ export function installFleet(pi, ctx, {
     return openView(async signal => {
       let selected;
       while (!signal.aborted) {
-        selected = await openWorkflowView(current, { group, signal, selected });
+        selected = await openWorkflowView(current, { group, signal, selected, describe });
         if (!selected || signal.aborted) break;
         await showPeek(current, selected.runId, selected.asyncDir, () => ({ agent: selected.agent, goal: selected.task }), signal);
       }
@@ -529,9 +554,14 @@ export function installFleet(pi, ctx, {
     stopRuns,
     // A launch an extension made over RPC never passes the subagent tool's
     // execution events, so its row title and peek asyncDir are recorded here.
-    adopt: (id, { agent, task, asyncDir }) => { state.launches.set(id, { agent, task, asyncDir }); },
+    adopt: (id, { agent, task, asyncDir }) => { state.launches.set(id, { agent, task, asyncDir, workflow: true }); },
+    // A workflow launch's spawn alias, recorded before the spawn, so a completion
+    // that beats the reply is still known as the workflow's.
+    own: alias => { state.workflowCalls.add(alias); },
+    disown: alias => { state.workflowCalls.delete(alias); },
     // A blocking workflow's overview row, live until end(). `records` is the
-    // run's own array, mutated in place; the caller calls changed() after
+    // run's own array, mutated in place (`startedAt` once running,
+    // `durationMs`/`tokens` once complete); the caller calls changed() after
     // each status change. The workflow view holds the group after end().
     track: ({ title, records }) => {
       const listeners = new Set();

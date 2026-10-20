@@ -419,6 +419,8 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   const commands = new Map();
   const sent = [];
   const order = [];
+  const appended = [];
+  const entries = [];
   const events = new EventEmitter();
   let level = "low";
   const pi = {
@@ -426,7 +428,7 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
     events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); }, registerCommand(name, command) { commands.set(name, command); },
-    registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+    registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry: (type, data) => { appended.push(type); entries.push({ type, data }); },
     sendMessage: (message, options) => { sent.push({ message, options }); },
     getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, getMcpServers() { return []; },
@@ -453,20 +455,21 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   t.after(() => handlers.get("session_shutdown").find(handler => handler.name === "shutdown")());
   let idle = true;
   const available = Object.values(config.models.tiers).map(id => ({ provider: "openai-codex", id }));
+  const statuses = new Map();
   // The root installs its TUI surfaces only for a UI session start; the
   // orchestrate gate reads hasUI from the tool call's ctx.
   const ctx = {
     cwd: process.cwd(), hasUI: false, isIdle: () => idle, isProjectTrusted: () => true,
     sessionManager: { getSessionId: () => "orchestrate-root", getBranch: () => [] },
     modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => available },
-    ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
+    ui: { setStatus(key, value) { statuses.set(key, value); }, setToolsExpanded() {}, notify() {} },
   };
   for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
   ctx.hasUI = true;
   order.length = 0;
   const run = () => tools.get("orchestrate").execute("o1", { script: 'return await agent("look", { agentType: "fixture-reader", label: "Look" })' }, new AbortController().signal, undefined, ctx);
   const input = (text, source = "user") => { for (const handler of handlers.get("input")) handler({ source, text, streamingBehavior: "followUp" }); };
-  const deliver = text => { for (const handler of handlers.get("message_start")) handler({ message: { role: "user", content: [{ type: "text", text }] } }); };
+  const deliver = text => { for (const handler of handlers.get("message_start")) handler({ message: { role: "user", content: [{ type: "text", text }] } }, ctx); };
   const arm = () => { input("ultracode: run it"); deliver("ultracode: run it"); };
   // ultrathink holds through agent_end (retries and continuations re-run the loop) until the prompt settles.
   deliver("ultrathink it");
@@ -480,21 +483,41 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   // Text an extension injects never arms the opt-in, even once delivered.
   input("ultracode", "extension");
   deliver("ultracode");
-  await assert.rejects(run(), /prompt says ultracode/);
+  await assert.rejects(run(), /Ultracode is off/);
   // A queued prompt arms only at its delivery, its user message_start.
   input("ultracode: queued");
-  await assert.rejects(run(), /prompt says ultracode/);
+  await assert.rejects(run(), /Ultracode is off/);
   deliver("ultracode: queued");
-  assert.match((await tools.get("orchestrate").execute("o0", { script: "return 1" }, new AbortController().signal, undefined, ctx)).content[0].text, /^0 agents · completed/);
-  arm();
-  // A tree move or a new session disarms the opt-in.
+  const quick = () => tools.get("orchestrate").execute("o0", { script: "return 1" }, new AbortController().signal, undefined, ctx);
+  assert.match((await quick()).content[0].text, /^0 agents · completed/);
+  // It stays on across a plain prompt and a tree move; a new session resets it.
+  deliver("plain follow-up");
+  assert.match((await quick()).content[0].text, /^0 agents · completed/);
+  assert.equal(statuses.get("workflow"), "plan auto ultracode");
   for (const handler of handlers.get("session_tree")) await handler({}, ctx);
-  await assert.rejects(run(), /prompt says ultracode/);
-  arm();
+  assert.match((await quick()).content[0].text, /^0 agents · completed/);
+  assert.equal(statuses.get("workflow"), "plan auto ultracode");
   ctx.hasUI = false;
   for (const handler of handlers.get("session_start")) await handler({ reason: "new" }, ctx);
   ctx.hasUI = true;
-  await assert.rejects(run(), /prompt says ultracode/);
+  await assert.rejects(run(), /Ultracode is off/);
+  assert.equal(statuses.get("workflow"), "plan auto");
+  const section = async () => {
+    const event = { systemPromptOptions: { sections: {}, contextFiles: [], skills: [] } };
+    for (const handler of handlers.get("before_agent_start")) await handler(event, ctx);
+    return event.systemPromptOptions.sections.workflow;
+  };
+  assert.doesNotMatch(await section(), /Ultracode/);
+  // /ultracode toggles it, with a π note and the status word.
+  await commands.get("ultracode").handler("", ctx);
+  assert.equal(statuses.get("workflow"), "plan auto ultracode");
+  assert.deepEqual(entries.at(-1), { type: "workflow-note", data: { text: "Ultracode on for this session" } });
+  assert.match(await section(), / Ultracode is on\.$/);
+  assert.match((await quick()).content[0].text, /^0 agents · completed/);
+  await commands.get("ultracode").handler("", ctx);
+  assert.equal(statuses.get("workflow"), "plan auto");
+  assert.deepEqual(entries.at(-1), { type: "workflow-note", data: { text: "Ultracode off" } });
+  await assert.rejects(quick(), /Ultracode is off/);
   arm();
   order.length = 0;
   const launched = () => new Promise(resolve => { onSpawn = () => setImmediate(resolve); });
@@ -510,6 +533,8 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   const result = await first;
   assert.match(result.content[0].text, /seen/);
   assert.equal(result.details.runs[0].runId, "run-1");
+  // The workflow's child draws no completion line: the orchestrate row is its outcome.
+  assert.equal(appended.includes("workflow-child"), false);
   // index.mjs hands orchestrate's ownership to the Proxy: the notice pi-subagents
   // sends after the completion is dropped while the root is busy; an unowned one is forwarded.
   captured.sendMessage({ customType: "subagent-notify", content: "x", display: true, details: { runs: [{ runId: "run-1" }] } }, { triggerTurn: true });

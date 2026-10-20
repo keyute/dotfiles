@@ -12,7 +12,8 @@ import { saysUltracode } from "./keywords.mjs";
 // pi-subagents' RPC spawn after the owned launch check. The call blocks until
 // the script settles, so the root stays busy and each owned child's notice
 // takes the plain-steer (no-wake) path the plugin-API Proxy drops; ownership
-// lasts until the Proxy claims the child's notice.
+// lasts until the Proxy claims the child's notice. An owned child also draws no
+// completion line: the call's own row is the workflow's outcome.
 // The VM settling does not wait for host work: execute() stops and settles
 // every launch itself afterwards.
 
@@ -138,13 +139,14 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       run.group.changed();
       const requestId = randomUUID();
       const alias = `rpc-spawn-${requestId}`;
+      fleet.own(alias);
       const reply = await rpc(pi.events, "spawn", args, 30_000, requestId, true);
       const refused = reply?.success === false ? reply.error?.message ?? "spawn failed" : undefined;
       // Only invalid_params precedes execution. Any other error reply, like a
       // lost one, may follow a spawned child (the executor's post-spawn budget
       // step can throw), so the run is recovered by the spawn's tool-call alias,
       // never redispatched, and a recovered child of a failed launch is stopped.
-      if (refused !== undefined && reply.error?.code === "invalid_params") { record.status = "failed"; run.group.changed(); throw new Error(`${agentType} launch refused: ${refused}`); }
+      if (refused !== undefined && reply.error?.code === "invalid_params") { fleet.disown(alias); record.status = "failed"; run.group.changed(); throw new Error(`${agentType} launch refused: ${refused}`); }
       let details = reply?.data?.details;
       if (!(details?.runId ?? details?.asyncId)) details = (await rpc(pi.events, "status", { id: alias }, 5_000))?.details;
       const started = [...run.started.values()].find(payload => payload.toolCallId === alias);
@@ -160,7 +162,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
         throw new Error(refused !== undefined ? `${agentType} launch refused: ${refused}` : `launch outcome unknown: ${agentType}`);
       }
       const asyncDir = details?.asyncDir ?? run.started.get(id)?.asyncDir;
-      Object.assign(record, { runId: id, asyncDir, status: "running" });
+      Object.assign(record, { runId: id, asyncDir, status: "running", startedAt: Date.now() });
       run.group.changed();
       owned.add(id);
       fleet.adopt(id, { agent: agentType, task, asyncDir });
@@ -174,7 +176,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       const payload = await run.completion(id, signal).catch(error => { if (run.done.has(id)) { record.status = "failed"; run.group.changed(); } throw error; });
       const r = payload.results?.[0];
       const status = completionStatus(payload);
-      record.status = status;
+      Object.assign(record, { status, durationMs: payload.durationMs, tokens: (r?.usage?.input ?? 0) + (r?.usage?.output ?? 0) });
       run.group.changed();
       if (status !== "completed") throw new Error(`${agentType} ${status}${r?.summary ? `: ${firstLine(r.summary)}` : ""}`);
       if (!schema) return r?.output ?? "";
@@ -206,7 +208,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
   }
 
   async function execute(_id, params, signal, _onUpdate, ctx) {
-    if (!armed) throw new Error("Workflows start only when the prompt says ultracode");
+    if (!armed) throw new Error("Ultracode is off: workflows run only after the user's prompt says ultracode or /ultracode turns it on");
     if (!ctx?.hasUI) throw new Error("Workflows run only in an interactive session");
     const script = String(params?.script ?? "");
     if (script.length > MAX_SCRIPT) throw new Error("script exceeds 256 KiB");
@@ -250,7 +252,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       for (const { alias, record } of run.lost) {
         const payload = [...run.started.values()].find(payload => payload.toolCallId === alias);
         if (!payload) continue;
-        Object.assign(record, { runId: payload.id, asyncDir: payload.asyncDir, status: "running" });
+        Object.assign(record, { runId: payload.id, asyncDir: payload.asyncDir, status: "running", startedAt: Date.now() });
         run.group.changed();
         owned.add(payload.id);
         fleet.adopt(payload.id, { agent: record.agent, task: record.task, asyncDir: payload.asyncDir });
@@ -277,7 +279,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       return failed(scrub(`${result.error.kind}: ${result.error.message}${stack ? `\n${stack.trim()}` : ""}`) + trailer(run));
     }
     const value = JSON.stringify(result.value, null, 1) ?? "undefined";
-    // The first line is the row's summary (rows.mjs); the value follows, then
+    // The first line counts the agents for the model; the value follows, then
     // the logs and per-child lines. The cap cuts the value and logs, never the
     // per-child and cleanup lines.
     let text = `${run.records.length} agent${run.records.length === 1 ? "" : "s"} · completed\n\n${value}${trailer(run)}`;
@@ -315,10 +317,12 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       // A /skill: prompt is decided by its args, not the expanded skill body.
       const skill = parseSkillBlock(text);
       const authored = skill ? skill.userMessage ?? "" : text;
-      armed = saysUltracode(authored);
+      if (saysUltracode(authored)) armed = true;
       return authored;
     },
     disarm: () => { armed = false; extensionInput.clear(); },
+    armed: () => armed,
+    toggle: () => (armed = !armed),
     // True iff every id is owned; releases each owned one, since a run's
     // notice is sent once.
     claim: ids => {

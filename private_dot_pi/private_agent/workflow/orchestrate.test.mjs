@@ -20,11 +20,11 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
   const emitter = new EventEmitter();
   emitter.setMaxListeners(0);
   const events = { on: (name, fn) => { emitter.on(name, fn); return () => emitter.off(name, fn); }, emit: (name, data) => emitter.emit(name, data) };
-  const h = { events, mode: "execute", spawns: [], log: [], held: [], inflight: 0, maxInflight: 0, adopted: [], stopped: [], groups: [], ready: true };
+  const h = { events, mode: "execute", spawns: [], log: [], held: [], inflight: 0, maxInflight: 0, adopted: [], owned: [], stopped: [], groups: [], ready: true };
   const reply = (requestId, data) => events.emit(`subagents:rpc:v1:reply:${requestId}`, { version: 1, requestId, success: true, data });
   h.complete = (id, result, extra = {}) => {
     events.emit("subagent:process-terminal", { state: "observed", runId: id });
-    events.emit("subagent:async-complete", { runId: id, success: result.status === "completed", state: result.status === "completed" ? "complete" : result.status, agent: "x", results: [result], ...extra });
+    events.emit("subagent:async-complete", { runId: id, success: result.status === "completed", state: result.status === "completed" ? "complete" : result.status, agent: "x", results: [result], durationMs: 1_000, ...extra });
   };
   events.on("subagents:rpc:v1:request", async ({ requestId, method, params }) => {
     await sleep(1);
@@ -54,6 +54,8 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
   });
   const fleet = {
     adopt: (id, launch) => h.adopted.push({ id, ...launch }),
+    own: alias => h.owned.push(alias),
+    disown: alias => h.owned.splice(h.owned.indexOf(alias), 1),
     // Each change is logged as the statuses at that moment.
     track: ({ title, records }) => {
       const group = { title, records, log: [] };
@@ -83,7 +85,7 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
   h.run = (script, args, signal, ctx = { hasUI: true }) => h.orchestrate.tool.execute("call-1", { script, args }, signal, undefined, ctx);
   return h;
 }
-// The result's first line is the row summary; the value is the block below it.
+// The result's first line counts the agents; the value is the block below it.
 const value = result => JSON.parse(result.content[0].text.split("\n\n")[1]);
 // A failure after the VM ran is a returned error result, so its details survive.
 const failure = result => { assert.equal(result.isError, true); return result.content[0].text; };
@@ -95,6 +97,7 @@ test("agent() returns the child's text and spawns exactly the checked object", a
   assert.deepEqual(h.spawns[0], { agent: "scout", task: "look around", context: "fresh", agentScope: "user", async: true });
   assert.deepEqual(result.details.runs, [{ runId: "run-1", agent: "scout", label: "Look", task: "Look", asyncDir: "/tmp/async/run-1", status: "completed" }]);
   assert.deepEqual(h.adopted, [{ id: "run-1", agent: "scout", task: "Look", asyncDir: "/tmp/async/run-1" }]);
+  assert.deepEqual(h.owned, [`rpc-spawn-${h.lastRequestId}`]);
   assert.match(result.content[0].text, /^1 agent · completed\n\n/);
   assert.match(result.content[0].text, /\nLook · completed$/);
   assert.equal(h.orchestrate.claim(["run-1"]), true);
@@ -155,38 +158,51 @@ test("a run tracks one fleet group: its title, each status change, and its end",
   assert.deepEqual(h.groups[0].log, ["launching", "running", "completed", "completed,launching", "completed,running", "completed,failed", "end"]);
 });
 
-test("opt-in: unarmed calls are refused; arming lasts until a prompt without the word", async () => {
+test("a record keeps its start once running and the completion's duration and input + output tokens", async () => {
+  const h = harness({ behave: () => ({ status: "completed", output: "", usage: { input: 1_200, output: 34 } }) });
+  await h.run(`return await agent("a", { agentType: "scout" })`);
+  const r = h.groups[0].records[0];
+  assert.deepEqual([typeof r.startedAt, r.durationMs, r.tokens], ["number", 1_000, 1_234]);
+});
+
+test("opt-in: ultracode stays on across prompts until disarm; toggle flips it", async () => {
   const h = harness();
   assert.ok(saysUltracode("use ULTRACODE here") && !saysUltracode("ultracoder"));
   await h.run(`return 1`);
-  await h.run(`return 2`);
   h.orchestrate.delivered({ role: "user", content: [{ type: "text", text: "just a question" }] });
-  await assert.rejects(h.run(`return 1`), /Workflows start only when the prompt says ultracode/);
-  h.orchestrate.delivered({ role: "user", content: "ultracode" });
+  await h.run(`return 2`);
   h.orchestrate.disarm();
-  await assert.rejects(h.run(`return 1`), /ultracode/);
+  assert.equal(h.orchestrate.armed(), false);
+  await assert.rejects(h.run(`return 1`), /Ultracode is off/);
+  assert.equal(h.orchestrate.toggle(), true);
+  await h.run(`return 1`);
+  assert.equal(h.orchestrate.toggle(), false);
+  await assert.rejects(h.run(`return 1`), /Ultracode is off/);
+  h.orchestrate.delivered({ role: "user", content: "ultracode" });
+  assert.equal(h.orchestrate.armed(), true);
 });
 
 test("opt-in: the delivered text decides; extension text is consumed once; a skill decides by its args", async () => {
   const h = harness();
+  h.orchestrate.disarm();
   const armed = () => h.run(`return 1`).then(() => true, () => false);
   const deliver = text => h.orchestrate.delivered({ role: "user", content: [{ type: "text", text }, { type: "image", data: "x" }] });
   deliver("don't run a workflow");
-  assert.equal(await armed(), false);
-  deliver("ultracode it");
-  h.orchestrate.noteExtensionInput("plain notice");
-  h.orchestrate.noteExtensionInput("plain notice");
-  deliver("plain notice");
-  deliver("plain notice");
-  assert.equal(await armed(), true);
-  // Both noted copies are spent: the same text from the user decides.
-  deliver("plain notice");
   assert.equal(await armed(), false);
   const skill = args => `<skill name="review" location="/s/SKILL.md">\nReferences are relative to /s.\n\nRun ultracode for big diffs.\n</skill>${args ? `\n\n${args}` : ""}`;
   deliver(skill());
   assert.equal(await armed(), false);
   deliver(skill("check the auth flow"));
   assert.equal(await armed(), false);
+  h.orchestrate.noteExtensionInput("ultracode");
+  h.orchestrate.noteExtensionInput("ultracode");
+  deliver("ultracode");
+  deliver("ultracode");
+  assert.equal(await armed(), false);
+  // Both noted copies are spent: the same text from the user decides.
+  deliver("ultracode");
+  assert.equal(await armed(), true);
+  h.orchestrate.disarm();
   deliver(skill("ultracode the auth flow"));
   assert.equal(await armed(), true);
   // The decided text is the return value: a skill's args, nothing for extension input.

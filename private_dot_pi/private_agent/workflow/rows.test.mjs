@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, foldKey, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, noticeLine, orchestrateRenderers, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, summarise, taskTitle, toolRenderers } from "./rows.mjs";
+import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, foldKey, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, meter, noticeLine, orchestrateRenderers, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, statusTone, summarise, taskTitle, toolRenderers } from "./rows.mjs";
 import { createShellRunner } from "./shell.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
@@ -16,6 +16,15 @@ const rendered = component => component.render(80).map(line => line.trimEnd());
 test("alignRight puts the right side flush at the width and yields the left", () => {
   assert.equal(alignRight("peek", "esc back", 20), "peek        esc back");
   assert.equal(alignRight("a long left side", "esc back", 20).replace(/\x1b\[[0-9;]*m/g, ""), "a long le…  esc back");
+});
+
+test("meter rounds its segments cumulatively to the width, the rest dim; statusTone maps every run state", () => {
+  assert.equal(meter(theme, 16, [["success", 0.4], ["error", 0.2], ["warning", 0], ["accent", 0.2]]), "<success>▰▰▰▰▰▰<error>▰▰▰▰<accent>▰▰▰<dim>▱▱▱");
+  assert.equal(meter(theme, 8, []), "<dim>▱▱▱▱▱▱▱▱");
+  assert.equal(meter(theme, 8, [["accent", 1.4]]), `<accent>${"▰".repeat(8)}`);
+  assert.equal(meter(theme, 8, [["accent", -1]]), `<dim>${"▱".repeat(8)}`);
+  assert.deepEqual(["completed", "running", "launching", "failed", "stopped", "unknown", "paused", "partial", "detached"].map(statusTone),
+    ["success", "accent", "dim", "error", "error", "error", "warning", "warning", "warning"]);
 });
 
 test("row titles name the action and the target", () => {
@@ -535,25 +544,30 @@ test("tool search and background-task management join the group; their member li
   assert.equal(taskTitle({ action: "stop", id: "t1" }), "Stopped task t1");
 });
 
-test("an orchestrate run is a titled row that groups as a workflow; a failed run stands alone", () => {
-  assert.equal(foldKey("orchestrate", { script: "x" }), "orchestrate");
+test("an orchestrate run stays visible: its line counts agents, outcome and elapsed, and it closes the group above", () => {
+  assert.equal(foldKey("orchestrate", { script: "x" }), null);
   assert.deepEqual(rendered(orchestrateRenderers.renderCall({ title: "Review the auth flow", script: "x" }, theme, context({ toolCallId: "o0" }))), ["<success>• <toolTitle>Orchestrated Review the auth flow"]);
   assert.deepEqual(rendered(orchestrateRenderers.renderCall({ script: "x" }, theme, context({ toolCallId: "o00" }))), ["<success>• <toolTitle>Orchestrated workflow"]);
   assert.deepEqual(rendered(orchestrateRenderers.renderCall({ title: "", script: "x" }, theme, context({ toolCallId: "o000" }))), ["<success>• <toolTitle>Orchestrated workflow"]);
+  const runs = (n, status = "completed") => Array.from({ length: n }, (_, i) => ({ runId: `w${i}`, status }));
+  assert.deepEqual(rendered(orchestrateRenderers.renderResult(result("8 agents · completed\n\n{}", { runs: runs(8) }), { expanded: false }, theme, context({ toolCallId: "o0", durationMs: 192_000 }))), ["  <muted>↳ 8 agents · completed · 3m 12s"]);
+  assert.deepEqual(rendered(orchestrateRenderers.renderResult(result("8 agents · completed\n\n{}", { runs: runs(8) }), { expanded: false }, theme, context({ toolCallId: "o00" }))), ["  <muted>↳ 8 agents · completed"]);
+  // A script that caught a child's failure still returns; the outcome line counts it, not
+  // a child the workflow stopped after an early return.
+  assert.deepEqual(rendered(orchestrateRenderers.renderResult(result("4 agents · completed\n\n{}", { runs: [...runs(2), ...runs(1, "failed"), ...runs(1, "stopped")] }), { expanded: false }, theme, context({ toolCallId: "o01", durationMs: 41_000 }))), ["  <muted>↳ 4 agents · completed · <warning>1 failed<muted> · 41s"]);
+  assert.deepEqual(rendered(orchestrateRenderers.renderResult(result("Workflow interrupted\n\nLook · stopped", { runs: runs(2) }), { expanded: false }, theme, context({ toolCallId: "o000", isError: true, durationMs: 41_000 }))), ["  <muted>↳ 2 agents · failed · 41s", "  <error>Workflow interrupted", "  <error>Look · stopped"]);
   const folds = createFolds(() => false);
   const handlers = {};
   installFolding({ on: (name, fn) => { handlers[name] = fn; } }, { ui: { getToolsExpanded: () => false } }, folds);
-  for (const [id, tool, args] of [["r1", "workspace_read", { path: "a" }], ["o1", "orchestrate", { title: "Audit", script: "x" }], ["o2", "orchestrate", { title: "Broken", script: "x" }]]) {
+  for (const [id, tool, args] of [["r1", "workspace_read", { path: "a" }], ["r2", "workspace_read", { path: "b" }], ["o1", "orchestrate", { title: "Audit", script: "x" }], ["r3", "workspace_read", { path: "c" }], ["r4", "workspace_read", { path: "d" }]]) {
     handlers.tool_execution_start({ toolName: tool, toolCallId: id, args });
+    handlers.tool_execution_end({ toolCallId: id, isError: false, result: result("x", { runs: [] }) });
   }
-  handlers.tool_execution_end({ toolCallId: "r1", isError: false, result: result("", {}) });
-  handlers.tool_execution_end({ toolCallId: "o1", isError: false, result: result("{\"ok\":true}\nmore", { runs: [] }) });
-  handlers.tool_execution_end({ toolCallId: "o2", isError: true, result: result("boom", { runs: [] }) });
   closeFolds(folds);
-  const group = foldGroup(folds, "r1");
-  assert.deepEqual(group.entries.map(entry => entry.id), ["r1", "o1"]);
-  assert.equal(summarise(group.counts), "Read 1 file, ran 1 workflow");
-  assert.equal(foldGroup(folds, "o2"), null);
+  assert.deepEqual(foldGroup(folds, "r1").entries.map(entry => entry.id), ["r1", "r2"]);
+  assert.deepEqual(foldGroup(folds, "r3").entries.map(entry => entry.id), ["r3", "r4"]);
+  assert.equal(foldGroup(folds, "o1"), null);
+  assert.equal(summarise(foldGroup(folds, "r1").counts), "Read 2 files");
 });
 
 test("a background bash call answered inside its grace period reads as the foreground call it was, on its row and as a member", async () => {

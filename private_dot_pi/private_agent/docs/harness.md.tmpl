@@ -43,7 +43,8 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
   across the tree; they start fresh with no channel back (intercom off);
   batch independent launches.
 - `orchestrate` runs a workflow script (`agent()`/`parallel()`/`pipeline()`, schema results;
-  any non-frontier tier per call) when the prompt says ultracode, blocking until it returns.
+  any non-frontier tier per call) while ultracode is on (from a prompt that says it until
+  the next session start; /ultracode toggles it), blocking until it returns.
 - Chains, role overrides, revival and mutating management are refused; status, stop,
   interrupt and steer work. Runs stop after {{ div $sub.timeoutMs 60000 }} minutes, with a checkpoint steer
   {{ div $sub.checkpointBeforeDeadlineMs 60000 }} minutes before.

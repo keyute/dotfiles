@@ -4,7 +4,7 @@ import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth as truncate } from "@earendil-works/pi-tui";
 import { formatReset, longWindow, readRateLimits, windowLabel } from "./footer.mjs";
 import { formatTokens, modelLabel, rpcCall } from "./fleet.mjs";
-import { PAD, TURN_GLYPH, formatDuration, pad } from "./rows.mjs";
+import { PAD, TURN_GLYPH, formatDuration, meter, pad } from "./rows.mjs";
 
 // The shape is docs/pi-design.md's /usage bullet: plan limits, context, cost
 // and cache as four π blocks. The entry stores numbers; the layout is per width.
@@ -164,10 +164,6 @@ export async function readUsage(pi, ctx, { readLimits = readRateLimits, now = Da
 }
 
 const percent = (part, whole, digits = 0) => `${(whole ? (100 * part) / whole : 0).toFixed(digits)}%`;
-const bar = (fraction, width, theme, colour = "accent") => {
-  const used = Math.max(0, Math.min(width, Math.round(fraction * width)));
-  return theme.fg(colour, "━".repeat(used)) + theme.fg("dim", "─".repeat(width - used));
-};
 // Context's and Cache's row: label, figure, a share that goes below NARROW, tail.
 const figureRow = (label, figure, share, tail, theme, width) => fit(`${PAD}${pad(label, 16)}${theme.fg("muted", `${figure.padStart(7)}${share && width >= NARROW ? share.padStart(8) : ""}${tail ? `   ${tail}` : ""}`)}`, width);
 const head = (title, rest, theme) => `${theme.fg("accent", TURN_GLYPH)} ${title}${rest ? theme.fg("muted", `${SEP}${rest}`) : ""}`;
@@ -182,7 +178,7 @@ function planLines({ at, limits }, theme, width) {
     const until = !weekday && window.resetsAt ? ` (in ${formatDuration(window.resetsAt * 1000 - at)})` : "";
     const colour = window.usedPercent >= WARN_PERCENT ? "warning" : "accent";
     const figure = theme.fg("muted", `${String(window.usedPercent).padStart(5)}%${reset ? `   resets ${reset}${until}` : ""}`);
-    return fit(`${PAD}${pad(WINDOW_NAMES[label] ?? label, 10)}${bar(window.usedPercent / 100, barWidth, theme, colour)}${figure}`, width);
+    return fit(`${PAD}${pad(WINDOW_NAMES[label] ?? label, 10)}${meter(theme, barWidth, [[colour, window.usedPercent / 100]])}${figure}`, width);
   })];
 }
 
@@ -191,7 +187,7 @@ function contextLines({ model, window, used, estimated, parts }, theme, width) {
   const headline = `${estimated ? "~" : ""}${tokenText(used)} / ${tokenText(window)} tokens (${percent(used, window, 1)})`;
   return [
     fit(head("Context", [modelLabel(model), headline].filter(Boolean).join(SEP), theme), width),
-    `${PAD}${bar(window ? used / window : 0, Math.max(0, Math.min(62, width - PAD.length)), theme)}`,
+    `${PAD}${meter(theme, Math.max(0, Math.min(62, width - PAD.length)), [["accent", window ? used / window : 0]])}`,
     ...parts.filter(part => part.tokens > 0).map(part => row(part.label, part.tokens, part.tail)),
     row("Free", Math.max(0, window - used)),
   ];

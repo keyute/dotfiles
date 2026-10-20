@@ -68,10 +68,10 @@ const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 // planning workflow is gated on the root in plan mode: a child has neither
 // submit_plan nor ask_user_question (policy.mjs rootTools).
 // Fills the `workflow` system prompt section (see before_agent_start).
-export function workflowPrompt({ mode, readonly, isRoot }) {
+export function workflowPrompt({ mode, readonly, isRoot, ultracode }) {
   // Read-only requests need an answer, not implementation permission.
   const planning = isRoot && mode === "plan" ? " Answer read-only questions and command requests directly. For requested source edits or external mutations, research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it. Approval switches the mode and revokes running child sessions, aborting their work: settle async children before submitting the plan, or launch them after." : "";
-  return `Workflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}`;
+  return `Workflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}${ultracode ? " Ultracode is on." : ""}`;
 }
 
 // Plan mode keeps write/edit declared: the broker refuses the call, while a
@@ -279,9 +279,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     pi.events.emit("herdr:blocked", { active: false });
   });
 
-  // Mode and approval reach the status line as one string so the two can never
-  // drift; the footer paints it, where the theme is live.
-  const publishStatus = ctx => ctx.ui.setStatus("workflow", `${broker.policy.mode} ${broker.policy.approval}`);
+  // Mode, approval and ultracode reach the status line as one string so they
+  // can never drift; the footer paints it, where the theme is live.
+  const publishStatus = ctx => ctx.ui.setStatus("workflow", `${broker.policy.mode} ${broker.policy.approval}${orchestrate?.armed() ? " ultracode" : ""}`);
 
   async function setMode(mode, ctx, { cleanup = true } = {}) {
     if (!broker) throw new Error("Only the parent can change workflow mode");
@@ -390,7 +390,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("session_tree", async (_event, ctx) => {
     currentContext = ctx;
     pendingInput?.reset();
-    if (isRoot) { plans.restore(ctx); orchestrate.disarm(); await setMode("plan", ctx); }
+    if (isRoot) { plans.restore(ctx); await setMode("plan", ctx); }
   });
   // pi fires `input` at queue time and the user message_start at delivery;
   // deciding the opt-in from the delivered text, as pi's own queue splice
@@ -400,9 +400,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (isRoot && event.source === "extension") orchestrate.noteExtensionInput(event.text);
     return { action: "continue" };
   });
-  if (isRoot) pi.on("message_start", event => {
+  if (isRoot) pi.on("message_start", (event, ctx) => {
     if (event.message?.role !== "user") return;
     const text = orchestrate.delivered(event.message);
+    publishStatus(ctx);
     if (text !== undefined) ultrathink.delivered(text);
   });
   if (isRoot) pi.on("agent_settled", () => ultrathink.end());
@@ -423,7 +424,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     // patched in one mid-conversation system message instead.
     const options = event.systemPromptOptions;
     for (const { path, content } of extraDirs.values()) options.contextFiles.push({ path, content });
-    options.sections.workflow = workflowPrompt({ mode: state.mode, readonly: state.readonly, isRoot });
+    options.sections.workflow = workflowPrompt({ mode: state.mode, readonly: state.readonly, isRoot, ultracode: orchestrate?.armed() ?? false });
     // pi lists skills only when `read` or `bash` is selected, and the workflow
     // exposes only workspace_* tools; an empty section is dropped.
     if (isRoot) options.sections.skills = sdk.formatSkillsForPrompt(options.skills, "read").replace("Use the read tool", "Use the workspace_read tool").trim();
@@ -462,6 +463,11 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     pi.registerCommand("approvals", { description: "Choose auto-reviewed or individually prompted approvals", handler: async (_args, ctx) => {
       const value = await ctx.ui.select("Approval mode", ["auto", "ask"]);
       if (value) { broker.policy.approval = value; broker.policy.epoch++; publishEpoch(); publishStatus(ctx); }
+    } });
+    pi.registerCommand("ultracode", { description: "Turn ultracode on or off for this session", handler: (_args, ctx) => {
+      const on = orchestrate.toggle();
+      publishStatus(ctx);
+      appendVisible(pi, "workflow-note", { text: on ? "Ultracode on for this session" : "Ultracode off" });
     } });
     const completions = values => values.map(value => ({ value, label: value }));
     pi.registerCommand("add-dir", { description: "Add a directory to the editable workspace and load its AGENTS.md", getArgumentCompletions: prefix => completions(broker.policy.addableDirs(prefix)), handler: async (args, ctx) => {
