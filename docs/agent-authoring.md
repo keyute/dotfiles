@@ -32,7 +32,7 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   trigger's question needs, each fact at its current state. Quirk
   workarounds go there too, where they expire cheaply.
 - Implementation mechanics a harness editor needs go to
-  `docs/pi-implementation.md` (pi and the bridge), not the deployed doc.
+  `docs/pi-implementation.md`, not the deployed doc.
 - Occasional workflows → skills.
 
 ## Style

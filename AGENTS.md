@@ -28,7 +28,7 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
   scoped with `harnesses:` where not for every harness; a shared skill
   body lives once in `.chezmoitemplates/skills/` with a one-line stub per
   harness. *Why: copies drift from the data.*
-- Code the harness spawns outside the sandbox (MCP servers, the bridge, hooks)
+- Code the harness spawns outside the sandbox (MCP servers, hooks)
   treats caller-supplied paths, repos and arguments as hostile: pin its config,
   refuse sandbox-writable roots, and ship a malicious-input test.
 - Before adding to `private_dot_pi/private_agent/workflow/`, read the module map atop

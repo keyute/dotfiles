@@ -6,7 +6,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { sandboxPolicy, thinkingLevel } from "../../../scripts/pi-bridge.mjs";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // byte budgets (single owner):
@@ -179,18 +180,13 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     for (const noun of nouns) assert.doesNotMatch(text, new RegExp(`\\b${noun}\\b`, flags), `${name} names the model family ${noun}: name the tier or the pin id`);
   }
 
-  const claudeSettingsText = run("cat", target(".claude/settings.json"));
-  const claudeSettings = JSON.parse(claudeSettingsText);
-  // the bridge takes its whole deny policy from this render; an empty denyNames
-  // would not fail closed, so pin it here
-  const bridgePolicy = sandboxPolicy(claudeSettingsText, "/h");
-  assert.ok(bridgePolicy.denyNames.includes(".env"));
-  for (const path of ["/h/.claude/ide", "/h/.claude/bridge-spawn"]) assert.ok(bridgePolicy.denyRead.includes(path), `bridge denyRead misses ${path}`);
+  const claudeSettings = JSON.parse(run("cat", target(".claude/settings.json")));
   // a relative deny name sits in the writable cwd, so it also gets an Edit() deny
   assert.ok(claudeSettings.permissions.deny.includes("Edit(.env)"));
-  // live code run outside the sandbox (node_modules, the bridge copy) is write-denied by Edit() rules,
+  for (const p of ["~/.claude/ide", "~/.claude/bridge-spawn"]) assert.ok(claudeSettings.permissions.deny.includes(`Read(${p})`), p);
+  // live code run outside the sandbox (node_modules) is write-denied by Edit() rules,
   // which the harness merges into the Bash sandbox
-  const liveCode = [`${data.chezmoi.sourceDir}/node_modules`, `${data.chezmoi.homeDir}/.claude/pi-bridge`];
+  const liveCode = [`${data.chezmoi.sourceDir}/node_modules`];
   assert.deepEqual(claudeSettings.permissions.deny.filter(rule => /^Edit\([~/]/.test(rule)), liveCode.map(path => `Edit(/${path}/**)`));
   // shared network policy reaches both harnesses
   const networkKeys = { allow_local_binding: "allowLocalBinding", allowed_domains: "allowedDomains" };
@@ -205,20 +201,11 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(claudeSettings.model, data.subagent_tiers.claude[data.agents.claude.defaults.tier]);
   assert.equal(claudeSettings.workflowSizeGuideline, data.workflow_size === "unrestricted" ? undefined : data.workflow_size);
   assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, data.subagent_tiers.claude.top);
-  // the cross-model bridge stays prompt-free in plan mode only via these rules; auto-approval is per
-  // read-only tool on both harnesses, never a whole server
-  for (const tool of data.agent_mcp_servers.pi.readonly_tools) assert.ok(claudeSettings.permissions.allow.includes(`mcp__pi__${tool}`), tool);
-  assert.ok(!claudeSettings.permissions.allow.some(rule => /^mcp__[^_]+$/.test(rule)), "a server-wide mcp allow");
-  // driver_only is consumed on Claude (the tool-list-less nesting role disallows the server); pi never renders it
-  const driverOnly = Object.entries(data.agent_mcp_servers).filter(([, server]) => server.driver_only).map(([name]) => name);
-  // the bridge itself must stay driver-only, or the loop below checks nothing
-  assert.ok(driverOnly.includes("pi"), "agent_mcp_servers.pi is not driver_only");
-  const claudeGeneral = run("cat", target(".claude/agents/general-purpose.md"));
-  const disallowed = /^disallowedTools: (.*)$/m.exec(claudeGeneral)?.[1].split(", ") ?? [];
-  for (const name of driverOnly) {
-    assert.ok(disallowed.includes(`mcp__${name}`), `claude general-purpose does not disallow mcp__${name}`);
-    assert.ok(!(name in workflow.mcp), `pi renders driver_only server ${name}`);
+  // auto-approval is per read-only tool on both harnesses, never a whole server
+  for (const [server, cfg] of Object.entries(data.agent_mcp_servers).filter(([, cfg]) => cfg.auto_approve_tools)) {
+    for (const tool of cfg.readonly_tools ?? []) assert.ok(claudeSettings.permissions.allow.includes(`mcp__${server}__${tool}`), `${server}: ${tool}`);
   }
+  assert.ok(!claudeSettings.permissions.allow.some(rule => /^mcp__[^_]+$/.test(rule)), "a server-wide mcp allow");
   // pi's workflow.json write-denies the same live code
   for (const path of liveCode) assert.ok(workflow.filesystem.denyWrite.includes(path), `pi denyWrite misses ${path}`);
   // the search plugin's config resolves its tier or fails the render
@@ -241,8 +228,13 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/node_modules")), true);
 });
 
-// every pi (pin, effort) pair must be a level the pinned pi-ai catalog offers that model
-const assertPiEffort = (provider, pin, effort, owner) => assert.doesNotThrow(() => thinkingLevel(provider, pin, effort), owner);
+// every pi (pin, effort) pair must be a level the pinned pi-ai catalog offers that model; levels are
+// per model: a model may drop one (e.g. no "off") that another on the same provider supports
+const assertPiEffort = (provider, pin, effort, owner) => {
+  const model = getBuiltinModel(provider, pin);
+  assert.ok(model, `${owner}: ${provider}/${pin} is not in the pi-ai catalog`);
+  assert.ok(getSupportedThinkingLevels(model).includes(effort), `${owner}: ${provider}/${pin} does not support effort ${effort}`);
+};
 
 test("each role renders its roster tier and effort on every harness it targets", (t) => {
   const { run, invoke, target, data: load } = fixture(t);
@@ -322,12 +314,6 @@ test("each role renders its roster tier and effort on every harness it targets",
     [workflow.models.classifierFilter, workflow.models.classifierJudge],
     [{ model: classifierPin, reasoningEffort: pi.classifier.filter_effort }, { model: classifierPin, reasoningEffort: pi.classifier.judge_effort }],
   );
-  // the bridge is a worker: top tier, never the frontier, at its own effort
-  const bridgeArgs = JSON.parse(run("execute-template", "{{ .agent_mcp_servers.pi.args | toJson }}"));
-  const bridgePairs = bridgeArgs.flatMap((arg, i) => i % 2 ? [] : [[arg, bridgeArgs[i + 1]]]).sort(([a], [b]) => a.localeCompare(b));
-  const effort = bridgePairs.find(([flag]) => flag === "--reasoning-effort")?.[1];
-  assert.deepEqual(bridgePairs, [["--model", data.subagent_tiers.pi.top], ["--provider", provider], ["--reasoning-effort", effort]]);
-  assertPiEffort(provider, data.subagent_tiers.pi.top, effort, "bridge");
 });
 
 test("every roster role and shared skill has its source stubs, and every stub a source", (t) => {
@@ -398,7 +384,7 @@ test("readonly roles grant no write tool and only read-only MCP tools; writers c
   }
 });
 
-test("docs/decisions.md has a row for every tier pin, driver, classifier, search and bridge slot", (t) => {
+test("docs/decisions.md has a row for every tier pin, driver, classifier and search slot", (t) => {
   const { data: load } = fixture(t);
   const data = load();
   const nouns = familyNouns(data);
@@ -415,7 +401,6 @@ test("docs/decisions.md has a row for every tier pin, driver, classifier, search
     "agents.pi.defaults.classifier",
     "agents.pi.defaults.context_window",
     "agents.pi.search_tier",
-    "agent_mcp_servers.pi.args",
     "measure.role_matrix",
   ];
   for (const key of slots) assert.ok(rows.has(key), `docs/decisions.md has no ${key} row`);
@@ -544,7 +529,7 @@ test("the whole tree applies into an isolated destination", (t) => {
     .map(path => JSON.parse(readFileSync(target(path), "utf8")));
   // configs point MCP/statusline commands into the source dir's node_modules/.bin;
   // a missing binary renders fine but breaks at runtime
-  const bins = new Set([join(source, "node_modules/.bin/pi")]); // the pi launcher (zshrc, the bridge) is in no config
+  const bins = new Set([join(source, "node_modules/.bin/pi")]); // the pi launcher (zshrc) is in no config
   const walk = value => {
     if (Array.isArray(value)) return value.forEach(walk);
     if (!value || typeof value !== "object") return;

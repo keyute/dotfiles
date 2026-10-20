@@ -5,10 +5,7 @@
        output: JSON {name: {connection: {...}, policy: {...}}}
                  connection: {type: "stdio", command, args, env}
                              — env op: refs resolved via onepasswordRead;
-                             command node_modules/.bin/<package_bin>, or
-                             `node ~/.claude/pi-bridge/scripts/<script>`, the
-                             applied copy: the bridge runs outside the
-                             sandbox, so `chezmoi apply` gates its code; a
+                             command node_modules/.bin/<package_bin>; a
                              leading `~/` in args expands to home
                  policy:     {auto_approve_tools, denied_tools, readonly_tools,
                              unsandboxed, domains} — always all keys,
@@ -38,14 +35,8 @@
         "unsandboxed" (default false (get $cfg "unsandboxed"))
         "domains" (default (list) (get $cfg "domains"))) -}}
   {{- if not $policyOnly -}}
-    {{- $command := "node" -}}
+    {{- $command := printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
     {{- $args := list -}}
-    {{- $script := get $cfg "script" -}}
-    {{- if $script -}}
-      {{- $args = append $args (printf "%s/.claude/pi-bridge/scripts/%s" $root.chezmoi.homeDir $script) -}}
-    {{- else -}}
-      {{- $command = printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
-    {{- end -}}
     {{- range $cfg.args -}}
       {{- $args = append $args (regexReplaceAll "^~/" . (printf "%s/" $root.chezmoi.homeDir)) -}}
     {{- end -}}

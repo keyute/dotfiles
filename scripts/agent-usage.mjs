@@ -126,11 +126,8 @@ for (const [file, f] of perFile) {
 }
 
 // pi: child transcripts live under /run-N/ and are mirrored in subagent-artifacts/, so calls are deduplicated by responseId.
-// The pi bridge (scripts/pi-bridge.mjs SESSION_DIR) keeps its own sessions outside ~/.pi; they are origin "bridge".
-const bridgeSessions = path.resolve(process.env.XDG_CACHE_HOME || path.resolve(home, ".cache"), "pi-bridge", "sessions");
 const piFiles = [
   ...walk(path.join(home, ".pi/agent/sessions")).map((f) => [f, /\/(run-\d+|subagent-artifacts)\//.test(f) ? "child" : "root"]),
-  ...walk(bridgeSessions).map((f) => [f, "bridge"]),
 ];
 const piCalls = new Map();
 const piDispatches = {}, piSkills = {};

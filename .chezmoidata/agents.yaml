@@ -21,8 +21,8 @@ agents:
       - "backups"
       - "sessions"
       - "paste-cache"
-      # IDE lock tokens and bridge spawn state: Claude Code denies these on its
-      # own, but listing them here carries them to the bridge's git sandbox
+      # IDE lock tokens and Remote Control spawn state: Claude Code's Bash
+      # sandbox denies these on its own; this carries them to its file tools
       - "ide"
       - "bridge-spawn"
     plugins:
@@ -67,7 +67,7 @@ agents:
     # direct launches keep their leases
     orchestrate_concurrency: 8
     defaults:
-      provider: &pi_provider openai-codex
+      provider: openai-codex
       tier: frontier
       reasoning_effort: high
       # approval classifier: one tier model for both stages; the filter answers
@@ -174,8 +174,7 @@ subagent_tiers:
     frontier: claude-fable-5-1
   pi:
     small: gpt-6-luna
-    # anchored: the Claude->pi review/advice bridge pins this tier
-    top: &openai_top gpt-6.1-sol
+    top: gpt-6.1-sol
     frontier: gpt-6-astra
 # advisory fan-out size both drivers' workflow tools show: small <5 agents,
 # medium <10, large <50
@@ -207,7 +206,6 @@ agent_sandbox:
       "~/.zsh_history": none
       "~/.zhistory": none
       "~/.python_history": none
-      "~/.cache/pi-bridge": none
       "~/.go/pkg/mod": write
       "~/.npm/_cacache": write
       "~/Library/Caches/uv": write
@@ -229,18 +227,6 @@ agent_mcp_servers:
   # auto_approve_tools: Claude emits an allow rule and pi's workflow/policy.mjs
   # allows a read-only call outright; omission keeps normal review.
 
-  # scoped to claude: pi must not be handed itself as an MCP server
-  pi:
-    script: pi-bridge.mjs
-    # the bridge runs the top worker tier at its own effort
-    args: ["--reasoning-effort", high, "--model", *openai_top, "--provider", *pi_provider]
-    auto_approve_tools: true
-    readonly_tools: [review, advise, reply]
-    # rostered children lose this server (tool list, or disallowedTools on
-    # nesting roles); bare agent(), built-in claude and plugin agents keep it
-    driver_only: true
-    harnesses:
-      - claude
   context7:
     package_bin: context7-mcp
     args: []
