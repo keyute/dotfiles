@@ -6,14 +6,15 @@ import { formatReset, longWindow, readRateLimits, windowLabel } from "./footer.m
 import { formatTokens, modelLabel, rpcCall } from "./fleet.mjs";
 import { PAD, TURN_GLYPH, formatDuration, pad } from "./rows.mjs";
 
-// The shape is docs/pi-design.md's /usage bullet: plan limits, context and
-// cost as three π blocks. The entry stores numbers; the layout is per width.
+// The shape is docs/pi-design.md's /usage bullet: plan limits, context, cost
+// and cache as four π blocks. The entry stores numbers; the layout is per width.
 const SEP = " · ";
 const WINDOW_NAMES = { ses: "Session", wk: "Weekly" };
 const WARN_PERCENT = 90;
 // Below this width the % column goes, then lines truncate.
 const NARROW = 48;
 const TOP = 3;
+const BREAK_FLOOR = 1024;
 const MESSAGE_ROLES = { toolResult: "tool results", assistant: "assistant" };
 
 // pi has no tokenizer; its own estimateTokens is chars ÷ 4 too.
@@ -21,6 +22,7 @@ const estimate = text => Math.ceil((Array.isArray(text) ? text.map(part => part.
 const top = (counts, format) => [...counts].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, TOP).map(([name, n]) => `${name} ${format(n)}`).join(SEP);
 const fit = (text, width) => truncate(text, width, "…");
 const tokenText = n => formatTokens(n) ?? "0";
+const promptTokens = usage => usage.input + usage.cacheRead + usage.cacheWrite;
 
 export const formatMoney = usd => `$${usd < 0.1 ? usd.toFixed(4) : usd.toFixed(2)}`;
 
@@ -107,6 +109,42 @@ export function sessionCost(entries, report) {
   };
 }
 
+// Requests are assistant messages that sent a prompt, on every branch as Cost
+// counts them. A break compares a request with its nearest such ancestor by
+// parentId — never across a compaction, a branch summary or a provider/model
+// change — and counts when the cache read falls over BREAK_FLOOR short of the
+// smaller prompt, so TTL expiry counts too. None count until its provider/model
+// has reported cache activity; entries are in append order, so that is time.
+export function cacheStats(entries) {
+  const byId = new Map(entries.map(entry => [entry.id, entry]));
+  const requests = entries.filter(entry => entry.type === "message" && entry.message.role === "assistant" && entry.message.usage && promptTokens(entry.message.usage) > 0);
+  const counted = new Set(requests);
+  const caching = new Set();
+  const modelOf = message => `${message.provider}/${message.model}`;
+  const predecessor = entry => {
+    for (let id = entry.parentId; id != null; id = byId.get(id)?.parentId) {
+      const at = byId.get(id);
+      if (at?.type === "compaction" || at?.type === "branch_summary") return null;
+      if (counted.has(at)) return at;
+    }
+    return null;
+  };
+  let hits = 0, breaks = 0, breakTokens = 0;
+  for (const entry of requests) {
+    const { usage } = entry.message;
+    if (usage.cacheRead > 0) hits++;
+    const previous = caching.has(modelOf(entry.message)) && predecessor(entry);
+    if (usage.cacheRead + usage.cacheWrite > 0) caching.add(modelOf(entry.message));
+    if (!previous || modelOf(previous.message) !== modelOf(entry.message)) continue;
+    const shortfall = Math.min(promptTokens(previous.message.usage), promptTokens(usage)) - usage.cacheRead;
+    if (shortfall > BREAK_FLOOR) {
+      breaks++;
+      breakTokens += shortfall;
+    }
+  }
+  return { requests: requests.length, hits, breaks, breakTokens };
+}
+
 // pi-subagents' documented `cost` RPC (docs/extension-api.md): it walks the
 // current branch only, and its childTotal is a lower bound for nested spend.
 async function subagentCost(events) {
@@ -115,11 +153,13 @@ async function subagentCost(events) {
 }
 
 export async function readUsage(pi, ctx, { readLimits = readRateLimits, now = Date.now() } = {}) {
+  const entries = ctx.sessionManager.getEntries();
   return {
     at: now,
     limits: await readLimits(),
     context: contextUsage(ctx),
-    cost: sessionCost(ctx.sessionManager.getEntries(), await subagentCost(pi.events)),
+    cost: sessionCost(entries, await subagentCost(pi.events)),
+    cache: cacheStats(entries),
   };
 }
 
@@ -128,6 +168,8 @@ const bar = (fraction, width, theme, colour = "accent") => {
   const used = Math.max(0, Math.min(width, Math.round(fraction * width)));
   return theme.fg(colour, "━".repeat(used)) + theme.fg("dim", "─".repeat(width - used));
 };
+// Context's and Cache's row: label, figure, a share that goes below NARROW, tail.
+const figureRow = (label, figure, share, tail, theme, width) => fit(`${PAD}${pad(label, 16)}${theme.fg("muted", `${figure.padStart(7)}${share && width >= NARROW ? share.padStart(8) : ""}${tail ? `   ${tail}` : ""}`)}`, width);
 const head = (title, rest, theme) => `${theme.fg("accent", TURN_GLYPH)} ${title}${rest ? theme.fg("muted", `${SEP}${rest}`) : ""}`;
 
 function planLines({ at, limits }, theme, width) {
@@ -145,8 +187,7 @@ function planLines({ at, limits }, theme, width) {
 }
 
 function contextLines({ model, window, used, estimated, parts }, theme, width) {
-  const narrow = width < NARROW;
-  const row = (label, tokens, tail) => fit(`${PAD}${pad(label, 16)}${theme.fg("muted", `${tokenText(tokens).padStart(7)}${narrow ? "" : percent(tokens, window, 1).padStart(8)}${tail ? `   ${tail}` : ""}`)}`, width);
+  const row = (label, tokens, tail) => figureRow(label, tokenText(tokens), percent(tokens, window, 1), tail, theme, width);
   const headline = `${estimated ? "~" : ""}${tokenText(used)} / ${tokenText(window)} tokens (${percent(used, window, 1)})`;
   return [
     fit(head("Context", [modelLabel(model), headline].filter(Boolean).join(SEP), theme), width),
@@ -158,10 +199,7 @@ function contextLines({ model, window, used, estimated, parts }, theme, width) {
 
 function costLines({ total, main, models, subagents }, theme, width) {
   const row = (label, cost, tail) => fit(`${PAD}${pad(label, 12)}${theme.fg("muted", `${formatMoney(cost).padStart(8)}${tail ? `   ${tail}` : ""}`)}`, width);
-  const tokens = usage => {
-    const prompt = usage.input + usage.cacheRead + usage.cacheWrite;
-    return [`${tokenText(prompt)} in`, `${tokenText(usage.output)} out`, prompt && `${percent(usage.cacheRead, prompt)} cached`].filter(Boolean).join(SEP);
-  };
+  const tokens = usage => `${tokenText(promptTokens(usage))} in${SEP}${tokenText(usage.output)} out`;
   const lines = [fit(head("Cost", formatMoney(total), theme), width), row("Main", main.cost, tokens(main))];
   // Indented under Main: the per-model lines are its parts, not further spend.
   for (const usage of models) lines.push(row(`  ${usage.model}`, usage.cost, tokens(usage)));
@@ -175,8 +213,25 @@ function costLines({ total, main, models, subagents }, theme, width) {
   return lines;
 }
 
+// The token rows are Cost's Main totals, so they reconcile with its `in`.
+// Entries stored before cache stats have no `cache`: token rows only.
+function cacheLines(main, cache, theme, width) {
+  const prompt = promptTokens(main);
+  const row = (label, tokens) => figureRow(label, tokenText(tokens), percent(tokens, prompt, 1), "", theme, width);
+  const lines = [fit(head("Cache", cache?.requests ? `${cache.hits}/${cache.requests} requests hit` : "", theme), width), row("Read", main.cacheRead)];
+  if (main.cacheWrite > 0) lines.push(row("Written", main.cacheWrite));
+  lines.push(row("Uncached", main.input));
+  if (cache?.requests) lines.push(figureRow("Breaks", String(cache.breaks), null, cache.breaks ? `${tokenText(cache.breakTokens)} tokens` : "", theme, width));
+  return lines;
+}
+
 export function usageLines(data, theme, width) {
-  return [...planLines(data, theme, width), "", ...contextLines(data.context, theme, width), "", ...costLines(data.cost, theme, width)];
+  return [
+    ...planLines(data, theme, width), "",
+    ...contextLines(data.context, theme, width), "",
+    ...costLines(data.cost, theme, width), "",
+    ...cacheLines(data.cost.main, data.cache, theme, width),
+  ];
 }
 
 // Re-laid out on each paint, so a resize or theme switch applies.

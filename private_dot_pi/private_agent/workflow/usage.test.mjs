@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { formatReset } from "./footer.mjs";
-import { contextUsage, formatMoney, readUsage, sessionCost, usageLines } from "./usage.mjs";
+import { cacheStats, contextUsage, formatMoney, readUsage, sessionCost, usageLines } from "./usage.mjs";
 
 const plain = { fg: (_color, text) => text };
 const usage = (total, input = 0, output = 0, cacheRead = 0, cacheWrite = 0) => ({ input, output, cacheRead, cacheWrite, cost: { total } });
@@ -100,7 +100,7 @@ test("the Subagents row reads unavailable without a cost reply or on another rep
     const data = await read(events);
     assert.equal(data.cost.subagents, null);
     assert.equal(data.cost.total.toFixed(2), "1.52");
-    assert.equal(usageLines(data, plain, 70).at(-1), "  Subagents   unavailable");
+    assert.equal(usageLines(data, plain, 70).find(line => line.includes("Subagents")), "  Subagents   unavailable");
   }
 });
 
@@ -156,7 +156,7 @@ const limits = [
   { usedPercent: 58, resetsAt: 1_800_300_000, windowMins: 10_080 },
 ];
 
-test("the entry renders three π blocks at width 70", async () => {
+test("the entry renders four π blocks at width 70", async () => {
   const data = await readUsage({ events: bus({ ping: ping(), cost: costReport }) }, ctx(84_200, fixture()), { readLimits: async () => limits, now: 1_800_000_000_000 - 7_980_000 });
   // truncateToWidth wraps its ellipsis in resets; the plain theme adds no other codes.
   const lines = usageLines(data, plain, 70).map(line => line.replaceAll("\x1b[0m", ""));
@@ -175,10 +175,75 @@ test("the entry renders three π blocks at width 70", async () => {
     "  Free             187.8k   69.0%",
     "",
     "π Cost · $2.67",
-    "  Main           $1.52   10k in · 200 out · 90% cached",
-    "    gpt-5.5      $1.50   10k in · 200 out · 90% cached",
+    "  Main           $1.52   10k in · 200 out",
+    "    gpt-5.5      $1.50   10k in · 200 out",
     "    summaries  $0.0200   0 in · 0 out",
     "  Subagents      $1.15   4 runs (1 unavailable) · implementer 2 · res…",
+    "",
+    "π Cache · 1/1 requests hit",
+    "  Read                 9k   90.0%",
+    "  Uncached             1k   10.0%",
+    "  Breaks                0",
+  ]);
+});
+
+// A pi session tree: each request names its parent; prompt = input + cacheRead + cacheWrite.
+const request = (id, parentId, input, cacheRead, cacheWrite = 0, model = "gpt-5.5", provider = "openai") => ({ type: "message", id, parentId, message: { role: "assistant", provider, model, usage: usage(0, input, 100, cacheRead, cacheWrite) } });
+const user = (id, parentId) => ({ type: "message", id, parentId, message: { role: "user" } });
+
+test("cache: hits per request, breaks against the parentId predecessor only", () => {
+  const entries = [
+    request("a", null, 5000, 0, 5000),
+    user("u1", "a"),
+    request("b", "u1", 500, 10_000), // hit
+    request("c", "b", 1524, 9476), // shortfall exactly 1,024: not over the floor
+    request("d", "c", 2000, 8500), // shortfall 2,000: a break
+    request("e", "d", 11_000, 0), // full miss: 10.5k
+    request("f", "e", 11_000, 0), // a full miss again counts again: 11k
+    // An error reply with zero usage is no request and breaks no chain.
+    { type: "message", id: "err", parentId: "f", message: { role: "assistant", provider: "openai", model: "gpt-5.5", usage: usage(0) } },
+    { type: "compaction", id: "k", parentId: "err" },
+    request("g", "k", 3000, 0), // across a compaction: no comparison
+    request("h", "g", 3000, 0, 0, "gpt-5.4"), // model switch: no comparison
+    // /tree back to b: its sibling c is not this request's predecessor.
+    request("i", "b", 600, 10_000),
+  ];
+  // Fixture shortfalls the floor counts: d 2,000, e 10,500 and f 11,000.
+  assert.deepEqual(cacheStats(entries), { requests: 9, hits: 4, breaks: 3, breakTokens: 23_500 });
+  // Before any cache activity nothing is a break.
+  assert.deepEqual(cacheStats([request("a", null, 5000, 0), request("b", "a", 9000, 0)]), { requests: 2, hits: 0, breaks: 0, breakTokens: 0 });
+  // The first request to write or read cache is warm-up, not a break.
+  assert.equal(cacheStats([request("a", null, 5000, 0), request("b", "a", 5000, 0, 6000)]).breaks, 0);
+  assert.equal(cacheStats([request("a", null, 8000, 0), request("b", "a", 5000, 4000)]).breaks, 0);
+  // Both sides caching, 9k short: a model or a provider change still compares nothing.
+  assert.equal(cacheStats([request("a", null, 0, 0, 9000), request("b", null, 0, 0, 9000, "gpt-5.4"), request("c", "a", 9000, 0, 0, "gpt-5.4")]).breaks, 0);
+  assert.equal(cacheStats([request("a", null, 0, 0, 9000), request("b", null, 0, 0, 9000, "gpt-5.5", "azure"), request("c", "a", 9000, 0, 0, "gpt-5.5", "azure")]).breaks, 0);
+  // Another model's later cache activity does not make earlier misses breaks.
+  assert.equal(cacheStats([request("a", null, 5000, 0, 0, "local"), request("b", "a", 9000, 0, 0, "local"), request("c", "b", 12_000, 0, 0, "local"), request("d", "c", 1000, 2000)]).breaks, 0);
+  // The parent a (1,000 short), not the array-previous sibling b (3,000 short).
+  assert.equal(cacheStats([request("a", null, 1000, 0, 9000), request("b", "a", 3000, 9000), request("c", "a", 3000, 9000)]).breaks, 0);
+  // A branch summary also ends the walk.
+  assert.equal(cacheStats([request("a", null, 0, 9000), { type: "branch_summary", id: "s", parentId: "a" }, request("b", "s", 9000, 0)]).breaks, 0);
+});
+
+test("the cache block: Written only when written, and a stored entry without cache shows token rows only", () => {
+  const entries = [request("a", null, 1000, 0, 4000), request("b", "a", 1000, 4000)];
+  const cost = sessionCost(entries, report([]));
+  const cache = lines => lines.slice(lines.findIndex(line => line.startsWith("π Cache")));
+  assert.deepEqual(cache(usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost, cache: cacheStats(entries) }, plain, 70)), [
+    "π Cache · 1/2 requests hit",
+    "  Read                 4k   40.0%",
+    "  Written              4k   40.0%",
+    "  Uncached             2k   20.0%",
+    "  Breaks                0",
+  ]);
+  const broken = [request("a", null, 1000, 0, 4000), request("b", "a", 5000, 0)];
+  assert.equal(usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost: sessionCost(broken, report([])), cache: cacheStats(broken) }, plain, 70).at(-1), "  Breaks                1   5k tokens");
+  assert.deepEqual(cache(usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost }, plain, 70)), [
+    "π Cache",
+    "  Read                 4k   40.0%",
+    "  Written              4k   40.0%",
+    "  Uncached             2k   20.0%",
   ]);
 });
 
