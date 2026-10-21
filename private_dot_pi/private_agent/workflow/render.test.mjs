@@ -201,6 +201,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(claudeSettings.model, data.subagent_tiers.claude[data.agents.claude.defaults.tier]);
   assert.equal(claudeSettings.workflowSizeGuideline, data.workflow_size === "unrestricted" ? undefined : data.workflow_size);
   assert.equal(claudeSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, data.subagent_tiers.claude.top);
+  assert.equal(claudeSettings.env.CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL, data.subagent_tiers.claude.top);
   // auto-approval is per read-only tool on both harnesses, never a whole server
   for (const [server, cfg] of Object.entries(data.agent_mcp_servers).filter(([, cfg]) => cfg.auto_approve_tools)) {
     for (const tool of cfg.readonly_tools ?? []) assert.ok(claudeSettings.permissions.allow.includes(`mcp__${server}__${tool}`), `${server}: ${tool}`);

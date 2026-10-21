@@ -43,10 +43,13 @@
   "model": {{ (index .subagent_tiers.claude .agents.claude.defaults.tier) | toJson }},
   {{- /* every Claude pin gets the driver effort, so a /model change keeps it */}}
   "modelSettings": {{ $modelSettings | toPrettyJson | indent 2 | trim }},
-  {{- /* fallback for the built-in `claude` type, plugin and workflow agents; a default, not a
+  {{- /* fallback for the built-in `claude` type and plugin agents; a default, not a
          force — leave CLAUDE_CODE_SUBAGENT_MODEL_FORCE unset, it would erase specialist pins */}}
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
+    {{- /* forces every Workflow agent() onto this pin, over its opts.model and agentType pin
+           (Explore included), so no workflow child reaches the frontier */}}
+    "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL": {{ .subagent_tiers.claude.top | toJson }},
     {{- /* also disables the bundled `loop` skill; add `loop: "off"` to skill_overrides if this goes */}}
     "CLAUDE_CODE_DISABLE_CRON": "1",
     {{- /* no usage telemetry and no feature-flag fetching */}}

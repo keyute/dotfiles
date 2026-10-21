@@ -22,14 +22,14 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
 | {{ $name }} | `{{ $role.model }}` | {{ $role.effort | default "—" }} |
 {{ end }}
 - `general-purpose` and `Plan` override the built-ins. `CLAUDE_CODE_SUBAGENT_MODEL`
-  (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin and workflow
-  agents and teammates.
+  (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin agents and
+  teammates. `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL` (`{{ .subagent_tiers.claude.top }}`) runs every
+  Workflow `agent()` on that pin, whatever its `model` or agentType (Explore included).
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
 {{- $modelDeny := list }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ end }}
 - The `Agent(model:…)` deny rules (the frontier pin's alias, plus `{{ $modelDeny | join "`, `" }}`) keep per-call children on the tier pins;
-  they do not see a Workflow `agent()` opts.model, which does reach the frontier, or a
-  third-party `model: inherit`, nor prove routing.
+  they do not see a third-party `model: inherit`, nor prove routing.
 {{- $omit := list }}
 {{- range $name, $meta := .subagents }}{{ if and (get $meta "omit_instructions") (or (not (get $meta "harnesses")) (has "claude" (get $meta "harnesses"))) }}{{ $omit = append $omit $name }}{{ end }}{{ end }}
 - Every custom subagent except the omit_instructions roles ({{ $omit | join ", " }}) loads
