@@ -52,6 +52,7 @@ const resultText = result => {
 };
 const nonEmpty = text => text.split("\n").filter(line => line.trim());
 const plural = (n, noun, nouns = `${noun}s`) => `${n} ${n === 1 ? noun : nouns}`;
+const liveWork = ({ agents, shells }) => [agents && plural(agents, "agent"), shells && plural(shells, "shell")].filter(Boolean).join(", ");
 const indent = line => `${PAD}${line}`;
 export const oneLine = text => (text ?? "").replace(/\s+/g, " ").trim();
 
@@ -1015,14 +1016,13 @@ export function noteLine(text, theme) {
   return `${theme.fg("accent", TURN_GLYPH)} ${theme.fg("muted", text)}`;
 }
 
-// `running` marks a turn the user's typing closed while work was still live:
-// its line names that work instead of claiming done. Entries from before it
-// existed carry none.
+// `running` marks a turn the user's typing or an interrupt closed while work
+// was still live: its line names that work instead of claiming done. Entries
+// from before it existed carry none.
 export function formatTurn({ verb, ms, endedAt, aborted, running }, theme) {
-  if (aborted) return noteLine(`Interrupted after ${formatDuration(ms)}`, theme);
-  const tail = running
-    ? `${[running.agents && plural(running.agents, "agent"), running.shells && plural(running.shells, "shell")].filter(Boolean).join(", ")} still running`
-    : `done ${new Date(endedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase()}`;
+  const still = running && `${liveWork(running)} still running`;
+  if (aborted) return noteLine(`Interrupted after ${formatDuration(ms)}${still ? ` · ${still}` : ""}`, theme);
+  const tail = still || `done ${new Date(endedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase()}`;
   return noteLine(`${verb} for ${formatDuration(ms)} · ${tail}`, theme);
 }
 
@@ -1042,8 +1042,12 @@ export function createTurnClock(verbs = TURN_VERBS, pick = () => Math.floor(Math
     label(now = Date.now()) {
       return startedAt == null ? "" : `${verb[0]}… ${formatDuration(now - startedAt)}`;
     },
-    settledLabel(now = Date.now()) {
-      return startedAt == null ? "" : `${verb[1]} for ${formatDuration(now - startedAt)}`;
+    // The root has settled with work live: it names that work, the turn's
+    // clock still running. Counts can read zero while a wake is on its way.
+    waitingLabel(running, now = Date.now()) {
+      if (startedAt == null) return "";
+      const work = liveWork(running);
+      return `${work ? `Waiting on ${work}` : verb[0]}… ${formatDuration(now - startedAt)}`;
     },
     stop(now = Date.now(), { aborted = false, running } = {}) {
       if (startedAt == null) return null;

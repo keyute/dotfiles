@@ -1095,6 +1095,7 @@ test("answers, completion and turn lines format", () => {
   assert.equal(formatDuration(3_720_000), "1h 02m");
   assert.match(formatTurn({ verb: "Integrated", ms: 512_000, endedAt: Date.UTC(2026, 8, 7, 10, 50) }, theme), /^<accent>π <muted>Integrated for 8m 32s · done \d{1,2}:\d{2} [ap]m$/);
   assert.equal(formatTurn({ verb: "Integrated", ms: 214_000, endedAt: 0, aborted: true }, theme), "<accent>π <muted>Interrupted after 3m 34s");
+  assert.equal(formatTurn({ verb: "Integrated", ms: 214_000, endedAt: 0, aborted: true, running: { agents: 2, shells: 0 } }, theme), "<accent>π <muted>Interrupted after 3m 34s · 2 agents still running");
   assert.equal(formatTurn({ verb: "Interpolated", ms: 82_000, endedAt: 0, aborted: false, running: { agents: 1, shells: 0 } }, theme), "<accent>π <muted>Interpolated for 1m 22s · 1 agent still running");
   assert.equal(formatTurn({ verb: "Interpolated", ms: 82_000, endedAt: 0, aborted: false, running: { agents: 1, shells: 2 } }, theme), "<accent>π <muted>Interpolated for 1m 22s · 1 agent, 2 shells still running");
 });
@@ -1102,11 +1103,14 @@ test("answers, completion and turn lines format", () => {
 test("the turn clock draws one verb per turn and ignores nested starts", () => {
   const clock = createTurnClock([["Iterating", "Iterated"]], () => 0);
   assert.equal(clock.label(), "");
+  assert.equal(clock.waitingLabel({ agents: 1, shells: 0 }), "");
   assert.equal(clock.running(), false);
   clock.start(1000);
   clock.start(5000);
   assert.equal(clock.running(), true);
   assert.equal(clock.label(13_000), "Iterating… 12s");
+  assert.equal(clock.waitingLabel({ agents: 2, shells: 1 }, 131_000), "Waiting on 2 agents, 1 shell… 2m 10s");
+  assert.equal(clock.waitingLabel({ agents: 0, shells: 0 }, 13_000), "Iterating… 12s", "a wake due with nothing counted keeps the verb");
   assert.deepEqual(clock.stop(61_000), { verb: "Iterated", ms: 60_000, endedAt: 61_000, aborted: false });
   assert.equal(clock.stop(), null);
   clock.start(0);

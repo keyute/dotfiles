@@ -98,7 +98,7 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   when Editor offers a borderless, height-bounded render API. *Pin:* `stability.test.mjs`.
 - **Working row**: a pi-tui `Loader` subclass docked through `setWidget`'s
   component form above the editor; it stands down for pi's compaction indicator,
-  and pi's auto-retry countdown shows alongside it. The frozen row closes when
+  and pi's auto-retry countdown shows alongside it. The waiting row closes when
   the last child or shell ends with the root idle (`ctx.isIdle()` after a 250 ms
   grace): a child is live from `subagent:async-started` until both its
   completion event and its observed process exit (or until 10 s after its exit
@@ -108,16 +108,16 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   holds the close from that wake's extension `input` until its `agent_start`
   (at most 10 s). *Why:* rules 3 and 4. *On red:* fall back to pi's own working row
   (`setWorkingVisible` left on); lost: the column-0 row with a trailing blank
-  line and the frozen settled-root snapshot. On the ordering pins, close only
+  line and the waiting row. On the ordering pins, close only
   at `agent_settled`; lost: the close when the last work ends with no wake.
   *Pin:* `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`.
 - **Prompt span** (`dialog.mjs` `openView`/`openWait`/`blocksUser`): pi wraps
   every `ctx.ui.custom` in one `custom` prompt span, emits `ui_prompt_*` only
   for the outermost prompt, and its end carries that prompt's kind; its own
   terminal status never marks a custom dialog blocked. A custom dialog is a
-  view unless `openWait` mounts it (plan approval, the questionnaire); the
-  herdr forward and `Waiting for you…` take only native prompts and waits, each
-  pairing the end with its own flag. A dialog opened inside a view's span (the
+  view unless `openWait` mounts it (plan approval, the questionnaire); herdr
+  `blocked` and `Waiting for you…`, one footer flag, take only native prompts
+  and waits, pairing the end with that flag. A dialog opened inside a view's span (the
   peek, `/plan show`) would go unreported, so views mount through `openView`
   and `closeView` returns the mount, settled after pi's span closes; `openWait`
   and the broker confirm await it. A native prompt another extension opens
@@ -125,9 +125,31 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   hook and goes unreported. *Why:* opening a peek marked herdr blocked
   and swapped the working row's clock. *On red:* fall back to forwarding every
   prompt; lost: a view marks herdr blocked and shows `Waiting for you…`. *Pin:*
-  `stability.test.mjs`, `integration.test.mjs`, `footer.test.mjs`,
-  `fleet.test.mjs`, `approval.test.mjs`, `plan-approval.test.mjs`,
-  `questionnaire.test.mjs`.
+  `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`,
+  `approval.test.mjs`, `plan-approval.test.mjs`, `questionnaire.test.mjs`.
+- **herdr reporter** (`herdr.mjs`, `footer.mjs` `onActivity`): the root TUI
+  reports the footer's turn to herdr's socket as `pane.report_agent` and
+  `pane.report_agent_session` under source `herdr:pi`, agent `pi` — herdr's
+  own integration identity (its docs reserve the `herdr:` prefix), the only
+  pi source herdr gives full-lifecycle authority (screen state is ignored).
+  The protocol is copied from herdr's bundled pi extension v9: one JSON line
+  per connection, acked by the first reply byte, retried once (500 ms, then
+  1500 ms); seq seeded at `Date.now()*1000`, accepted only above the source's
+  last. Idle is held 250 ms so the gap before a follow-up run reports no done.
+  herdr's own extension is uninstalled
+  (`run_onchange_after_zz-herdr-integrations.sh.tmpl`) and not loaded (`~/.zshrc`
+  `pi`, `--no-extensions`). *Why:* rule 4 — herdr's extension went idle (done)
+  at every `agent_settled` while async children or shells still ran.
+  *Residual:* runs restored by `/resume` are live with no open turn, so idle;
+  a user-opened menu (`/approvals`) reports blocked, playing herdr's Request
+  sound; plan approval and the questionnaire report blocked with no title; if
+  both delivery attempts fail, the last state stays until the next change.
+  *Re-verify:* on a herdr upgrade — its embedded pi extension still speaks v9's
+  params, and a waiting row shows `working` in `herdr pane get`. *On red:*
+  reinstall herdr's pi integration and restore the zshrc `-e`; lost: working
+  across child waits, one done per turn. *Retire:* when herdr's pi integration
+  reports a turn that outlives `agent_settled`. *Pin:* `herdr.test.mjs`,
+  `footer.test.mjs`.
 - **Hidden reasoning** (`rows.mjs` `installReasoningHide`): wraps the
   exported `AssistantMessageComponent.prototype.updateContent` once, on the
   host class the extension entry passes, drawing from a copy without

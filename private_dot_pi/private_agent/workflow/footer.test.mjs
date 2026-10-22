@@ -4,6 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { buildSegments, formatReset, installFooter, paintMode, paintSegment, parseCodexHeaders, parseCodexRateLimits, parseGitChanges, parseRateLimits, readRateLimits, windowLabel } from "./footer.mjs";
 import { createTurnClock, formatTurn } from "./rows.mjs";
+import { openWait } from "./dialog.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
 function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = async () => null, mountFooter = false } = {}) {
@@ -38,12 +39,15 @@ function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = 
   const root = { idle: true };
   const ctx = { cwd: ".", model: { id: "gpt-5.6-sol", provider: "openai-codex" }, getContextUsage: () => ({ percent: 27.2 }), isIdle: () => root.idle, ui };
   const changes = [];
+  const activity = [];
   const fleet = { attach() {}, render: () => [], activeCount: () => active, onChange: fn => changes.push(fn), changed: () => changes.forEach(fn => fn()) };
   const tasks = { live: () => live, onChange: fn => changes.push(fn), changed: () => changes.forEach(fn => fn()) };
-  const footer = installFooter(pi, ctx, { fleet, tasks, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, settleMs, readLimits });
+  const footer = installFooter(pi, ctx, { fleet, tasks, onActivity: next => activity.push(next), clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, settleMs, readLimits });
   process.env.PATH = path;
   const fire = (name, event = {}, eventCtx = ctx) => handlers[name]?.(event, eventCtx);
-  return { fire, entries, messages, fleet, tasks, root, widget, visible, working: footer.working, refreshUsage: footer.refreshUsage, attach: () => footer.attach(ctx), render: () => component.render(100)[0], renders: () => renders, done: () => { fire("session_shutdown"); component?.dispose(); } };
+  // What herdr would be sent, its repeats collapsed as the reporter drops them.
+  const states = () => activity.map(a => (a.message ? `${a.state}:${a.message}` : a.state)).filter((s, i, all) => s !== all[i - 1]);
+  return { fire, entries, messages, fleet, tasks, root, widget, visible, activity, states, working: footer.working, refreshUsage: footer.refreshUsage, attach: () => footer.attach(ctx), render: () => component.render(100)[0], renders: () => renders, done: () => { fire("session_shutdown"); component?.dispose(); } };
 }
 
 const usageWindow = usedPercent => [{ usedPercent, resetsAt: null, windowMins: 300 }];
@@ -464,28 +468,32 @@ test("the turn line waits for background tasks as it waits for children", () => 
   h.done();
 });
 
-test("a settled root waits on active work with a fixed completion snapshot, not an animated clock", async () => {
+test("a settled root waits on live work with a ticking clock and no spinner, naming that work", t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
   const h = harness({ active: 1 });
   h.fire("agent_start");
-  await sleep(12);
+  t.mock.timers.tick(12_000);
   h.fire("agent_settled");
-  const snapshot = h.widget.row.message;
-  assert.match(snapshot, /^Iterated for \d+s$/);
+  assert.equal(h.widget.row.message, "Waiting on 1 agent… 12s");
   assert.equal(h.widget.row.intervalId, null);
-  await sleep(12);
-  assert.equal(h.widget.row.message, snapshot);
+  t.mock.timers.tick(1_000);
+  assert.equal(h.widget.row.message, "Waiting on 1 agent… 13s");
+  h.tasks.live = () => 1;
+  t.mock.timers.tick(1_000);
+  assert.equal(h.widget.row.message, "Waiting on 1 agent, 1 shell… 14s");
+  assert.equal(h.widget.row.intervalId, null);
   assert.equal(h.entries.length, 0);
   h.done();
 });
 
-test("a waiting snapshot survives prompts and compaction without restarting animation", () => {
+test("a waiting row survives prompts and compaction without restarting animation", () => {
   const h = harness({ active: 1 });
   h.fire("agent_start");
   h.fire("agent_settled");
   const snapshot = h.widget.row.render(80);
-  assert.match(snapshot[0], /π Iterated for/);
+  assert.match(snapshot[0], /π Waiting on 1 agent…/);
   h.fire("ui_prompt_start");
-  assert.match(h.widget.row.render(80)[0], /Waiting for you…/, "a confirm outranks the frozen snapshot");
+  assert.match(h.widget.row.render(80)[0], /^π Waiting for you…/, "a confirm outranks the waiting row, with no spinner frame");
   h.fire("ui_prompt_end");
   assert.deepEqual(h.widget.row.render(80), snapshot);
   h.fire("session_before_compact");
@@ -509,7 +517,7 @@ test("staggered child and shell wakes keep one turn open until the final settle"
   h.fire("agent_start");
   assert.notEqual(h.widget.row.intervalId, null);
   h.fire("agent_settled");
-  assert.match(h.widget.row.message, /^Iterated for \d+s$/);
+  assert.match(h.widget.row.message, /^Waiting on 1 shell… \d+s$/);
   assert.equal(h.widget.row.intervalId, null);
   assert.equal(h.entries.length, 0);
   active = 0;
@@ -517,11 +525,11 @@ test("staggered child and shell wakes keep one turn open until the final settle"
   h.fire("agent_start");
   h.fire("agent_settled");
   assert.equal(h.entries.length, 1);
-  assert.match(childSnapshot, /^Iterated for \d+s$/);
+  assert.match(childSnapshot, /^Waiting on 1 agent… \d+s$/);
   h.done();
 });
 
-test("a typed prompt while work still runs closes the turn at the settle, naming that work, and the prompt's turn takes the wake", t => {
+test("a typed prompt while work still runs closes the turn when typed, naming that work, and the prompt's turn takes the wake", t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 1_000 });
   const h = harness({ active: 2, live: 1 });
   h.fire("agent_start");
@@ -529,8 +537,8 @@ test("a typed prompt while work still runs closes the turn at the settle, naming
   h.fire("agent_settled");
   t.mock.timers.tick(30_000);
   h.fire("input", { source: "interactive" });
-  assert.deepEqual(h.entries.map(entry => entry.data), [{ verb: "Iterated", ms: 82_000, endedAt: 83_000, aborted: false, running: { agents: 2, shells: 1 } }]);
-  assert.equal(formatTurn(h.entries[0].data, { fg: (_color, text) => text }), "π Iterated for 1m 22s · 2 agents, 1 shell still running");
+  assert.deepEqual(h.entries.map(entry => entry.data), [{ verb: "Iterated", ms: 112_000, endedAt: 113_000, aborted: false, running: { agents: 2, shells: 1 } }]);
+  assert.equal(formatTurn(h.entries[0].data, { fg: (_color, text) => text }), "π Iterated for 1m 52s · 2 agents, 1 shell still running");
   assert.equal(h.widget.row.message, "");
   h.fleet.activeCount = () => 0;
   h.tasks.live = () => 0;
@@ -541,7 +549,7 @@ test("a typed prompt while work still runs closes the turn at the settle, naming
   h.done();
 });
 
-test("the last child ending with the root idle closes the frozen row once, at that moment", t => {
+test("the last child ending with the root idle closes the waiting row once, at that moment", t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
   let active = 2;
   const h = harness({ settleMs: 250 });
@@ -655,7 +663,7 @@ test("after session shutdown a change arms no settle, so the invalidated ctx is 
   assert.equal(h.entries.length, 0);
 });
 
-test("work ending during a compaction closes the frozen row once the compaction ends", t => {
+test("work ending during a compaction closes the waiting row once the compaction ends", t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
   let active = 1;
   const h = harness({ settleMs: 250 });
@@ -699,6 +707,7 @@ test("an interrupted run closes immediately, even with children running", () => 
   h.fire("agent_end");
   h.fire("agent_settled", { aborted: true });
   assert.deepEqual([h.entries.length, h.entries[0].data.aborted], [1, true]);
+  assert.deepEqual(h.entries[0].data.running, { agents: 1, shells: 0 });
   h.fire("agent_settled", { aborted: true });
   assert.equal(h.entries.length, 1);
   h.done();
@@ -807,16 +816,120 @@ test("a custom view keeps the clock label", () => {
   h.done();
 });
 
-test("a frozen snapshot keeps its glyph through an invalidate and stays still", () => {
+test("a waiting row keeps its glyph through an invalidate, with no spinner", () => {
   const h = harness({ active: 1 });
   h.fire("agent_start");
   h.fire("agent_settled");
   const snapshot = h.widget.row.render(80);
-  assert.match(snapshot[0], /^π Iterated for/);
+  assert.match(snapshot[0], /^π Waiting on 1 agent…/);
   h.widget.row.invalidate();
   assert.deepEqual(h.widget.row.render(80), snapshot, "a theme switch redraws the snapshot, not a spinner frame");
   assert.equal(h.widget.row.intervalId, null);
   h.fire("agent_start");
   assert.match(h.widget.row.render(80)[0], /^\S Iterating…/, "a wake drops the snapshot for the spinner");
+  h.done();
+});
+
+test("herdr's state follows the turn: working through the waiting row and its wakes, idle once the work ends", t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+  let active = 1;
+  const h = harness({ settleMs: 250 });
+  h.fleet.activeCount = () => active;
+  assert.deepEqual(h.states(), ["idle"], "attach reports the state");
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  assert.deepEqual(h.states(), ["idle", "working"], "the settled root still waits on its child");
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  assert.deepEqual(h.states(), ["idle", "working"], "a wake is the same turn");
+  active = 0;
+  h.fleet.changed();
+  t.mock.timers.tick(250);
+  assert.deepEqual(h.states(), ["idle", "working", "idle"]);
+  assert.equal(h.entries.length, 1);
+  h.done();
+});
+
+test("a waiting prompt reports blocked with its title over a waiting turn and with none; a view reports nothing", async () => {
+  const h = harness({ active: 1 });
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  h.fire("ui_prompt_start", { kind: "confirm", title: "Approve" });
+  h.fire("ui_prompt_end", { kind: "confirm" });
+  assert.deepEqual(h.states(), ["idle", "working", "blocked:Approve", "working"]);
+  h.fire("ui_prompt_start", { kind: "custom" });
+  h.fire("ui_prompt_end", { kind: "custom" });
+  assert.deepEqual(h.states(), ["idle", "working", "blocked:Approve", "working"], "a bare custom dialog is a view");
+  await openWait({ ui: { custom: async () => { h.fire("ui_prompt_start", { kind: "custom" }); h.fire("ui_prompt_end", { kind: "custom" }); } } }, () => {});
+  assert.deepEqual(h.states().slice(4), ["blocked", "working"], "a wait mounted through openWait blocks");
+  h.fire("agent_settled", { aborted: true });
+  h.fire("ui_prompt_start", { kind: "select", title: "Approval mode" });
+  assert.equal(h.states().at(-1), "blocked:Approval mode");
+  assert.match(h.widget.row.render(80)[0], /^π Waiting for you…/, "shown with no turn, without a spinner frame");
+  h.fire("ui_prompt_end", { kind: "select" });
+  assert.equal(h.states().at(-1), "idle");
+  assert.deepEqual(h.widget.row.render(80), []);
+  h.done();
+});
+
+test("compaction outranks a waiting prompt with no turn, which shows once compaction ends", () => {
+  const h = harness();
+  h.fire("session_before_compact");
+  h.fire("ui_prompt_start", { kind: "confirm", title: "Approve" });
+  assert.equal(h.messages.at(-1), "");
+  assert.deepEqual(h.widget.row.render(80), [], "pi's compaction indicator is the only one drawn");
+  assert.equal(h.states().at(-1), "blocked:Approve");
+  h.fire("session_compact");
+  assert.match(h.widget.row.render(80)[0], /^π Waiting for you…/);
+  h.fire("ui_prompt_end", { kind: "confirm" });
+  assert.equal(h.states().at(-1), "idle");
+  h.done();
+});
+
+test("a waiting turn that closes under a waiting prompt keeps the prompt's row", t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+  let active = 1;
+  const h = harness();
+  h.fleet.activeCount = () => active;
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  h.fire("ui_prompt_start", { kind: "confirm", title: "Approve" });
+  active = 0;
+  h.fleet.changed();
+  t.mock.timers.tick(0);
+  assert.deepEqual(h.entries.map(entry => entry.kind), ["workflow-turn"]);
+  assert.match(h.widget.row.render(80)[0], /^π Waiting for you…/);
+  assert.equal(h.states().at(-1), "blocked:Approve");
+  h.done();
+});
+
+test("a compaction and a `!` report working with no turn, an interrupt reports idle naming live work, and a shutdown reports nothing until attach", () => {
+  const h = harness({ active: 2 });
+  h.fire("session_before_compact");
+  h.fire("session_compact");
+  h.working({ command: "npm test", startedAt: Date.now() });
+  h.fire("ui_prompt_start", { kind: "confirm", title: "Approve" });
+  assert.equal(h.messages.at(-1), "Waiting for you…", "a waiting prompt outranks a running `!`");
+  h.fire("ui_prompt_end", { kind: "confirm" });
+  assert.match(h.messages.at(-1), /^Running npm test…/);
+  h.working(null);
+  assert.deepEqual(h.states(), ["idle", "working", "idle", "working", "blocked:Approve", "working", "idle"]);
+  h.working({ command: "npm test", startedAt: Date.now() });
+  h.fire("ui_prompt_start", { kind: "confirm", title: "Approve" });
+  h.working(null);
+  assert.match(h.widget.row.render(80)[0], /^π Waiting for you…/, "a `!` ending under a waiting prompt leaves the prompt's row");
+  h.fire("ui_prompt_end", { kind: "confirm" });
+  h.fire("agent_start");
+  h.fire("agent_settled", { aborted: true });
+  assert.equal(h.states().at(-1), "idle");
+  assert.deepEqual([h.entries[0].data.aborted, h.entries[0].data.running], [true, { agents: 2, shells: 0 }]);
+  h.fire("agent_start");
+  h.fire("session_before_compact");
+  h.fire("ui_prompt_start", { kind: "confirm", title: "Approve" });
+  const reported = h.activity.length;
+  h.fire("session_shutdown");
+  assert.equal(h.activity.length, reported, "a shutdown reports nothing");
+  h.attach();
+  assert.equal(h.states().at(-1), "idle", "attach reports the new session's state, the cut-off prompt and compaction dropped");
   h.done();
 });

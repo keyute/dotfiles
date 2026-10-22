@@ -11,6 +11,7 @@ import { hostEnvironment } from "./sandbox-runner.mjs";
 import { TASK_CHARS, reviewAction } from "./approval.mjs";
 import { SUBAGENT_SCHEMA, allowedChildAgents, checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
+import { installHerdr } from "./herdr.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createOrchestrate } from "./orchestrate.mjs";
@@ -22,7 +23,6 @@ import { applyPlanDecision, isolatePlanApproval, PlanState, requestPlanApproval,
 import { registerQuestionnaire } from "./questionnaire.mjs";
 import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installFolding, installReasoningHide, isMcp, noteLine, orchestrateRenderers, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
-import { blocksUser } from "./dialog.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
 import { webFetchTool } from "./web-fetch.mjs";
@@ -263,22 +263,6 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     } catch (error) { return { block: true, reason: error.message }; }
   });
 
-  // herdr's pi extension reports `blocked` only on this bus event; pi's prompt
-  // span is the one signal covering plan approval, questions and broker confirms.
-  // Views (the peek, /plan show) open spans too and are not forwarded.
-  // Drop once herdr's extension subscribes to ui_prompt_* itself, or each prompt counts twice.
-  let blocked = false;
-  pi.on("ui_prompt_start", event => {
-    if (!blocksUser(event)) return;
-    blocked = true;
-    pi.events.emit("herdr:blocked", { active: true, label: event.title });
-  });
-  pi.on("ui_prompt_end", () => {
-    if (!blocked) return;
-    blocked = false;
-    pi.events.emit("herdr:blocked", { active: false });
-  });
-
   // Mode, approval and ultracode reach the status line as one string so they
   // can never drift; the footer paints it, where the theme is live.
   const publishStatus = ctx => ctx.ui.setStatus("workflow", `${broker.policy.mode} ${broker.policy.approval}${orchestrate?.armed() ? " ultracode" : ""}`);
@@ -311,6 +295,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   async function shutdown() {
+    surfaces?.herdr?.shutdown();
     // pi persists each level change and a resume restores the last one.
     if (isRoot) ultrathink.end();
     plans.generation++;
@@ -338,7 +323,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (failures.length) throw new Error(`Workflow shutdown cleanup failed: ${failures.join("; ")}`);
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     currentContext = ctx;
     if (isRoot) { plans.restore(ctx); orchestrate.disarm(); }
@@ -366,12 +351,19 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       pendingInput = installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
       if (!surfaces) {
         installFolding(pi, ctx);
-        const footer = installFooter(pi, ctx, { fleet, tasks });
+        // RPC reports hasUI too, with no pane for herdr to show. Its attach
+        // re-anchors the session before the footer reports into it.
+        const herdr = ctx.mode === "tui" ? installHerdr(pi) : undefined;
+        herdr?.attach(ctx, event.reason);
+        const footer = installFooter(pi, ctx, { fleet, tasks, onActivity: herdr?.report });
         // `!` runs in zsh with the interactive config; workspace_bash stays on
         // bash -c without rc, which would otherwise load into every sandboxed call
         const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations({ shellPath: "/bin/zsh" }).exec, env: hostEnvironment, prefix: () => "source ~/.zshrc" });
-        surfaces = { footer, shell };
-      } else surfaces.footer.attach(ctx);
+        surfaces = { footer, shell, herdr };
+      } else {
+        surfaces.herdr?.attach(ctx, event.reason);
+        surfaces.footer.attach(ctx);
+      }
       // pi resets every extension surface when a session is invalidated
       // (/new, /resume), so these are applied on each session start.
       installHeader(ctx);

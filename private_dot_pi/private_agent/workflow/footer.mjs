@@ -167,9 +167,10 @@ export class WorkingRow extends Loader {
     this.paddingX = 0;
     this.stop();
   }
-  // Loader's invalidate (a theme switch among them) redraws through
-  // updateDisplay, so the frozen snapshot is a mode of it, not a one-off
-  // setText that the next redraw would replace with a spinner frame.
+  // A row with no spinner frame (the waiting row, rule 4): Loader's invalidate
+  // (a theme switch among them) redraws through updateDisplay, so it is a mode
+  // of it, not a one-off setText that the next redraw would replace with a
+  // spinner frame.
   snapshot(message) {
     this.stop();
     this.message = message;
@@ -203,8 +204,8 @@ export class WorkingRow extends Loader {
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
-export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock(), tickMs = 1000, settleMs = 250, wakeMs = 10_000, readLimits = readRateLimits, folds = defaultFolds } = {}) {
-  const state = { ctx, limits: null, changes: null, usageAt: -Infinity, gitAt: 0, tui: null, tick: null, prompting: false, waiting: false, stopped: false, settledAt: 0, endedAt: 0, settle: null, wake: null, working: null, compacting: false, shell: null };
+export function installFooter(pi, ctx, { fleet, tasks, onActivity, clock = createTurnClock(), tickMs = 1000, settleMs = 250, wakeMs = 10_000, readLimits = readRateLimits, folds = defaultFolds } = {}) {
+  const state = { ctx, limits: null, changes: null, usageAt: -Infinity, gitAt: 0, tui: null, tick: null, prompt: null, waiting: false, stopped: false, endedAt: 0, settle: null, wake: null, working: null, compacting: false, shell: null };
   let usageInFlight;
   let nativeRevision = 0;
   const acceptNative = limits => {
@@ -254,32 +255,48 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   // unless a background child or task is still running, in which case the turn
   // stays open until the follow-up run settles, the last of that work ends
   // with the root idle, or the user types (a line naming what still runs; the
-  // typed prompt's turn takes any later wake). An aborted run closes at once
-  // as "Interrupted".
-  const label = () => (state.prompting ? "Waiting for you…" : clock.label());
+  // typed prompt's turn takes any later wake). Until then the settled root's
+  // row waits, ticking and naming that work. An aborted run closes at once as
+  // "Interrupted", naming any work still live.
   const clearTick = () => {
     clearInterval(state.tick);
     state.tick = null;
   };
-  // A running `!` command outranks the turn label (rule 3: one place per
-  // fact); its own tick keeps the elapsed time live even with no turn
-  // running. Compaction outranks both — pi draws its own indicator then, and
-  // rule 3 allows only one — regardless of which of the two this row would
-  // otherwise be showing.
+  const busy = () => ({ agents: fleet?.activeCount?.() ?? 0, shells: tasks?.live?.() ?? 0 });
+  const live = () => { const { agents, shells } = busy(); return agents + shells > 0; };
+  // A prompt waiting on the user outranks the rest (rule 11), drawn without a
+  // spinner frame when nothing animates the row. A running `!` command
+  // outranks the turn label (rule 3: one place per fact); its own tick keeps
+  // the elapsed time live even with no turn running. Compaction outranks all —
+  // pi draws its own indicator then, and rule 3 allows only one.
   const showLabel = () => {
     if (state.compacting) state.working?.setMessage("");
-    else if (state.shell) state.working?.setMessage(`Running ${shortTitle(firstLine(state.shell.command))}… ${formatDuration(Date.now() - state.shell.startedAt)}`);
+    else if (state.prompt) {
+      if (state.shell || (clock.running() && !state.waiting)) state.working?.setMessage("Waiting for you…");
+      else state.working?.snapshot("Waiting for you…");
+    } else if (state.shell) state.working?.setMessage(`Running ${shortTitle(firstLine(state.shell.command))}… ${formatDuration(Date.now() - state.shell.startedAt)}`);
     else if (!clock.running()) state.working?.setMessage("");
-    else if (state.waiting && !state.prompting) state.working?.snapshot(state.waiting);
-    else state.working?.setMessage(label());
+    else if (state.waiting) state.working?.snapshot(clock.waitingLabel(busy()));
+    else state.working?.setMessage(clock.label());
   };
+  // The pane state herdr shows (herdr.mjs) is this footer's turn: blocked
+  // while a prompt waits on the user, working while the turn is open (its
+  // clock runs through the waiting row and its wakes), pi compacts or a `!`
+  // runs, else idle. It is reported after every turn handler and timer close;
+  // the reporter drops repeats. A session that has shut down reports nothing
+  // until it is attached again, or /new would report done ahead of herdr's
+  // re-anchor.
+  const activity = () => state.prompt ? { state: "blocked", message: state.prompt.title }
+    : { state: clock.running() || state.compacting || state.shell ? "working" : "idle" };
+  const report = () => { if (!state.stopped) onActivity?.(activity()); };
+  const on = (name, handler) => pi.on(name, (...args) => { const result = handler(...args); report(); return result; });
   const stopWorking = () => {
     state.working?.setMessage("");
     state.working?.stop();
   };
   const startWorking = () => {
     state.compacting = false;
-    if (!clock.running()) return;
+    if (!clock.running()) return showLabel();
     if (!state.waiting) state.working?.start();
     showLabel();
   };
@@ -297,12 +314,12 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     else if (!clock.running()) {
       clearTick();
       stopWorking();
+      if (state.prompt) showLabel();
     } else {
       showLabel();
     }
+    report();
   };
-  const busy = () => ({ agents: fleet?.activeCount?.() ?? 0, shells: tasks?.live?.() ?? 0 });
-  const live = () => { const { agents, shells } = busy(); return agents + shells > 0; };
   const clearSettle = () => {
     clearTimeout(state.settle);
     state.settle = null;
@@ -320,9 +337,11 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     const turn = clock.stop(at, options);
     if (turn) appendVisible(pi, "workflow-turn", turn);
     if (state.shell) armShell();
+    else if (state.prompt) showLabel();
+    report();
   };
   // The last child or shell can end with no wake to follow (none owed, or its
-  // wake declined); the frozen row then closes at that moment. The grace lets
+  // wake declined); the waiting row then closes at that moment. The grace lets
   // a wake that is on its way start the root run first, which takes the turn.
   // pi-subagents' wake, sent as a triggered custom message, is busy from the
   // send. An extension's sendUserMessage wake holds the close outright once its
@@ -347,7 +366,7 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
   };
   fleet?.onChange(workChanged);
   tasks?.onChange(workChanged);
-  pi.on("agent_start", () => {
+  on("agent_start", () => {
     clock.start();
     clearSettle();
     clearWake();
@@ -362,19 +381,17 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     void refreshUsage();
     void refreshGit(eventCtx.cwd);
   });
-  pi.on("agent_settled", event => {
+  // The turn's tick stays armed through the waiting row: its clock still runs.
+  on("agent_settled", event => {
     if (!clock.running()) return;
-    if (event?.aborted) return close({ aborted: true });
-    if (live()) {
-      state.settledAt = state.endedAt = Date.now();
-      state.waiting = clock.settledLabel(state.settledAt);
-      clearTick();
-      if (state.shell) armShell();
-      else showLabel();
-    } else close();
+    if (event?.aborted) return close({ aborted: true, ...(live() && { running: busy() }) });
+    if (!live()) return close();
+    state.endedAt = Date.now();
+    state.waiting = true;
+    showLabel();
   });
-  pi.on("input", event => {
-    if (state.waiting && event.source !== "extension") close(live() ? { at: state.settledAt, running: busy() } : {});
+  on("input", event => {
+    if (state.waiting && event.source !== "extension") close(live() ? { running: busy() } : {});
     else if (state.waiting && !state.stopped) {
       clearSettle();
       clearWake();
@@ -386,19 +403,20 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
     }
     return { action: "continue" };
   });
-  pi.on("ui_prompt_start", event => { state.prompting = blocksUser(event); showLabel(); });
-  pi.on("ui_prompt_end", () => { state.prompting = false; showLabel(); });
+  on("ui_prompt_start", event => { state.prompt = blocksUser(event) ? { title: event.title } : null; showLabel(); });
+  on("ui_prompt_end", () => { state.prompt = null; showLabel(); });
   // pi draws its own indicator while it compacts, in the status container just
   // above this row; rule 3 allows one, so the row stands down and comes back
   // with the turn. Its auto-retry countdown has no documented event and keeps
   // its own indicator alongside this one.
-  pi.on("session_before_compact", () => { state.compacting = true; stopWorking(); });
+  on("session_before_compact", () => { state.compacting = true; stopWorking(); });
   // Compaction counts as not idle and emits no input, so work that ended during
-  // it is re-checked here or the frozen row would never close.
-  pi.on("session_compact", () => { startWorking(); if (state.shell) armShell(); workChanged(); });
-  pi.on("session_compact_failed", () => { startWorking(); if (state.shell) armShell(); workChanged(); });
-  // The open turn is dropped, not closed: after /new its line would land in the next session.
-  pi.on("session_shutdown", () => { state.stopped = true; state.waiting = false; clock.stop(); clearTick(); clearSettle(); clearWake(); stopWorking(); });
+  // it is re-checked here or the waiting row would never close.
+  on("session_compact", () => { startWorking(); if (state.shell) armShell(); workChanged(); });
+  on("session_compact_failed", () => { startWorking(); if (state.shell) armShell(); workChanged(); });
+  // The open turn is dropped, not closed: after /new its line would land in the
+  // next session. A prompt or compaction it cut off would report on at attach.
+  pi.on("session_shutdown", () => { state.stopped = true; state.waiting = false; state.prompt = null; state.compacting = false; clock.stop(); clearTick(); clearSettle(); clearWake(); stopWorking(); });
   pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
   void refreshGit(ctx.cwd);
@@ -462,6 +480,7 @@ export function installFooter(pi, ctx, { fleet, tasks, clock = createTurnClock()
         },
       };
     });
+    report();
   };
   attach(ctx);
   return { attach, working, refreshUsage };

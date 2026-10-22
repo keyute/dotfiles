@@ -17,11 +17,8 @@ alias lsql='lazysql'
 # The CLI is the repo's lockfile-pinned copy: pi breaks extension APIs across
 # 0.x point releases, and the workflow extension must match it exactly.
 pi() {
-  local -a pi_extensions=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts")
-  [[ ! -f "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts" ]] ||
-    pi_extensions+=(-e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/herdr-agent-state.ts")
   # No startup network activity (version check, catalog refresh).
-  PI_OFFLINE=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions "${pi_extensions[@]}" "$@"
+  PI_OFFLINE=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions -e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts" "$@"
 }
 
 # `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the

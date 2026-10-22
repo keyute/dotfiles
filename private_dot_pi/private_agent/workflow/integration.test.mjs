@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { createConnection, createServer } from "node:net";
+import net, { createConnection, createServer } from "node:net";
+import { syncBuiltinESMExports } from "node:module";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,8 +14,8 @@ import { streamSimple } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
+import { readLines, sendLine } from "./lines.mjs";
 import { activeToolNames, taskNotifier } from "./index.mjs";
-import { openWait } from "./dialog.mjs";
 
 // Unix sockets are unavailable in some sandboxes (EPERM on listen); probe once
 // up front so every test in this file can share one skip reason.
@@ -341,17 +342,6 @@ test("pinned upstream packages register against the managed extension and prefli
     assert.ok(guidelines.some(line => line.includes(`workspace_${name}`)));
     assert.ok(guidelines.every(line => !new RegExp(`(?<!workspace_)\\b${name}\\b(?= )`).test(line)), guidelines.join("\n"));
   }
-  const blocked = [];
-  events.on("herdr:blocked", data => blocked.push(data));
-  const prompt = (kind, title) => {
-    for (const handler of handlers.get("ui_prompt_start")) handler({ type: "ui_prompt_start", kind, ...(title ? { title } : {}) });
-    for (const handler of handlers.get("ui_prompt_end")) handler({ type: "ui_prompt_end", kind });
-  };
-  prompt("custom");
-  assert.deepEqual(blocked, [], "a bare custom dialog is a view");
-  prompt("confirm", "Approve");
-  await openWait({ ui: { custom: async () => prompt("custom") } }, () => {});
-  assert.deepEqual(blocked, [{ active: true, label: "Approve" }, { active: false }, { active: true, label: undefined }, { active: false }]);
   await assert.rejects(tools.get("workspace_read").execute("test", { path: "fixture" }), /not ready/);
   // The unsandboxed flag is offered to root and withheld from a read-only role (policy refuses it regardless).
   assert.ok(tools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox);
@@ -572,6 +562,88 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.equal(level, "low");
   assert.match((await third).content[0].text, /Workflow interrupted/);
   assert.ok(order.includes("stop:run-5") && order.indexOf("stop:run-5") < order.indexOf("close"), order.join(","));
+});
+
+test("only a TUI root reports to herdr, re-anchoring first and suspending before awaited cleanup", async t => {
+  const { config, root } = fixture(t);
+  config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const frames = [];
+  const socketPath = join(root, "h.sock");
+  t.mock.method(net, "createConnection", () => {
+    const socket = new EventEmitter();
+    socket.destroy = () => {};
+    socket.write = line => { frames.push(JSON.parse(line)); queueMicrotask(() => socket.emit("data", "{}\n")); };
+    queueMicrotask(() => socket.emit("connect"));
+    return socket;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const previous = { HERDR_ENV: process.env.HERDR_ENV, HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH, HERDR_PANE_ID: process.env.HERDR_PANE_ID };
+  Object.assign(process.env, { HERDR_ENV: "1", HERDR_SOCKET_PATH: socketPath, HERDR_PANE_ID: "p1" });
+  t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const { installWorkflow } = await import("./index.mjs");
+  // A fresh install per mode: herdr is wired only at the first UI session start.
+  const start = async (mode, close = async () => {}) => {
+    const handlers = new Map();
+    const bus = new EventEmitter();
+    const events = { on: (name, fn) => { bus.on(name, fn); return () => bus.off(name, fn); }, emit: (name, payload) => bus.emit(name, payload) };
+    events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
+      ? { capabilities: { stop: true } }
+      : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, runs: [] } } }));
+    const pi = {
+      events, getThinkingLevel: () => "low", setThinkingLevel() {},
+      on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+      registerTool() {}, registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+      sendMessage() {}, getFlag() { return false; }, getAllTools: () => [], getActiveTools: () => [], setActiveTools() {}, getMcpServers: () => [],
+    };
+    const policy = { mode: "plan", epoch: 1, approval: "auto" };
+    const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} };
+    await installWorkflow(pi, configPath, "root", { startBroker: async () => ({ env: {}, policy, setMode: async next => { policy.mode = next; }, close }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
+    const ui = { setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {} };
+    const ctx = {
+      cwd: process.cwd(), mode, hasUI: true, isIdle: () => true, isProjectTrusted: () => true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, getContextUsage: () => null,
+      sessionManager: { getSessionId: () => `herdr-${mode}`, getSessionFile: () => `/abs/${mode}.jsonl`, getBranch: () => [] },
+      modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] }, ui,
+    };
+    const fire = async (name, event = {}) => { for (const handler of handlers.get(name) ?? []) await handler(event, ctx); };
+    await fire("session_start", { reason: "startup" });
+    t.after(() => fire("session_shutdown", { reason: "quit" }));
+    return fire;
+  };
+  await start("rpc");
+  await flush();
+  assert.deepEqual(frames, [], "RPC reports hasUI with no pane to show");
+  let releaseCleanup, cleanupStarted = false;
+  const cleanup = new Promise(resolve => { releaseCleanup = resolve; });
+  t.after(() => releaseCleanup());
+  const fire = await start("tui", () => { cleanupStarted = true; return cleanup; });
+  await flush();
+  assert.equal(frames[0].method, "pane.report_agent_session");
+  assert.equal(frames[0].params.session_start_source, "startup");
+  assert.equal(frames[0].params.agent_session_path, "/abs/tui.jsonl");
+  assert.ok(frames.findIndex(frame => frame.method === "pane.report_agent") > 0);
+
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  await fire("agent_start");
+  await flush();
+  assert.equal(frames.at(-1).params.state, "working");
+  await fire("agent_settled");
+  t.mock.timers.tick(100);
+  const closing = fire("session_shutdown", { reason: "switch" });
+  await flush();
+  assert.ok(cleanupStarted, "shutdown is awaiting cleanup before later handlers run");
+  const before = frames.length;
+  t.mock.timers.tick(300);
+  await flush();
+  assert.equal(frames.length, before, "no delayed idle while shutdown awaits cleanup");
+  releaseCleanup();
+  await closing;
+  await fire("session_start", { reason: "new" });
+  await flush();
+  assert.deepEqual(frames.slice(before).map(frame => [frame.method, frame.params.session_start_source ?? frame.params.state]), [["pane.report_agent_session", "new"], ["pane.report_agent", "idle"]]);
 });
 
 test("headless root cleanup uses plugin RPC before its shutdown hook and still closes the broker on stop failure", async t => {
