@@ -422,6 +422,7 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
     sendMessage: (message, options) => { sent.push({ message, options }); },
     getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, getMcpServers() { return []; },
+    getCommands: () => [...[...commands.keys()].map(name => ({ name, source: "extension" })), { name: "skill:x", source: "skill" }],
   };
   const spawned = [];
   let onSpawn;
@@ -458,9 +459,22 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   ctx.hasUI = true;
   order.length = 0;
   const run = () => tools.get("orchestrate").execute("o1", { script: 'return await agent("look", { agentType: "fixture-reader", label: "Look" })' }, new AbortController().signal, undefined, ctx);
-  const input = (text, source = "user") => { for (const handler of handlers.get("input")) handler({ source, text, streamingBehavior: "followUp" }); };
+  // pi stops at the first `handled`, as runner.js's input dispatch does.
+  const input = (text, source = "user") => { for (const handler of handlers.get("input")) { const result = handler({ source, text, streamingBehavior: "followUp" }, ctx); if (result?.action === "handled") return result; } return { action: "continue" }; };
   const deliver = text => { for (const handler of handlers.get("message_start")) handler({ message: { role: "user", content: [{ type: "text", text }] } }, ctx); };
   const arm = () => { input("ultracode: run it"); deliver("ultracode: run it"); };
+  // An interactive /word naming no command, template or skill is refused; paths, known names and other sources continue.
+  const notices = [];
+  ctx.ui.notify = (text, level) => notices.push([level, text]);
+  for (const text of ["/nope", "/skill:nope do it"]) assert.deepEqual(input(text, "interactive"), { action: "handled" });
+  assert.deepEqual(notices, [["error", "/nope was not sent: no extension command, template or skill by that name"], ["error", "/skill:nope was not sent: no extension command, template or skill by that name"]]);
+  for (const [text, source] of [["/skill:x go", "interactive"], ["/btw why?", "interactive"], ["/a/b c", "interactive"], ["plain", "interactive"], ["/nope", "extension"], ["/nope", "rpc"]]) assert.deepEqual(input(text, source), { action: "continue" }, text);
+  // Print mode sends its prompt as interactive with no UI; refusing it would drop it silently.
+  ctx.hasUI = false;
+  assert.deepEqual(input("/nope", "interactive"), { action: "continue" });
+  ctx.hasUI = true;
+  assert.equal(notices.length, 2);
+  ctx.ui.notify = () => {};
   // ultrathink holds through agent_end (retries and continuations re-run the loop) until the prompt settles.
   deliver("ultrathink it");
   assert.equal(level, "max");
@@ -679,7 +693,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); },
     registerCommand(name, command) { commands.set(name, command); }, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry(type, data) { entries.push({ type, data }); },
-    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return [...tools.keys()]; }, setActiveTools(names) { activeTools.push(names); },
+    getFlag() { return false; }, getAllTools() { return [...tools.values()]; }, getActiveTools() { return [...tools.keys()]; }, setActiveTools(names) { activeTools.push(names); }, getCommands: () => [],
   };
   const broker = {
     env: { PI_WORKFLOW_SOCKET: "fake-socket", PI_WORKFLOW_TOKEN: "fake-token" },
@@ -822,6 +836,9 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   for (const handler of handlers.get("tool_call")) structuredVerdict ??= await handler({ toolName: "structured_output", input: {} }, ctx);
   assert.equal(structuredVerdict?.block, true, "structured_output is a child's tool only");
   assert.deepEqual(tools.get("ask_user_question").renderCall().render(), []);
+  ctx.hasUI = true;
+  for (const handler of handlers.get("input") ?? []) handler({ source: "interactive", text: "/nope typo'd" }, ctx);
+  ctx.hasUI = false;
   for (const handler of handlers.get("input") ?? []) handler({ source: "user", text: "Choose implementation." }, ctx);
   const completed = {
     toolName: "ask_user_question",
@@ -831,6 +848,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.deepEqual(entries.at(-1), { type: "workflow-answers", data: { answers: [{ question: "Which complete direction should we take?", answer: "Fast — keeps the exact note; Safe", notes: "raw custom: 1,3" }] } });
   await review({ approval: "auto", tool: "bash", args: { command: "true" } });
   assert.match(classified, /User decision: Which complete direction should we take\? → Fast — keeps the exact note; Safe — raw custom: 1,3/);
+  assert.doesNotMatch(classified, /typo'd/, "a refused command stays out of the classifier task");
   for (const event of [{ ...completed, isError: true }, { ...completed, result: { ...completed.result, isError: true } }, { ...completed, result: { details: { ...completed.result.details, error: "unavailable" } } }, { ...completed, result: { details: { ...completed.result.details, cancelled: true } } }, { ...completed, result: { details: { cancelled: false, answers: [] } } }]) {
     for (const handler of handlers.get("tool_execution_end") ?? []) handler(event, ctx);
   }

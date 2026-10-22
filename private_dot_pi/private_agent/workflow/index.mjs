@@ -25,6 +25,7 @@ import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, d
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
+import { askBtw } from "./btw.mjs";
 import { webFetchTool } from "./web-fetch.mjs";
 import { CONTROL_NOTICE, NOTICE_RENDERERS, QUIET_MESSAGES, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
 
@@ -387,7 +388,15 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // pi fires `input` at queue time and the user message_start at delivery;
   // deciding the opt-in from the delivered text, as pi's own queue splice
   // matches by text, keeps queued, dequeued, retried and RPC-sent messages aligned.
-  pi.on("input", event => {
+  pi.on("input", (event, ctx) => {
+    // A typo'd command would otherwise reach the model as text; a path is a message.
+    // Print mode's prompt is "interactive" too, with no UI to show the refusal.
+    // getCommands() omits pi's built-ins, so the notice cannot call a name unknown.
+    const name = isRoot && ctx.hasUI && event.source === "interactive" ? event.text.match(/^\/(\S+)/)?.[1] : undefined;
+    if (name && !name.includes("/") && !pi.getCommands().some(command => command.name === name)) {
+      ctx.ui.notify(`/${name} was not sent: no extension command, template or skill by that name`, "error");
+      return { action: "handled" };
+    }
     if (isRoot && event.source !== "extension") userTask = `${userTask}\n${event.text}`.slice(-TASK_CHARS);
     if (isRoot && event.source === "extension") orchestrate.noteExtensionInput(event.text);
     return { action: "continue" };
@@ -491,6 +500,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       appendVisible(pi, "workflow-note", { text: `Removed ${dir} from the workspace` });
     } });
     pi.registerCommand("usage", { description: "Show plan limits, context use and session cost", handler: async (_args, ctx) => appendVisible(pi, "workflow-usage", await readUsage(pi, ctx, surfaces?.footer ? { readLimits: () => surfaces.footer.refreshUsage({ force: true }) } : undefined)) });
+    pi.registerCommand("btw", { description: "Ask a quick side question without adding it to the conversation", handler: (args, ctx) => askBtw(ctx, args) });
     pi.registerEntryRenderer("workflow-usage", (entry, _options, theme) => usageComponent(entry.data, theme));
     pi.registerEntryRenderer("workflow-note", (entry, _options, theme) => new Text(noteLine(entry.data.text, theme), 0, 0));
     // The questionnaire owns its invisible renderers; completed answers feed

@@ -1,6 +1,6 @@
 import { Markdown, visibleWidth } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Dialog, openView, openWait } from "./dialog.mjs";
+import { Dialog, MarkdownView, openView, openWait } from "./dialog.mjs";
 import { TASK_CHARS } from "./approval.mjs";
 
 export const PLAN_APPROVED = "approved";
@@ -106,32 +106,13 @@ export class PlanState {
   }
 }
 
-class PlanViewComponent extends Dialog {
+class PlanViewComponent extends MarkdownView {
   constructor(tui, theme, keybindings, done, snapshot, signal) {
     super(tui, theme, keybindings, done, signal);
     this.snapshot = snapshot;
     this.markdown = new Markdown(snapshot.plan, 2, 0, getMarkdownTheme());
-    this.offset = 0;
   }
-  invalidate() {
-    super.invalidate();
-    this.markdown.invalidate();
-  }
-  editingNow() { return false; }
-  handleInput(data) {
-    const keys = this.keys(data);
-    if (keys.cancel || keys.enter) this.finish();
-    if (keys.up || keys.pageUp) this.offset = Math.max(0, this.offset - (keys.pageUp ? 10 : 1));
-    if (keys.down || keys.pageDown) this.offset = Math.min(this.maxOffset ?? 0, this.offset + (keys.pageDown ? 10 : 1));
-    this.refresh();
-  }
-  render(width) {
-    const body = this.markdown.render(width);
-    const height = Math.max(1, Math.floor(this.tui.terminal.rows / 2) - 4);
-    this.maxOffset = Math.max(0, body.length - height);
-    this.offset = Math.min(this.offset, this.maxOffset);
-    return this.frame([...this.line(this.theme.bold(`Plan · revision ${this.snapshot.revision}`), width), "", ...body.slice(this.offset, this.offset + height)], width);
-  }
+  heading(width) { return this.line(this.theme.bold(`Plan · revision ${this.snapshot.revision}`), width); }
 }
 
 export async function showPlan(ctx, snapshot) {

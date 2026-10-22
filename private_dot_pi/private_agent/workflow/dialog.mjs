@@ -9,7 +9,7 @@ export const editorTheme = theme => ({
   },
 });
 
-// The view holding the composer slot (the fleet peek, /plan show). pi's
+// The view holding the composer slot (the fleet peek, /plan show, /btw). pi's
 // non-overlay ctx.ui.custom clears the slot under whatever is there, orphaning
 // it, and reports only the outermost prompt span, so anything taking the slot
 // closes the view first. `mount(signal)` runs at once and is aborted by the
@@ -126,5 +126,35 @@ export class Dialog {
   hang(prefix, lines) {
     const indent = " ".repeat(visibleWidth(prefix));
     return [`${prefix}${lines[0] ?? ""}`, ...lines.slice(1).map(line => `${indent}${line}`)];
+  }
+}
+
+// A read-only view scrolling `this.markdown` under `heading(width)`; until a
+// subclass sets the markdown it shows `placeholder(width)`.
+export class MarkdownView extends Dialog {
+  constructor(tui, theme, keybindings, done, signal) {
+    super(tui, theme, keybindings, done, signal);
+    this.offset = 0;
+  }
+  invalidate() {
+    super.invalidate();
+    this.markdown?.invalidate();
+  }
+  editingNow() { return false; }
+  handleInput(data) {
+    const keys = this.keys(data);
+    if (keys.cancel || keys.enter) this.finish();
+    if (keys.up || keys.pageUp) this.offset = Math.max(0, this.offset - (keys.pageUp ? 10 : 1));
+    if (keys.down || keys.pageDown) this.offset = Math.min(this.maxOffset ?? 0, this.offset + (keys.pageDown ? 10 : 1));
+    this.refresh();
+  }
+  render(width) {
+    const heading = [...this.heading(width), ""];
+    if (!this.markdown) return this.frame([...heading, ...this.placeholder(width)], width);
+    const body = this.markdown.render(width);
+    const height = Math.max(1, Math.floor(this.tui.terminal.rows / 2) - 4);
+    this.maxOffset = Math.max(0, body.length - height);
+    this.offset = Math.min(this.offset, this.maxOffset);
+    return this.frame([...heading, ...body.slice(this.offset, this.offset + height)], width);
   }
 }
