@@ -1,0 +1,10 @@
+[fixed_dirs]
+# built-ins include ~/.cache, ~/.npm/_cacache, ~/.gradle/caches
+enabled = true
+extra = ~/.npm
+extra = ~/.omlx
+# GOPATH is ~/.go, not the built-in ~/go
+extra = ~/.go/pkg/mod
+extra = ~/.android/avd
+extra = ~/Library/Android/sdk
+extra = ~/Library/Developer/CoreSimulator

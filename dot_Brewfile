@@ -3,6 +3,7 @@ tap "buo/cask-upgrade", trusted: true
 tap "hashicorp/tap", trusted: true
 tap "jundot/omlx", "https://github.com/jundot/omlx", trusted: true
 tap "siderolabs/tap", trusted: true
+brew "asimov", start_service: true
 brew "bat"
 brew "chezmoi"
 brew "cloudflared"
