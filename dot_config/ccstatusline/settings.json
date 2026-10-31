@@ -14,20 +14,7 @@
         "rawValue": true
       },
       { "id": "sep-b", "type": "separator", "character": " · ", "color": "brightBlack" },
-      { "id": "lbl-ses", "type": "custom-text", "customText": "ses ", "color": "brightBlack" },
-      {
-        "id": "session",
-        "type": "session-usage",
-        "rawValue": true,
-        "color": "brightBlack"
-      },
-      { "id": "sep-ses", "type": "separator", "character": " ", "color": "brightBlack" },
-      {
-        "id": "session-reset",
-        "type": "reset-timer",
-        "rawValue": true,
-        "color": "brightBlack"
-      },
+      { "id": "session", "type": "custom-command", "commandPath": "~/.config/ccstatusline/session-limit.js", "color": "brightBlack" },
       { "id": "sep-c", "type": "separator", "character": " · ", "color": "brightBlack" },
       { "id": "lbl-wk", "type": "custom-text", "customText": "wk ", "color": "brightBlack" },
       {
