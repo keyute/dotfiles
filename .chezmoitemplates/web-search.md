@@ -1,3 +1,3 @@
-- Web search and fetch: built-in by default (cost); where the role has Exa, escalate to the
-  Exa MCP (search or fetch) when built-in results are sparse, stale, miss community sources,
-  or when a fetch is refused or empty.
+- Web search and fetch: start with the built-in tools (Exa bills per call). Where the role
+  has Exa, escalate to the Exa MCP (search or fetch) only after a built-in call for that
+  same need came back sparse, stale, refused or empty — not alongside it.

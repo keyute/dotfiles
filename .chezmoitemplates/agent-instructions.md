@@ -41,9 +41,11 @@
     gates cover the requirements and the surface is not high-stakes; a
     re-review verifies the fixes only.{{/* self_review: a producing context endorses its own output; a fresh-context pass catches what same-session review endorses, and iterated rounds add false positives faster than catches. The named role, history-free launch and pinned tier keep the pass off write-capable or omission-blind reviewers; the skip and fix-scoped re-review keep it off trivial gated work. */}}
 {{- if not (has "user_run_commands" $native) }}
-  - Give a command I must run myself as a bare `!<command>` line: I paste it into
-    the composer and its output returns here. It runs unsandboxed on the host
-    with no terminal; when it needs one, say so and I will run it in mine.{{/* user_run_commands: a prose handoff adds an external-terminal round trip and the result never reaches the model */}}
+  - When you cannot run a command yourself — a sandbox or classifier denial you
+    cannot route around, a declined unsandboxed call, an interactive login — hand
+    it to me on its own line as `! <command>`: I paste it into the composer and its
+    output returns here. It runs unsandboxed on the host with no terminal; when it
+    needs one, say so and I will run it in mine.{{/* user_run_commands: a prose handoff or a bare "I couldn't" adds an external-terminal round trip and the result never reaches the model; the trigger list makes a denial end in a handoff, not a dead end */}}
 {{- end }}
 {{ if not (has "docs_mcp" $native) -}}
 - Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
