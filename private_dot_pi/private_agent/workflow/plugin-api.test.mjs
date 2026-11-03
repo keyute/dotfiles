@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { recordingExec, trimHistory, workflowPrompt } from "./index.mjs";
 import { DRAWN_ENTRIES, NOTICE_RENDERERS, QUIET_MESSAGES, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
 import { addFold, appendVisible, closeFolds, createFolds } from "./rows.mjs";
@@ -10,7 +14,8 @@ test("the plugin API records every registered tool name and forwards everything 
   const tools = new Map();
   const names = new Set();
   const events = { on() {} };
-  const pi = { events, on: () => "on", registerTool(tool) { tools.set(tool.name, tool); } };
+  const receivers = [];
+  const pi = { events, on() { receivers.push(this); return "on"; }, registerTool(tool) { tools.set(tool.name, tool); } };
   const styled = pluginApi(pi, {}, {}, undefined, undefined, undefined, undefined, names);
   const { registerTool } = styled; // a plugin may extract the function
   const execute = () => {};
@@ -22,7 +27,10 @@ test("the plugin API records every registered tool name and forwards everything 
   assert.equal(tools.get("mcp__docs_q").renderCall, "theirs");
   assert.deepEqual([...names], ["subagent", "mcp__docs_q", "bg_wait"]);
   assert.equal(styled.events, events);
-  assert.equal(styled.on, pi.on);
+  assert.equal(styled.on("other", () => {}), "on");
+  assert.equal(receivers.at(-1), styled);
+  assert.equal(styled.on("session_start", () => {}), "on");
+  assert.equal(receivers.at(-1), styled, "context wrapping preserves the registration receiver");
 });
 
 test("the plugin API replaces only the subagent description without changing its executor or schema", () => {
@@ -262,13 +270,14 @@ test("shutdown retains child results without requesting a new model turn", () =>
   assert.equal(sent[1][0].display, false);
 });
 
-const { createParentWake, PARENT_WAKE_TEXT } = await import(new URL("../../../node_modules/pi-subagents/src/shared/parent-wake.js", import.meta.url));
+const { createParentWake } = await import(new URL("../../../node_modules/pi-subagents/src/shared/parent-wake.js", import.meta.url));
 const { default: registerSubagentNotify, createCompletionSendRegistry } = await import(new URL("../../../node_modules/pi-subagents/src/runs/background/notify.js", import.meta.url));
 const reservationsSymbol = Symbol.for("pi.idle-wake.v1");
 const queuedWakesSymbol = Symbol.for("pi-subagents.queued-completion-wakes.v2");
 const nativeNotifications = ({ idle = true, held = false, prior, batch = false } = {}) => {
   const sent = [];
   const users = [];
+  const persisted = [];
   const owned = new Set(["owned", "owned-2"]);
   const manager = { getSessionId: () => "session" };
   let current = manager;
@@ -279,11 +288,12 @@ const nativeNotifications = ({ idle = true, held = false, prior, batch = false }
     entries.add(handler);
     return () => entries.delete(handler);
   };
-  const pi = { on, events: { on: () => () => {} }, sendMessage: (message, options) => sent.push([message, options]), sendUserMessage: (...args) => users.push(args) };
+  const pi = { on, appendEntry: (...args) => persisted.push(args), events: { on: () => () => {} }, sendMessage: (message, options) => sent.push([message, options]), sendUserMessage: (...args) => users.push(args) };
   const api = pluginApi(pi, {}, QUIET_MESSAGES, undefined, undefined, undefined, undefined, undefined, () => idle, undefined,
     ids => { const all = ids.every(id => owned.has(id)); ids.forEach(id => owned.delete(id)); return all; }, () => current);
   const wake = createParentWake(api, () => 20_000);
-  wake.bindSession({ sessionManager: manager, isIdle: () => idle });
+  api.on("session_start", (_event, ctx) => wake.bindSession(ctx));
+  for (const handler of handlers.get("session_start")) handler({}, { sessionManager: manager, isIdle: () => idle });
   // Bind creates the lazy reservation through isPending, just as native liveness can.
   wake.isPending();
   if (prior !== undefined) globalThis[reservationsSymbol].get(manager).sentAt = prior;
@@ -294,7 +304,7 @@ const nativeNotifications = ({ idle = true, held = false, prior, batch = false }
   notifier.bindSession(manager);
   const deliver = (id, extra = {}) => notifier.deliver({ id, runId: id, sessionId: "session", completionOwnerId: "owner", agent: id, success: true, summary: id, ...extra });
   const state = globalThis[queuedWakesSymbol].get(manager);
-  return { api, wake, notifier, deliver, sent, users, manager, state, handlers, replace: value => { current = value; } };
+  return { api, wake, notifier, deliver, sent, users, manager, state, handlers, owned, persisted, replace: value => { current = value; } };
 };
 
 for (const idle of [true, false]) for (const held of [true, false]) for (const quiet of [true, false]) {
@@ -306,10 +316,13 @@ for (const idle of [true, false]) for (const held of [true, false]) for (const q
       assert.deepEqual(f.users, []);
       assert.deepEqual(f.state.wakes, []);
       assert.equal(f.state.unansweredCompletions.size, 0);
+      assert.equal(f.state.notices.size, 0);
       assert.equal(f.notifier.hasPendingDelivery(), false);
       for (const handler of f.handlers.get("agent_before_settle") ?? []) {
         assert.equal(handler({ outcome: "completed", context: { pendingMessages: [], contextMessages: [] }, entries: [] }), undefined);
       }
+      f.notifier.sessionShutdown("quit");
+      assert.deepEqual(f.persisted, []);
     } finally { f.notifier.dispose(); }
   });
 }
@@ -323,7 +336,7 @@ for (const prior of [undefined, 19_999, 1]) test(`owned idle reservation restore
     await f.deliver("unowned");
     assert.equal(f.sent[0][0].customType, "subagent-notify");
     assert.equal(f.sent[0][0].display, false);
-    assert.equal(f.sent.filter(([m]) => m.customType === "subagent-wake").length, prior === 19_999 ? 0 : 1);
+    assert.equal(f.sent[0][1].triggerTurn, prior !== 19_999);
   } finally { f.notifier.dispose(); }
 });
 
@@ -333,10 +346,11 @@ test("owned then unowned delivery in one stack retains only unowned native bookk
     const owned = f.deliver("owned");
     const unowned = f.deliver("unowned");
     await Promise.all([owned, unowned]);
-    assert.deepEqual(f.sent.map(([m]) => m.customType), ["subagent-notify", "subagent-wake"]);
+    assert.deepEqual(f.sent.map(([m]) => m.customType), ["subagent-notify"]);
     assert.equal(f.state.unansweredCompletions.size, 1);
     assert.match([...f.state.unansweredCompletions.keys()][0], /unowned/);
-    assert.deepEqual(f.state.wakes, []);
+    assert.deepEqual(f.state.wakes, [...f.state.unansweredCompletions.keys()]);
+    assert.equal(f.sent[0][1].triggerTurn, true);
   } finally { f.notifier.dispose(); }
 });
 
@@ -362,7 +376,7 @@ test("missing native shape forwards owned notices rather than partially consumin
   assert.equal(sent[0].display, false);
 });
 
-for (const replacement of ["manager", "session", "state", "entry"]) test(`cleanup leaves replacement ${replacement} untouched`, async () => {
+for (const replacement of ["manager", "session", "state", "entry", "notice", "wakes", "unanswered", "notices"]) test(`cleanup leaves replacement ${replacement} untouched`, async () => {
   const f = nativeNotifications({ idle: false });
   try {
     const delivery = f.deliver("owned");
@@ -371,45 +385,62 @@ for (const replacement of ["manager", "session", "state", "entry"]) test(`cleanu
     if (replacement === "session") f.manager.getSessionId = () => "next";
     if (replacement === "state") globalThis[queuedWakesSymbol].set(f.manager, { ...f.state });
     if (replacement === "entry") f.state.unansweredCompletions.set(content, { reminded: true });
+    if (replacement === "notice") f.state.notices.set(content, { content: "replacement" });
+    if (replacement === "wakes") f.state.wakes = [...f.state.wakes];
+    if (replacement === "unanswered") f.state.unansweredCompletions = new Map(f.state.unansweredCompletions);
+    if (replacement === "notices") f.state.notices = new Map(f.state.notices);
     await delivery;
     assert.equal(f.state.unansweredCompletions.size, 1);
     assert.equal(f.state.wakes.length, 1);
+    assert.equal(f.state.notices.size, 1);
   } finally { f.notifier.dispose(); }
 });
 
-test("an intervening send or a microtask clears owned-wake correlation", async () => {
-  for (const intervening of ["message", "user", "microtask"]) {
+test("consumed appended wakes are cleaned only after native splice and preserve unrelated wakes", async () => {
+  const f = nativeNotifications({ prior: 19_999 });
+  try {
+    f.state.wakes.push("unrelated");
+    const unrelated = { content: "unrelated" };
+    f.state.notices.set("unrelated", unrelated);
+    const delivery = f.deliver("owned");
+    assert.deepEqual(f.state.wakes, ["unrelated"], "native removed only its appended wake");
+    assert.equal(f.state.unansweredCompletions.size, 1, "cleanup waits for native bookkeeping");
+    await delivery;
+    assert.deepEqual(f.state.wakes, ["unrelated"]);
+    assert.deepEqual([...f.state.notices], [["unrelated", unrelated]]);
+    assert.equal(f.state.unansweredCompletions.size, 0);
+  } finally { f.notifier.dispose(); }
+});
+
+for (const mismatch of ["wakes", "notices", "unanswered", "session", "message", "snapshot", "reservation", "state"]) {
+  test(`invalid native ${mismatch} forwards without claiming ownership`, async () => {
     const f = nativeNotifications({ idle: false });
     try {
-      const delivery = f.deliver("owned");
-      if (intervening === "message") f.api.sendMessage({ customType: "supervisor", content: "ask" });
-      if (intervening === "user") f.api.sendUserMessage("other");
-      if (intervening === "microtask") await Promise.resolve();
-      globalThis[reservationsSymbol].get(f.manager).sentAt = 20_000;
-      f.api.sendUserMessage(PARENT_WAKE_TEXT, { deliverAs: "steer" });
-      await delivery;
-      assert.equal(f.sent.at(-1)[0].customType, "subagent-wake");
-      assert.equal(globalThis[reservationsSymbol].get(f.manager).sentAt, 20_000);
+      const content = "uncorrelated";
+      const message = { customType: "subagent-notify", content, details: { runs: [{ runId: "owned" }] } };
+      f.state.wakes.push(content);
+      f.state.notices.set(content, message);
+      f.state.unansweredCompletions.set(content, { reminded: false });
+      const ctx = { sessionManager: f.manager, isIdle: () => false };
+      let bound;
+      f.api.on("session_start", (_event, context) => { bound = context; });
+      [...f.handlers.get("session_start")].at(-1)({}, ctx);
+      if (mismatch !== "snapshot") bound.isIdle();
+      if (mismatch === "wakes") f.state.wakes = {};
+      if (mismatch === "notices") f.state.notices = {};
+      if (mismatch === "unanswered") f.state.unansweredCompletions = {};
+      if (mismatch === "session") f.manager.getSessionId = () => "replacement";
+      if (mismatch === "message") f.state.notices.set(content, { ...message });
+      if (mismatch === "reservation") globalThis[reservationsSymbol].set(f.manager, { sessionId: "session" });
+      if (mismatch === "state") globalThis[queuedWakesSymbol].set(f.manager, { ...f.state });
+      f.api.sendMessage(message, { triggerTurn: true });
+      assert.equal(f.sent.length, 1);
+      assert.equal(f.sent[0][0].display, false);
+      assert.equal(f.owned.has("owned"), true);
+      await Promise.resolve();
     } finally { f.notifier.dispose(); }
-  }
-});
-
-for (const replacement of ["reservation", "state", "session", "manager"]) test(`wake correlation leaves replacement ${replacement} untouched`, async () => {
-  const f = nativeNotifications({ idle: false });
-  try {
-    const delivery = f.deliver("owned");
-    const reservation = globalThis[reservationsSymbol].get(f.manager);
-    reservation.sentAt = 20_000;
-    if (replacement === "reservation") globalThis[reservationsSymbol].set(f.manager, { sessionId: "session", sentAt: 20_000 });
-    if (replacement === "state") globalThis[queuedWakesSymbol].set(f.manager, { ...f.state });
-    if (replacement === "session") f.manager.getSessionId = () => "next";
-    if (replacement === "manager") f.replace({ getSessionId: () => "session" });
-    f.api.sendUserMessage(PARENT_WAKE_TEXT, { deliverAs: "steer" });
-    await delivery;
-    assert.equal(f.sent.at(-1)[0].customType, "subagent-wake");
-    assert.equal(globalThis[reservationsSymbol].get(f.manager).sentAt, 20_000);
-  } finally { f.notifier.dispose(); }
-});
+  });
+}
 
 test("native owned notifications are isolated between session managers", async () => {
   const first = nativeNotifications({ idle: false });
@@ -419,27 +450,17 @@ test("native owned notifications are isolated between session managers", async (
     assert.equal(first.state.unansweredCompletions.size, 0);
     assert.equal(second.state.unansweredCompletions.size, 1);
     assert.deepEqual(first.sent, []);
-    assert.equal(second.sent.length, 2);
+    assert.equal(second.sent.length, 1);
   } finally { first.notifier.dispose(); second.notifier.dispose(); }
 });
 
-test("pi-subagents' parent wake is sent as a quiet custom message and dropped at shutdown, every other user message untouched", () => {
-  const sent = [];
+test("user messages, including former wake text, pass through untouched", () => {
   const users = [];
-  let shuttingDown = false;
-  const pi = { on() {}, sendMessage: (message, options) => sent.push([message, options]), sendUserMessage: (content, options) => users.push([content, options]) };
-  const { sendUserMessage } = pluginApi(pi, {}, QUIET_MESSAGES, undefined, () => shuttingDown);
-  const wake = "Inspect subagent updates above. Answer pending supervisor requests within your authority. For completed work, read saved results and resume the already-authorized parent task, or report completion. If approval is required, explicitly ask the user. Do not silently yield, rerun completed work, or infer new authorization.";
-  sendUserMessage(wake, { deliverAs: "steer" });
-  sendUserMessage(wake);
-  sendUserMessage("relayed", { deliverAs: "steer" });
-  shuttingDown = true;
-  sendUserMessage(wake, { deliverAs: "steer" });
-  // The whole wake reaches the model; only its box is hidden.
-  assert.deepEqual(sent, [
-    [{ customType: "subagent-wake", content: wake, display: false }, { deliverAs: "steer", triggerTurn: true }],
-  ]);
-  assert.deepEqual(users, [[wake, undefined], ["relayed", { deliverAs: "steer" }]]);
+  const pi = { on() {}, sendUserMessage: (...args) => users.push(args) };
+  const api = pluginApi(pi);
+  assert.equal(api.sendUserMessage, pi.sendUserMessage);
+  api.sendUserMessage("Inspect subagent updates above.", { deliverAs: "steer" });
+  assert.deepEqual(users, [["Inspect subagent updates above.", { deliverAs: "steer" }]]);
 });
 
 test("the control notice row is built from the event pi-subagents puts in details", () => {
@@ -494,4 +515,50 @@ test("an authorization carries the newest history that fits the serialized budge
   assert.deepEqual(trimHistory(history, 200), [entry("new")]);
   assert.deepEqual(trimHistory(history), history);
   assert.deepEqual(trimHistory([entry("x".repeat(500))], 100), []);
+});
+
+
+test("exported pi-subagents bundle consumes owned completions without wake, reminders or persistence", t => {
+  const root = mkdtempSync(join(tmpdir(), "pi-bundle-notify-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import assert from "node:assert/strict";
+    import { EventEmitter } from "node:events";
+    import { pluginApi, QUIET_MESSAGES } from ${JSON.stringify(new URL("./plugin-api.mjs", import.meta.url).href)};
+    const { default: register } = await import("pi-subagents");
+    const events = new EventEmitter();
+    const handlers = new Map();
+    const sent = [], entries = [];
+    const manager = { getSessionId: () => "bundle-session", getSessionFile: () => undefined,
+      getBranch: () => [], getEntries: () => [], getLeafId: () => null };
+    const raw = new Proxy({
+      events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
+      on(name, fn) { const list = handlers.get(name) ?? new Set(); list.add(fn); handlers.set(name, list); return () => list.delete(fn); },
+      sendMessage: (message, options) => sent.push([message, options]),
+      appendEntry: (...args) => entries.push(args),
+      getFlag: () => undefined, getActiveTools: () => [], getAllTools: () => [], getThinkingLevel: () => "off",
+    }, { get(target, key) { return target[key] ?? (() => {}); } });
+    const api = pluginApi(raw, {}, QUIET_MESSAGES, undefined, undefined, undefined, undefined, undefined,
+      () => true, undefined, ids => ids.every(id => id.startsWith("owned")), () => manager);
+    register(api);
+    const ctx = { cwd: process.env.PI_CODING_AGENT_DIR, hasUI: false, sessionManager: manager,
+      isIdle: () => true, isProjectTrusted: () => true, getContextUsage: () => undefined,
+      modelRegistry: { getAvailable: () => [], find: () => undefined }, ui: { notify() {}, setStatus() {}, setWidget() {} } };
+    for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
+    const send = runId => events.emit("subagent:foreground-complete", { id: runId, runId,
+      source: "foreground", sessionId: "bundle-session", agent: runId, success: true, summary: "done" });
+    send("owned-bundle");
+    send("unowned-bundle");
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0][1].triggerTurn, true);
+    await Promise.resolve();
+    const state = globalThis[Symbol.for("pi-subagents.queued-completion-wakes.v2")].get(manager);
+    assert.equal(state.wakes.length, 1);
+    assert.equal(state.notices.size, 1);
+    assert.equal(state.unansweredCompletions.size, 1);
+    assert.match(state.wakes[0], /unowned-bundle/);
+    for (const handler of handlers.get("session_shutdown") ?? []) await handler({ reason: "quit" }, ctx);
+    assert.equal(entries.filter(([type, data]) => type === "subagent-notify-pending" && data.message.details.runs.some(run => run.runId === "owned-bundle")).length, 0);
+  `], { cwd: new URL("../../../", import.meta.url), env: { ...process.env, PI_CODING_AGENT_DIR: root, PI_SUBAGENT_CHILD: "", HERDR_PI_MODE: "" }, encoding: "utf8", timeout: 30_000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout || String(result.error));
 });

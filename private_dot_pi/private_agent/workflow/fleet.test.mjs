@@ -177,16 +177,20 @@ function fakeBus() {
     runs: [],
     silent: false,
     delayMs: 0,
+    holdStatus: false,
+    replies: [],
+    fail: false,
     on(channel, handler) { handlers.set(channel, handler); return () => handlers.delete(channel); },
     emit(channel, message) {
-      if (channel.startsWith("subagent:")) return handlers.get(channel)?.(message);
+      if (channel.startsWith("subagent:") || channel === "subagents:rpc:v1:ready") return handlers.get(channel)?.(message);
       if (channel !== "subagents:rpc:v1:request") return;
       this.requests.push(message.method);
       if (this.silent) return;
-      const data = message.method === "ping" ? { capabilities: { fleetStatus: { version: 1 } } }
+      const data = message.method === "ping" ? { capabilities: { fleetStatus: { version: 1 } }, events: { jobsChanged: "subagent:jobs-changed" } }
         : message.params.id ? { text: `transcript of ${message.params.id} (${message.params.view}, ${message.params.lines})` }
         : { fleet: { version: 1, entries: this.entries, totalActive: this.entries.length }, asyncSnapshot: { runs: this.runs ?? [] } };
-      const reply = () => handlers.get(`subagents:rpc:v1:reply:${message.requestId}`)?.({ version: 1, requestId: message.requestId, success: true, data });
+      const reply = () => handlers.get(`subagents:rpc:v1:reply:${message.requestId}`)?.({ version: 1, requestId: message.requestId, success: !this.fail, data });
+      if (this.holdStatus && message.method === "status" && !message.params.id) { this.replies.push(reply); return; }
       this.delayMs ? setTimeout(reply, this.delayMs) : reply();
     },
     pending: () => [...handlers.keys()].filter(key => key.startsWith("subagents:rpc:v1:reply:")).length,
@@ -213,7 +217,7 @@ function cleanupBus({ runs = [], omitted = 0, hiddenActive = 0, failStop = new S
       if (message.method === "stop") onStop?.(this, message.params.id);
       let success = true;
       let data;
-      if (message.method === "ping") data = { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } };
+      if (message.method === "ping") data = { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } }, events: { jobsChanged: "subagent:jobs-changed" } };
       else if (message.method === "status" && !message.params.id) data = {
         fleet: { version: 1, entries: [], totalActive: runs.filter(run => ["queued", "running"].includes(run.state)).length + hiddenActive },
         asyncSnapshot: { kind: "pi-subagents.async-status-snapshot", version: 1, omitted: { runs: omitted, children: 0, byteLimitExceeded: false }, runs },
@@ -376,7 +380,7 @@ test("session shutdown clears owed expiries, arms none after, and notifies no li
   assert.equal(fleet.activeCount(), 0);
 });
 
-test("a restored run's close, seen only by the poll, notifies listeners", async () => {
+test("a restored run's close, seen in the refreshed snapshot, notifies listeners", async () => {
   const bus = fakeBus();
   bus.entries = [{ agent: "restored" }];
   const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0, timeoutMs: 10 });
@@ -386,6 +390,7 @@ test("a restored run's close, seen only by the poll, notifies listeners", async 
   await sleep(1);
   assert.deepEqual([fleet.activeCount(), changes], [1, 1]);
   bus.entries = [];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(30);
   assert.deepEqual([fleet.activeCount(), changes], [0, 2]);
 });
@@ -406,12 +411,14 @@ test("peek opens the intended active sibling after a completed sibling drops", a
   await sleep(20);
   bus.runs[0].state = "complete";
   bus.entries.shift();
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(20);
   fleet.handleKey("enter");
   fleet.handleKey("confirm");
   await sleep(10);
   assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["B", "/tmp/B"]]);
   bus.entries = [{ key: "fleet-new", agent: "worker", startedAt: 2000 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.runs.push({ id: "D", label: "worker", state: "running", startedAt: 2000 });
   await sleep(20);
   fleet.handleKey("confirm");
@@ -421,7 +428,7 @@ test("peek opens the intended active sibling after a completed sibling drops", a
   hooks.session_shutdown();
 });
 
-test("rows poll while children run, name the task from the launch, peek each sibling, and stop on shutdown", async () => {
+test("rows refresh when jobs change, name the task from the launch, peek each sibling, and stop on shutdown", async () => {
   const bus = fakeBus();
   const events = {};
   const entries = [];
@@ -450,7 +457,9 @@ test("rows poll while children run, name the task from the launch, peek each sib
   events.tool_execution_start({ toolName: "workspace_bash", toolCallId: "c2", args: { command: "ls" } });
   events.tool_execution_end({ toolName: "workspace_bash", toolCallId: "c2", result: {} });
   bus.entries = [{ agent: "a", goal: "one", tokens: { total: 2000 }, model: "openai-codex/m:high", effort: "high", startedAt: 1000 }, { agent: "b", tokens: { total: 0 }, startedAt: 5000 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.runs = [{ id: "run-a-old", label: "a", startedAt: 900_000, state: "complete" }, { id: "run-a", label: "a", startedAt: 1000, state: "running" }, { id: "run-b", label: "b", startedAt: 5000, state: "running" }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { mode: "async", runId: "run-b" } } });
   await sleep(20);
   assert.deepEqual(fleet.render(60, theme), ["  ○ a › one · 2k tokens · m", "  ○ b › Review the diff for correctness"]);
@@ -470,10 +479,12 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.equal(fleet.render(60, theme)[1], "  *❭* b › Review the diff for correctness");
 
   // A launch whose result carries an asyncDir opens the injected dialog
-  // instead, with a live describe() sourced from the current poll.
+  // instead, with a live describe() sourced from the current snapshot.
   events.tool_execution_start({ toolName: "subagent", toolCallId: "c5", args: { agent: "d", task: "Patch the config", title: "Config patch" } });
   bus.entries = [{ agent: "d", tokens: { total: 2000 }, model: "openai-codex/m:medium", effort: "medium", startedAt: 7000 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running" }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c5", result: { details: { mode: "async", runId: "run-d", asyncDir: "/tmp/x/run-d" } } });
   await sleep(20);
   assert.equal(fleet.handleKey("confirm"), true);
@@ -489,14 +500,17 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.equal(fleet.render(60, theme)[0], "  *❭* d › Config patch · 2k tokens · m");
   // Once the run leaves the async snapshot, describe() reports it terminal.
   bus.runs = [];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(20);
   assert.equal(opened[0].describe().terminal, true);
   // A sibling that lands above the peeked row while the peek is open does not
   // move the cursor off it: the row is found again by its key.
   bus.entries = [{ key: "k-d", agent: "d", tokens: { total: 0 }, startedAt: 7000 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running" }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(20);
-  shift = async () => { bus.entries = [{ key: "k-c", agent: "c", tokens: { total: 0 }, startedAt: 6000 }, ...bus.entries]; await sleep(20); };
+  shift = async () => { bus.entries = [{ key: "k-c", agent: "c", tokens: { total: 0 }, startedAt: 6000 }, ...bus.entries]; bus.emit("subagent:jobs-changed", { version: 1 }); await sleep(20); };
   fleet.handleKey("confirm");
   await sleep(50);
   shift = null;
@@ -505,7 +519,9 @@ test("rows poll while children run, name the task from the launch, peek each sib
   // Same-agent siblings: focus already sits on the first row, so Down alone
   // reaches the second run.
   bus.entries = [{ key: "k-b1", agent: "b", tokens: { total: 0 }, startedAt: 5000 }, { key: "k-b2", agent: "b", tokens: { total: 0 }, startedAt: 5100 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.runs = [{ id: "run-b", label: "b", startedAt: 5000, state: "running" }, { id: "run-b2", label: "b", startedAt: 5100, state: "running" }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
   fleet.handleKey("down");
@@ -514,6 +530,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.match(overlays[2], /transcript of run-b2 /);
   // No run at all: Enter says so instead of staying silent.
   bus.runs = [];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   events.tool_execution_end({ toolName: "subagent", toolCallId: "c9", result: {} });
   await sleep(20);
   fleet.handleKey("confirm");
@@ -527,6 +544,7 @@ test("rows poll while children run, name the task from the launch, peek each sib
   bus.silent = false;
 
   bus.entries = [];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(60);
   assert.deepEqual(fleet.render(60, theme), []);
   const settled = bus.requests.length;
@@ -535,11 +553,12 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.equal(bus.pending(), 0);
 
   bus.entries = [{ agent: "late", tokens: { total: 0 } }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.emit("subagent:async-started", { id: "late-1" });
   await sleep(20);
   assert.equal(fleet.render(60, theme).length, 1);
-  // Live children: the launch/complete events lead, the poll (which also
-  // covers runs restored with the session) catches up within an interval.
+  // Live children: launch/complete events lead, and refreshed snapshots
+  // also cover runs restored with the session.
   assert.equal(fleet.activeCount(), 1);
   // Completions print a transcript line: the launch names the child and task,
   // an unknown run falls back to the payload.
@@ -572,18 +591,22 @@ test("rows poll while children run, name the task from the launch, peek each sib
   assert.notEqual(entries[0].data.seq, entries[4].data.seq);
   assert.equal(entries[3].data.seq, undefined);
   bus.entries = [];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(20);
   assert.equal(fleet.activeCount(), 1, "logical completion does not prove runner exit");
   bus.emit("subagent:process-terminal", { version: 1, runId: "late-1", state: "observed" });
   assert.equal(fleet.activeCount(), 0);
   bus.entries = [{ agent: "late", tokens: { total: 0 } }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(20);
   assert.equal(fleet.activeCount(), 1);
   bus.delayMs = 5;
   await sleep(6);
   // A peek left open when the session shuts down gets its signal aborted.
   bus.entries = [{ agent: "d", tokens: { total: 0 }, startedAt: 7000 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.runs = [{ id: "run-d", label: "d", startedAt: 7000, state: "running" }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(20);
   hold = new Promise(() => {});
   fleet.handleKey("enter");
@@ -663,6 +686,7 @@ test("Enter on a workflow row opens its view, a pick peeks the record by its own
     openPeek: async (_ctx, options) => { peeks.push(options); },
     openWorkflowView: async (_ctx, options) => { views.push({ ...options }); return picks.shift(); } });
   bus.entries = [{ key: "fleet-x", agent: "other", startedAt: 1000 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   const group = fleet.track({ title: "Audit", records: [record] });
   await sleep(20);
   assert.deepEqual(fleet.render(80, theme), [`  ○ workflow › Audit  ${"▰".repeat(16)}  1/1 · 0s`, "  ○ other"]);
@@ -950,17 +974,19 @@ test("workflow aliases exclude owned children from counts without changing total
   group.changed();
   assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "alias and record ownership do not subtract the child twice");
   bus.entries = [{ agent: "worker", startedAt: 1 }, { agent: "scout", startedAt: 2 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.runs = [{ id: "owned", state: "running", label: "worker", startedAt: 1 }, { id: "regular", state: "running", label: "scout", startedAt: 2 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   await sleep(20);
   assert.equal(fleet.activeCount(), 2);
-  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "poll and event ownership agree");
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "snapshot and event ownership agree");
   bus.emit("subagent:process-terminal", { runId: "owned", state: "observed" });
   assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "owed workflow child is excluded too");
   fleet.disown("rpc-regular");
   bus.emit("subagent:async-started", { id: "other", toolCallId: "rpc-regular" });
   assert.equal(fleet.activeCount({ excludeWorkflows: true }), 2);
   group.end();
-  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 3, "an ended owner no longer accounts for its owed or polled child");
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 3, "an ended owner no longer accounts for its owed or snapshotted child");
   const next = fleet.track({ title: "Different owner", records: [] });
   assert.equal(fleet.activeCount({ excludeWorkflows: true }), 3, "a different live workflow does not claim a past owner's child");
   next.end();
@@ -973,7 +999,9 @@ test("a recovered child is counted through its live owner's record, not its hist
   const entries = [];
   const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry: (kind, data) => entries.push({ kind, data }), registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0 });
   bus.entries = [{ agent: "worker", startedAt: 1 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   bus.runs = [{ id: "recovered", state: "running", label: "worker", startedAt: 1 }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
   fleet.adopt("recovered", { agent: "worker", task: "Patch", asyncDir: "/tmp/recovered" });
   const group = fleet.track({ title: "Recovered owner", records: [{ runId: "recovered", status: "running" }] });
   await sleep(20);
@@ -988,7 +1016,7 @@ test("a recovered child is counted through its live owner's record, not its hist
   hooks.session_shutdown();
 });
 
-test("track and end notify footer listeners and the existing poll repaints childless workflow clocks", async () => {
+test("track and end notify footer listeners and the local clock repaints childless workflows", async () => {
   const bus = fakeBus();
   const hooks = {};
   const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0 });
@@ -1000,7 +1028,7 @@ test("track and end notify footer listeners and the existing poll repaints child
   assert.equal(changes, 1);
   const initial = renders;
   await sleep(30);
-  assert.ok(renders > initial + 1, "poll repaints even without a root turn clock or children");
+  assert.ok(renders > initial + 1, "the local clock repaints even without a root turn clock or children");
   group.end();
   assert.equal(changes, 2);
   assert.deepEqual(fleet.render(80, { fg: (_color, text) => text }), []);
@@ -1029,5 +1057,184 @@ test("completion entries restore workflow ownership and artifact paths for peek"
   fleet.handleKey("confirm");
   await sleep(0);
   assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["restored-workflow-child", "/tmp/workflow-child"]]);
+  hooks.session_shutdown();
+});
+
+test("native invalidations coalesce bursts, retain in-flight dirtiness, and never poll a UI", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  bus.entries = [{ agent: "restored" }];
+  bus.holdStatus = true;
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, { hasUI: true }, { pollMs: 5, quietMs: 20, timeoutMs: 100 });
+  await sleep(0);
+  assert.deepEqual(bus.requests, ["ping", "status"]);
+  assert.equal(bus.pending(), 1);
+  // The subscription already exists while the initial snapshot is pending.
+  for (let i = 0; i < 10; i++) bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(0);
+  assert.equal(bus.replies.length, 1, "at most one snapshot in flight");
+  bus.entries = [{ agent: "newer" }];
+  bus.replies.shift()();
+  await sleep(0);
+  assert.equal(bus.replies.length, 1, "a change during the request requires a subsequent read");
+  assert.deepEqual(fleet.render(80, theme), ["  ○ restored"]);
+  bus.replies.shift()();
+  await sleep(0);
+  assert.deepEqual(fleet.render(80, theme), ["  ○ newer"]);
+  const settled = bus.requests.length;
+  await sleep(30);
+  assert.equal(bus.requests.length, settled, "live UI rows cause no status polling");
+  for (let i = 0; i < 10; i++) bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(0);
+  assert.equal(bus.requests.length, settled + 1, "same-stack bursts share a read");
+  bus.replies.shift()();
+  hooks.session_shutdown();
+});
+
+test("context replacement and shutdown reject late snapshots; ready and attach refresh restored rows", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  bus.entries = [{ agent: "old" }];
+  bus.holdStatus = true;
+  const pi = { events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} };
+  const fleet = installFleet(pi, { hasUI: true }, { timeoutMs: 100 });
+  await sleep(0);
+  bus.entries = [{ agent: "replacement" }];
+  fleet.attachContext({ hasUI: true });
+  bus.replies.shift()();
+  await sleep(0);
+  assert.deepEqual(fleet.render(80, theme), [], "the previous context cannot populate the replacement");
+  bus.replies.shift()();
+  await sleep(0);
+  assert.deepEqual(fleet.render(80, theme), ["  ○ replacement"]);
+  bus.entries = [{ agent: "ready-restored" }];
+  bus.emit("subagents:rpc:v1:ready");
+  await sleep(0);
+  bus.replies.shift()();
+  await sleep(0);
+  assert.deepEqual(fleet.render(80, theme), ["  ○ ready-restored"]);
+  bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(0);
+  hooks.session_shutdown();
+  const stopped = bus.requests.length;
+  bus.replies.shift()();
+  bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(0);
+  assert.deepEqual(fleet.render(80, theme), []);
+  assert.equal(bus.requests.length, stopped);
+});
+
+test("failed and timed-out event refreshes preserve the last good snapshot", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  bus.entries = [{ agent: "last-good" }];
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, { hasUI: true }, { timeoutMs: 10 });
+  await sleep(0);
+  bus.entries = [];
+  bus.fail = true;
+  bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(0);
+  assert.deepEqual(fleet.render(80, theme), ["  ○ last-good"]);
+  bus.fail = false;
+  bus.silent = true;
+  bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(20);
+  assert.deepEqual(fleet.render(80, theme), ["  ○ last-good"]);
+  bus.silent = false;
+  bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(0);
+  assert.deepEqual(fleet.render(80, theme), []);
+  hooks.session_shutdown();
+});
+
+for (const failure of ["failed", "timed-out"]) {
+  test(`a ${failure} final UI refresh retries without another event and stops after recovery`, async () => {
+    const bus = fakeBus();
+    const hooks = {};
+    bus.entries = [{ agent: "last-good" }];
+    const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, { hasUI: true }, { pollMs: 40, quietMs: 0, timeoutMs: 10 });
+    await sleep(0);
+    assert.equal(fleet.activeCount(), 1);
+    bus.entries = [];
+    bus.fail = failure === "failed";
+    bus.silent = failure === "timed-out";
+    bus.emit("subagent:jobs-changed", { version: 1 });
+    await sleep(20);
+    assert.deepEqual(fleet.render(80, theme), ["  ○ last-good"]);
+    assert.equal(fleet.activeCount(), 1, "keep the last count until a successful snapshot");
+    assert.deepEqual(bus.requests, ["ping", "status", "status"], "failure does not spin an immediate retry");
+    bus.fail = false;
+    bus.silent = false;
+    await sleep(60);
+    assert.deepEqual(fleet.render(80, theme), []);
+    assert.equal(fleet.activeCount(), 0, "the final snapshot recovers without another invalidation");
+    assert.deepEqual(bus.requests, ["ping", "status", "status", "status"]);
+    await sleep(60);
+    assert.equal(bus.requests.length, 4, "successful UI snapshots remain event-driven");
+    assert.equal(bus.pending(), 0);
+    hooks.session_shutdown();
+  });
+}
+
+for (const transition of ["shutdown", "context replacement"]) {
+  test(`a pending failed-refresh retry is canceled on ${transition}`, async () => {
+    const bus = fakeBus();
+    const hooks = {};
+    const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, { hasUI: true }, { pollMs: 40, timeoutMs: 10 });
+    await sleep(0);
+    bus.fail = true;
+    bus.emit("subagent:jobs-changed", { version: 1 });
+    await sleep(0);
+    assert.deepEqual(bus.requests, ["ping", "status", "status"]);
+    bus.fail = false;
+    if (transition === "shutdown") hooks.session_shutdown();
+    else {
+      bus.entries = [{ agent: "replacement" }];
+      fleet.attachContext({ hasUI: true });
+      await sleep(0);
+      assert.deepEqual(fleet.render(80, theme), ["  ○ replacement"]);
+      assert.deepEqual(bus.requests.slice(3), ["ping", "status"]);
+    }
+    const settled = bus.requests.length;
+    await sleep(80);
+    assert.equal(bus.requests.length, settled, "the old retry cannot read the new or stopped context");
+    hooks.session_shutdown();
+  });
+}
+
+test("headless reconciliation discovers restored work then becomes quiet without jobs-changed", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, { hasUI: false }, { pollMs: 5, quietMs: 25, timeoutMs: 10 });
+  await sleep(0);
+  bus.entries = [{ agent: "restored-headless" }];
+  await sleep(15);
+  assert.equal(fleet.activeCount(), 1);
+  bus.entries = [];
+  await sleep(40);
+  assert.equal(fleet.activeCount(), 0);
+  const settled = bus.requests.length;
+  await sleep(20);
+  assert.equal(bus.requests.length, settled);
+  hooks.session_shutdown();
+});
+
+test("workflow elapsed repaint ticks without RPCs and stops when its row ends", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  let renders = 0;
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, { hasUI: true }, { pollMs: 5 });
+  fleet.attach({ requestRender: () => renders++ });
+  const group = fleet.track({ title: "Clock", records: [] });
+  await sleep(0);
+  const requests = bus.requests.length;
+  const initial = renders;
+  await sleep(25);
+  assert.ok(renders > initial + 1);
+  assert.equal(bus.requests.length, requests);
+  group.end();
+  const ended = renders;
+  await sleep(20);
+  assert.equal(renders, ended);
   hooks.session_shutdown();
 });

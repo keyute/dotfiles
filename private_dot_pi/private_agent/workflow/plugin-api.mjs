@@ -33,9 +33,6 @@ export const CONTROL_NOTICE = "subagent_control_notice";
 // only when `display` is truthy, so the wrapper sends it quiet; the content,
 // session-file path included, still reaches the model.
 export const SUBAGENT_NOTIFY = "subagent-notify";
-// The first sentence of pi-subagents' PARENT_WAKE_TEXT; the rest of it is
-// instructions the model still reads in the hidden wake.
-const PARENT_WAKE = "Inspect subagent updates above.";
 export const controlNotice = (message, _options, theme) => {
   const event = message?.details?.event;
   if (!event?.agent || !event.message) return undefined;
@@ -119,11 +116,11 @@ export const DRAWN_ENTRIES = new Set(["subagent_watchdog_warning", "subagent_sup
 // event after that flush. Every other branch draws through the agent stream.
 //
 // Wholly owned completions have already reached their workflow. Native delivery
-// records wake bookkeeping before calling us, then may reserve and send an idle
-// wake immediately after. Correlate only that adjacent send, and clean up after
+// records wake bookkeeping and reserves an idle wake before calling us. Capture
+// the pre-reservation value through its bound context, and clean up after
 // native's own post-send splice (removing early would make it splice(-1)).
 export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagentSchema, isShuttingDown = () => false, subagentDescription, mcpTools = new Map(), pluginTools = new Set(), isIdle = () => true, folds = defaultFolds, claimRuns = () => false, getSession = () => undefined) {
-  let consumed;
+  let snapshot;
   const reservationsSymbol = Symbol.for("pi.idle-wake.v1");
   const queuedWakesSymbol = Symbol.for("pi-subagents.queued-completion-wakes.v2");
   let deferred = 0;
@@ -135,6 +132,24 @@ export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagen
   for (const event of ["turn_start", "agent_end", "agent_settled"]) pi.on(event, drain);
   return new Proxy(pi, {
     get(target, key, receiver) {
+      if (key === "on") return (event, handler) => target.on.call(receiver, event, event === "session_start"
+        ? (event, ctx) => handler(event, new Proxy(ctx, {
+          get(context, key, receiver) {
+            if (key !== "isIdle") return Reflect.get(context, key, receiver);
+            return () => {
+              const idle = context.isIdle();
+              const manager = context.sessionManager;
+              const reservations = globalThis[reservationsSymbol];
+              const prior = reservations instanceof WeakMap ? reservations.get(manager) : undefined;
+              const queued = globalThis[queuedWakesSymbol];
+              const state = queued instanceof WeakMap ? queued.get(manager) : undefined;
+              const token = { manager, sessionId: manager.getSessionId(), reservations, prior, sentAt: prior?.sentAt, queued, state, idle };
+              snapshot = token;
+              queueMicrotask(() => { if (snapshot === token) snapshot = undefined; });
+              return idle;
+            };
+          },
+        })) : handler);
       if (key === "registerTool") return tool => {
         const split = tool.name.startsWith("mcp__") ? tool.label?.indexOf("/") ?? -1 : -1;
         if (split > 0) mcpTools.set(tool.name, { server: tool.label.slice(0, split), tool: tool.label.slice(split + 1) });
@@ -146,34 +161,51 @@ export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagen
         });
       };
       if (key === "sendMessage") return (message, options) => {
-        consumed = undefined;
+        const token = snapshot;
+        snapshot = undefined;
         const runs = message?.customType === SUBAGENT_NOTIFY ? message.details?.runs : undefined;
-        if (Array.isArray(runs) && runs.length && claimRuns(runs.map(run => run?.runId))) {
+        if (Array.isArray(runs) && runs.length && runs.every(run => typeof run?.runId === "string")) {
           const manager = getSession();
           const reservations = globalThis[reservationsSymbol];
           const queued = globalThis[queuedWakesSymbol];
           const sessionId = manager?.getSessionId?.();
-          const state = queued instanceof WeakMap ? queued.get(manager) : undefined;
-          const prior = reservations instanceof WeakMap ? reservations.get(manager) : undefined;
+          const state = queued instanceof WeakMap && manager ? queued.get(manager) : undefined;
+          const current = reservations instanceof WeakMap && manager ? reservations.get(manager) : undefined;
+          const content = message.content;
+          const entry = state?.unansweredCompletions instanceof Map ? state.unansweredCompletions.get(content) : undefined;
+          const tracked = state?.notices instanceof Map && state.notices.get(content) === message
+            && Array.isArray(state.wakes) && state.wakes.includes(content) && entry?.reminded === false;
+          const correlated = token && token.manager === manager && token.sessionId === sessionId
+            && token.reservations === reservations && token.prior === current
+            && token.queued === queued && token.state === state
+            && (!token.idle || (typeof current?.sentAt === "number" && current.sentAt !== token.sentAt));
+          // claimRuns releases ownership even for mixed batches. Validate the private
+          // transaction first, so a changed native shape cannot steal those claims.
           if (typeof sessionId === "string" && state?.sessionId === sessionId
-            && Array.isArray(state.wakes) && state.unansweredCompletions instanceof Map
-            && (prior === undefined || (prior?.sessionId === sessionId && (prior.sentAt === undefined || typeof prior.sentAt === "number")))
-            && reservations instanceof WeakMap && typeof message.content === "string") {
-            const { content } = message;
-            const { wakes, unansweredCompletions } = state;
-            const entry = unansweredCompletions.get(content);
-            const token = { manager, sessionId, reservations, prior, sentAt: prior?.sentAt, queued, state };
-            consumed = token;
+            && Array.isArray(state.wakes) && state.unansweredCompletions instanceof Map && state.notices instanceof Map
+            && reservations instanceof WeakMap && typeof content === "string"
+            && (current === undefined || (current?.sessionId === sessionId && (current.sentAt === undefined || typeof current.sentAt === "number")))
+            && (options?.triggerTurn === true ? tracked && correlated : options?.triggerTurn === false && (tracked || (entry === undefined && !state.notices.has(content) && !state.wakes.includes(content))))
+            && claimRuns(runs.map(run => run.runId))) {
+            // parentWake has already reserved this send. Undo it before another
+            // completion in this stack decides whether its own wake is reserved.
+            if (options?.triggerTurn === true && token.idle) current.sentAt = token.sentAt;
+            const { wakes, unansweredCompletions, notices } = state;
+            const notice = notices.get(content);
             queueMicrotask(() => {
-              if (consumed === token) consumed = undefined;
               if (getSession() !== manager || manager.getSessionId() !== sessionId
                 || globalThis[queuedWakesSymbol] !== queued || queued.get(manager) !== state || state.sessionId !== sessionId
-                || state.wakes !== wakes || state.unansweredCompletions !== unansweredCompletions) return;
+                || state.wakes !== wakes || state.unansweredCompletions !== unansweredCompletions || state.notices !== notices
+                || unansweredCompletions.get(content) !== entry
+                || (notices.has(content) && notices.get(content) !== notice)) return;
+              // Native may splice its appended wake after sendMessage returns.
+              // Removing earlier risks its splice(-1) deleting an unrelated wake.
               if (entry !== undefined && unansweredCompletions.get(content) === entry) {
                 unansweredCompletions.delete(content);
                 const index = wakes.lastIndexOf(content);
                 if (index !== -1) wakes.splice(index, 1);
               }
+              if (notice !== undefined && notices.get(content) === notice) notices.delete(content);
             });
             return;
           }
@@ -186,27 +218,6 @@ export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagen
           else if (options?.triggerTurn === false) deferred += 1;
         }
         return target.sendMessage(message, options);
-      };
-      // pi-subagents wakes an idle parent with a user prompt so the run gets
-      // before_agent_start; a triggered custom message gets that natively, with
-      // no user box to end the group. At shutdown the notice is already kept,
-      // so the wake is dropped.
-      if (key === "sendUserMessage") return (content, options) => {
-        const token = consumed;
-        consumed = undefined;
-        if (typeof content !== "string" || !content.startsWith(PARENT_WAKE) || options?.deliverAs !== "steer") return target.sendUserMessage(content, options);
-        if (token && getSession() === token.manager && token.manager.getSessionId() === token.sessionId
-          && globalThis[reservationsSymbol] === token.reservations
-          && globalThis[queuedWakesSymbol] === token.queued && token.queued.get(token.manager) === token.state
-          && token.state.sessionId === token.sessionId) {
-          const current = token.reservations.get(token.manager);
-          if (current?.sessionId === token.sessionId && (token.prior === undefined || current === token.prior)
-            && typeof current.sentAt === "number" && current.sentAt !== token.sentAt) {
-            current.sentAt = token.sentAt;
-            return;
-          }
-        }
-        if (!isShuttingDown()) target.sendMessage({ customType: "subagent-wake", content, display: false }, { deliverAs: "steer", triggerTurn: true });
       };
       // appendVisible places the boundary where pi mounts the entry, above a reply still streaming.
       if (key === "appendEntry") return (type, data) => DRAWN_ENTRIES.has(type)

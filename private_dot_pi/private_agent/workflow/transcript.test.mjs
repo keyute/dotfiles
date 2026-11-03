@@ -309,7 +309,18 @@ test("a streaming reply with reasoning draws exactly as the reply alone, reasoni
 // every shape a second text block arrives in.
 test("two text blocks in one message are two bullets one blank line apart, however the message is shaped", () => {
   installReasoningHide();
-  const draw = content => new AssistantMessageComponent({ role: "assistant", api: "openai-responses", content }, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]).render(40).map(strip);
+  const draw = content => {
+    const message = { role: "assistant", api: "openai-responses", content };
+    const component = new AssistantMessageComponent(message, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
+    const expected = component.render(40).map(strip);
+    for (const streaming of [true, true, false, false]) {
+      component.updateContent(message, streaming);
+      assert.deepEqual(component.render(40).map(strip), expected);
+      component.invalidate();
+      assert.deepEqual(component.render(40).map(strip), expected);
+    }
+    return expected;
+  };
   const first = { type: "text", text: "First." };
   const second = { type: "text", text: "Second." };
   const thinking = { type: "thinking", thinking: "weighing it up" };
@@ -415,7 +426,7 @@ test("a run a quiet notice starts, opening with a tool-only message, continues t
 });
 
 
-test("activity host seam is pinned to Pi 1.3.0 mount and rebuild mechanics", () => {
+test("activity host seam is pinned to Pi 1.5.0 mount, rebuild and retained Markdown mechanics", () => {
   const read = file => readFileSync(new URL(`../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/${file}`, import.meta.url), "utf8");
   const host = read("interactive-mode.js");
   assert.match(host, /addCustomEntryToChat\(entry\) \{[\s\S]*?new CustomEntryComponent\(entry, renderer, this.outputPad\)/);
@@ -426,7 +437,12 @@ test("activity host seam is pinned to Pi 1.3.0 mount and rebuild mechanics", () 
   assert.match(entry, /setExpanded\(expanded\)[\s\S]*?this.rebuild\(\)/);
   const assistant = read("components/assistant-message.js");
   assert.match(assistant, /this.markdownTheme = markdownTheme/);
-  assert.match(assistant, /new Markdown\(content.text.trim\(\), this.outputPad, 0, this.markdownTheme/);
+  assert.match(assistant, /const previousSlots = this.markdownSlots;\s*this.markdownSlots = \[\]/);
+  assert.match(assistant, /const slot = previousSlots\[this.markdownSlots.length\];\s*const markdown = slot\?\.kind === kind \? slot.markdown : create\(\);\s*markdown.setText\(text\);\s*this.markdownSlots.push\(\{ kind, markdown \}\)/);
+  assert.match(assistant, /addVisibleChild\(markdownBlock\("text", text, \(\) => new Markdown\(text, this.outputPad, 0, this.markdownTheme/);
+  assert.match(assistant, /let needsSpacer = true;\s*const addVisibleChild = \(child\) => \{\s*if \(needsSpacer\) \{\s*this.contentContainer.addChild\(new Spacer\(1\)\);\s*needsSpacer = false;\s*\}\s*this.contentContainer.addChild\(child\)/);
+  assert.match(assistant, /if \(hidden && !this.hiddenThinkingLabel.trim\(\)\) \{\s*continue;\s*\}/);
+  assert.match(assistant, /addVisibleChild\(new MouseRegion\(thinkingComponent,[\s\S]*?needsSpacer = true/);
 });
 
 test("activity hosts render each child once per paint and suppress only spacer-only output", () => {

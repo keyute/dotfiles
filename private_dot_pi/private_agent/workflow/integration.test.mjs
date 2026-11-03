@@ -133,17 +133,17 @@ test("Subscription Responses payloads retain distinct workflow and project-conte
   const toExecute = [...prefix, { role: "system", content: "", sections: { workflow: "Workflow mode: execute." }, timestamp: 5 }, { role: "user", content: "Implement", timestamp: 6 }];
   const execute = await capture(toExecute);
   const backToPlan = await capture([...toExecute, { role: "system", content: "", sections: { workflow: "Workflow mode: plan." }, timestamp: 7 }, { role: "user", content: "Plan again", timestamp: 8 }]);
-  const commonInput = [{ role: "user", content: [{ type: "input_text", text: "Plan it" }] }];
   const commonTools = [providerTool(read), providerTool(write)];
+  const commonInput = [{ type: "additional_tools", role: "developer", tools: commonTools }, { role: "user", content: [{ type: "input_text", text: "Plan it" }] }];
   assert.equal(plan.instructions, "base prompt\n\nWorkflow mode: plan.\n\nProject context: fixture.");
   assert.deepEqual(plan.input, commonInput);
-  assert.deepEqual(plan.tools, commonTools);
+  assert.equal(plan.tools, undefined, "tool declarations are carried by the stable input prefix");
   for (const payload of [planPatch, execute, backToPlan]) {
     assert.equal(payload.instructions, plan.instructions);
     assert.deepEqual(payload.input.slice(0, plan.input.length), plan.input);
     assert.deepEqual(payload.reasoning, plan.reasoning);
     assert.deepEqual(payload.tools, plan.tools, "mode switches keep the tool declarations");
-    assert.ok(!payload.input.some(message => message.type === "additional_tools"));
+    assert.deepEqual(payload.input.filter(message => message.type === "additional_tools"), [commonInput[0]], "mode switches never redeclare tools");
   }
   assert.match(JSON.stringify(planPatch.input), /Updated system prompt section \\"workflow\\"/);
   assert.match(JSON.stringify(planPatch.input), /Workflow mode: plan; expanded\./);
@@ -175,7 +175,7 @@ test("nested preflight retains bg_wait and loads the managed runtime backstop", 
   role.tools = ["workspace_read", "subagent", "bg_wait"];
   writeFileSync(role.agentPath, `---\nname: fixture-writer\ndescription: Fixture\nmodel: ${role.model}\ntools: ${role.tools.join(", ")}\nextensions: ${role.extensionPath}\nallowNestedSubagents: true\n---\nCoordinate.\n`);
   const jiti = createJiti(import.meta.url);
-  const { loadConfig } = await jiti.import(new URL("src/extension/config.js", import.meta.resolve("pi-subagents")).pathname);
+  const { loadConfig } = await jiti.import(new URL("../src/extension/config.js", import.meta.resolve("pi-subagents")).pathname);
   const defaults = loadConfig();
   assert.equal(defaults.timeoutMs, 7_200_000);
   assert.equal(defaults.checkpointBeforeDeadlineMs, 300_000);
@@ -183,7 +183,7 @@ test("nested preflight retains bg_wait and loads the managed runtime backstop", 
   const resolved = await resolveSubagentLaunchContract({ agent: "fixture-writer", task: "Coordinate", agentScope: "user", cwd: process.cwd(), availableModels: [{ provider: "openai-codex", id: "gpt-5.6-luna" }] });
   assert.equal(resolved.ok, true, JSON.stringify(resolved));
   assert.ok(resolved.contract.tools.effectiveAllowlist.includes("bg_wait"));
-  const { registerWaitTool } = await jiti.import(new URL("src/runs/background/wait-tool.js", import.meta.resolve("pi-subagents")).pathname);
+  const { registerWaitTool } = await jiti.import(new URL("../src/runs/background/wait-tool.js", import.meta.resolve("pi-subagents")).pathname);
   let wait;
   registerWaitTool({ on() {}, registerTool: tool => { wait = tool; } }, {}, true, undefined, undefined, { nestedRootRunId: "fixture" });
   assert.equal(wait.name, "bg_wait");
@@ -310,6 +310,9 @@ test("pinned upstream packages register against the managed extension and prefli
   config.agents["fixture-docs"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__context7__query_docs"] };
   writeFileSync(configPath, JSON.stringify(config));
   const jiti = createJiti(import.meta.url);
+  for (const specifier of ["pi-subagents", "pi-subagents/preflight", "pi-subagents/capability-ceiling"]) {
+    assert.match(import.meta.resolve(specifier), /\/bundle\/[^/]+\.js$/, `${specifier} must exercise the exported bundle`);
+  }
   const runtime = {
     startBroker: async () => ({ env: {}, policy: { mode: "plan", epoch: 1 }, async close() {} }),
     requestBroker: async () => ({ mode: "plan" }),
@@ -328,9 +331,14 @@ test("pinned upstream packages register against the managed extension and prefli
   const call = (id, args) => validateToolArguments(tools.get("subagent"), { type: "toolCall", id, name: "subagent", arguments: args });
   call("v-launch", { agent: "fixture-reader", task: "Inspect fixture", title: "Fixture check", context: "fresh" });
   call("v-status", { action: "status", id: "run", options: { view: "transcript", lines: 50 } });
+  assert.equal(call("v-coerce", { action: "status", id: "run", options: { view: "transcript", lines: "50" } }).options.lines, 50);
+  assert.equal(call("v-integer", { action: "status", id: "run", options: { view: "transcript", lines: 1.5 } }).options.lines, 1);
+  for (const lines of ["many", 0, -1, 501]) {
+    assert.throws(() => call("v-lines", { action: "status", id: "run", options: { view: "transcript", lines } }), /Validation failed for tool "subagent"/);
+  }
   // The shape pi-subagents' own control notice teaches.
   call("v-steer", { action: "steer", id: "run", message: "Narrow the scope", options: { index: 0 } });
-  assert.throws(() => call("v-model", { agent: "fixture-reader", task: "Inspect fixture", model: "x" }), /additional properties/);
+  assert.throws(() => call("v-model", { agent: "fixture-reader", task: "Inspect fixture", model: "x" }), /model: unknown field/);
   assert.equal(tools.get("subagent").description, "Managed fixture: named asynchronous children only.");
   assert.doesNotMatch(tools.get("subagent").description, /workflowScript|runs\.|SAFETY-CRITICAL/);
   // pi's MCP tools register once their servers connect; deferred ones load through tool_search.
@@ -453,9 +461,12 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   });
   const policy = { mode: "plan", epoch: 1, approval: "auto" };
   const broker = { env: {}, policy, setMode: async mode => { order.push(`mode:${mode}`); policy.mode = mode; }, close: async () => { order.push("close"); } };
-  let captured;
+  let captured, pluginContext;
   const { installWorkflow } = await import("./index.mjs");
-  await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: policy.mode }), installSubagents: styled => { captured = styled; } });
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: policy.mode }), installSubagents: styled => {
+    captured = styled;
+    styled.on("session_start", (_event, ctx) => { pluginContext = ctx; });
+  } });
   t.after(() => handlers.get("session_shutdown").find(handler => handler.name === "shutdown")());
   let idle = true;
   const available = Object.values(config.models.tiers).map(id => ({ provider: "openai-codex", id }));
@@ -581,13 +592,16 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   // The root wiring must consume an owned notice, not an unowned one.
   const reservations = globalThis[Symbol.for("pi.idle-wake.v1")] ??= new WeakMap();
   const queuedWakes = globalThis[Symbol.for("pi-subagents.queued-completion-wakes.v2")] ??= new WeakMap();
-  const noticeState = { sessionId: ctx.sessionManager.getSessionId(), wakes: ["x"], unansweredCompletions: new Map([["x", {}]]) };
+  const ownedNotice = { customType: "subagent-notify", content: "x", display: true, details: { runs: [{ runId: "run-1" }] } };
+  const noticeState = { sessionId: ctx.sessionManager.getSessionId(), wakes: ["x"], unansweredCompletions: new Map([["x", { reminded: false }]]), notices: new Map([["x", ownedNotice]]) };
   queuedWakes.set(ctx.sessionManager, noticeState);
   t.after(() => { reservations.delete(ctx.sessionManager); queuedWakes.delete(ctx.sessionManager); });
-  captured.sendMessage({ customType: "subagent-notify", content: "x", display: true, details: { runs: [{ runId: "run-1" }] } }, { triggerTurn: true });
+  pluginContext.isIdle();
+  captured.sendMessage(ownedNotice, { triggerTurn: true });
   await Promise.resolve();
   assert.deepEqual(noticeState.wakes, []);
   assert.equal(noticeState.unansweredCompletions.size, 0);
+  assert.equal(noticeState.notices.size, 0);
   assert.equal(sent.filter(entry => entry.message.customType === "subagent-notify").length, 0);
   captured.sendMessage({ customType: "subagent-notify", content: "x", display: true, details: { runs: [{ runId: "other" }] } }, { triggerTurn: true });
   const childNotices = sent.filter(entry => entry.message.customType === "subagent-notify");
@@ -756,7 +770,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     styled.events.on("subagents:rpc:v1:request", request => {
       let success = true;
       let data;
-      if (request.method === "ping") data = { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } };
+      if (request.method === "ping") data = { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } }, events: { jobsChanged: "subagent:jobs-changed" } };
       else if (!rpcReady) success = false;
       else if (request.method === "status" && !request.params.id) data = { fleet: { entries: [], totalActive: running ? 1 : 0 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: running ? [{ id: "owned-run", state: "running" }] : [] } };
       else if (request.method === "status") data = { details: { lifecycleStatus: { processTerminal: { version: 1, runId: "owned-run", state: "pending" } } }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [{ id: "owned-run", state: "running" }] } };
@@ -1031,7 +1045,7 @@ test("every MCP call is resolved to its server and tool and put to the broker; u
     styled.registerTool({ name: "mcp__other__search", label: "other/search", exposure: "direct", parameters: Type.Object({}), execute });
     for (const name of ["read_mcp_resource", "list_mcp_resources", "list_mcp_resource_templates"]) styled.registerTool({ name, label: name, parameters: Type.Object({}), execute });
     styled.events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
-      ? { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } }
+      ? { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } }, events: { jobsChanged: "subagent:jobs-changed" } }
       : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [] } } }));
   };
   const { installWorkflow } = await import("./index.mjs");
@@ -1279,7 +1293,7 @@ test("the tool renderer resolver draws plugin-registered and unregistered MCP ca
   const installSubagents = async api => {
     api.registerTool({ name: "subagent", execute() {} });
     api.events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
-      ? { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } } }
+      ? { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } }, events: { jobsChanged: "subagent:jobs-changed" } }
       : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [] } } }));
   };
   const { installWorkflow } = await import("./index.mjs");

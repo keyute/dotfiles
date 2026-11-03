@@ -875,11 +875,20 @@ export function installReasoningHide(AssistantMessage = AssistantMessageComponen
     return;
   }
   const original = prototype.updateContent;
+  // Pi retains positional Markdown slots and the theme captured at construction.
+  const forwardingPalette = { fg: (color, text) => {
+    const current = typeof hidden.palette === "function" ? hidden.palette() : hidden.palette;
+    return current ? current.fg(color, text) : text;
+  } };
   const hidden = function (message, ...rest) {
     const markdownTheme = this.markdownTheme;
-    this.markdownTheme = commandMarkdownTheme(markdownTheme, typeof hidden.palette === "function" ? hidden.palette() : hidden.palette);
-    const drawn = original.call(this, { ...message, content: message.content.filter(block => block.type !== "thinking") }, ...rest);
-    this.markdownTheme = markdownTheme;
+    let drawn;
+    try {
+      this.markdownTheme = commandMarkdownTheme(markdownTheme, forwardingPalette);
+      drawn = original.call(this, { ...message, content: message.content.filter(block => block.type !== "thinking") }, ...rest);
+    } finally {
+      this.markdownTheme = markdownTheme;
+    }
     // By class name: pi-coding-agent may resolve its own pi-tui copy, so `instanceof` can miss.
     const text = child => child?.constructor.name === "Markdown";
     const children = this.contentContainer.children;

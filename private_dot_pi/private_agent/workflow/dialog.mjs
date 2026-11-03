@@ -9,12 +9,11 @@ export const editorTheme = theme => ({
   },
 });
 
-// The view holding the composer slot (the fleet peek, /plan show, /btw). pi's
-// non-overlay ctx.ui.custom clears the slot under whatever is there, orphaning
-// it, and reports only the outermost prompt span, so anything taking the slot
-// closes the view first. `mount(signal)` runs at once and is aborted by the
-// next view or closeView; a mount may still be preparing (an import, an RPC)
-// and must then mount nothing.
+// The view holding the composer slot (the fleet peek, /plan show, /btw). Pi
+// stacks inline dialogs, but only the outermost prompt span is reported. Close
+// the view first so a wait gets its own span and dismissing it cannot restore
+// the old view. `mount(signal)` runs at once and is aborted by the next view or
+// closeView; a mount still preparing (an import, an RPC) must then mount nothing.
 let view;
 export function openView(mount) {
   closeView();

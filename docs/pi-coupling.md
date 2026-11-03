@@ -10,9 +10,10 @@ entry's part outside the npm pin cannot go red and carries *Re-verify:*; a new
 owned surface states its *On red:* when it lands. A seam with no entry is
 repair-only and carries only its pin. Source pins name shipped files:
 pi-subagents compiled `src/**/*.js` plus `.d.ts`, pi-web-search `.ts`, and
-pi's modular `dist/**` — the CLI runs `dist/bundle/cli.js` built from the
-same source, so a bundle-only change passes the pins; the bundled-entry test
-in `skill-display.test.mjs` is the one check on the code the TUI executes.
+pi's modular `dist/**`. pi-subagents executes its exported `bundle/*.js`;
+reachable-bundle pins and exported-entry integration/notification tests cover
+that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
+`skill-display.test.mjs` checks the host classes the TUI executes.
 
 - **Plugin tool Proxy** (`plugin-api.mjs` `pluginApi`): pi-subagents,
   pi-web-search and pi's own MCP and tool-search factories get a Proxy of the
@@ -24,12 +25,10 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   closes the activity group for a displayed message `_appendCustomMessage`
   draws outside the agent stream (no extension event sees it); its
   `appendEntry` closes for either entry type pi-subagents draws (it draws
-  every payload of those types). Its `sendUserMessage` turns pi-subagents'
-  idle-parent wake (a steer starting `Inspect subagent updates above.`, named
-  `PARENT_WAKE_TEXT` in the plugin's docs but not exported) into a hidden
-  custom message that triggers the turn, dropped while shutting down; other
-  user text passes through. After a UI abort the plugin sends no wake until the
-  parent's next run.
+  every payload of those types). Native completion notices now trigger their
+  own turns as custom messages; the Proxy suppresses their turn request while
+  shutting down. User messages pass through untouched. After a UI abort the
+  plugin sends no wake until the parent's next run.
   Owned rows are composed over pi-subagents' shaded `[subagent]` renderer for
   six notice types (`NOTICE_RENDERERS` and the steering and settle-reminder
   rows), answering undefined on an unknown payload. *Why:*
@@ -46,9 +45,8 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   and output, `action` is a free string and `options` opaque, and
   `toolDescriptionMode: custom` reads a project file first with no trust
   check); the send boundary when pi emits an extension event for appended
-  custom messages; the wake branch when pi can draw an extension's user message
-  quietly. A changed wake literal falls back to a visible wake box by itself;
-  an option key the plugin's hints teach beyond the owned schema's is rejected
+  custom messages. An option key the plugin's hints teach beyond the owned
+  schema's is rejected
   by pi before the hook, so `integration.test.mjs` validates the hint shapes.
   *Pin:* `stability.test.mjs`, `plugin-api.test.mjs`,
   `integration.test.mjs`, `render.test.mjs`.
@@ -104,8 +102,8 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   the last child or shell ends with the root idle (`ctx.isIdle()` after a 250 ms
   grace): a child is live from `subagent:async-started` until both its
   completion event and its observed process exit (or until 10 s after its exit
-  when no completion follows). pi-subagents' wake, converted to a triggered
-  custom message, is busy from the send; an extension's `sendUserMessage` wake
+  when no completion follows). pi-subagents' native triggering custom notice
+  is busy from the send; an extension's `sendUserMessage` wake
   counts as busy only after pi's `input` handlers and auth check, so the footer
   holds the close from that wake's extension `input` until its `agent_start`
   (at most 10 s). *Why:* rules 3 and 4. *On red:* fall back to pi's own working row
@@ -115,16 +113,18 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   *Pin:* `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`.
 - **Prompt span** (`dialog.mjs` `openView`/`openWait`/`blocksUser`): pi wraps
   every `ctx.ui.custom` in one `custom` prompt span, emits `ui_prompt_*` only
-  for the outermost prompt, and its end carries that prompt's kind; its own
-  terminal status never marks a custom dialog blocked. A custom dialog is a
-  view unless `openWait` mounts it (plan approval, the questionnaire); herdr
+  for the outermost prompt, and its end carries that prompt's kind. Inline
+  dialogs now stack; their `blocked` option affects terminal program status,
+  not these events. A custom dialog is a view unless `openWait` mounts it
+  (plan approval, the questionnaire); herdr
   `blocked` and `Waiting for you…`, one footer flag, take only native prompts
   and waits, pairing the end with that flag. A dialog opened inside a view's span (the
   peek, `/plan show`) would go unreported, so views mount through `openView`
   and `closeView` returns the mount, settled after pi's span closes; `openWait`
   and the broker confirm await it. A native prompt another extension opens
   over a view (pi-subagents' authority and spawn-budget confirms) has no such
-  hook and goes unreported. *Why:* opening a peek marked herdr blocked
+  hook and goes unreported. Closing a view also prevents native dialog stacking
+  from restoring it after an answer. *Why:* opening a peek marked herdr blocked
   and swapped the working row's clock. *On red:* fall back to forwarding every
   prompt; lost: a view marks herdr blocked and shows `Waiting for you…`. *Pin:*
   `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`,
@@ -171,16 +171,20 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   `contentContainer` (matched by class name: pi may resolve its own pi-tui).
   The same assistant-only seam temporarily decorates `markdownTheme`: native
   inline/fenced code highlighting runs first, then `command-display.mjs` colours
-  a suggested shell marker. The public Markdown transformer handles standalone
-  suggestions; peek supplies the same decorated theme directly. No stored text
-  is changed. *Retire:* the theme decoration when Pi exposes an assistant-only
+  a suggested shell marker. Pi reuses positional Markdown slots and their
+  construction-time theme, so the decorator resolves the current palette when
+  rendering; native invalidation clears cached lines on theme changes. The
+  public Markdown transformer handles standalone suggestions; peek supplies the
+  same decorated theme directly. No stored text is changed. *Retire:* the theme decoration when Pi exposes an assistant-only
   Markdown theme hook; *On red:* drop marker colouring, preserving native code
   rendering and command text.
-  *Why:* rule 2's "takes no space" (earendil-works/pi#8154) and rule 8's one
-  blank between text blocks. *On red:* set `hideThinkingBlock: true` in
-  modify_settings; lost: "takes no space" — pi's label, its spacer and click
-  region return — and two text blocks with no thinking between sit flush. *Retire:* when pi can hide reasoning outright. *Pin:*
-  `stability.test.mjs`, `rows.test.mjs`, `transcript.test.mjs`.
+  *Why:* rule 2's always-hidden reasoning and rule 8's one blank between text
+  blocks. *On red:* set `hideThinkingBlock: true` in modify_settings and use
+  `ctx.ui.setHiddenThinkingLabel("")`; native hidden reasoning takes no space,
+  but Ctrl+T can expose it and adjacent text blocks sit flush. *Retire:* when
+  native rendering preserves always-hidden reasoning, text-block spacing and
+  assistant-only theme decoration. *Pin:* `stability.test.mjs`,
+  `rows.test.mjs`, `transcript.test.mjs`, `command-display.test.mjs`.
 - **Managed agent runs** (`index.mjs` `installManagedRun`): wraps the host `AgentSession`'s
   `_startRun` with the model and workspace guard; a refused custom trigger is
   appended without a turn. *Why:* pi swallows `before_agent_start` handler
@@ -203,13 +207,17 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
 - **Owned completion consumption** (`plugin-api.mjs`): native
   `pi.idle-wake.v1` reservations and `pi-subagents.queued-completion-wakes.v2`
   tracking are WeakMaps keyed by session manager and scoped by UUID. The native
-  notifier records exact content before sending; an idle send synchronously
-  reserves and sends a wake, then removes its own unstarted content. The Proxy
-  consumes only wholly owned notices, correlates only that adjacent wake,
-  restores the prior reservation and cleans exact tracking in a microtask after
-  native bookkeeping. Session/state/entry identities guard every delayed mutation.
+  notifier records wakes, unanswered completions and exact notice objects before
+  sending. Its parent wake checks the bound context's `isIdle()` before reserving
+  and directly sending the custom notice. The Proxy wraps that context at
+  `session_start` to capture the pre-reservation value for the same stack. It
+  validates native state and correlation before claiming owned notices, restores
+  a consumed idle reservation synchronously, and cleans exact tracking in a
+  microtask after native bookkeeping. Session/state/entry identities guard every
+  delayed mutation; consumed notices cannot remain for shutdown persistence.
   *Why:* background workflow children must not wake the root separately or leave
-  abandoned-delivery reminders. *Residual:* mixed owned/unowned notices pass
+  abandoned-delivery reminders, and consumption must not suppress the next
+  unowned completion's wake. *Residual:* mixed owned/unowned notices pass
   through whole, retaining incidental child context but no extra visible workflow
   outcome. Missing or mismatched native state forwards normally. *On red:* repair
   or disable consumption and accept native child notifications; never swallow an

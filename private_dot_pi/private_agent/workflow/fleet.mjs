@@ -69,8 +69,8 @@ export function progressLine(name, records, tail, theme, width, paint = text => 
   return [truncateToWidth(name, Math.max(0, width - visibleWidth(meta) - 2), "…"), meta].join("  ");
 }
 
-// The phase is the latest live launch's, else the last launch's. The fleet
-// poll repaints its clock even after an interrupt stops the turn clock.
+// The phase is the latest live launch's, else the last launch's. The local
+// clock repaints it even after an interrupt stops the turn clock.
 export function groupRow({ title, records, startedAt }, theme, width, now = Date.now()) {
   const phase = (records.findLast(record => isLive(record.status)) ?? records.at(-1))?.phase;
   const name = title ? `workflow${NAME_SEP}${shortTitle(title)}` : "workflow";
@@ -245,7 +245,7 @@ export function installFleet(pi, ctx, {
     return open(ctx, opts);
   },
 } = {}) {
-  const state = { ...createFleetState(), pending: new Map(), active: new Set(), owed: new Map(), workflowCalls: new Map(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
+  const state = { ...createFleetState(), pending: new Map(), active: new Set(), owed: new Map(), workflowCalls: new Map(), lastWake: 0, timer: undefined, clock: undefined, refreshing: false, dirty: false, epoch: 0, stopped: false, capable: undefined, tui: null, ctx };
   const listeners = new Set();
   // A stopped fleet's listeners belong to a torn-down session.
   const changed = () => { if (!state.stopped) for (const listener of listeners) listener(); };
@@ -268,28 +268,64 @@ export function installFleet(pi, ctx, {
     if (shape() !== before) state.tui?.requestRender();
     if (state.totalActive !== total || activeCount({ excludeWorkflows: true }) !== unowned) changed();
   };
-  const poll = async () => {
-    state.timer = undefined;
+  // UI jobs-changed is an invalidation, not a snapshot. A change during an
+  // RPC must survive that reply; same-stack bursts need only one read.
+  const refresh = async () => {
+    if (state.refreshing || state.stopped || !state.dirty) return;
+    state.refreshing = true;
+    const epoch = state.epoch;
+    const current = () => !state.stopped && state.epoch === epoch;
+    state.dirty = false;
+    let retry = false;
     try {
-      state.capable ??= (await rpcCall(pi.events, "ping", {}, timeoutMs))?.capabilities?.fleetStatus?.version === 1;
-      // A dropped or slow reply keeps the last rows; only a reply may clear them.
+      if (state.capable === undefined) {
+        const ping = await rpcCall(pi.events, "ping", {}, timeoutMs);
+        if (!current() || !ping) return;
+        state.capable = ping.capabilities?.fleetStatus?.version === 1;
+        if (state.capable) {
+          // The advertised event is UI/RPC-only, independent of asyncWidget.
+          // Subscribe before reading even the first restored snapshot.
+          state.offJobs?.();
+          state.offJobs = pi.events.on(ping.events.jobsChanged, payload => { if (payload?.version === 1) wake(); });
+        }
+      }
+      retry = state.capable;
       const reply = state.capable ? await rpcCall(pi.events, "status", {}, timeoutMs) : null;
-      if (reply && !state.stopped) show(reply.fleet, reply.asyncSnapshot);
-      if (state.groups.length && !state.stopped) state.tui?.requestRender();
-    } catch { state.capable = false; }
-    const again = state.capable && !state.stopped && (state.entries.length || state.groups.length || Date.now() - state.lastWake < quietMs);
-    if (again) {
-      state.timer = setTimeout(poll, pollMs);
-      state.timer.unref?.();
+      // A dropped or slow reply keeps the last rows; only a reply may clear them.
+      if (reply && current()) {
+        retry = false;
+        show(reply.fleet, reply.asyncSnapshot);
+      }
+    } catch {
+      // Keep the last snapshot when the transport fails.
+    } finally {
+      state.refreshing = false;
+      if (state.dirty && !state.stopped) queueMicrotask(refresh);
+      // Retry a lost final invalidation, but never poll a successful UI snapshot.
+      else if (current() && state.capable && (retry || (!state.ctx?.hasUI
+        && (state.entries.length || state.groups.length || Date.now() - state.lastWake < quietMs)))) {
+        state.timer = setTimeout(() => { state.dirty = true; void refresh(); }, pollMs);
+        state.timer.unref?.();
+      }
     }
-    else state.polling = false;
   };
   const wake = () => {
     if (state.stopped) return;
     state.lastWake = Date.now();
-    if (state.polling) return;
-    state.polling = true;
-    void poll();
+    clearTimeout(state.timer);
+    state.dirty = true;
+    queueMicrotask(refresh);
+  };
+  // Peek owns its clock; this one only repaints live workflow rows, never RPC.
+  const clock = () => {
+    if (state.clock || state.stopped || !state.groups.length) return;
+    state.clock = setTimeout(() => {
+      state.clock = undefined;
+      if (state.stopped || !state.groups.length) return;
+      state.tui?.requestRender();
+      clock();
+    }, pollMs);
+    state.clock.unref?.();
   };
   // The launch's own events are the only place the task text and the async run
   // id appear together (the DTO redacts one and hides the other); the same
@@ -306,10 +342,10 @@ export function installFleet(pi, ctx, {
     if (launch && id) state.launches.set(id, { ...launch, asyncDir: event.result?.details?.asyncDir });
     wake();
   });
-  // The install-time and ready-time polls cover jobs restored with the session.
-  // Live children are counted from the launch events themselves: the status
-  // poll lags agent_settled, where the footer asks whether a turn is over.
-  pi.events.on("subagents:rpc:v1:ready", wake);
+  // Initial and ready snapshots cover jobs restored with the session. Live
+  // children are counted from launch events: status can lag agent_settled,
+  // where the footer asks whether a turn is over.
+  pi.events.on("subagents:rpc:v1:ready", () => { state.capable = undefined; wake(); });
   // A child is also owed from launch until its completion line: pi-subagents
   // emits async-complete only once the wake has reached pi (the run is active
   // by then), and the process can exit well before that. A completion that
@@ -359,7 +395,13 @@ export function installFleet(pi, ctx, {
   pi.registerEntryRenderer("workflow-child", doneEntryRenderer("workflow-child", folds));
   pi.on("session_shutdown", () => {
     state.stopped = true;
+    state.epoch++;
+    state.dirty = false;
+    state.offJobs?.();
+    state.offJobs = undefined;
     clearTimeout(state.timer);
+    clearTimeout(state.clock);
+    state.clock = undefined;
     // An expiry firing after teardown would reach the old session's listeners.
     for (const [id, timer] of state.owed) if (timer) { clearTimeout(timer); state.owed.delete(id); }
     closeView();
@@ -455,8 +497,7 @@ export function installFleet(pi, ctx, {
     if (failures.length) throw new Error(`Subagent cleanup failed: ${failures.join("; ")}`);
   };
 
-  // The peek's live facts for a run id, re-read from the current poll every
-  // time the caller asks (the dialog's own clock is this fleet's poll).
+  // The peek reads the current snapshot's live facts on its own clock.
   const describe = id => {
     const entry = state.entries.find(candidate => runIdFor(state, candidate) === id);
     const run = state.runs.find(item => item.id === id);
@@ -596,12 +637,17 @@ export function installFleet(pi, ctx, {
         },
       };
       state.groups.push(group);
+      clock();
       wake();
       group.changed();
       return group;
     },
     attachContext: current => {
       closeView(); state.bindings.clear(); state.ctx = current; state.stopped = false;
+      state.epoch++;
+      state.capable = undefined;
+      clearTimeout(state.timer);
+      clock();
       // A live launch recorded from this process's own events wins over the
       // branch's replay of the same run.
       for (const [id, launch] of launchesFromBranch(current?.sessionManager?.getBranch?.())) {
@@ -611,9 +657,8 @@ export function installFleet(pi, ctx, {
       changed();
     },
     handleKey,
-    // Runs restored with the session never emit async-started; the poll's
-    // count covers them (it lags a completion by one poll, so the event set
-    // is the fast path).
+    // Runs restored with the session never emit async-started; snapshots
+    // cover them, while lifecycle events are the fast path for live launches.
     activeCount,
     // Fires whenever activeCount may have changed.
     onChange: listener => { listeners.add(listener); },

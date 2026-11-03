@@ -1069,10 +1069,29 @@ test("an assistant message with reasoning draws exactly as the one without it, l
   }
   assert.deepEqual(draw(message, false), ["", "• Done."]);
   const component = new AssistantMessageComponent(message, false, getMarkdownTheme(), "Thinking...", 0, [bulletMarkdown]);
-  component.invalidate();
-  assert.deepEqual(component.render(40).map(strip), ["", "• Done."]);
+  for (const hide of [true, false, true, false]) {
+    component.setHideThinkingBlock(hide);
+    component.invalidate();
+    assert.deepEqual(component.render(40).map(strip), ["", "• Done."]);
+  }
   assert.equal(message.content.length, 4);
   assert.equal(thinking.thinking, "weighing it up");
+});
+
+test("assistant theme decoration is restored even when native update throws", () => {
+  const nativeTheme = getMarkdownTheme();
+  const failure = new Error("native update failed");
+  class Assistant {
+    markdownTheme = nativeTheme;
+    updateContent() {
+      assert.notEqual(this.markdownTheme, nativeTheme);
+      throw failure;
+    }
+  }
+  installReasoningHide(Assistant);
+  const component = new Assistant();
+  assert.throws(() => component.updateContent({ content: [] }), error => error === failure);
+  assert.equal(component.markdownTheme, nativeTheme);
 });
 
 test("answers, completion and turn lines format", () => {
