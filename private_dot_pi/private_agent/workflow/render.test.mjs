@@ -159,6 +159,11 @@ test("renders Pi and Claude projections with isolated state", (t) => {
 
   const piInstructions = run("cat", target(".pi/agent/AGENTS.md"));
   const claudeInstructions = run("cat", target(".claude/CLAUDE.md"));
+  for (const instructions of [piInstructions, claudeInstructions]) {
+    assert.match(instructions, /The lowest capable pinned worker owns\s+implementation\/test\/repair/);
+    assert.match(instructions, /Unblock handoffs and return the slice; take over\s+only when the worker cannot complete or repair it/);
+    assert.doesNotMatch(instructions, /Finish a failed worker's piece yourself rather than promoting it/);
+  }
   const claudeHarness = run("cat", target(".claude/docs/harness.md"));
   const piHarness = run("cat", target(".pi/agent/docs/harness.md"));
   const claudeSandboxDoc = run("cat", target(".claude/docs/sandbox.md"));

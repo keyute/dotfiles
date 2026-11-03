@@ -20,12 +20,12 @@
     summary. Verify delegated writes from the actual diff.
     Keep inline trivial tasks, tightly sequential steps, and changes whose
     details must stay in your context.{{/* model: context_hygiene, delegation_contract, delegation_economics: the driver's context degrades before the window is full; underspecified workers drift and unbounded scope wastes them; verbose worker output re-read by the driver costs what the handoff saved; a handoff pays only when specifying and verifying its boundary costs less than doing, or repairing, the work inline */}}
-  - Before editing a non-trivial implementation slice, delegate it once design,
-    exclusive scope, and an objective gate are settled. Use the lowest capable
-    pinned worker; it owns implementation/test/repair. Keep decomposition,
+  - Delegate non-trivial implementation once design, exclusive scope, and an
+    objective gate are settled. The lowest capable pinned worker owns
+    implementation/test/repair. Unblock handoffs and return the slice; take over
+    only when the worker cannot complete or repair it. Keep decomposition,
     architecture, cross-scope and overall planning decisions, planning synthesis,
-    approval, integration, adjudication, and final verification in the driver.
-    Finish a failed worker's piece yourself rather than promoting it.{{/* driver_ownership: explicit ownership keeps scoped implementation out of the driver's context without ceding cross-scope decisions, and objective gates make worker results reviewable */}}
+    approval, integration, adjudication, and final verification in the driver.{{/* driver_ownership: recoverable handoff blockers must not transfer implementation ownership to the driver; scoped workers retain implementation/test/repair while the driver owns cross-scope decisions and final verification */}}
 {{- if not (has "specialist_pinning" $native) }}
   - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
     does not show it: don't override their model.{{/* specialist_pinning: presets are tuned once, not per session */}}
