@@ -183,7 +183,7 @@ test("approval renders its placeholder inline and focuses No immediately", async
   component.handleInput("second");
   component.handleInput("\x1b[A");
   component.handleInput("X");
-  assert.match(component.render(80).join("\n"), /❭ No  aXX/);
+  assert.match(component.render(80).join("\n"), /❭ No\n  aXX/);
   component.handleInput("\r");
   assert.deepEqual(await prompt.promise, { decision: PLAN_REVISION, feedback: "aXX\nsecondb" });
   assert.ok(prompt.stats().renders >= 6);
@@ -199,7 +199,7 @@ test("empty No shows a visible cursor and wrapped feedback keeps editor navigati
   component.handleInput("0123456789012345");
   component.render(18);
   component.handleInput("\x1b[A");
-  assert.deepEqual(component.editor.getCursor(), { line: 1, col: 5 });
+  assert.deepEqual(component.editor.getCursor(), { line: 1, col: 1 });
   component.handleInput("\x1b");
 });
 
@@ -225,7 +225,7 @@ test("inline draft replaces and restores the No placeholder without losing it on
   component.handleInput("\x1b");
 });
 
-test("inline No input wraps multiline Unicode text after its prefix", () => {
+test("No feedback moves Unicode and multiline text wholly below its standalone label", () => {
   const prompt = tuiApproval();
   const component = prompt.component();
   component.handleInput("\x1b[B");
@@ -235,15 +235,66 @@ test("inline No input wraps multiline Unicode text after its prefix", () => {
   assert.ok(unicodeCursor.includes(renderFakeCursor("👩‍💻")), unicodeCursor);
   component.handleInput("e\u0301 long feedback");
   const focused = component.render(18).join("\n");
-  assert.match(focused, /❭ No  /);
+  assert.match(focused, /❭ No\n  /);
   assert.ok(focused.includes(CURSOR_MARKER));
   component.handleInput("\x1b[13;2~");
   component.handleInput("second line");
   const lines = component.render(18);
-  assert.ok(lines.some(line => line.includes("second")));
+  assert.ok(lines.some(line => line.startsWith("  second")));
+  const noRow = lines.indexOf("❭ No");
+  assert.ok(noRow >= 0);
+  assert.ok(lines.slice(noRow + 1, -1).every(line => line.startsWith("  ")));
   for (const line of lines) assert.ok(visibleWidth(line) <= 18, `${visibleWidth(line)} > 18: ${line}`);
   component.focused = false;
   assert.ok(!component.render(18).join("\n").includes(CURSOR_MARKER));
+  component.handleInput("\x1b");
+});
+
+test("feedback fit includes the native cursor cell and uses display columns", () => {
+  const component = tuiApproval().component();
+  component.handleInput("\x1b[B");
+  for (const text of ["x".repeat(13), "界".repeat(6) + "e\u0301", "👩‍💻".repeat(6) + "x"]) {
+    assert.equal(visibleWidth(text), 13);
+    component.editor.setText(text);
+    const fitting = component.render(20).join("\n");
+    assert.ok(fitting.includes(`❭ No  ${text}`));
+    assert.ok(fitting.includes(CURSOR_MARKER));
+    component.handleInput("x");
+    const overflowing = component.render(20).join("\n");
+    assert.ok(overflowing.includes(`❭ No\n  ${text}x`));
+    component.handleInput("\x7f");
+    assert.ok(component.render(20).join("\n").includes(`❭ No  ${text}`));
+  }
+  component.editor.setText("short\nline");
+  assert.match(component.render(80).join("\n"), /❭ No\n  short *\n  line/);
+  component.handleInput("\x1b");
+});
+
+test("resizing moves the same focused editor between inline and stacked with one native render", t => {
+  const prompt = tuiApproval();
+  const component = prompt.component();
+  const editor = component.editor;
+  component.handleInput("\x1b[B");
+  component.handleInput("abcdefghijklmn");
+  component.handleInput("\x1b[D");
+  const cursor = editor.getCursor();
+  const render = t.mock.method(editor, "render");
+  for (const [width, editorWidth, stacked] of [[21, 15, false], [20, 18, true], [40, 34, false]]) {
+    const before = render.mock.callCount();
+    const lines = component.render(width);
+    assert.equal(render.mock.callCount(), before + 1);
+    assert.deepEqual(render.mock.calls.at(-1).arguments, [editorWidth]);
+    assert.equal(lines.includes("❭ No"), stacked);
+    assert.equal(component.editor, editor);
+    assert.equal(editor.focused, true);
+    assert.deepEqual(editor.getCursor(), cursor);
+    assert.ok(lines.join("\n").includes(CURSOR_MARKER));
+    assert.equal(editor.getText(), "abcdefghijklmn");
+  }
+  component.focused = false;
+  assert.ok(!component.render(20).join("\n").includes(CURSOR_MARKER));
+  component.focused = true;
+  assert.ok(component.render(20).join("\n").includes(CURSOR_MARKER));
   component.handleInput("\x1b");
 });
 

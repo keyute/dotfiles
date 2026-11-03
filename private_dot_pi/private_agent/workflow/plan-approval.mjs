@@ -184,12 +184,17 @@ class PlanApprovalComponent extends Dialog {
     const noFocused = this.selected === 1;
     const noPrefix = `${this.gutter(noFocused)}${this.label("No  ", { focused: noFocused })}`;
     const active = this.focused && this.editing;
-    const feedback = this.field({ width: Math.max(1, usable - visibleWidth(noPrefix)), active, text: this.editor.getText(), placeholder: FEEDBACK_PLACEHOLDER });
+    const text = this.editor.getText();
+    const inlineWidth = Math.max(1, usable - visibleWidth(noPrefix));
+    const stacked = text && (text.includes("\n") || visibleWidth(text) > Math.max(1, inlineWidth - 1));
+    const feedback = this.field({ width: stacked ? Math.max(1, usable - 2) : inlineWidth, active, text, placeholder: FEEDBACK_PLACEHOLDER });
     const content = [
       ...this.line(this.theme.bold("Approve the current plan?"), usable),
       "",
       ...this.line(this.label("Yes", { focused: yesFocused }), usable, yesFocused),
-      ...this.hang(noPrefix, feedback),
+      ...(stacked
+        ? [...this.line(this.label("No", { focused: noFocused }), usable, noFocused), ...feedback.map(line => `  ${line}`)]
+        : this.hang(noPrefix, feedback)),
     ];
     return this.frame(content, usable);
   }
