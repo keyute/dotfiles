@@ -173,6 +173,72 @@ test("pipeline() has no barrier: a fast item reaches stage 2 before a slow item'
   assert.ok(h.log.indexOf("spawn:s2:s1:b") < h.log.indexOf("complete:s1:a"), h.log.join(","));
 });
 
+test("research example: gather barrier, evidence crosscheck and delegated distillation", async () => {
+  const script = `
+    phase("Gather");
+    const evidence = await parallel(args.sources.map(source => () =>
+      agent("Gather cited evidence: " + source, { agentType: "scout", label: source })));
+    if (evidence.some(report => report === null)) throw new Error("Required research incomplete");
+    phase("Crosscheck");
+    let checked;
+    try {
+      checked = await agent("Crosscheck claims against sources; retain unresolved disagreement.\\n" + JSON.stringify(evidence),
+        { agentType: "scout", label: "Crosscheck" });
+    } catch {
+      checked = JSON.stringify({ unresolved: ["Crosscheck failed; claims unverified, not refuted"] });
+    }
+    phase("Distill");
+    return await agent("Return only cited synthesis, coverage gaps and unresolved disagreement; no raw reports.\\n" +
+      JSON.stringify({ evidence, checked }), { agentType: "scout", label: "Distill" });
+  `;
+  for (const scenario of ["complete", "research-failed", "check-failed"]) {
+    const evidence = ["RAW_REPORT_A: source A claims fast [A:1]", "RAW_REPORT_B: source B claims slow [B:2]"];
+    const checked = "RAW_CHECK: unresolved disagreement on speed [A:1, B:2]";
+    const distilled = {
+      synthesis: "Speed estimates disagree [A:1, B:2]",
+      coverageGaps: ["No independent timing"],
+      unresolved: [scenario === "check-failed" ? "Crosscheck failed; claims unverified, not refuted" : "Speed disagreement [A:1, B:2]"],
+    };
+    const h = harness({ behave: async params => {
+      if (params.task.startsWith("Gather")) {
+        if (params.task.endsWith("A")) await sleep(40);
+        if (scenario === "research-failed" && params.task.endsWith("B")) return { status: "failed", summary: "source unavailable" };
+        return { status: "completed", output: evidence[params.task.endsWith("A") ? 0 : 1] };
+      }
+      if (params.task.startsWith("Crosscheck")) {
+        assert.deepEqual(JSON.parse(params.task.split("\n")[1]), evidence);
+        if (scenario === "check-failed") return { status: "failed", summary: "check unavailable" };
+        return { status: "completed", output: checked };
+      }
+      assert.match(params.task, /^Return only cited synthesis, coverage gaps and unresolved disagreement; no raw reports\./);
+      const handoff = JSON.parse(params.task.split("\n")[1]);
+      assert.deepEqual(handoff.evidence, evidence);
+      assert.equal(handoff.checked, scenario === "check-failed"
+        ? JSON.stringify({ unresolved: ["Crosscheck failed; claims unverified, not refuted"] }) : checked);
+      return { status: "completed", output: JSON.stringify(distilled) };
+    } });
+    const result = await h.run(script, { sources: ["A", "B"] });
+    if (scenario === "research-failed") {
+      assert.match(failure(result), /Required research incomplete/);
+      assert.equal(result.details.workflow.status, "failed");
+      assert.equal(h.spawns.length, 2);
+      assert.deepEqual(h.groups[0].records.map(record => record.phase), ["Gather", "Gather"]);
+      assert.doesNotMatch(result.content[0].text, /synthesis|RAW_REPORT|RAW_CHECK/);
+      continue;
+    }
+    assert.deepEqual(JSON.parse(value(result)), distilled);
+    assert.equal(h.spawns.length, 4);
+    const crosscheck = h.log.findIndex(line => line.startsWith("spawn:Crosscheck"));
+    for (const source of ["A", "B"]) {
+      assert.ok(h.log.indexOf(`complete:Gather cited evidence: ${source}`) < crosscheck);
+    }
+    assert.ok(h.log.findIndex(line => line.startsWith("complete:Crosscheck")) < h.log.findIndex(line => line.startsWith("spawn:Return only")));
+    assert.deepEqual(h.groups[0].records.map(record => record.phase), ["Gather", "Gather", "Crosscheck", "Distill"]);
+    assert.doesNotMatch(JSON.stringify(result), /RAW_REPORT|RAW_CHECK/);
+    assert.doesNotMatch((await h.manage("result", result.details.workflow.id)).content[0].text, /RAW_REPORT|RAW_CHECK/);
+  }
+});
+
 test("log() lines, console output, args and an exported meta reach the result", async () => {
   const h = harness();
   const result = await h.run(`export const meta = { name: "demo" };\nlog("hello \\x1b]0;t\\x07 there\\nnext"); log({ n: args.n }); console.log("c1"); return meta.name + args.n`, { n: 3 });

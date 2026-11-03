@@ -132,6 +132,11 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.match(orchestrateDescription, /Only one workflow may be active/);
   assert.match(orchestrateDescription, /parallel subagent launches for flat independent work/);
   assert.match(orchestrateDescription, /scripted dependencies, pipelines or structured aggregation/);
+  assert.match(orchestrateDescription, /dependent implementation\/check\/review or multi-source research needing reconciliation or validation/);
+  assert.match(orchestrateDescription, /await dependencies and pass intermediate evidence to downstream children/);
+  assert.match(orchestrateDescription, /return only their cited synthesis, coverage gaps and unresolved disagreement, not raw reports or logs/);
+  assert.match(orchestrateDescription, /not a dependency; use await/);
+  assert.doesNotMatch(orchestrateDescription, /```|const evidence|Gather|Crosscheck|Distill|gather2|fixed phase count/);
   assert.match(orchestrateDescription, /Root steering does not rewrite/);
   assert.match(orchestrateDescription, /not the workflow/);
   assert.doesNotMatch(orchestrateDescription, /every substantive task|call blocks until|typed steers reach you only after/);
@@ -251,6 +256,11 @@ test("ship-check shares a selection-aware native approval flow across harnesses"
   const claude = run("cat", target(".claude/skills/ship-check/SKILL.md"));
   const pi = run("cat", target(".agents/skills/ship-check/SKILL.md"));
   assert.equal(pi, claude);
+  const description = JSON.parse(pi.match(/^description: (.+)$/m)[1]);
+  assert.match(description, /only on explicit invocation or an explicit user request for ship-check/);
+  assert.match(description, /not automatic implementation completion, generic review or routine verification/);
+  assert.match(description, /full-branch pre-ship review and approved fixes/);
+  assert.doesNotMatch(pi, /^disable-model-invocation:/m);
   assert.match(pi, /no survivors[^]*stop without a plan/);
   assert.match(pi, /explicit review-only request[^]*without seeking execution approval/);
   assert.match(pi, /in plan\s+mode, proactively submit[^]*native plan approval flow/);

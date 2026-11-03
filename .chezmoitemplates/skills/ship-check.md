@@ -1,6 +1,6 @@
 ---
 name: ship-check
-description: "One converging pre-ship review of the branch's full state — committed and uncommitted — against its merge-base with main: correctness and quality in a single verified pass. Not a whole-repo audit; no GitHub/PR integration. Args: optional base ref (default main) or a single lens to focus."
+description: "Use only on explicit invocation or an explicit user request for ship-check: full-branch pre-ship review and approved fixes, not automatic implementation completion, generic review or routine verification. Args: optional base ref (default main) or one lens."
 ---
 
 Review everything this branch would ship — committed and uncommitted alike — and
