@@ -70,8 +70,9 @@ const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 // submit_plan nor ask_user_question (policy.mjs rootTools).
 // Fills the `workflow` system prompt section (see before_agent_start).
 export function workflowPrompt({ mode, readonly, isRoot, ultracode }) {
-  // Read-only requests need an answer, not implementation permission.
-  const planning = isRoot && mode === "plan" ? " Answer read-only questions and command requests directly. For requested source edits or external mutations, research the request to the point of a plan without being asked: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Then submit the plan for explicit approval yourself — the user should not have to ask for it. Approval switches the mode and revokes running child sessions, aborting their work: settle async children before submitting the plan, or launch them after." : "";
+  // Read-only limits execution, not proposals: investigative wording must not
+  // require a second request before the driver prepares an approval plan.
+  const planning = isRoot && mode === "plan" ? " For requested changes, and investigations and reviews that identify concrete changes you recommend within the requested scope, research through to an actionable plan: read what the change touches, delegate the independent exploration, and ask with ask_user_question where different readings would lead to materially different work. Submit the plan with submit_plan for explicit approval before ending the task; do not wait for a separate request to implement. Read-only research restricts execution, not proposal preparation. Answer informational questions, command-only requests, clean reviews with no recommended changes, and explicit report-only/no-plan requests directly without a plan. Approval switches the mode and revokes running child sessions, aborting their work: settle async children before submitting the plan, or launch them after." : "";
   return `Workflow mode: ${mode}. ${readonly ? `Investigate only; source edits and external mutations are disabled.${planning}` : "Execute only the user-approved task."}${ultracode ? " Ultracode is on." : ""}`;
 }
 

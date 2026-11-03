@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
+import { Agent } from "@earendil-works/pi-agent-core";
 import { AgentSession, InteractiveMode, SessionManager, createLocalBashOperations, initTheme } from "@earendil-works/pi-coding-agent";
 import { addFold, createFolds, foldGroup, liveGroup, settleFold } from "./rows.mjs";
 import { contextText, createShellRunner, installShell, parseShellInput, shellComponent, shellLines } from "./shell.mjs";
@@ -233,6 +234,98 @@ test("native in-memory safe boundary retains one visible entry and delays a canc
   assert.equal(manager.buildSessionContext().messages.filter(message => message.role === "custom").length, 1);
 });
 
+for (const exitCode of [0, 2]) test(`native steering delivers shell exit ${exitCode} after the blocked tool batch, without interrupting it`, { timeout: 5000 }, async t => {
+  const manager = SessionManager.inMemory("/work");
+  const requests = [];
+  let releaseTool, toolStarted;
+  const blocked = new Promise(resolve => { releaseTool = resolve; });
+  const started = new Promise(resolve => { toolStarted = resolve; });
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const signals = [];
+  const agent = new Agent({
+    initialState: {
+      model: { provider: "openai-codex", id: "fixture" },
+      tools: [{ name: "blocked", description: "fixture", parameters: { type: "object", properties: {} }, async execute(_id, _args, signal) {
+        signals.push(signal);
+        toolStarted();
+        await blocked;
+        return { content: [{ type: "text", text: "tool finished" }] };
+      } }],
+    },
+    steeringMode: "all",
+    convertToLlm: messages => messages,
+    streamFn: async (_model, context, options) => {
+      signals.push(options.signal);
+      requests.push(structuredClone(context.messages));
+      const call = requests.length <= 2;
+      const message = { role: "assistant", content: call ? [{ type: "toolCall", id: `t${requests.length}`, name: "blocked", arguments: {} }] : [{ type: "text", text: "done" }], api: "openai-codex-responses", provider: "openai-codex", model: "fixture", usage, stopReason: call ? "toolUse" : "stop", timestamp: Date.now() };
+      return { async *[Symbol.asyncIterator]() { yield { type: "done" }; }, async result() { return message; } };
+    },
+  });
+  t.after(() => { releaseTool(); agent.abort(); });
+  agent.subscribe(event => {
+    if (event.type === "message_end") {
+      const message = event.message;
+      if (message.role === "custom") manager.appendCustomMessageEntry(message.customType, message.content, message.display, message.details);
+      else manager.appendMessage(message);
+    }
+  });
+  const session = Object.create(AgentSession.prototype);
+  session.agent = agent;
+  session._isAgentRunActive = true;
+  session._steeringMessages = [];
+  session._followUpMessages = [];
+  session._emit = () => {};
+  session._startRun = () => { throw new Error("must not start a competing run"); };
+  const runner = createShellRunner({
+    pi: { appendEntry: (type, data) => manager.appendCustomEntry(type, data), sendMessage: (message, options) => session.sendCustomMessage(message, options) },
+    folds: createFolds(), working() {}, cwd: () => "/work", notify() {}, env: () => ({}), idle: () => false,
+    exec: async (_command, _cwd, { onData }) => { onData(Buffer.from("shell result")); return { exitCode }; },
+  });
+  const running = agent.prompt("work through both batches");
+  await started;
+  runner.submit("!fixture");
+  await runner.pending;
+  assert.equal(manager.getEntries().filter(entry => entry.type === "custom").length, 1, "visible entry lands while the tool is blocked");
+  assert.equal(manager.getEntries().filter(entry => entry.type === "custom_message").length, 0, "context waits for the safe boundary");
+  await session._queueSteer("human steering");
+  await session.sendCustomMessage({ customType: "notification", content: "subsequent notification", display: false }, { triggerTurn: true, deliverAs: "steer" });
+  assert.equal(requests.length, 1, "no new request before the running tool finishes");
+  assert.ok(signals.every(signal => !signal?.aborted), "neither model nor tool was interrupted");
+  releaseTool();
+  await running;
+  assert.equal(requests.length, 3, "the task continues through another tool batch");
+  for (const request of requests.slice(1)) {
+    const results = request.filter(message => message.customType === "workflow-shell");
+    assert.equal(results.length, 1, "each later request contains the shell result exactly once");
+    assert.equal(results[0].details.exitCode, exitCode);
+    assert.equal(results[0].display, false);
+    assert.equal(results[0].content, contextText(results[0].details));
+  }
+  const next = requests[1];
+  const resultIndex = next.findIndex(message => message.customType === "workflow-shell");
+  assert.ok(next.findIndex(message => message.role === "toolResult" && message.toolCallId === "t1") < resultIndex);
+  assert.equal(next[resultIndex + 1].content[0].text, "human steering");
+  assert.equal(next[resultIndex + 2].customType, "notification");
+  assert.equal(manager.getEntries().filter(entry => entry.type === "custom_message" && entry.customType === "workflow-shell").length, 1);
+  assert.ok(signals.every(signal => !signal?.aborted));
+});
+
+test("native idle delivery wakes once with the hidden shell context", async () => {
+  const session = Object.create(AgentSession.prototype);
+  session._isAgentRunActive = false;
+  const starts = [];
+  session._startRun = async input => { starts.push(input); };
+  const h = harness();
+  h.pi.sendMessage = (message, options) => session.sendCustomMessage(message, options);
+  h.runner.submit("!pwd");
+  await h.runner.pending;
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].messageType, "custom");
+  assert.equal(starts[0].message.display, false);
+  assert.equal(starts[0].message.content, contextText(h.appended[0].data));
+});
+
 test("a wide output line wraps instead of overflowing the render width", () => {
   const output = "x".repeat(100);
   const lines = shellLines({ command: "ls", output }, {}, theme, 40);
@@ -351,9 +444,9 @@ test("! sends a hidden custom message carrying its contextText", async () => {
   assert.equal(h.appended.length, 1);
 });
 
-test("! starts one turn, as a follow-up when the agent is busy; a cancelled ! starts none; !! sends nothing", async () => {
+test("! wakes idle or steers busy; a cancelled ! starts none; !! sends nothing", async () => {
   const hang = (_command, _cwd, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
-  const turn = { triggerTurn: true, deliverAs: "followUp" };
+  const turn = { triggerTurn: true, deliverAs: "steer" };
   for (const [input, idle, cancel, expected] of [["!pwd", true, false, turn], ["!pwd", false, false, turn], ["!pwd", true, true, { triggerTurn: false }], ["!!pwd", true, false, undefined]]) {
     const h = harness({ exec: cancel ? hang : undefined, idle: () => idle });
     h.runner.submit(input);

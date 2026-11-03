@@ -857,7 +857,7 @@ export function bulletMarkdown(markdown, { messageType }, palette) {
   const [first, ...rest] = body.split("\n");
   const heading = first.match(/^#{1,6}\s+(.*?)\s*$/);
   if (heading) return [`${BULLET} **${heading[1]}**`, ...(rest[0]?.trim() ? [""] : []), ...rest].join("\n");
-  return /^(```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(body) ? `${BULLET}\n${body}` : `${BULLET} ${body}`;
+  return /^(```|~~~|>|[-*+]\s|\d+[.)]\s|\|)/.test(markdown.trimStart()) ? `${BULLET}\n${body}` : `${BULLET} ${body}`;
 }
 
 // pi's assistant component draws reasoning as a clickable block (or its label)

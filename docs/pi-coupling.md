@@ -79,9 +79,14 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   to a custom editor, parses `!`/`!!` so
   `handleBashCommand` never runs, and runs the command through
   `createLocalBashOperations` in zsh sourcing `~/.zshrc`.
+  Completed `!` results use native custom-message steering so the next model
+  request sees them, rather than waiting for the whole tool-calling run to end;
+  the visible entry is separate from context delivery.
   *Why:* rule 5's shell block; pi has no renderer
   hook for its own. *Residual:* no `bash_execution_update`, no full-output file
-  on truncation, no pi pending shell component. *On red:* repair. *Retire:*
+  on truncation, no pi pending shell component. Native `clearQueue()` drops queued
+  custom messages while restoring only human text; steering does not repair that
+  upstream loss path. *On red:* repair. *Retire:*
   when pi exposes a renderer for its shell block.
   One optional separator after `!`/`!!` is hidden with the marker in the
   command view; visual cursor positions map back to unchanged editor text.
@@ -174,8 +179,9 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   a suggested shell marker. Pi reuses positional Markdown slots and their
   construction-time theme, so the decorator resolves the current palette when
   rendering; native invalidation clears cached lines on theme changes. The
-  public Markdown transformer handles standalone suggestions; peek supplies the
-  same decorated theme directly. No stored text is changed. *Retire:* the theme decoration when Pi exposes an assistant-only
+  public Markdown transformer protects standalone suggestions as literal code
+  before Markdown can interpret shell punctuation; peek supplies the same
+  decorated theme directly. No stored text is changed. *Retire:* the theme decoration when Pi exposes an assistant-only
   Markdown theme hook; *On red:* drop marker colouring, preserving native code
   rendering and command text.
   *Why:* rule 2's always-hidden reasoning and rule 8's one blank between text

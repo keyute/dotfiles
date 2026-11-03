@@ -474,15 +474,17 @@ test("the control notice row is built from the event pi-subagents puts in detail
   assert.equal(controlNotice({}, {}, theme), undefined);
 });
 
-test("the plan-mode research addendum is the root's alone, and execute mode carries neither", () => {
+test("the root planning contract requires proposals for changes and actionable investigations, with direct-answer exemptions", () => {
   const base = { mode: "plan", readonly: true };
   const root = workflowPrompt({ ...base, isRoot: true });
   assert.match(root, /Workflow mode: plan\. Investigate only/);
-  assert.match(root, /Answer read-only questions and command requests directly/);
-  assert.match(root, /For requested source edits or external mutations, research the request to the point of a plan without being asked/);
+  assert.match(root, /For requested changes, and investigations and reviews that identify concrete changes you recommend within the requested scope/);
+  assert.match(root, /Submit the plan with submit_plan for explicit approval before ending the task; do not wait for a separate request to implement/);
+  assert.match(root, /Read-only research restricts execution, not proposal preparation/);
+  assert.match(root, /Answer informational questions, command-only requests, clean reviews with no recommended changes, and explicit report-only\/no-plan requests directly without a plan/);
   assert.match(root, /Approval switches the mode and revokes running child sessions/);
   // A child in plan mode is read-only too, but has neither submit_plan nor ask_user_question.
-  assert.doesNotMatch(workflowPrompt({ ...base, isRoot: false }), /research the request|Answer read-only/i);
+  assert.doesNotMatch(workflowPrompt({ ...base, isRoot: false }), /submit_plan|research through|Answer informational/i);
   // Execute mode replaces the investigate clause outright, so the addendum cannot ride it.
   const executing = workflowPrompt({ mode: "execute", readonly: false, isRoot: true });
   assert.equal(executing, "Workflow mode: execute. Execute only the user-approved task.");
