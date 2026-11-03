@@ -130,9 +130,10 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   for (const action of ["status", "result", "stop"]) assert.match(orchestrateDescription, new RegExp(`action: "${action}"`));
   assert.match(orchestrateDescription, /management still works/);
   assert.match(orchestrateDescription, /Only one workflow may be active/);
-  assert.match(orchestrateDescription, /parallel subagent launches for flat independent work/);
-  assert.match(orchestrateDescription, /scripted dependencies, pipelines or structured aggregation/);
-  assert.match(orchestrateDescription, /dependent implementation\/check\/review or multi-source research needing reconciliation or validation/);
+  assert.match(orchestrateDescription, /Keep trivial work inline and isolated bounded delegations on subagent/);
+  assert.match(orchestrateDescription, /with ultracode on, use workflows for substantive multi-part work, including initially independent investigations needing reconciliation/);
+  assert.doesNotMatch(orchestrateDescription, /parallel subagent launches for flat independent work/);
+  assert.match(orchestrateDescription, /dependent work or research needing validation/);
   assert.match(orchestrateDescription, /await dependencies and pass intermediate evidence to downstream children/);
   assert.match(orchestrateDescription, /return only their cited synthesis, coverage gaps and unresolved disagreement, not raw reports or logs/);
   assert.match(orchestrateDescription, /not a dependency; use await/);
@@ -162,6 +163,9 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const piHarness = run("cat", target(".pi/agent/docs/harness.md"));
   const claudeSandboxDoc = run("cat", target(".claude/docs/sandbox.md"));
   const piSandboxDoc = run("cat", target(".pi/agent/docs/sandbox.md"));
+  assert.match(piHarness, /keep trivial work inline, isolated bounded tasks on `subagent`/);
+  assert.match(piHarness, /With ultracode on, use `orchestrate` for substantive multi-part work, even initially independent\s+investigations to reconcile/);
+  assert.doesNotMatch(piHarness, /parallel launches for flat independent work/);
   assert.match(piHarness, /background workflow id immediately/);
   for (const action of ["status", "result", "stop"]) assert.match(piHarness, new RegExp(`action: "${action}"`));
   assert.match(piHarness, /Management works even with ultracode off/);
@@ -173,12 +177,12 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   for (const [name, text, max] of [
     [".pi/agent/AGENTS.md", piInstructions, PROJECTION_MAX_BYTES],
     [".claude/CLAUDE.md", claudeInstructions, PROJECTION_MAX_BYTES],
-    [".pi/agent/docs/harness.md", piHarness, ON_DEMAND_DOC_MAX_BYTES],
+    [".pi/agent/docs/harness.md", piHarness, 5607],
     [".claude/docs/harness.md", claudeHarness, ON_DEMAND_DOC_MAX_BYTES],
     [".pi/agent/docs/sandbox.md", piSandboxDoc, ON_DEMAND_DOC_MAX_BYTES],
     [".claude/docs/sandbox.md", claudeSandboxDoc, ON_DEMAND_DOC_MAX_BYTES],
     [".pi/agent/subagent-tool-description.md", description, SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES],
-    [".pi/agent/orchestrate-tool-description.md", orchestrateDescription, SUBAGENT_TOOL_DESCRIPTION_MAX_BYTES],
+    [".pi/agent/orchestrate-tool-description.md", orchestrateDescription, 2330],
     // chezmoi-ignored, so read from source: it loads in every session in this repo
     ["AGENTS.md", readSource("AGENTS.md"), REPO_AGENTS_MAX_BYTES],
   ]) {

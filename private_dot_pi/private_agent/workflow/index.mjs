@@ -372,7 +372,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       // pi resets every extension surface when a session is invalidated
       // (/new, /resume), so these are applied on each session start.
       installHeader(ctx);
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell, pending: pendingInput }));
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell, pending: pendingInput, notify: (text, type) => ctx.ui.notify(text, type) }));
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
     refreshActiveTools();

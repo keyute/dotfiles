@@ -42,15 +42,14 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
 - Children run in the background, sharing the root policy, up to {{ .agents.pi.child_limit }} at once
   across the tree; they start fresh with no channel back (intercom off);
   batch independent launches.
-- Use `subagent` for bounded work and parallel launches for flat independent work;
-  use `orchestrate` for scripted dependencies, pipelines or structured aggregation
-  (`agent()`/`parallel()`/`pipeline()`, schema results; any non-frontier tier per call).
-  Launch requires ultracode (a delivered prompt enables it until the next session
-  start; `/ultracode` toggles it) and returns a background workflow id immediately.
-  Only one workflow may be active. Management works even with ultracode off:
+- With ultracode on, use `orchestrate` for substantive multi-part work, even initially independent
+  investigations to reconcile; keep trivial work inline, isolated bounded tasks on `subagent`.{{/* model: Flat fan-out hides the reconciliation dependency between initially independent investigations. */}}
+  Workflows: `agent()`/`parallel()`/`pipeline()`, schemas; non-frontier tiers.
+  Launch requires ultracode (a delivered prompt enables it until next session
+  start; `/ultracode` toggles it); returns a background workflow id immediately.
+  One active workflow only. Management works even with ultracode off:
   `{action: "status", id?}`, `{action: "result", id}`, `{action: "stop", id}`.
-  Root steering does not rewrite the script; steer named children through subagent
-  controls. Root Escape/Ctrl+Enter interrupts the root response, not the workflow.
+  Root steering does not rewrite the script; steer named children via subagent controls. Root Escape/Ctrl+Enter interrupts the root response, not the workflow.
 - Chains, role overrides, revival and mutating management are refused; status, stop,
   interrupt and steer work. Runs stop after {{ div $sub.timeoutMs 60000 }} minutes, with a checkpoint steer
   {{ div $sub.checkpointBeforeDeadlineMs 60000 }} minutes before.

@@ -10,7 +10,7 @@ const keybindings = { matches: (data, id) => ({ "app.interrupt": "\x1b", "tui.ed
 // separately, so the mocks stay split or the test stops matching the runtime.
 const editorTheme = { borderColor: text => `<border>${text}`, selectList: { selectedText: text => text, unselectedText: text => text, description: text => text, noMatch: text => text, scrollInfo: text => text } };
 const BG = "\x1b[48;5;1m";
-const palette = { fg: (color, text) => `<${color}>${text}`, bg: (_color, text) => `${BG}${text}\x1b[49m` };
+const palette = { fg: (color, text) => `<${color}>${text}`, bg: (_color, text) => `${BG}${text}\x1b[49m`, inverse: text => `\x1b[7m${text}\x1b[27m` };
 const editor = options => new CaretEditor({ terminal: { rows: 24 }, requestRender: () => {} }, editorTheme, keybindings, { palette, ...options });
 
 test("Ctrl+Enter invokes send-now with the expanded-paste editor; Enter and Alt+Enter stay native", () => {
@@ -541,4 +541,43 @@ test("accepting a child directory reopens at its next level", async () => {
   await tab(caret);
   assert.equal(caret.getText(), "/add-dir ../one/a/");
   assert.deepEqual(menu(caret), ["../one/a/", "../one/a/child/"]);
+});
+
+test("leading large shell pastes render red while collapsed and dispatch only on Enter or Alt+Enter", () => {
+  for (const prefix of ["!", "!!", "! ", "!! "]) {
+    for (const key of ["\r", "\x1b\r"]) {
+      const sent = [];
+      const caret = editor({ shell: { submit: text => { sent.push(text); return true; }, abortable: () => false } });
+      const payload = prefix + "echo command\n".repeat(15);
+      caret.handleInput(`\x1b[200~${payload}\x1b[201~`);
+      assert.match(caret.getText(), /\[paste #/);
+      assert.match(caret.render(50).join("\n"), /<error>! /);
+      assert.equal(caret.getExpandedText(), payload);
+      assert.deepEqual(sent, []);
+      caret.handleInput(key);
+      assert.deepEqual(sent, [payload.trim()]);
+    }
+  }
+});
+
+test("composer range survives resize and leaves autocomplete mouse routing native", async () => {
+  const caret = editor({ palette: { ...palette, fg: (_color, text) => text, bg: (_color, text) => text } });
+  caret.setText("abcdefghij");
+  caret.render(30);
+  const event = (type, x, y, width = 30) => ({ type, button: "left", x, y, width, height: 10 });
+  caret.handleMouse(event("press", 3, 1));
+  caret.handleMouse(event("drag", 8, 1));
+  caret.handleMouse(event("release", 8, 1));
+  assert.ok(caret.render(8).every(row => visibleWidth(row.replace(/<\w+>/g, "")) === 8));
+  caret.handleInput("\x7f");
+  assert.equal(caret.getText(), "aghij");
+  caret.setAutocompleteProvider({
+    getSuggestions: async () => ({ prefix: "", items: [{ value: "one", label: "one" }, { value: "two", label: "two" }] }),
+    applyCompletion: () => ({ lines: ["chosen"], cursorLine: 0, cursorCol: 6 }),
+  });
+  caret.handleInput("\t"); await settle();
+  caret.render(30);
+  assert.equal(caret.isShowingAutocomplete(), true);
+  const result = caret.handleMouse(event("press", 3, 3));
+  assert.notEqual(result?.capture, true, "autocomplete does not start an editor drag");
 });

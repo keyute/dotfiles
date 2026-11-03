@@ -90,7 +90,24 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   when pi exposes a renderer for its shell block.
   One optional separator after `!`/`!!` is hidden with the marker in the
   command view; visual cursor positions map back to unchanged editor text.
-  *Pin:* `stability.test.mjs`, `editor.test.mjs`.
+  `CaretEditor` also adapts native completed `handlePaste` insertion: the
+  registry retains the full payload for exact repeat comparison, while shell
+  mode also inspects a leading collapsed paste. A matching preceding marker
+  expands using the native paste's undo snapshot. Conflicting live marker ids
+  are rekeyed without changing payload text or native registry iteration order;
+  later pastes skip literal ids in both visible text and collapsed payloads.
+  Backspace uses range deletion when
+  literal markers are present, avoiding native renumbering of their text.
+  Fullscreen drag endpoints
+  reuse native click mapping; private state performs atomic range deletion,
+  and visual-line/scroll metadata places the highlight. Within the range,
+  deferred fake-cursor wrappers are removed so they cannot reset its highlight;
+  the IME cursor marker stays. Copy-on-select and the copy shortcut use public
+  clipboard/preference APIs.
+  *Residual:* terminal-owned regular-mode selection is not editable.
+  *On red:* repair these composer seams; retire when native editable ranges,
+  shell-aware collapse and targeted paste expansion cover them.
+  *Pin:* `stability.test.mjs`, `editor.test.mjs`, `caret.test.mjs`.
 - **Fleet peek replay**: replays `<asyncDir>/events.jsonl`, whose event
   names, lifecycle record names and mirroring rule (`message_update` dropped)
   pi-subagents now documents (`docs/observability.md`); still undocumented are
