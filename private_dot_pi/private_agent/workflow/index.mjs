@@ -21,7 +21,7 @@ import { installPendingInput } from "./pending-input.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, PlanState, requestPlanApproval, showPlan } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installFolding, installReasoningHide, isMcp, noteLine, orchestrateRenderers, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installActivityEntries, installFolding, installReasoningHide, isMcp, noteLine, orchestrateCompletionLines, orchestrateRenderers, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
@@ -61,7 +61,7 @@ export function taskNotifier(pi) {
   pi.on("agent_end", (_event, ctx) => { if (ctx.hasUI && ctx.signal?.aborted) held = true; });
   pi.on("agent_start", () => { held = false; });
   pi.on("session_start", () => { held = false; });
-  return text => pi.sendMessage({ customType: "workflow-task", content: text, display: false }, { deliverAs: "steer", triggerTurn: !held });
+  return (text, { customType = "workflow-task", details, triggerTurn = true } = {}) => pi.sendMessage({ customType, content: text, display: false, ...(details && { details }) }, { deliverAs: "steer", triggerTurn: triggerTurn && !held });
 }
 const resultText = text => ({ content: [{ type: "text", text }], details: {} });
 
@@ -183,8 +183,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const toolFactory = name => sdk[`create${name[0].toUpperCase()}${name.slice(1)}ToolDefinition`];
   const workerEnv = { ...env, PI_WORKFLOW_ROLE: role };
 
+  const notify = taskNotifier(pi);
   const tasks = createTasks({
-    notify: taskNotifier(pi),
+    notify,
     record: entry => appendVisible(pi, "workflow-task", entry),
   });
   pi.registerEntryRenderer("workflow-task", doneEntryRenderer("workflow-task"));
@@ -326,8 +327,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
 
   pi.on("session_start", async (event, ctx) => {
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
+    if (isRoot) { ready = false; await orchestrate.reset(); }
     currentContext = ctx;
-    if (isRoot) { plans.restore(ctx); orchestrate.disarm(); }
+    if (isRoot) plans.restore(ctx);
     if (runtime.AgentSession) installManagedRun(runtime.AgentSession, assertManagedRun);
     shuttingDown = false;
     const mode = isRoot ? broker.policy.mode : (await requestBroker(env, role, { action: "state" })).mode;
@@ -348,7 +350,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (isRoot && ctx.hasUI) {
       installSkillDisplay(runtime.InteractiveMode);
-      installReasoningHide(runtime.AssistantMessageComponent);
+      installActivityEntries(runtime.InteractiveMode);
+      installReasoningHide(runtime.AssistantMessageComponent, () => currentContext?.ui.theme);
       pendingInput = installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
       if (!surfaces) {
         installFolding(pi, ctx);
@@ -356,7 +359,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         // re-anchors the session before the footer reports into it.
         const herdr = ctx.mode === "tui" ? installHerdr(pi) : undefined;
         herdr?.attach(ctx, event.reason);
-        const footer = installFooter(pi, ctx, { fleet, tasks, onActivity: herdr?.report });
+        const footer = installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity: herdr?.report });
         // `!` runs in zsh with the interactive config; workspace_bash stays on
         // bash -c without rc, which would otherwise load into every sandboxed call
         const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations({ shellPath: "/bin/zsh" }).exec, env: hostEnvironment, prefix: () => "source ~/.zshrc" });
@@ -442,7 +445,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // registrations themselves are the plugins' own.
   const rowsFor = name => pluginRenderers(name, { servers: Object.keys(config.mcp) });
   const pluginTools = new Set();
-  const styled = pluginApi(pi, { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, SUBAGENT_SCHEMA, () => shuttingDown, subagentDescription, mcpTools, pluginTools, () => currentContext.isIdle(), defaultFolds, ids => orchestrate?.claim(ids) ?? false);
+  const styled = pluginApi(pi, { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, SUBAGENT_SCHEMA, () => shuttingDown, subagentDescription, mcpTools, pluginTools, () => currentContext.isIdle(), defaultFolds, ids => orchestrate?.claim(ids) ?? false, () => currentContext?.sessionManager);
   // Resolvers run in registration order and pi's MCP extension, installed
   // below through the same API, only fills in its card: registered first,
   // this draws every plugin and mcp__ row, a resumed MCP one before its
@@ -453,9 +456,22 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // before pi-subagents installs its hook, which disposes the RPC bridge.
   if (isRoot) {
     fleet = installFleet(pi, null);
-    // Blocking by design: see orchestrate.mjs.
-    orchestrate = createOrchestrate({ pi, config, fleet, check: (args, options) => checkChildLaunch(args, config, "root", currentContext, resolveSubagentLaunchContract, broker.policy.mode, options), isReady: () => ready, description: orchestrateDescription, resultDir: join(sdk.getAgentDir(), "orchestrate") });
+    orchestrate = createOrchestrate({
+      pi, config, fleet,
+      check: (args, options) => checkChildLaunch(args, config, "root", currentContext, resolveSubagentLaunchContract, broker.policy.mode, options),
+      isReady: () => ready,
+      generation: () => plans.generation,
+      description: orchestrateDescription,
+      resultDir: join(sdk.getAgentDir(), "orchestrate"),
+      onComplete: result => {
+        if (shuttingDown) return;
+        appendVisible(pi, "workflow-orchestrate", result);
+        const { id, status } = result.details.workflow;
+        notify(`Workflow ${id} ${status}\n\n${result.content.map(part => part.text ?? "").join("\n")}`, { customType: "workflow-orchestrate", details: result.details, triggerTurn: ready });
+      },
+    });
     pi.registerTool({ ...orchestrate.tool, ...orchestrateRenderers });
+    pi.registerEntryRenderer("workflow-orchestrate", (entry, _options, theme) => new Text(orchestrateCompletionLines(entry.data, theme).join("\n"), 0, 0));
   }
   pi.on("session_shutdown", shutdown);
   if (isRoot) {

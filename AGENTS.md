@@ -20,9 +20,9 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
 - Keep vendor-templated files (oh-my-tmux, ghostty, gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
 
-- Edit source state only; verify with `npm run test:pi` (inside the agent
-  sandbox: `TMPDIR=/tmp/claude/x`; its fixture renders every target into a
-  scratch destination with a stubbed `op` and reports template errors), plus
+- Edit source state only; verify with `npm run test:pi` (its fixture renders every
+  target into a scratch destination with a stubbed `op` and reports template
+  errors; preserve the inherited `TMPDIR`), plus
   `chezmoi cat <target>` where the target is readable.
 - Declare a subagent or MCP server once in `.chezmoidata/agents.yaml`,
   scoped with `harnesses:` where not for every harness; a shared skill

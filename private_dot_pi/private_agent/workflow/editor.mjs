@@ -94,13 +94,17 @@ export class CaretEditor extends sdk.CustomEditor {
   shellPrefix() {
     return this.state.lines[0].match(/^!{1,2}/)?.[0].length ?? 0;
   }
+  commandStart() {
+    const prefix = this.shellPrefix();
+    return prefix + (prefix && this.state.lines[0][prefix] === " " ? 1 : 0);
+  }
   shellMode() {
     return this.shellPrefix() > 0;
   }
   // Keep native text, history, paste expansion and dispatch untouched. Layout
   // and visual navigation see only the command; their columns map back below.
   commandView(draw) {
-    const prefix = this.shellPrefix();
+    const prefix = this.commandStart();
     if (!prefix) return draw();
     const state = this.state;
     this.state = { ...state, lines: [state.lines[0].slice(prefix), ...state.lines.slice(1)], cursorCol: state.cursorLine === 0 ? Math.max(0, state.cursorCol - prefix) : state.cursorCol };
@@ -110,14 +114,14 @@ export class CaretEditor extends sdk.CustomEditor {
     return this.commandView(() => super.layoutText(width));
   }
   buildVisualLineMap(width) {
-    const prefix = this.shellPrefix();
+    const prefix = this.commandStart();
     return this.commandView(() => super.buildVisualLineMap(width)).map(line => line.logicalLine === 0 ? { ...line, startCol: line.startCol + prefix } : line);
   }
   setCursorCol(col) {
-    super.setCursorCol(Math.max(this.state.cursorLine === 0 ? this.shellPrefix() : 0, col));
+    super.setCursorCol(Math.max(this.state.cursorLine === 0 ? this.commandStart() : 0, col));
   }
   handleBackspace() {
-    const prefix = this.shellPrefix();
+    const prefix = this.commandStart();
     if (!prefix || this.state.cursorLine !== 0 || this.state.cursorCol !== prefix) return super.handleBackspace();
     this.exitHistoryBrowsing();
     this.lastAction = null;
@@ -161,7 +165,7 @@ export class CaretEditor extends sdk.CustomEditor {
     }
     // Native history uses logical column zero; shell mode starts after its
     // hidden prefix instead.
-    if (this.shellMode() && this.keybindings.matches(data, "tui.editor.cursorUp") && !this.isShowingAutocomplete() && this.state.cursorLine === 0 && this.state.cursorCol === this.shellPrefix()) {
+    if (this.shellMode() && this.keybindings.matches(data, "tui.editor.cursorUp") && !this.isShowingAutocomplete() && this.state.cursorLine === 0 && this.state.cursorCol === this.commandStart()) {
       this.navigateHistory(-1);
       return;
     }

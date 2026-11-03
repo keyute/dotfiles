@@ -7,15 +7,7 @@ import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
 import { completionStatus, rpcCall } from "./fleet.mjs";
 import { saysUltracode } from "./keywords.mjs";
 
-// The root-only `orchestrate` tool: a model-written script runs in
-// pi-codemode's QuickJS VM, and each agent() is a roster child launched by
-// pi-subagents' RPC spawn after the owned launch check. The call blocks until
-// the script settles, so the root stays busy and each owned child's notice
-// takes the plain-steer (no-wake) path the plugin-API Proxy drops; ownership
-// lasts until the Proxy claims the child's notice. An owned child also draws no
-// completion line: the call's own row is the workflow's outcome.
-// The VM settling does not wait for host work: execute() stops and settles
-// every launch itself afterwards.
+// Ownership outlives the launch tool call and ends only after verified cleanup.
 
 const KiB = 1024;
 const MAX_SCRIPT = 256 * KiB;
@@ -44,9 +36,19 @@ const scrub = text => String(text).replace(/[\p{Cc}]/gu, c => (c === "\n" ? c : 
 // graceMs sits above pi-subagents' result watcher's 60 s healthy scan
 // (result-watcher.js HEALTHY_SCAN_INTERVAL_MS), so a completion the native
 // notify missed still arrives before the exit is taken as the end.
-export function createOrchestrate({ pi, config, fleet, check, isReady, description, resultDir, rpc = rpcCall, graceMs = 120_000 }) {
+export function createOrchestrate({ pi, config, fleet, check, isReady, description, resultDir, rpc = rpcCall, graceMs = 120_000, generation = () => 0, onComplete = () => {} }) {
   const owned = new Set();
   const running = new Set();
+  const terminal = new Map();
+  const listeners = new Set();
+  let epoch = 0;
+  const changed = () => { for (const fn of listeners) { try { fn(); } catch {} } };
+  const current = run => run.generation === generation() && run.epoch === epoch;
+  const shaped = run => ({
+    content: [{ type: "text", text: [`Workflow ${run.workflow.id} · ${run.workflow.title} · ${run.workflow.status}`,
+      ...run.records.map(record => `${record.runId ?? "launching"} · ${record.agent} · ${record.label ?? record.task} · ${record.status}${record.phase ? ` · ${record.phase}` : ""}`)].join("\n") }],
+    details: { workflow: { ...run.workflow }, runs: run.records.map(({ runId, agent, label, task, asyncDir, status, phase }) => ({ runId, agent, label, task, asyncDir, status, ...(phase && { phase }) })) },
+  });
   let armed = false;
   const extensionInput = new Map();
   const nonFrontier = () => Object.keys(config.models.tiers).filter(key => key !== "frontier");
@@ -67,7 +69,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
   }
 
   function startRun() {
-    const run = { records: [], unverified: [], logs: [], droppedLogs: 0, calls: 0, inflight: 0, waiters: [], settling: new Set(), open: new Map(), buffer: new Map(), terminal: new Set(), started: new Map(), done: new Map(), lost: [], finished: false };
+    const run = { records: [], unverified: [], logs: [], droppedLogs: 0, calls: 0, inflight: 0, waiters: [], settling: new Set(), open: new Map(), buffer: new Map(), terminal: new Set(), started: new Map(), done: new Map(), lost: [], finished: false, aliases: new Set() };
     // Per open id: { agent, wait, timer }. Completions for ids not
     // yet known are buffered while the run lives (a spawn reply can lag its child).
     const finish = (id, outcome) => {
@@ -88,7 +90,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     const offs = [
       // A status recovery carries no asyncDir; the launch event does, and its
       // toolCallId names the spawn request it answered.
-      pi.events.on("subagent:async-started", payload => { if (!run.finished && payload?.id) run.started.set(payload.id, payload); }),
+      pi.events.on("subagent:async-started", payload => { if (!run.finished && payload?.id && run.aliases.has(payload.toolCallId)) { run.started.set(payload.id, payload); owned.add(payload.id); } }),
       pi.events.on("subagent:async-complete", payload => {
         const id = payload?.runId ?? payload?.id;
         if (run.open.has(id)) finish(id, { payload });
@@ -96,8 +98,8 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       }),
       pi.events.on("subagent:process-terminal", proof => {
         if (proof?.state !== "observed" || !proof.runId) return;
+        run.terminal.add(proof.runId);
         if (run.open.has(proof.runId)) graceFor(proof.runId);
-        else if (!run.finished) run.terminal.add(proof.runId);
       }),
     ];
     run.off = () => { for (const off of offs) off?.(); };
@@ -128,19 +130,20 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     while (run.inflight >= config.orchestrateConcurrency) await new Promise(resolve => run.waiters.push(resolve));
     run.inflight++;
     try {
-      if (signal.aborted) throw new Error("Workflow interrupted");
+      if (signal.aborted || !current(run)) throw new Error("Workflow interrupted");
       if (!isReady()) throw new Error("Managed workflow is not ready");
       const args = { agent: agentType, task: prompt, context: "fresh", title: label };
       await check(args, { outputSchema: schema, model: tier ? `${config.models.provider}/${config.models.tiers[tier]}` : undefined });
-      if (signal.aborted) throw new Error("Workflow interrupted");
+      if (signal.aborted || !current(run)) throw new Error("Workflow interrupted");
       const task = label ?? firstLine(prompt);
       const record = { runId: undefined, agent: agentType, label, phase, task, asyncDir: undefined, status: "launching" };
       run.records.push(record);
       run.group.changed();
       const requestId = randomUUID();
       const alias = `rpc-spawn-${requestId}`;
-      fleet.own(alias);
-      const reply = await rpc(pi.events, "spawn", args, 30_000, requestId, true);
+      run.aliases.add(alias);
+      fleet.own(alias, run.group);
+      const reply = await rpc(pi.events, "spawn", args, 30_000, requestId, true).catch(() => undefined);
       const refused = reply?.success === false ? reply.error?.message ?? "spawn failed" : undefined;
       // Only invalid_params precedes execution. Any other error reply, like a
       // lost one, may follow a spawned child (the executor's post-spawn budget
@@ -148,7 +151,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       // never redispatched, and a recovered child of a failed launch is stopped.
       if (refused !== undefined && reply.error?.code === "invalid_params") { fleet.disown(alias); record.status = "failed"; run.group.changed(); throw new Error(`${agentType} launch refused: ${refused}`); }
       let details = reply?.data?.details;
-      if (!(details?.runId ?? details?.asyncId)) details = (await rpc(pi.events, "status", { id: alias }, 5_000))?.details;
+      if (!(details?.runId ?? details?.asyncId)) details = (await rpc(pi.events, "status", { id: alias }, 5_000).catch(() => undefined))?.details;
       const started = [...run.started.values()].find(payload => payload.toolCallId === alias);
       const id = details?.runId ?? details?.asyncId ?? started?.id;
       if (!id) {
@@ -164,7 +167,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       const asyncDir = details?.asyncDir ?? run.started.get(id)?.asyncDir;
       Object.assign(record, { runId: id, asyncDir, status: "running", startedAt: Date.now() });
       run.group.changed();
-      owned.add(id);
+      if (!run.started.has(id)) owned.add(id);
       fleet.adopt(id, { agent: agentType, task, asyncDir });
       run.track(id, agentType);
       if (refused !== undefined || signal.aborted) {
@@ -189,13 +192,28 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
   }
 
   async function stop(run, records) {
-    const pending = records.filter(record => record.status === "running" && !record.stopping);
+    // A result is not process-exit proof, even when the child succeeded.
+    const pending = records.filter(record => record.runId && !run.terminal.has(record.runId) && !record.stopping);
     if (!pending.length) return;
     for (const record of pending) record.stopping = true;
     const failures = await fleet.stopRuns(pending.map(record => record.runId));
     run.unverified.push(...failures.map(failure => `unverified cleanup: ${failure}`));
-    for (const record of pending) if (record.status === "running" && !failures.some(failure => failure.startsWith(`${record.runId}:`))) record.status = "stopped";
+    for (const record of pending) if (!failures.length) {
+      run.terminal.add(record.runId);
+      if (record.status === "running") record.status = "stopped";
+    }
     run.group.changed();
+  }
+
+  function recoverRecord(run, record, id, asyncDir) {
+    const payload = run.buffer.get(id) ?? run.done.get(id)?.payload;
+    Object.assign(record, { runId: id, asyncDir, status: payload ? completionStatus(payload) : run.terminal.has(id) ? "stopped" : "running" });
+    if (payload) {
+      const usage = payload.results?.[0]?.usage;
+      Object.assign(record, { durationMs: payload.durationMs, tokens: (usage?.input ?? 0) + (usage?.output ?? 0) });
+    }
+    run.group.changed();
+    fleet.adopt(id, { agent: record.agent, task: record.task, asyncDir });
   }
 
   const statusLines = run => [...run.records.map(record => `${record.label ?? record.agent} · ${record.status}`), ...run.unverified];
@@ -207,73 +225,61 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     return lines.length ? `\n\n${lines.join("\n")}` : "";
   }
 
-  async function execute(_id, params, signal, _onUpdate, ctx) {
-    if (!armed) throw new Error("Ultracode is off: workflows run only after the user's prompt says ultracode or /ultracode turns it on");
-    if (!ctx?.hasUI) throw new Error("Workflows run only in an interactive session");
-    const script = String(params?.script ?? "");
-    if (script.length > MAX_SCRIPT) throw new Error("script exceeds 256 KiB");
-    const argsJson = JSON.stringify(params?.args ?? null) ?? "null";
-    if (argsJson.length > MAX_ARGS) throw new Error("args exceed 16 KiB of JSON");
-    const runId = randomUUID().slice(0, 8);
-    const controller = new AbortController();
-    const onAbort = () => controller.abort();
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) controller.abort();
-    const run = startRun();
-    run.end = reason => { run.ended ??= reason; controller.abort(); };
+  async function executeRun(run, params, argsJson) {
+    const { controller } = run;
+    const script = params.script;
+    const runId = run.workflow.id;
     const pushLog = message => {
       if (run.logs.length >= MAX_LOGS) run.droppedLogs++;
       else run.logs.push(clean(typeof message === "string" ? message : JSON.stringify(message) ?? String(message), MAX_LOG_CHARS));
     };
-    let settle;
-    const entry = { controller, done: new Promise(resolve => { settle = resolve; }) };
-    running.add(entry);
-    const sandbox = new CodemodeSandbox({
-      timeoutMs: Infinity,
-      memoryLimitBytes: 256 * 1024 * 1024,
-      tools: [{ name: "agent", description: "Launch one roster child and resolve to its final text or structured value", execute: (input, ctx) => {
-        const call = launch(run, input, AbortSignal.any([ctx.signal, controller.signal]));
-        run.settling.add(call);
-        call.then(() => run.settling.delete(call), () => run.settling.delete(call));
-        return call;
-      } }],
-    });
-    // The run's one fleet row, live exactly as long as this call.
-    run.group = fleet.track({ title: params?.title, records: run.records });
+    const workers = [];
+    let sandbox;
     let result;
+    let interrupted;
     try {
+      if (!current(run) || controller.signal.aborted) throw new Error("Workflow interrupted");
+      sandbox = new CodemodeSandbox({
+        timeoutMs: Infinity,
+        onWorkerStarted: exited => { workers.push(exited); },
+        memoryLimitBytes: 256 * 1024 * 1024,
+        tools: [{ name: "agent", description: "Launch one roster child and resolve to its final text or structured value", execute: (input, ctx) => {
+          const call = launch(run, input, AbortSignal.any([ctx.signal, controller.signal]));
+          run.settling.add(call);
+          call.then(() => run.settling.delete(call), () => run.settling.delete(call));
+          return call;
+        } }],
+      });
+
       const code = `const args = JSON.parse(${JSON.stringify(argsJson)}); ${PRELUDE}${script.replace(META, "$1$2")}`;
-      try { result = await sandbox.execute(code, { signal: controller.signal }); } finally { await sandbox.close(); }
+      result = await sandbox.execute(code, { signal: controller.signal });
       // The VM's text()/console output, log() lines included, in call order.
       for (const item of result.output) if (item.type === "text") pushLog(item.text);
-      await stop(run, run.records);
+    } catch (error) { run.error = error; }
+    finally {
+      interrupted = controller.signal.aborted;
+      controller.abort();
+      try { await sandbox?.close(); } catch (error) { run.error ??= error; }
+      try { await Promise.all(workers); } catch (error) { run.error ??= error; }
+      try { await stop(run, run.records); } catch (error) { run.unverified.push(`unverified cleanup: ${error.message}`); }
       while (run.settling.size) await Promise.allSettled([...run.settling]);
-      // After settling, so a launch still recovering when the VM settled is seen.
-      for (const { alias, record } of run.lost) {
-        const payload = [...run.started.values()].find(payload => payload.toolCallId === alias);
-        if (!payload) continue;
-        Object.assign(record, { runId: payload.id, asyncDir: payload.asyncDir, status: "running", startedAt: Date.now() });
-        run.group.changed();
-        owned.add(payload.id);
-        fleet.adopt(payload.id, { agent: record.agent, task: record.task, asyncDir: payload.asyncDir });
-      }
-      await stop(run, run.records);
-    } finally {
-      run.group.end();
-      run.finished = true;
-      run.buffer.clear();
-      run.terminal.clear();
-      run.started.clear();
-      if (!run.open.size) run.off();
-      signal?.removeEventListener("abort", onAbort);
-      running.delete(entry);
-      settle();
+      try {
+        // After settling, so a launch still recovering when the VM settled is seen.
+        for (const { alias, record } of run.lost) {
+          const payload = [...run.started.values()].find(payload => payload.toolCallId === alias);
+          if (!payload) continue;
+          record.startedAt = Date.now();
+          recoverRecord(run, record, payload.id, payload.asyncDir);
+        }
+        await stop(run, run.records);
+      } catch (error) { run.unverified.push(`unverified cleanup: ${error.message}`); }
     }
     const details = { runs: run.records.map(({ runId, agent, label, task, asyncDir, status }) => ({ runId, agent, label, task, asyncDir, status })) };
     // Failures after the VM return, not throw: pi replaces a thrown tool
     // error's details with {}, and fleet restores these runs from details.runs.
     const failed = text => ({ content: [{ type: "text", text }], details, isError: true });
-    if (controller.signal.aborted) return failed(`${run.ended ?? "Workflow interrupted"}${trailer(run)}`);
+    if (run.error) return failed(`${scrub(run.error.message)}${trailer(run)}`);
+    if (interrupted || run.ended) return failed(`${run.ended ?? "Workflow interrupted"}${trailer(run)}`);
     if (!result.ok) {
       const stack = result.error.stack?.split("\n").find(line => line.trim());
       return failed(scrub(`${result.error.kind}: ${result.error.message}${stack ? `\n${stack.trim()}` : ""}`) + trailer(run));
@@ -298,13 +304,123 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     return { content: [{ type: "text", text }], details };
   }
 
+  function release(run) {
+    if (!running.has(run)) return;
+    run.group.end();
+    run.finished = true;
+    run.off();
+    running.delete(run);
+    terminal.set(run.workflow.id, run.result);
+    while (terminal.size > 20) terminal.delete(terminal.keys().next().value);
+    changed();
+  }
+
+  async function finish(run, params, argsJson) {
+    let result;
+    try {
+      run.group = fleet.track({ title: params.title, records: run.records });
+      result = await executeRun(run, params, argsJson);
+    } catch (error) {
+      result = { ...shaped(run), isError: true, content: [{ type: "text", text: scrub(error.message) }] };
+    }
+    const unresolved = run.unverified.some(text => !text.startsWith("launch outcome unknown:")) || run.lost.some(({ record }) => !run.terminal.has(record.runId));
+    Object.assign(run.workflow, { status: unresolved ? "cleanup-unverified" : result.isError ? (run.stopped ? "stopped" : "failed") : "completed", endedAt: Date.now() });
+    run.workflow.durationMs = run.workflow.endedAt - run.workflow.startedAt;
+    result.details.workflow = { ...run.workflow };
+    run.result = result;
+    if (current(run)) { try { await onComplete(result); } catch {} }
+    if (!unresolved) release(run);
+    else changed();
+    return result;
+  }
+
+  function stopOwner(run) {
+    if (!run.stoppingOwner) {
+      run.stoppingOwner = stopOwned(run).finally(() => { run.stoppingOwner = undefined; });
+    }
+    return run.stoppingOwner;
+  }
+
+  async function stopOwned(run) {
+    run.stopped = true;
+    run.controller.abort();
+    await run.settled;
+    if (running.has(run)) {
+      run.unverified = [];
+      for (const record of run.records) record.stopping = false;
+      try {
+        await stop(run, run.records);
+        for (const { alias, record } of run.lost) {
+          if (record.runId && run.terminal.has(record.runId)) continue;
+          const details = (await rpc(pi.events, "status", { id: alias }, 5_000))?.details;
+          const started = [...run.started.values()].find(payload => payload.toolCallId === alias);
+          const id = details?.runId ?? details?.asyncId ?? started?.id;
+          if (!id) { run.unverified.push(`launch outcome unknown: ${record.agent}`); continue; }
+          record.stopping = false;
+          recoverRecord(run, record, id, details?.asyncDir ?? started?.asyncDir);
+          await stop(run, [record]);
+        }
+      } catch (error) { run.unverified.push(error.message); }
+      if (run.unverified.length) throw new Error(run.unverified.join("\n"));
+      run.workflow.status = "stopped";
+      run.result.details.workflow = { ...run.workflow };
+      run.result.details.runs = shaped(run).details.runs;
+      release(run);
+    }
+    return run.result;
+  }
+
+  async function execute(_id, params, signal, _onUpdate, ctx) {
+    if (params?.action !== undefined) {
+      const { action, id } = params;
+      if (!["status", "result", "stop"].includes(action) || Object.keys(params).some(key => !["action", "id"].includes(key))) throw new Error("Use either a launch or a management action");
+      const run = [...running].find(run => run.workflow.id === id);
+      const result = terminal.get(id);
+      if (action === "status" && id === undefined) {
+        const workflows = [...running].map(run => run.workflow).concat([...terminal.values()].map(result => result.details.workflow));
+        return { content: [{ type: "text", text: workflows.map(workflow => `${workflow.id} · ${workflow.title} · ${workflow.status}`).join("\n") || "No workflows" }], details: { workflows } };
+      }
+      if (!run && !result) throw new Error("Unknown workflow id");
+      if (action === "stop") return run ? await stopOwner(run) : result;
+      if (action === "status") return run ? shaped(run) : { ...result, content: [{ type: "text", text: [`Workflow ${result.details.workflow.id} · ${result.details.workflow.title} · ${result.details.workflow.status}`,
+        ...result.details.runs.map(record => `${record.runId ?? "unknown"} · ${record.agent} · ${record.label ?? record.task} · ${record.status}`)].join("\n") }] };
+      return run ? run.result ?? shaped(run) : result;
+    }
+    if (!params || typeof params.script !== "string" || Object.keys(params).some(key => !["script", "args", "title"].includes(key))) throw new Error("A launch requires script");
+    if (!armed) throw new Error("Ultracode is off: workflows run only after the user's prompt says ultracode or /ultracode turns it on");
+    if (!ctx?.hasUI) throw new Error("Workflows run only in an interactive session");
+    if (signal?.aborted) throw new Error("Workflow interrupted");
+    if (running.size) throw new Error("A workflow already owns this session");
+    if (params.script.length > MAX_SCRIPT) throw new Error("script exceeds 256 KiB");
+    const argsJson = JSON.stringify(params.args ?? null) ?? "null";
+    if (argsJson.length > MAX_ARGS) throw new Error("args exceed 16 KiB of JSON");
+    const run = startRun();
+    run.controller = new AbortController();
+    run.generation = generation();
+    run.epoch = epoch;
+    run.workflow = { id: `wf_${randomUUID()}`,  title: clean(params.title ?? "Workflow", 120), status: "running", startedAt: Date.now() };
+    run.end = reason => { run.ended ??= reason; run.controller.abort(); };
+    run.group = { changed() {}, end() {} };
+    running.add(run);
+    const admitted = shaped(run);
+    run.settled = Promise.resolve().then(() => finish(run, params, argsJson));
+    changed();
+    return admitted;
+  }
+
   return {
     tool: {
       name: "orchestrate",
       label: "Workflow",
       description,
-      parameters: Type.Object({ script: Type.String(), args: Type.Optional(Type.Any()), title: Type.Optional(Type.String()) }, { additionalProperties: false }),
-      // One run at a time per turn keeps the concurrency cap the cap.
+      parameters: Type.Object({
+        script: Type.Optional(Type.String()),
+        args: Type.Optional(Type.Any()),
+        title: Type.Optional(Type.String()),
+        action: Type.Optional(Type.Union([Type.Literal("status"), Type.Literal("result"), Type.Literal("stop")])),
+        id: Type.Optional(Type.String()),
+      }, { additionalProperties: false }),
+      // Admission, not tool-call serialization, retains the session concurrency cap.
       executionMode: "sequential",
       execute,
     },
@@ -326,15 +442,24 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     // True iff every id is owned; releases each owned one, since a run's
     // notice is sent once.
     claim: ids => {
-      const all = ids.every(id => owned.has(id));
-      for (const id of ids) owned.delete(id);
+      const all = ids.length > 0 && ids.every(id => owned.has(id));
+      if (all) for (const id of ids) owned.delete(id);
       return all;
+    },
+    onChange: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+    reset: async () => {
+      epoch++;
+      await Promise.all([...running].map(stopOwner));
+      terminal.clear();
+      owned.clear();
+      armed = false;
+      extensionInput.clear();
+      changed();
     },
     live: () => running.size,
     stopAll: async () => {
       const entries = [...running];
-      for (const entry of entries) entry.controller.abort();
-      await Promise.all(entries.map(entry => entry.done));
+      await Promise.all(entries.map(stopOwner));
     },
   };
 }

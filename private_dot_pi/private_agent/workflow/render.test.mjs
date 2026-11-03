@@ -126,6 +126,15 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(workflow.orchestrateConcurrency, data.agents.pi.orchestrate_concurrency);
   const orchestrateDescription = run("cat", target(".pi/agent/orchestrate-tool-description.md"));
   assert.match(orchestrateDescription, /ultracode/);
+  assert.match(orchestrateDescription, /background workflow id immediately/);
+  for (const action of ["status", "result", "stop"]) assert.match(orchestrateDescription, new RegExp(`action: "${action}"`));
+  assert.match(orchestrateDescription, /management still works/);
+  assert.match(orchestrateDescription, /Only one workflow may be active/);
+  assert.match(orchestrateDescription, /parallel subagent launches for flat independent work/);
+  assert.match(orchestrateDescription, /scripted dependencies, pipelines or structured aggregation/);
+  assert.match(orchestrateDescription, /Root steering does not rewrite/);
+  assert.match(orchestrateDescription, /not the workflow/);
+  assert.doesNotMatch(orchestrateDescription, /every substantive task|call blocks until|typed steers reach you only after/);
   for (const tier of Object.keys(data.subagent_tiers.pi).filter(tier => tier !== "frontier")) assert.match(orchestrateDescription, new RegExp(`\\b${tier}\\b`), `orchestrate description misses tier ${tier}`);
   // one entry per distinct tier model: tiers may share a pin
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
@@ -148,6 +157,14 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   const piHarness = run("cat", target(".pi/agent/docs/harness.md"));
   const claudeSandboxDoc = run("cat", target(".claude/docs/sandbox.md"));
   const piSandboxDoc = run("cat", target(".pi/agent/docs/sandbox.md"));
+  assert.match(piHarness, /background workflow id immediately/);
+  for (const action of ["status", "result", "stop"]) assert.match(piHarness, new RegExp(`action: "${action}"`));
+  assert.match(piHarness, /Management works even with ultracode off/);
+  assert.match(piHarness, /not the workflow/);
+  assert.match(piSandboxDoc, /Preserve inherited `TMPDIR`/);
+  assert.match(piSandboxDoc, /--configLoader runner/);
+  assert.match(piSandboxDoc, /`cacheDir` or `TMPDIR` alone does not relocate that bundle/);
+  assert.doesNotMatch(readSource("AGENTS.md"), /TMPDIR=\/tmp\/claude\/x/);
   for (const [name, text, max] of [
     [".pi/agent/AGENTS.md", piInstructions, PROJECTION_MAX_BYTES],
     [".claude/CLAUDE.md", claudeInstructions, PROJECTION_MAX_BYTES],
@@ -227,6 +244,19 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.ok(piHarness.includes(data.subagent_tiers.pi.frontier));
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/private_dot_pi")), false);
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/node_modules")), true);
+});
+
+test("ship-check shares a selection-aware native approval flow across harnesses", t => {
+  const { run, target } = fixture(t);
+  const claude = run("cat", target(".claude/skills/ship-check/SKILL.md"));
+  const pi = run("cat", target(".agents/skills/ship-check/SKILL.md"));
+  assert.equal(pi, claude);
+  assert.match(pi, /no survivors[^]*stop without a plan/);
+  assert.match(pi, /explicit review-only request[^]*without seeking execution approval/);
+  assert.match(pi, /in plan\s+mode, proactively submit[^]*native plan approval flow/);
+  assert.match(pi, /do not wait for a separate/);
+  assert.match(pi, /select findings by ID and revise the same artifact/);
+  assert.match(pi, /only the selected findings in the\s+approved revision/);
 });
 
 // every pi (pin, effort) pair must be a level the pinned pi-ai catalog offers that model; levels are

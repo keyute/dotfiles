@@ -5,6 +5,9 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { CodemodeSandbox } from "@earendil-works/pi-codemode";
+import { convertResponsesTools } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import { rpcCall } from "./fleet.mjs";
 import { saysUltracode } from "./keywords.mjs";
 import { createOrchestrate } from "./orchestrate.mjs";
@@ -16,11 +19,11 @@ const config = (concurrency = 8) => ({ models: { provider: "openai", tiers: { sm
 // async-started, process-terminal and async-complete. `behave(params, id)`
 // resolves to the child's results[0] (or never, for a child that hangs);
 // `gate(args)` holds a launch in its check.
-function harness({ concurrency, behave = params => ({ status: "completed", output: `done:${params.task}` }), spawn: spawnMode = "reply", status = () => null, stopFailures = () => [], gate = () => {} } = {}) {
+function harness({ concurrency, behave = params => ({ status: "completed", output: `done:${params.task}` }), spawn: spawnMode = "reply", status = () => null, stopFailures = () => [], gate = () => {}, onComplete = () => {}, generation = () => 0, resultDir } = {}) {
   const emitter = new EventEmitter();
   emitter.setMaxListeners(0);
   const events = { on: (name, fn) => { emitter.on(name, fn); return () => emitter.off(name, fn); }, emit: (name, data) => emitter.emit(name, data) };
-  const h = { events, mode: "execute", spawns: [], log: [], held: [], inflight: 0, maxInflight: 0, adopted: [], owned: [], stopped: [], groups: [], ready: true };
+  const h = { events, mode: "execute", spawns: [], log: [], held: [], inflight: 0, maxInflight: 0, adopted: [], owned: [], ownershipGroups: [], stopped: [], groups: [], ready: true };
   const reply = (requestId, data) => events.emit(`subagents:rpc:v1:reply:${requestId}`, { version: 1, requestId, success: true, data });
   h.complete = (id, result, extra = {}) => {
     events.emit("subagent:process-terminal", { state: "observed", runId: id });
@@ -54,16 +57,18 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
   });
   const fleet = {
     adopt: (id, launch) => h.adopted.push({ id, ...launch }),
-    own: alias => h.owned.push(alias),
+    own: (alias, group) => { h.owned.push(alias); h.ownershipGroups.push(group); },
     disown: alias => h.owned.splice(h.owned.indexOf(alias), 1),
     // Each change is logged as the statuses at that moment.
     track: ({ title, records }) => {
       const group = { title, records, log: [] };
       h.groups.push(group);
-      return { changed: () => group.log.push(records.map(record => record.status).join(",")), end: () => group.log.push("end") };
+      group.handle = { changed: () => group.log.push(records.map(record => record.status).join(",")), end: () => group.log.push("end") };
+      return group.handle;
     },
     stopRuns: async ids => { h.stopped.push(...ids); return ids.flatMap(stopFailures); },
   };
+  h.fleet = fleet;
   const check = async (args, { outputSchema, model } = {}) => {
     await gate(args);
     delete args.title;
@@ -75,20 +80,57 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
     args.agentScope = "user";
     args.async = true;
   };
+  h.results = new Map();
   h.orchestrate = createOrchestrate({
+    generation, onComplete: async result => { h.results.set(result.details.workflow.id, result); await onComplete(result); },
     pi: { events }, config: config(concurrency), fleet, check, isReady: () => h.ready, description: "d",
-    resultDir: mkdtempSync(join(tmpdir(), "orchestrate-")),
+    resultDir: resultDir ?? mkdtempSync(join(tmpdir(), "orchestrate-")),
     rpc: (ev, method, params, timeoutMs, requestId, raw) => rpcCall(ev, method, params, Math.min(timeoutMs, 100), requestId, raw),
     graceMs: 200,
   });
   h.orchestrate.delivered({ role: "user", content: "ultracode" });
-  h.run = (script, args, signal, ctx = { hasUI: true }) => h.orchestrate.tool.execute("call-1", { script, args }, signal, undefined, ctx);
+  h.manage = (action, id) => h.orchestrate.tool.execute("manage", { action, ...(id ? { id } : {}) });
+  h.launch = (script, args, signal, ctx = { hasUI: true }) => h.orchestrate.tool.execute("call-1", { script, args }, signal, undefined, ctx);
+  h.wait = async admitted => {
+    const id = admitted.details.workflow.id;
+    while (!h.results.has(id)) await sleep(5);
+    while (h.orchestrate.live() && (await h.manage("result", id)).details.workflow.status !== "cleanup-unverified") await sleep(1);
+    return h.results.get(id);
+  };
+  h.run = async (script, args, signal, ctx) => {
+    const admitted = await h.launch(script, args, signal, ctx);
+    signal?.addEventListener("abort", () => { h.manage("stop", admitted.details.workflow.id).catch(() => {}); }, { once: true });
+    return h.wait(admitted);
+  };
   return h;
 }
 // The result's first line counts the agents; the value is the block below it.
 const value = result => JSON.parse(result.content[0].text.split("\n\n")[1]);
 // A failure after the VM ran is a returned error result, so its details survive.
 const failure = result => { assert.equal(result.isError, true); return result.content[0].text; };
+
+test("provider conversion keeps an object root and usable launch and management inputs", async () => {
+  const h = harness({ behave: () => new Promise(() => {}) });
+  const tool = h.orchestrate.tool;
+  const [converted] = convertResponsesTools([tool], { strict: null });
+  assert.equal(converted.parameters.type, "object");
+  assert.equal(converted.parameters.anyOf, undefined);
+  assert.deepEqual(Object.keys(converted.parameters.properties), ["script", "args", "title", "action", "id"]);
+  const call = async input => {
+    const args = validateToolArguments({ ...tool, parameters: converted.parameters }, { name: tool.name, arguments: input });
+    assert.deepEqual(args, input);
+    return tool.execute("provider", args, undefined, undefined, { hasUI: true });
+  };
+  const admitted = await call({ script: 'return await agent(args.task, { agentType: "scout" })', args: { task: "hang" }, title: "Provider" });
+  const { id } = admitted.details.workflow;
+  while (!h.adopted.length) await sleep(5);
+  assert.equal((await call({ action: "status" })).details.workflows[0].id, id);
+  assert.equal((await call({ action: "status", id })).details.workflow.status, "running");
+  assert.equal((await call({ action: "result", id })).details.workflow.status, "running");
+  assert.equal((await call({ action: "stop", id })).details.workflow.status, "stopped");
+  await assert.rejects(call({ action: "status", script: "return 1" }), /either a launch/);
+  await assert.rejects(call({ id }), /launch requires script/);
+});
 
 test("agent() returns the child's text and spawns exactly the checked object", async () => {
   const h = harness();
@@ -152,7 +194,7 @@ test("phase() and opts.phase reach the records, the explicit option winning; a n
 
 test("a run tracks one fleet group: its title, each status change, and its end", async () => {
   const h = harness({ behave: params => params.task === "b" ? { status: "failed" } : { status: "completed", output: "" } });
-  await h.orchestrate.tool.execute("call-1", { title: "Audit", script: `await agent("a", { agentType: "scout" }); await parallel([() => agent("b", { agentType: "scout" })]); return 1` }, undefined, undefined, { hasUI: true });
+  await h.wait(await h.orchestrate.tool.execute("call-1", { title: "Audit", script: `await agent("a", { agentType: "scout" }); await parallel([() => agent("b", { agentType: "scout" })]); return 1` }, undefined, undefined, { hasUI: true }));
   assert.equal(h.groups.length, 1);
   assert.equal(h.groups[0].title, "Audit");
   assert.deepEqual(h.groups[0].log, ["launching", "running", "completed", "completed,launching", "completed,running", "completed,failed", "end"]);
@@ -353,6 +395,94 @@ test("a child that registers under a lost launch's alias after the script return
   assert.equal(h.spawns.length, 1);
 });
 
+for (const completed of [true, false]) test(`a late recovered child with ${completed ? "completion and exit" : "exit only"} releases its workflow owner`, async () => {
+  let asked, release;
+  const h = harness({
+    spawn: "vanish",
+    status: params => { asked = params.id; return null; },
+    gate: args => args.task === "g" ? new Promise(resolve => { release = resolve; }) : undefined,
+  });
+  const done = h.run('agent("t", { agentType: "scout" }); agent("g", { agentType: "scout" }); return 1');
+  while (!asked || !release) await sleep(5);
+  await sleep(150);
+  h.events.emit("subagent:async-started", { id: "late-1", asyncDir: "/tmp/async/late-1", toolCallId: asked });
+  if (completed) h.complete("late-1", { status: "completed", output: "done", usage: { input: 12, output: 3 } });
+  else h.events.emit("subagent:process-terminal", { state: "observed", runId: "late-1" });
+  release();
+  const result = await done;
+  assert.equal(result.details.workflow.status, "failed");
+  assert.deepEqual(result.details.runs, [{ runId: "late-1", agent: "scout", label: undefined, task: "t", asyncDir: "/tmp/async/late-1", status: completed ? "completed" : "stopped" }]);
+  assert.equal(h.groups[0].records[0].durationMs, completed ? 1_000 : undefined);
+  assert.equal(h.groups[0].records[0].tokens, completed ? 15 : undefined);
+  assert.deepEqual(h.stopped, []);
+  assert.equal(h.orchestrate.live(), 0);
+  assert.equal(h.groups[0].log.filter(status => status === "end").length, 1);
+  assert.equal(value(await h.run("return 2")), 2);
+});
+
+for (const exited of [true, false]) test(`explicit stop recovers a settled unknown launch with ${exited ? "observed" : "initially unverified"} exit`, async () => {
+  let alias;
+  const h = harness({
+    spawn: "vanish",
+    status: params => { alias = params.id; return null; },
+    stopFailures: id => [`${id}: no terminal proof`],
+  });
+  const result = await h.run('return await agent("t", { agentType: "scout" })');
+  const { id } = result.details.workflow;
+  assert.equal(result.details.workflow.status, "cleanup-unverified");
+  assert.equal(h.orchestrate.live(), 1);
+  await assert.rejects(h.launch("return 2"), /already owns/);
+  await assert.rejects(h.manage("stop", id), /launch outcome unknown/);
+  assert.equal(h.orchestrate.live(), 1);
+  h.events.emit("subagent:async-started", { id: "late-1", asyncDir: "/tmp/async/late-1", toolCallId: alias });
+  h.events.emit("subagent:async-complete", { runId: "late-1", success: true, results: [{ status: "completed", output: "done", usage: { input: 12, output: 3 } }], durationMs: 1_000 });
+  if (!exited) {
+    await assert.rejects(h.manage("stop", id), /no terminal proof/);
+    assert.equal(h.orchestrate.live(), 1);
+    assert.equal(h.groups[0].log.includes("end"), false);
+    await assert.rejects(h.launch("return 2"), /already owns/);
+  }
+  h.complete("late-1", { status: "completed", output: "done", usage: { input: 12, output: 3 } });
+  const stopped = await h.manage("stop", id);
+  assert.equal(stopped.details.workflow.status, "stopped");
+  assert.deepEqual(stopped.details.runs, [{ runId: "late-1", agent: "scout", label: undefined, task: "t", asyncDir: "/tmp/async/late-1", status: "completed" }]);
+  assert.equal(h.groups[0].records[0].durationMs, 1_000);
+  assert.equal(h.groups[0].records[0].tokens, 15);
+  assert.equal(h.orchestrate.live(), 0);
+  await h.manage("stop", id);
+  assert.equal(h.groups[0].log.filter(status => status === "end").length, 1);
+  assert.equal(value(await h.run("return 2")), 2);
+});
+
+test("a host execution failure still closes once, drains launches and recovers a lost child", async t => {
+  const execute = CodemodeSandbox.prototype.execute;
+  const close = CodemodeSandbox.prototype.close;
+  let closes = 0;
+  t.mock.method(CodemodeSandbox.prototype, "execute", async function (...args) {
+    await execute.apply(this, args);
+    throw new Error("host execution failed");
+  });
+  t.mock.method(CodemodeSandbox.prototype, "close", async function () { closes++; return close.call(this); });
+  let asked, release;
+  const h = harness({
+    spawn: "vanish",
+    status: params => { asked = params.id; return null; },
+    gate: args => args.task === "g" ? new Promise(resolve => { release = resolve; }) : undefined,
+  });
+  const done = h.run('agent("t", { agentType: "scout" }); agent("g", { agentType: "scout" }); return 1');
+  while (!asked) await sleep(5);
+  await sleep(150);
+  h.events.emit("subagent:async-started", { id: "late-1", asyncDir: "/tmp/async/late-1", toolCallId: asked });
+  release();
+  const result = await done;
+  assert.match(failure(result), /^host execution failed/);
+  assert.equal(closes, 1);
+  assert.equal(result.details.runs[0].status, "stopped");
+  assert.deepEqual(h.stopped, ["late-1"]);
+  assert.equal(h.orchestrate.live(), 0);
+  assert.equal(h.orchestrate.claim(["late-1"]), true);
+});
+
 test("a launch of unknown outcome caught by parallel() still fails the run as unverified", async () => {
   const h = harness({ spawn: "vanish" });
   assert.match(failure(await h.run(`return await parallel([() => agent("t", { agentType: "scout" })])`)), /launch outcome unknown: scout\n\nscout · unknown\nlaunch outcome unknown: scout$/);
@@ -482,4 +612,164 @@ test("the 1001st agent() call ends the run, refused calls counted, and the scrip
   const loop = harness();
   ended(await loop.run(`while (true) { try { await tools.agent({}) } catch {} }`));
   assert.equal(loop.spawns.length, 0);
+});
+
+test("launch is detached from the root signal; management works with ultracode off", async () => {
+  const h = harness({ behave: () => new Promise(() => {}) });
+  const root = new AbortController();
+  const launch = await h.launch(`return await agent("hang", { agentType: "scout" })`, undefined, root.signal);
+  const { id, status, startedAt } = launch.details.workflow;
+  assert.equal(status, "running");
+  assert.equal(typeof startedAt, "number");
+  root.abort();
+  h.orchestrate.disarm();
+  while (!h.adopted.length) await sleep(5);
+  assert.equal((await h.manage("status", id)).details.workflow.status, "running");
+  assert.equal((await h.manage("result", id)).details.workflow.status, "running");
+  assert.equal((await h.manage("status")).details.workflows.length, 1);
+  const result = await h.manage("stop", id);
+  assert.equal(result.details.workflow.status, "stopped");
+  assert.equal(typeof result.details.workflow.durationMs, "number");
+  assert.deepEqual(h.stopped, ["run-1"]);
+  assert.equal(h.orchestrate.live(), 0);
+});
+
+test("one live owner includes unverified cleanup, and stopAll refuses unverified cleanup", async () => {
+  let verified = false;
+  const h = harness({ behave: () => new Promise(() => {}), stopFailures: id => verified ? [] : [`${id}: no terminal proof`] });
+  const admitted = await h.launch(`agent("hang", { agentType: "scout" }); return 1`);
+  const result = await h.wait(admitted);
+  assert.equal(result.details.workflow.status, "cleanup-unverified");
+  assert.equal(h.orchestrate.live(), 1);
+  await assert.rejects(h.launch(`return 2`), /already owns/);
+  await assert.rejects(h.orchestrate.stopAll(), /no terminal proof/);
+  assert.equal(h.groups[0].log.includes("end"), false);
+  verified = true;
+  await h.orchestrate.stopAll();
+  assert.equal(h.orchestrate.live(), 0);
+  assert.equal(h.groups[0].log.at(-1), "end");
+});
+
+test("started aliases claim notices before a spawn reply, mixed claims consume nothing", async () => {
+  const h = harness({ spawn: "hold", behave: () => new Promise(() => {}) });
+  const admitted = await h.launch(`return await agent("hang", { agentType: "scout" })`);
+  while (!h.held.length) await sleep(5);
+  assert.equal(h.ownershipGroups[0], h.groups[0].handle, "the spawn alias is tied to its live fleet owner before the reply");
+  assert.equal(h.groups[0].log.includes("end"), false);
+  assert.equal(h.orchestrate.claim(["run-1", "not-owned"]), false);
+  assert.equal(h.orchestrate.claim([]), false);
+  assert.equal(h.orchestrate.claim(["run-1"]), true);
+  h.complete("run-1", { status: "completed", output: "early" });
+  h.held[0]();
+  assert.equal(value(await h.wait(admitted)), "early");
+  assert.equal(h.orchestrate.claim(["run-1"]), false, "spawn reply must not recreate consumed ownership");
+});
+
+test("completion callback runs once before live removal and remains queryable on callback failure", async () => {
+  let calls = 0;
+  const h = harness({ onComplete: async result => {
+    calls++;
+    assert.equal(h.orchestrate.live(), 1);
+    assert.notEqual(h.groups[0].log.at(-1), "end");
+    assert.equal((await h.manage("result", result.details.workflow.id)), result);
+    throw new Error("UI delivery failed");
+  } });
+  const result = await h.run(`return 7`);
+  assert.equal(calls, 1);
+  assert.equal(value(await h.manage("result", result.details.workflow.id)), 7);
+});
+
+test("syntax and artifact errors finalize with workflow metadata and retained child details", async () => {
+  const syntax = harness();
+  const broken = await syntax.run(`return (`);
+  assert.equal(broken.isError, true);
+  assert.equal(broken.details.workflow.status, "failed");
+  assert.equal(syntax.orchestrate.live(), 0);
+  const h = harness({ resultDir: new URL(import.meta.url).pathname });
+  const result = await h.run(`await agent("t", { agentType: "scout" }); return "x".repeat(70000)`);
+  assert.equal(result.isError, true);
+  assert.equal(result.details.workflow.status, "failed");
+  assert.equal(result.details.runs[0].runId, "run-1");
+  assert.equal(h.orchestrate.live(), 0);
+});
+
+test("terminal registry retains only 20 verified results; reset clears registry and notice ownership", async () => {
+  const h = harness();
+  const first = await h.run(`return await agent("a", { agentType: "scout" })`);
+  for (let i = 0; i < 20; i++) await h.run(`return ${i}`);
+  await assert.rejects(h.manage("result", first.details.workflow.id), /Unknown workflow/);
+  assert.equal(h.orchestrate.claim(["run-1"]), true);
+  const last = await h.run(`return 2`);
+  await h.orchestrate.reset();
+  await assert.rejects(h.manage("result", last.details.workflow.id), /Unknown workflow/);
+  assert.equal(h.orchestrate.armed(), false);
+});
+
+test("generation change refuses a launch held in check and suppresses its final notification", async () => {
+  let gen = 1, release;
+  const h = harness({ generation: () => gen, gate: () => new Promise(resolve => { release = resolve; }) });
+  const admitted = await h.launch(`return await agent("t", { agentType: "scout" })`);
+  while (!release) await sleep(5);
+  gen++;
+  release();
+  while (h.orchestrate.live()) await sleep(5);
+  assert.equal(h.results.size, 0);
+  assert.equal(h.spawns.length, 0);
+  assert.equal((await h.manage("result", admitted.details.workflow.id)).isError, true);
+});
+
+test("reset cancels busy VM work without sending completion into the next session", async () => {
+  const h = harness();
+  let changes = 0;
+  const off = h.orchestrate.onChange(() => changes++);
+  const admitted = await h.launch(`while (true) {}`);
+  await sleep(30);
+  await h.orchestrate.reset();
+  assert.equal(h.orchestrate.live(), 0);
+  assert.equal(h.results.size, 0);
+  assert.ok(changes >= 2);
+  off();
+  await assert.rejects(h.manage("result", admitted.details.workflow.id), /Unknown workflow/);
+});
+
+
+test("status exposes workflow and child IDs in model-visible text, including retained results", async () => {
+  const h = harness({ behave: () => new Promise(() => {}) });
+  const admitted = await h.launch('phase("Review"); return await agent("inspect", { agentType: "scout", label: "Inspect" })');
+  while (!h.adopted.length) await sleep(5);
+  const { id } = admitted.details.workflow;
+  assert.match((await h.manage("status")).content[0].text, new RegExp(id));
+  assert.match((await h.manage("status", id)).content[0].text, /run-1 · scout · Inspect · running · Review/);
+  await h.manage("stop", id);
+  assert.match((await h.manage("status")).content[0].text, new RegExp(`${id}.*stopped`));
+  assert.match((await h.manage("status", id)).content[0].text, /run-1/);
+});
+
+test("a successful child completion does not release ownership without process-exit proof", async () => {
+  let verified = false;
+  const h = harness({ behave: () => new Promise(() => {}), stopFailures: id => verified ? [] : [`${id}: no terminal proof`] });
+  const admitted = await h.launch('return await agent("inspect", { agentType: "scout" })');
+  while (!h.adopted.length) await sleep(5);
+  h.events.emit("subagent:async-complete", { runId: "run-1", success: true, results: [{ status: "completed", output: "done" }] });
+  const result = await h.wait(admitted);
+  assert.equal(result.details.workflow.status, "cleanup-unverified");
+  assert.equal(h.orchestrate.live(), 1);
+  await assert.rejects(h.orchestrate.stopAll(), /no terminal proof/);
+  verified = true;
+  await h.orchestrate.stopAll();
+  assert.equal(h.orchestrate.live(), 0);
+});
+
+test("setup failure finalizes once and mutually exclusive actions are enforced", async () => {
+  let calls = 0;
+  const h = harness({ onComplete: () => { calls++; } });
+  h.fleet.track = () => { throw new Error("fleet setup failed"); };
+  const admitted = await h.launch(`return 1`);
+  const result = await h.wait(admitted);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /fleet setup failed/);
+  assert.equal(result.details.workflow.status, "failed");
+  assert.equal(calls, 1);
+  assert.equal(h.orchestrate.live(), 0);
+  await assert.rejects(h.orchestrate.tool.execute("bad", { action: "status", script: "return 1" }), /either a launch/);
 });

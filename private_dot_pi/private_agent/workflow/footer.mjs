@@ -204,7 +204,7 @@ export class WorkingRow extends Loader {
 const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
-export function installFooter(pi, ctx, { fleet, tasks, onActivity, clock = createTurnClock(), tickMs = 1000, settleMs = 250, wakeMs = 10_000, readLimits = readRateLimits, folds = defaultFolds } = {}) {
+export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, clock = createTurnClock(), tickMs = 1000, settleMs = 250, wakeMs = 10_000, readLimits = readRateLimits, folds = defaultFolds } = {}) {
   const state = { ctx, limits: null, changes: null, usageAt: -Infinity, gitAt: 0, tui: null, tick: null, prompt: null, waiting: false, stopped: false, endedAt: 0, settle: null, wake: null, working: null, compacting: false, shell: null };
   let usageInFlight;
   let nativeRevision = 0;
@@ -262,8 +262,8 @@ export function installFooter(pi, ctx, { fleet, tasks, onActivity, clock = creat
     clearInterval(state.tick);
     state.tick = null;
   };
-  const busy = () => ({ agents: fleet?.activeCount?.() ?? 0, shells: tasks?.live?.() ?? 0 });
-  const live = () => { const { agents, shells } = busy(); return agents + shells > 0; };
+  const busy = () => ({ agents: fleet?.activeCount?.({ excludeWorkflows: true }) ?? 0, shells: tasks?.live?.() ?? 0, ...(orchestrate && { workflows: orchestrate.live() }) });
+  const live = () => { const { agents, shells, workflows = 0 } = busy(); return agents + shells + workflows > 0; };
   // A prompt waiting on the user outranks the rest (rule 11), drawn without a
   // spinner frame when nothing animates the row. A running `!` command
   // outranks the turn label (rule 3: one place per fact); its own tick keeps
@@ -357,6 +357,7 @@ export function installFooter(pi, ctx, { fleet, tasks, onActivity, clock = creat
   const workChanged = () => {
     if (!state.waiting || state.stopped) return;
     state.endedAt = Date.now();
+    showLabel();
     clearSettle();
     state.settle = setTimeout(() => {
       state.settle = null;
@@ -366,6 +367,7 @@ export function installFooter(pi, ctx, { fleet, tasks, onActivity, clock = creat
   };
   fleet?.onChange(workChanged);
   tasks?.onChange(workChanged);
+  orchestrate?.onChange(workChanged);
   on("agent_start", () => {
     clock.start();
     clearSettle();

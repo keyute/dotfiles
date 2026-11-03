@@ -69,9 +69,8 @@ export function progressLine(name, records, tail, theme, width, paint = text => 
   return [truncateToWidth(name, Math.max(0, width - visibleWidth(meta) - 2), "…"), meta].join("  ");
 }
 
-// The phase is the latest live launch's, else the last launch's. No timer of
-// its own: the row lives only while orchestrate blocks the root turn, whose
-// working-row spinner repaints the footer, so the clock moves with it.
+// The phase is the latest live launch's, else the last launch's. The fleet
+// poll repaints its clock even after an interrupt stops the turn clock.
 export function groupRow({ title, records, startedAt }, theme, width, now = Date.now()) {
   const phase = (records.findLast(record => isLive(record.status)) ?? records.at(-1))?.phase;
   const name = title ? `workflow${NAME_SEP}${shortTitle(title)}` : "workflow";
@@ -168,8 +167,10 @@ export function launchesFromBranch(entries) {
   }
   for (const entry of entries ?? []) {
     const message = entry?.message;
-    if (message?.role !== "toolResult" || message.toolName !== "orchestrate" || !Array.isArray(message.details?.runs)) continue;
-    for (const run of message.details.runs) {
+    const result = entry?.type === "custom" && entry.customType === "workflow-orchestrate" ? entry.data
+      : message?.role === "toolResult" && message.toolName === "orchestrate" ? message : null;
+    if (!Array.isArray(result?.details?.runs)) continue;
+    for (const run of result.details.runs) {
       if (run?.runId && typeof run.asyncDir === "string") launches.set(run.runId, { agent: run.agent, task: run.task ?? "", asyncDir: run.asyncDir, workflow: true });
     }
   }
@@ -244,19 +245,28 @@ export function installFleet(pi, ctx, {
     return open(ctx, opts);
   },
 } = {}) {
-  const state = { ...createFleetState(), pending: new Map(), active: new Set(), owed: new Map(), workflowCalls: new Set(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
+  const state = { ...createFleetState(), pending: new Map(), active: new Set(), owed: new Map(), workflowCalls: new Map(), lastWake: 0, timer: undefined, polling: false, stopped: false, capable: undefined, tui: null, ctx };
   const listeners = new Set();
   // A stopped fleet's listeners belong to a torn-down session.
   const changed = () => { if (!state.stopped) for (const listener of listeners) listener(); };
+
+  const activeCount = ({ excludeWorkflows = false } = {}) => {
+    const ids = new Set([...state.active, ...state.owed.keys()]);
+    if (!excludeWorkflows) return Math.max(ids.size, state.totalActive);
+    const owned = id => state.groups.some(group => group.started.has(id) || group.records.some(record => record.runId === id));
+    const polledOwned = state.runs.filter(run => ACTIVE_RUN_STATES.has(run.state) && owned(run.id)).length;
+    return Math.max([...ids].filter(id => !owned(id)).length, state.totalActive - polledOwned);
+  };
 
   // Must key every rendered segment, or the no-change check below freezes it.
   const shape = () => [state.totalActive, ...state.entries.map(entry => `${entry.agent}|${entry.status}|${entry.goal}|${entry.tokens?.total ?? entry.tokens}`)].join("\n");
   const show = (fleet, snapshot) => {
     const before = shape();
     const total = state.totalActive;
+    const unowned = activeCount({ excludeWorkflows: true });
     setEntries(state, fleet, snapshot);
     if (shape() !== before) state.tui?.requestRender();
-    if (state.totalActive !== total) changed();
+    if (state.totalActive !== total || activeCount({ excludeWorkflows: true }) !== unowned) changed();
   };
   const poll = async () => {
     state.timer = undefined;
@@ -265,8 +275,9 @@ export function installFleet(pi, ctx, {
       // A dropped or slow reply keeps the last rows; only a reply may clear them.
       const reply = state.capable ? await rpcCall(pi.events, "status", {}, timeoutMs) : null;
       if (reply && !state.stopped) show(reply.fleet, reply.asyncSnapshot);
+      if (state.groups.length && !state.stopped) state.tui?.requestRender();
     } catch { state.capable = false; }
-    const again = state.capable && !state.stopped && (state.entries.length || Date.now() - state.lastWake < quietMs);
+    const again = state.capable && !state.stopped && (state.entries.length || state.groups.length || Date.now() - state.lastWake < quietMs);
     if (again) {
       state.timer = setTimeout(poll, pollMs);
       state.timer.unref?.();
@@ -305,7 +316,11 @@ export function installFleet(pi, ctx, {
   // never comes stops being owed a while after the exit.
   pi.events.on("subagent:async-started", payload => {
     if (payload?.id) { state.active.add(payload.id); state.owed.set(payload.id, undefined); }
-    if (payload?.id && state.workflowCalls.delete(payload.toolCallId)) state.launches.set(payload.id, { ...state.launches.get(payload.id), workflow: true });
+    if (payload?.id && state.workflowCalls.has(payload.toolCallId)) {
+      state.workflowCalls.get(payload.toolCallId)?.started.add(payload.id);
+      state.workflowCalls.delete(payload.toolCallId);
+      state.launches.set(payload.id, { ...state.launches.get(payload.id), workflow: true });
+    }
     wake();
     changed();
   });
@@ -554,23 +569,24 @@ export function installFleet(pi, ctx, {
     stopRuns,
     // A launch an extension made over RPC never passes the subagent tool's
     // execution events, so its row title and peek asyncDir are recorded here.
-    adopt: (id, { agent, task, asyncDir }) => { state.launches.set(id, { agent, task, asyncDir, workflow: true }); },
+    adopt: (id, { agent, task, asyncDir }) => { state.launches.set(id, { agent, task, asyncDir, workflow: true }); changed(); },
     // A workflow launch's spawn alias, recorded before the spawn, so a completion
     // that beats the reply is still known as the workflow's.
-    own: alias => { state.workflowCalls.add(alias); },
+    own: (alias, group) => { state.workflowCalls.set(alias, group); },
     disown: alias => { state.workflowCalls.delete(alias); },
-    // A blocking workflow's overview row, live until end(). `records` is the
+    // A workflow's overview row, live until end(). `records` is the
     // run's own array, mutated in place (`startedAt` once running,
     // `durationMs`/`tokens` once complete); the caller calls changed() after
     // each status change. The workflow view holds the group after end().
     track: ({ title, records }) => {
       const listeners = new Set();
       const group = {
-        title, records, startedAt: Date.now(), endedAt: undefined,
+        title, records, started: new Set(), startedAt: Date.now(), endedAt: undefined,
         onChange: listener => { listeners.add(listener); return () => listeners.delete(listener); },
         changed: () => {
           clamp(state);
           state.tui?.requestRender();
+          changed();
           for (const listener of listeners) listener();
         },
         end: () => {
@@ -580,6 +596,7 @@ export function installFleet(pi, ctx, {
         },
       };
       state.groups.push(group);
+      wake();
       group.changed();
       return group;
     },
@@ -597,7 +614,7 @@ export function installFleet(pi, ctx, {
     // Runs restored with the session never emit async-started; the poll's
     // count covers them (it lags a completion by one poll, so the event set
     // is the fast path).
-    activeCount: () => Math.max(new Set([...state.active, ...state.owed.keys()]).size, state.totalActive),
+    activeCount,
     // Fires whenever activeCount may have changed.
     onChange: listener => { listeners.add(listener); },
     focused: () => state.focused,

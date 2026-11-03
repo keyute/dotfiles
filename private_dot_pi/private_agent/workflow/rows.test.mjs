@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, foldKey, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, meter, noticeLine, orchestrateRenderers, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, statusTone, summarise, taskTitle, toolRenderers } from "./rows.mjs";
+import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, foldKey, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, meter, noticeLine, orchestrateCompletionLines, orchestrateRenderers, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, statusTone, summarise, taskTitle, toolRenderers } from "./rows.mjs";
 import { createShellRunner } from "./shell.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
@@ -546,9 +546,9 @@ test("tool search and background-task management join the group; their member li
 
 test("an orchestrate run stays visible: its line counts agents, outcome and elapsed, and it closes the group above", () => {
   assert.equal(foldKey("orchestrate", { script: "x" }), null);
-  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ title: "Review the auth flow", script: "x" }, theme, context({ toolCallId: "o0" }))), ["<success>• <toolTitle>Orchestrated Review the auth flow"]);
-  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ script: "x" }, theme, context({ toolCallId: "o00" }))), ["<success>• <toolTitle>Orchestrated workflow"]);
-  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ title: "", script: "x" }, theme, context({ toolCallId: "o000" }))), ["<success>• <toolTitle>Orchestrated workflow"]);
+  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ title: "Review the auth flow", script: "x" }, theme, context({ toolCallId: "o0" }))), ["<success>• <toolTitle>Started workflow Review the auth flow"]);
+  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ script: "x" }, theme, context({ toolCallId: "o00" }))), ["<success>• <toolTitle>Started workflow"]);
+  assert.deepEqual(rendered(orchestrateRenderers.renderCall({ title: "", script: "x" }, theme, context({ toolCallId: "o000" }))), ["<success>• <toolTitle>Started workflow"]);
   const runs = (n, status = "completed") => Array.from({ length: n }, (_, i) => ({ runId: `w${i}`, status }));
   assert.deepEqual(rendered(orchestrateRenderers.renderResult(result("8 agents · completed\n\n{}", { runs: runs(8) }), { expanded: false }, theme, context({ toolCallId: "o0", durationMs: 192_000 }))), ["  <muted>↳ 8 agents · completed · 3m 12s"]);
   assert.deepEqual(rendered(orchestrateRenderers.renderResult(result("8 agents · completed\n\n{}", { runs: runs(8) }), { expanded: false }, theme, context({ toolCallId: "o00" }))), ["  <muted>↳ 8 agents · completed"]);
@@ -1162,7 +1162,7 @@ test("one completed completion has no group and renders as today's plain line", 
   assert.deepEqual(rendered(component), [completionLine(data, theme)]);
 });
 
-test("two adjacent completed completions form one activity group; the second member's renderer answers with no component at all", () => {
+test("two adjacent completed completions form one activity group; the second member retains a zero-line component", () => {
   const folds = createFolds(() => false);
   const a = { agent: "researcher", task: "Delegation claims", status: "completed", durationMs: 45_000 };
   const b = { id: "t1", command: "npm test", status: "completed", durationMs: 12_000 };
@@ -1173,7 +1173,7 @@ test("two adjacent completed completions form one activity group; the second mem
   assert.equal(doneGroup(folds, b.seq), group);
   const render = doneEntryRenderer(childMapper, folds);
   assert.ok(render({ data: a }, {}, theme));
-  assert.equal(doneEntryRenderer(taskMapper, folds)({ data: b }, {}, theme), undefined);
+  assert.deepEqual(rendered(doneEntryRenderer(taskMapper, folds)({ data: b }, {}, theme)), []);
 });
 
 test("a completion at any other status stands alone and separates the completed ones around it", () => {
@@ -1239,8 +1239,8 @@ test("a completion behind a pending call stays rendered whichever way that call 
     const component = doneEntryRenderer("workflow-child", folds)({ data }, {}, theme);
     assert.deepEqual(rendered(component), [completionLine(data, theme)]);
     settleFold(folds, "pending", failed);
-    assert.deepEqual(rendered(component), [completionLine(data, theme)]);
-    assert.equal(doneGroup(folds, data.seq), null);
+    assert.deepEqual(rendered(component), failed ? [completionLine(data, theme)] : []);
+    assert.equal(doneGroup(folds, data.seq) === null, failed);
   }
 });
 
@@ -1260,7 +1260,7 @@ test("a tool-led mixed group owns one handle and one chronological member ladder
   appendVisible(fakePi(), "workflow-child", b, folds);
   closeFolds(folds);
 
-  assert.equal(doneEntryRenderer("workflow-child", folds)({ data: a }, {}, theme), undefined);
+  assert.deepEqual(rendered(doneEntryRenderer("workflow-child", folds)({ data: a }, {}, theme)), []);
   const handle = reads.renderCall({ path: "a" }, theme, ctx("r1"));
   assert.deepEqual(rendered(handle), ["<muted>▸ Read 2 files, finished 2 agents"]);
   handle.handleMouse({ type: "click", button: "left", x: 0, y: 0 });
@@ -1314,10 +1314,10 @@ test("ctrl+o shows a sealed completion-led group's members and its own toggle is
   // Each member is its own full row, the first on the handle and every later one a blank line below the last.
   const rows = [
     "<success>• <toolTitle>researcher finished<muted> · x · 1s",
-    "",
-    "<success>• <toolTitle>reviewer finished<muted> · y · 2s",
+
   ];
   assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...rows]);
+  assert.deepEqual(rendered(doneEntryRenderer(childMapper, folds)({ data: b }, {}, theme)), [completionLine(b, theme)]);
   assert.equal(component.handleMouse({ type: "click", button: "left", x: 0, y: 0 }), undefined);
   assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...rows]);
 });
@@ -1366,4 +1366,28 @@ test("a quiet folds instance derives the same groups as a default one for the sa
   assert.equal(foldGroup(normal, "c"), null);
   assert.deepEqual(liveGroup(quiet, "d")?.counts, liveGroup(normal, "d")?.counts);
   assert.ok(liveGroup(normal, "d"));
+});
+
+
+test("async workflow admission says Started, management reads snapshots, and only the terminal entry owns the outcome duration", async () => {
+  const workflow = { id: "w1", title: "Audit", status: "running", startedAt: 1000 };
+  const launch = context({ toolCallId: "async-workflow", args: { title: "Audit", script: "agent()" } });
+  const running = result("Workflow w1 running", { workflow, runs: [] });
+  assert.deepEqual(rendered(orchestrateRenderers.renderResult(running, { expanded: false }, theme, launch)), ["  <muted>↳ 0 agents · running"]);
+  await Promise.resolve();
+  assert.deepEqual(rendered(orchestrateRenderers.renderCall(launch.args, theme, launch)), ["<success>• <toolTitle>Started workflow Audit"]);
+  for (const action of ["status", "result", "stop"]) {
+    const management = context({ toolCallId: `manage-${action}`, args: { action, id: "w1" } });
+    assert.deepEqual(rendered(orchestrateRenderers.renderResult(running, { expanded: false }, theme, management)), ["  <muted>↳ w1 · running"]);
+    await Promise.resolve();
+    assert.doesNotMatch(rendered(orchestrateRenderers.renderCall(management.args, theme, management)).join("\n"), /Orchestrated|Started/);
+  }
+  for (const status of ["completed", "failed", "stopped"]) {
+    const terminal = { ...result(status === "completed" ? "done" : "Workflow interrupted", { workflow: { ...workflow, status, endedAt: 13000, durationMs: 12000 }, runs: [{ status: "completed" }] }), isError: status !== "completed" };
+    const lines = orchestrateCompletionLines(terminal, theme);
+    assert.equal(lines.filter(line => line.includes("Orchestrated")).length, 1);
+    assert.ok(lines.some(line => line.includes(`1 agent · ${status} · 12s`)));
+    assert.doesNotMatch(lines.join("\n"), /running/);
+    assert.deepEqual(rowLines("orchestrate", terminal, { durationMs: 1, isError: terminal.isError }, theme), lines.slice(1));
+  }
 });

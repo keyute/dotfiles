@@ -7,7 +7,7 @@ import { createTurnClock, formatTurn } from "./rows.mjs";
 import { openWait } from "./dialog.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
-function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = async () => null, mountFooter = false } = {}) {
+function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = async () => null, mountFooter = false, orchestrate } = {}) {
   const path = process.env.PATH;
   process.env.PATH = ""; // git lookups fail fast instead of spawning
   const handlers = {};
@@ -42,7 +42,7 @@ function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = 
   const activity = [];
   const fleet = { attach() {}, render: () => [], activeCount: () => active, onChange: fn => changes.push(fn), changed: () => changes.forEach(fn => fn()) };
   const tasks = { live: () => live, onChange: fn => changes.push(fn), changed: () => changes.forEach(fn => fn()) };
-  const footer = installFooter(pi, ctx, { fleet, tasks, onActivity: next => activity.push(next), clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, settleMs, readLimits });
+  const footer = installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity: next => activity.push(next), clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, settleMs, readLimits });
   process.env.PATH = path;
   const fire = (name, event = {}, eventCtx = ctx) => handlers[name]?.(event, eventCtx);
   // What herdr would be sent, its repeats collapsed as the reporter drops them.
@@ -931,5 +931,53 @@ test("a compaction and a `!` report working with no turn, an interrupt reports i
   assert.equal(h.activity.length, reported, "a shutdown reports nothing");
   h.attach();
   assert.equal(h.states().at(-1), "idle", "attach reports the new session's state, the cut-off prompt and compaction dropped");
+  h.done();
+});
+
+
+test("a childless workflow and between-phase gaps keep the turn open until its terminal notification", t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+  let workflows = 1;
+  let changed;
+  const orchestrate = { live: () => workflows, onChange: listener => { changed = listener; } };
+  const h = harness({ orchestrate, settleMs: 250 });
+  t.after(h.done);
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  assert.equal(h.widget.row.message, "Waiting on 1 workflow… 0s");
+  t.mock.timers.tick(2_000);
+  assert.equal(h.entries.length, 0, "no premature done before any child launches");
+  assert.equal(h.widget.row.message, "Waiting on 1 workflow… 2s");
+  h.fleet.activeCount = options => {
+    assert.deepEqual(options, { excludeWorkflows: true });
+    return 1;
+  };
+  h.tasks.live = () => 2;
+  changed();
+  assert.equal(h.widget.row.message, "Waiting on 1 workflow, 1 agent, 2 shells… 2s");
+  h.fleet.activeCount = () => 0;
+  h.tasks.live = () => 0;
+  h.fleet.changed();
+  t.mock.timers.tick(1_000);
+  assert.equal(h.entries.length, 0, "no premature done between phases");
+  assert.equal(h.widget.row.message, "Waiting on 1 workflow… 3s");
+  workflows = 0;
+  changed();
+  t.mock.timers.tick(250);
+  assert.equal(h.entries.length, 1);
+  assert.equal(h.entries[0].data.ms, 3_000);
+  assert.match(formatTurn(h.entries[0].data, { fg: (_color, text) => text }), / · done /);
+  changed();
+  t.mock.timers.tick(1_000);
+  assert.equal(h.entries.length, 1);
+});
+
+test("interrupts name workflows without counting their children twice", () => {
+  const h = harness({ orchestrate: { live: () => 2, onChange() {} } });
+  h.fleet.activeCount = ({ excludeWorkflows }) => excludeWorkflows ? 1 : 5;
+  h.fire("agent_start");
+  h.fire("agent_settled", { aborted: true });
+  assert.deepEqual(h.entries[0].data.running, { workflows: 2, agents: 1, shells: 0 });
+  assert.match(formatTurn(h.entries[0].data, { fg: (_color, text) => text }), /2 workflows, 1 agent still running$/);
   h.done();
 });

@@ -85,7 +85,9 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   hook for its own. *Residual:* no `bash_execution_update`, no full-output file
   on truncation, no pi pending shell component. *On red:* repair. *Retire:*
   when pi exposes a renderer for its shell block.
-  *Pin:* `stability.test.mjs`.
+  One optional separator after `!`/`!!` is hidden with the marker in the
+  command view; visual cursor positions map back to unchanged editor text.
+  *Pin:* `stability.test.mjs`, `editor.test.mjs`.
 - **Fleet peek replay**: replays `<asyncDir>/events.jsonl`, whose event
   names, lifecycle record names and mirroring rule (`message_update` dropped)
   pi-subagents now documents (`docs/observability.md`); still undocumented are
@@ -150,6 +152,16 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   across child waits, one done per turn. *Retire:* when herdr's pi integration
   reports a turn that outlives `agent_settled`. *Pin:* `herdr.test.mjs`,
   `footer.test.mjs`.
+- **Activity-entry visibility** (`rows.mjs` `installActivityEntries`): wraps
+  the host `InteractiveMode.addCustomEntryToChat`, retaining every owned
+  completion's native host. Its render checks the current `customComponent`
+  after native rebuilds and suppresses the host spacer when the child draws
+  nothing. *Why:* a completion mounted behind a pending tool must become visible
+  after failure or merge after success without an artificial group boundary.
+  *On red:* repair; otherwise retain plain visible completion rows rather than
+  discard a component that might later be needed. *Retire:* a public entry
+  renderer with dynamic zero-height host spacing. *Pin:* native and bundled
+  mounts in `transcript.test.mjs` and `skill-display.test.mjs`, `rows.test.mjs`.
 - **Hidden reasoning** (`rows.mjs` `installReasoningHide`): wraps the
   exported `AssistantMessageComponent.prototype.updateContent` once, on the
   host class the extension entry passes, drawing from a copy without
@@ -157,6 +169,13 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   two text blocks apart only after a thinking run, the wrapper then puts a
   `Spacer` between adjacent `Markdown` children of the TS-private
   `contentContainer` (matched by class name: pi may resolve its own pi-tui).
+  The same assistant-only seam temporarily decorates `markdownTheme`: native
+  inline/fenced code highlighting runs first, then `command-display.mjs` colours
+  a suggested shell marker. The public Markdown transformer handles standalone
+  suggestions; peek supplies the same decorated theme directly. No stored text
+  is changed. *Retire:* the theme decoration when Pi exposes an assistant-only
+  Markdown theme hook; *On red:* drop marker colouring, preserving native code
+  rendering and command text.
   *Why:* rule 2's "takes no space" (earendil-works/pi#8154) and rule 8's one
   blank between text blocks. *On red:* set `hideThinkingBlock: true` in
   modify_settings; lost: "takes no space" — pi's label, its spacer and click
@@ -173,20 +192,29 @@ in `skill-display.test.mjs` is the one check on the code the TUI executes.
   payload's `results[0]` `status`/`structuredOutput`/`output`/`usage`, its
   `durationMs`, and `subagent:async-started`'s `toolCallId` (the spawn alias),
   by which the fleet draws no completion line for a workflow's child (else its
-  adopted run id),
-  the busy-parent no-wake branch of `parent-wake.js`, the internal `structured_output` tool
-  name in the contract allowlist, and pi-codemode's `DEFAULT_TIMEOUT_MS`.
-  *Why:* the blocking runner and schema results, and the workflow view's
-  per-agent elapsed and tokens. *Residual:* a notice batching
-  an owned and an unowned run, or a late owned one reaching an idle root, is
-  forwarded hidden with its wake; a child completing before its spawn reply
-  registers it still has its notice forwarded; the notifier's
-  pending-delivery flag stays set for dropped notices (pi-web liveness only).
-  *On red:* repair; fall back to one `subagent` launch per child with its
-  completion notice — lost: schema results and the blocking consolidated
-  result. *Retire:* each seam when pi-subagents documents it or offers a
-  host-consumed-completion seam. *Pin:* `stability.test.mjs`,
-  `orchestrate.test.mjs`.
+  adopted run id), the internal `structured_output` tool name in the contract
+  allowlist, and pi-codemode's `DEFAULT_TIMEOUT_MS`. Its documented worker-exit
+  callback keeps admission occupied until the VM worker actually exits.
+  *Why:* background ownership, schema results and the workflow view's per-agent
+  elapsed and tokens. *On red:* repair; fall back to one `subagent` launch per
+  child with its completion notice — lost: scripted coordination and consolidated
+  results. *Retire:* each seam when pi-subagents documents it. *Pin:*
+  `stability.test.mjs`, `orchestrate.test.mjs`, `integration.test.mjs`.
+- **Owned completion consumption** (`plugin-api.mjs`): native
+  `pi.idle-wake.v1` reservations and `pi-subagents.queued-completion-wakes.v2`
+  tracking are WeakMaps keyed by session manager and scoped by UUID. The native
+  notifier records exact content before sending; an idle send synchronously
+  reserves and sends a wake, then removes its own unstarted content. The Proxy
+  consumes only wholly owned notices, correlates only that adjacent wake,
+  restores the prior reservation and cleans exact tracking in a microtask after
+  native bookkeeping. Session/state/entry identities guard every delayed mutation.
+  *Why:* background workflow children must not wake the root separately or leave
+  abandoned-delivery reminders. *Residual:* mixed owned/unowned notices pass
+  through whole, retaining incidental child context but no extra visible workflow
+  outcome. Missing or mismatched native state forwards normally. *On red:* repair
+  or disable consumption and accept native child notifications; never swallow an
+  uncorrelated wake. *Retire:* a public consumed-completion hook. *Pin:*
+  `stability.test.mjs`, native notifier/wake cases in `plugin-api.test.mjs`.
 - **Usage segments** (`footer.mjs`): Pi's documented
   `after_provider_response` (Codex context only) and `provider_stream_event`
   (Codex provider only) expose stable but unversioned Codex limits. HTTP/SSE

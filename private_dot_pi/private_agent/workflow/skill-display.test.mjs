@@ -9,7 +9,7 @@ import { createJiti } from "jiti";
 import { InteractiveMode, UserMessageComponent, initTheme, parseSkillBlock, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { installWorkflow } from "./index.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
-import { bulletMarkdown } from "./rows.mjs";
+import { appendVisible, closeFolds, createFolds, doneEntryRenderer, installActivityEntries, installReasoningHide, bulletMarkdown } from "./rows.mjs";
 
 initTheme();
 const entry = readFileSync(new URL("../extensions/workflow.ts.tmpl", import.meta.url), "utf8");
@@ -152,4 +152,44 @@ test("native skill display uses one ordinary user box and restores command-only 
   assert.equal(mode.getUserMessageText(ordinary), "ordinary message");
   mode.addMessageToChat(ordinary);
   assert.doesNotMatch(mode.chatContainer.render(24).join("\n"), /\x1b\[35m/);
+});
+
+
+test("bundled Pi activity hosts retain hidden children across native rebuilds and assistant themes decorate shell code", () => {
+  installActivityEntries(host.InteractiveMode);
+  const wrapped = host.InteractiveMode.prototype.addCustomEntryToChat;
+  installActivityEntries(host.InteractiveMode);
+  assert.equal(host.InteractiveMode.prototype.addCustomEntryToChat, wrapped);
+  let expanded = false;
+  const folds = createFolds(() => expanded);
+  const { mode } = receiver(host.InteractiveMode);
+  mode.toolOutputExpanded = false;
+  mode.runtimeHost = { session: { extensionRunner: { getEntryRenderer: type => doneEntryRenderer(type, folds) } } };
+  const pi = { appendEntry: (customType, data) => mode.addCustomEntryToChat({ customType, data }) };
+  appendVisible(pi, "workflow-child", { agent: "first", status: "completed" }, folds);
+  appendVisible(pi, "workflow-child", { agent: "second", status: "completed" }, folds);
+  closeFolds(folds);
+  const calls = [0, 0];
+  for (const [index, entry] of mode.chatContainer.children.entries()) {
+    const child = entry.customComponent;
+    const render = child.render;
+    child.render = function (width) {
+      calls[index] += 1;
+      return render.call(this, width);
+    };
+  }
+  assert.deepEqual(mode.chatContainer.render(80).map(strip), ["", "▸ Finished 2 agents"]);
+  assert.deepEqual(calls, [1, 1], "bundled hosts render visible and hidden children once per paint");
+  assert.equal(mode.chatContainer.children.length, 2);
+  const second = mode.chatContainer.children[1];
+  second.invalidate();
+  assert.deepEqual(second.render(80), []);
+  expanded = true;
+  for (const child of mode.chatContainer.children) child.setExpanded(true);
+  assert.deepEqual(mode.chatContainer.render(80).map(strip), ["", "▾ Finished 2 agents", "• first finished", "", "• second finished"]);
+  const shellPalette = { ...palette, fg: (color, text) => `\x1b[${color === "error" ? 31 : 37}m${text}\x1b[39m` };
+  installReasoningHide(host.AssistantMessageComponent, shellPalette);
+  const message = { role: "assistant", content: [{ type: "text", text: "```sh\n! npm test\n```" }] };
+  const assistant = new host.AssistantMessageComponent(message, false, host.getMarkdownTheme(), "Thinking...", 0, [(text, context) => bulletMarkdown(text, context, shellPalette)]);
+  assert.ok(assistant.render(80).join("\n").includes(shellPalette.fg("error", "!")));
 });

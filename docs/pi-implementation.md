@@ -63,11 +63,22 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   boundary; pi-codemode's QuickJS VM is (only `agent` and `log` reachable,
   every argument validated host-side). Each `agent()` passes
   `checkChildLaunch`, then launches through the plugin's RPC `spawn`. The tool
-  call blocks until the script returns: a busy root takes pi-subagents'
-  no-wake steer branch, so owned completion notices are dropped with no wake or
-  reservation path to own; a late owned notice reaching an idle root, or one
-  batching an owned and an unowned run, is forwarded hidden with its wake, and the notifier's pending-delivery flag stays set for
-  dropped notices, read only by the pi-web liveness provider. A `tier`
+  call admits one background workflow and returns its ID. The same owner retains
+  its VM, children and bounded terminal results, with nonblocking status/result
+  and explicit stop; root steering does not rewrite script state. One live owner
+  preserves the former serialization limit, including unverified cleanup. Root
+  abort does not cancel it; mode/session transitions and shutdown do. A
+  generation-bound finalizer records one outcome and sends the existing hidden
+  completion/wake pattern before releasing liveness. No-child workflows count
+  as work too. Results do not stand in for child process-exit proof.
+  The plugin Proxy consumes wholly owned child notices in busy, idle and held
+  states. Its pinned adapter correlates only the adjacent native idle wake,
+  restores that transaction's prior reservation and removes exact consumed
+  notification bookkeeping after native post-send handling. Mixed/unowned
+  batches pass through; changed private state falls back to forwarding, not
+  swallowing notifications. Ownership starts at the spawn alias, before a reply
+  can lag its completion. Retire this adapter when pi-subagents offers a public
+  consumed-completion seam. A `tier`
   override may name any non-frontier tier, enforced in `checkChildLaunch` and
   the child-side managed-run guard. Children may call `structured_output`: its
   capture file is a harness artifact write, not a workspace effect, so every

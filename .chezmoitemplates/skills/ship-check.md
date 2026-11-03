@@ -50,11 +50,19 @@ synthesis.
    bar is what lets a pass over already-reviewed code come back empty and say "ship"
    instead of restarting the churn.
 
-5. **Present for approval.** Rank survivors by severity and present an actionable
-   checklist — `severity | lens | file:line | issue | proposed fix` — plus a one-line
-   ship/no-ship gate that blocks only on what makes the branch unshippable now. The
-   checklist is the whole output. This is the approval point: let me pick what to act on.
+5. **Present for approval.** Rank verified survivors by severity in a checklist
+   artifact — `severity | lens | file:line | issue | proposed fix` — with stable
+   finding IDs and a one-line ship/no-ship gate blocking only on what makes the
+   branch unshippable now. If there are no survivors, give the clean ship verdict
+   and stop without a plan. Respect an explicit review-only request: return the
+   checklist and verdict without seeking execution approval. Otherwise, in plan
+   mode, proactively submit the nonempty checklist of proposed fixes through the
+   harness's native plan approval flow; do not wait for a separate “fix them”
+   prompt. Let the user select findings by ID and revise the same artifact for
+   approval of that selection, rather than treating feedback as blanket approval.
 
-6. **Fix on approval, then call it.** Apply fixes only to the findings I approve, and
-   keep each fix inside the defect it names — no adjacent cleanup, no new capability.
-   Correction is a separate step from finding. End with the ship verdict.
+6. **Fix on approval, then call it.** Apply only the selected findings in the
+   approved revision, after native approval enables execution where required.
+   Keep each fix inside the defect it names — no adjacent cleanup, no new
+   capability. Correction is separate from finding. Verify the fixes and end
+   with the ship verdict.

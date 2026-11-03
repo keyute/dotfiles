@@ -933,3 +933,101 @@ test("closeView before the text-tail's status reply mounts nothing and notifies 
   await sleep(250);
   assert.deepEqual(calls, []);
 });
+
+
+test("workflow aliases exclude owned children from counts without changing total agents or regular children", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0 });
+  const records = [];
+  const group = fleet.track({ title: "Live owner", records });
+  fleet.own("rpc-owned", group);
+  bus.emit("subagent:async-started", { id: "owned", toolCallId: "rpc-owned" });
+  bus.emit("subagent:async-started", { id: "regular" });
+  assert.equal(fleet.activeCount(), 2);
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "the live owner's alias covers the child before its reply records a run id");
+  records.push({ runId: "owned", status: "running" });
+  group.changed();
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "alias and record ownership do not subtract the child twice");
+  bus.entries = [{ agent: "worker", startedAt: 1 }, { agent: "scout", startedAt: 2 }];
+  bus.runs = [{ id: "owned", state: "running", label: "worker", startedAt: 1 }, { id: "regular", state: "running", label: "scout", startedAt: 2 }];
+  await sleep(20);
+  assert.equal(fleet.activeCount(), 2);
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "poll and event ownership agree");
+  bus.emit("subagent:process-terminal", { runId: "owned", state: "observed" });
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "owed workflow child is excluded too");
+  fleet.disown("rpc-regular");
+  bus.emit("subagent:async-started", { id: "other", toolCallId: "rpc-regular" });
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 2);
+  group.end();
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 3, "an ended owner no longer accounts for its owed or polled child");
+  const next = fleet.track({ title: "Different owner", records: [] });
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 3, "a different live workflow does not claim a past owner's child");
+  next.end();
+  hooks.session_shutdown();
+});
+
+test("a recovered child is counted through its live owner's record, not its historical adoption", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const entries = [];
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry: (kind, data) => entries.push({ kind, data }), registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0 });
+  bus.entries = [{ agent: "worker", startedAt: 1 }];
+  bus.runs = [{ id: "recovered", state: "running", label: "worker", startedAt: 1 }];
+  fleet.adopt("recovered", { agent: "worker", task: "Patch", asyncDir: "/tmp/recovered" });
+  const group = fleet.track({ title: "Recovered owner", records: [{ runId: "recovered", status: "running" }] });
+  await sleep(20);
+  assert.equal(fleet.activeCount(), 1);
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 0);
+  group.changed();
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 0, "the owner retains accounting until end, including while cleanup is unverified");
+  group.end();
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1);
+  bus.emit("subagent:async-complete", { runId: "recovered", success: true });
+  assert.deepEqual(entries, [], "ending live accounting does not erase historical completion suppression");
+  hooks.session_shutdown();
+});
+
+test("track and end notify footer listeners and the existing poll repaints childless workflow clocks", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0 });
+  let changes = 0;
+  let renders = 0;
+  fleet.onChange(() => changes++);
+  fleet.attach({ requestRender: () => renders++ });
+  const group = fleet.track({ title: "Wait", records: [] });
+  assert.equal(changes, 1);
+  const initial = renders;
+  await sleep(30);
+  assert.ok(renders > initial + 1, "poll repaints even without a root turn clock or children");
+  group.end();
+  assert.equal(changes, 2);
+  assert.deepEqual(fleet.render(80, { fg: (_color, text) => text }), []);
+  hooks.session_shutdown();
+});
+
+test("completion entries restore workflow ownership and artifact paths for peek", async () => {
+  const branch = [{ type: "custom", customType: "workflow-orchestrate", data: { details: { runs: [
+    { runId: "restored-workflow-child", agent: "worker", task: "Patch", asyncDir: "/tmp/workflow-child" },
+  ] } } }];
+  assert.deepEqual(launchesFromBranch(branch).get("restored-workflow-child"), { agent: "worker", task: "Patch", asyncDir: "/tmp/workflow-child", workflow: true });
+  const bus = fakeBus();
+  bus.entries = [{ key: "child", agent: "worker", startedAt: 1 }];
+  bus.runs = [{ id: "restored-workflow-child", label: "worker", state: "running", startedAt: 1 }];
+  const hooks = {};
+  const opened = [];
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0, openPeek: async (_ctx, options) => { opened.push(options); } });
+  fleet.attachContext({ mode: "tui", hasUI: true, ui: { notify() {} }, sessionManager: { getBranch: () => branch } });
+  await sleep(20);
+  assert.equal(fleet.activeCount(), 1);
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "restored historical ownership has no live workflow accounting for it");
+  const group = fleet.track({ title: "New workflow", records: [] });
+  assert.equal(fleet.activeCount({ excludeWorkflows: true }), 1, "an unrelated live owner cannot hide restored work");
+  group.end();
+  fleet.handleKey("enter");
+  fleet.handleKey("confirm");
+  await sleep(0);
+  assert.deepEqual(opened.map(({ id, asyncDir }) => [id, asyncDir]), [["restored-workflow-child", "/tmp/workflow-child"]]);
+  hooks.session_shutdown();
+});

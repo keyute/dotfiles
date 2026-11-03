@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Container, Spacer } from "@earendil-works/pi-tui";
-import { AssistantMessageComponent, getMarkdownTheme, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, doneGroup, installFolding, installReasoningHide, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
+import { AssistantMessageComponent, InteractiveMode, getMarkdownTheme, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, doneGroup, installActivityEntries, installFolding, installReasoningHide, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -13,6 +14,14 @@ const strip = line => line.replace(/\x1b\][^\x07]*\x07/g, "").replace(/\x1b\[[0-
 // pi's own theme singleton (what a real mount would hand a registered entry
 // renderer) is not exported; this direct call takes rows.test.mjs's own stub.
 const theme = { fg: (color, text) => `<${color}>${text}`, bold: text => text };
+
+function entryMode(chatContainer, folds) {
+  installActivityEntries(InteractiveMode);
+  const mode = Object.create(InteractiveMode.prototype);
+  Object.assign(mode, { chatContainer, outputPad: 0, toolOutputExpanded: false,
+    runtimeHost: { session: { extensionRunner: { getEntryRenderer: type => doneEntryRenderer(type, folds) } } } });
+  return mode;
+}
 
 // This test mounts the real ToolExecutionComponent from pi-coding-agent, wired
 // to our own renderers and folds, to pin the one fact rows.test.mjs cannot see
@@ -109,16 +118,9 @@ test("queued user input collapses the live group before pending output, without 
   assert.ok(draw().includes("  output a"), "Ctrl+O remains authoritative");
 });
 
-// pi-coding-agent's `CustomEntryComponent` (the host for a registered entry
-// renderer, and the one that adds the spacer this test would otherwise pin)
-// is not a public export — the package's `exports` map has no dist path for
-// it — so this stands in with the same component `doneEntryRenderer` hands
-// pi directly, asserting `render(width)` at each stage without the spacer a
-// real mount would add above it (see the transition itself: the same
-// component instance updates in place as a second completion joins it, since
-// an entry renderer gets no invalidate handle of its own and reads state at
-// paint time instead).
-test("a completion's own component moves through the same levels a tool group does: solo, joined, sealed — the later member has no component at all", () => {
+// Direct component tests cover dynamic membership; native host mounts below
+// additionally cover its spacer and renderer rebuilds.
+test("a completion's own component moves through the same levels a tool group does: solo, joined, sealed — the later member retains a hidden component", () => {
   const folds = createFolds(() => false);
   const pi = { appendEntry() {} };
   const render = doneEntryRenderer("workflow-child", folds);
@@ -130,7 +132,7 @@ test("a completion's own component moves through the same levels a tool group do
 
   const b = { agent: "reviewer", task: "Type audit", status: "completed", durationMs: 12_000 };
   appendVisible(pi, "workflow-child", b, folds);
-  assert.equal(render({ data: b }, {}, theme), undefined);
+  assert.deepEqual(render({ data: b }, {}, theme).render(80), []);
   assert.deepEqual(first.render(80).map(strip), [
     "<success>• <toolTitle>Finished 2 agents",
     "  <muted>↳ <toolTitle>researcher finished › Delegation claims<muted> · 45s",
@@ -144,12 +146,12 @@ test("a completion's own component moves through the same levels a tool group do
 test("ctrl+o keeps interleaved completions after their preceding tool output, live and sealed", () => {
   const folds = createFolds(() => true);
   const container = new Container();
-  const plainTheme = { fg: (_color, text) => text, bold: text => text };
+  const mode = entryMode(container, folds);
+  mode.toolOutputExpanded = true;
   const finish = agent => {
     const data = { agent, status: "completed", durationMs: 1000 };
     appendVisible({ appendEntry() {} }, "workflow-child", data, folds);
-    const component = doneEntryRenderer("workflow-child", folds)({ data }, {}, plainTheme);
-    if (component) container.addChild(component);
+    mode.addCustomEntryToChat({ customType: "workflow-child", data });
   };
   const tool = (name, id, args, key, result) => {
     const definition = name === "read" ? toolRenderers(name, folds) : pluginRenderers(name, { folds });
@@ -180,7 +182,7 @@ test("ctrl+o keeps interleaved completions after their preceding tool output, li
     if (sealed) closeFolds(folds);
     read.invalidate();
     launch.invalidate();
-    assert.deepEqual(container.render(120).map(strip), sealed ? ["▾ Read 1 file, launched 1 agent, finished 3 agents", ...rows] : rows);
+    assert.deepEqual(container.render(120).map(strip), sealed ? ["", "▾ Read 1 file, launched 1 agent, finished 3 agents", ...rows] : ["", ...rows]);
   }
 });
 
@@ -206,7 +208,10 @@ test("a tool-led mixed group keeps one blank line, hides completion host spacers
   const r2 = mount("r2", "b", "beta");
   const done = { agent: "researcher", task: "Audit rows", status: "completed", durationMs: 45_000 };
   appendVisible({ appendEntry() {} }, "workflow-child", done, folds);
-  assert.equal(doneEntryRenderer("workflow-child", folds)({ data: done }, {}, theme), undefined, "a later completion adds neither content nor its custom-entry spacer");
+  const mode = entryMode(container, folds);
+  mode.addCustomEntryToChat({ customType: "workflow-child", data: done });
+  const host = container.children.at(-1);
+  assert.deepEqual(host.render(120), [], "a retained host suppresses its spacer with its child");
   assert.deepEqual(draw(), [
     "",
     "• Read 2 files, finished 1 agent",
@@ -219,6 +224,7 @@ test("a tool-led mixed group keeps one blank line, hides completion host spacers
   assert.deepEqual(draw(), ["", "▸ Read 2 files, finished 1 agent"]);
 
   toolsExpanded = true;
+  host.setExpanded(true);
   for (const component of [r1, r2]) {
     component.setExpanded(true);
     component.invalidate();
@@ -320,28 +326,21 @@ test("two text blocks in one message are two bullets one blank line apart, howev
 // pi mounts an entry that lands while a reply streams above that reply, and
 // asks its renderer for a component only then (stability.test.mjs pins both),
 // so this host does the same; a real mount adds the spacer it adds here.
-test("entries that land while a reply streams fold where pi mounts them, above it, and only a mounted completion ever leads a group", () => {
+test("entries that land while a reply streams fold where pi mounts them, above it, and every completion retains its mount", () => {
   installReasoningHide();
   const folds = createFolds(() => false);
   const handlers = {};
   installFolding({ on: (name, handler) => { handlers[name] = handler; } }, { ui: { getToolsExpanded: () => false } }, folds);
-  const plainTheme = { fg: (_color, text) => text, bold: text => text };
   const chat = new Container();
+  const mode = entryMode(chat, folds);
   const draw = () => chat.render(120).map(strip);
   let streaming = null;
   const mounted = new Set();
-  const render = doneEntryRenderer("workflow-child", folds);
   const pi = {
-    appendEntry(_type, data) {
-      const component = render({ data }, {}, plainTheme);
-      if (!component) return;
+    appendEntry(type, data) {
       if (data.seq) mounted.add(data.seq);
-      const entry = new Container();
-      entry.addChild(new Spacer(1));
-      entry.addChild(component);
-      const at = streaming ? chat.children.indexOf(streaming) : -1;
-      if (at >= 0) chat.children.splice(at, 0, entry);
-      else chat.addChild(entry);
+      mode.streamingComponent = streaming;
+      mode.addCustomEntryToChat({ customType: type, data });
     },
   };
   const finish = (agent, status = "completed") => appendVisible(pi, "workflow-child", { agent, status, durationMs: 1000 }, folds);
@@ -383,7 +382,8 @@ test("entries that land while a reply streams fold where pi mounts them, above i
   for (const fact of folds.facts.values()) {
     if (fact.source !== "completion") continue;
     const group = doneGroup(folds, fact.id);
-    assert.equal(mounted.has(fact.id), !group || group.entries[0].id === fact.id, fact.data.agent);
+    assert.ok(mounted.has(fact.id), fact.data.agent);
+    if (group && group.entries[0].id !== fact.id) assert.deepEqual(doneEntryRenderer("workflow-child", folds)({ data: fact.data }, {}, theme).render(80), []);
   }
 });
 
@@ -412,4 +412,93 @@ test("a run a quiet notice starts, opening with a tool-only message, continues t
   handlers.message_end({ message: toolOnly });
   read("c");
   assert.deepEqual(container.render(80).map(strip), ["", "• Read 3 files", "  ↳ Read a · 1 line", "  ↳ Read b · 1 line", "  ↳ Read c · 1 line"]);
+});
+
+
+test("activity host seam is pinned to Pi 1.3.0 mount and rebuild mechanics", () => {
+  const read = file => readFileSync(new URL(`../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/${file}`, import.meta.url), "utf8");
+  const host = read("interactive-mode.js");
+  assert.match(host, /addCustomEntryToChat\(entry\) \{[\s\S]*?new CustomEntryComponent\(entry, renderer, this.outputPad\)/);
+  assert.match(host, /this.chatContainer.children.splice\(streamingIndex, 0, component\)/);
+  const entry = read("components/custom-entry.js");
+  assert.match(entry, /this.customComponent = component;\s*this.addChild\(new Spacer\(1\)\);\s*this.addChild\(component\)/);
+  assert.match(entry, /invalidate\(\) \{\s*super.invalidate\(\);\s*this.rebuild\(\)/);
+  assert.match(entry, /setExpanded\(expanded\)[\s\S]*?this.rebuild\(\)/);
+  const assistant = read("components/assistant-message.js");
+  assert.match(assistant, /this.markdownTheme = markdownTheme/);
+  assert.match(assistant, /new Markdown\(content.text.trim\(\), this.outputPad, 0, this.markdownTheme/);
+});
+
+test("activity hosts render each child once per paint and suppress only spacer-only output", () => {
+  const folds = createFolds(() => false);
+  const chat = new Container();
+  const mode = entryMode(chat, folds);
+  const pi = { appendEntry: (customType, data) => mode.addCustomEntryToChat({ customType, data }) };
+  appendVisible(pi, "workflow-child", { agent: "first", status: "completed" }, folds);
+  appendVisible(pi, "workflow-child", { agent: "second", status: "completed" }, folds);
+  closeFolds(folds);
+  const calls = [0, 0];
+  for (const [index, host] of chat.children.entries()) {
+    const child = host.customComponent;
+    const render = child.render;
+    child.render = function (width) {
+      calls[index] += 1;
+      return render.call(this, width);
+    };
+  }
+  assert.deepEqual(chat.render(80).map(strip), ["", "▸ Finished 2 agents"]);
+  assert.deepEqual(calls, [1, 1]);
+  assert.deepEqual(chat.mouseLayout.children.map(child => child.height), [2, 0]);
+  chat.handleMouse({ type: "click", button: "left", x: 0, y: 1, width: 80, height: 2 });
+  assert.deepEqual(calls, [1, 1], "mouse routing reuses the native paint layout");
+  assert.deepEqual(chat.render(80).map(strip), ["", "▾ Finished 2 agents", "  ↳ first finished", "  ↳ second finished"]);
+  assert.deepEqual(calls, [2, 2]);
+  assert.deepEqual(chat.children[1].render(80), []);
+  assert.deepEqual(calls, [2, 3]);
+});
+
+test("a pending tool completion edge refolds in native hosts without a permanent boundary, and rebuilds retain dynamic ownership", () => {
+  for (const failed of [false, true]) {
+    let expanded = false;
+    const folds = createFolds(() => expanded);
+    const chat = new Container();
+    const mode = entryMode(chat, folds);
+    const wrapped = InteractiveMode.prototype.addCustomEntryToChat;
+    installActivityEntries(InteractiveMode);
+    assert.equal(InteractiveMode.prototype.addCustomEntryToChat, wrapped);
+    const read = (id, settle = true) => {
+      const row = new ToolExecutionComponent("read", id, { path: id }, {}, toolRenderers("read", folds), { requestRender() {} }, "/repo");
+      row.markExecutionStarted();
+      chat.addChild(row);
+      addFold(folds, id, "read");
+      if (settle) {
+        row.updateResult({ content: [], details: {} });
+        settleFold(folds, id, false);
+      }
+      return row;
+    };
+    read("a");
+    const pending = read("pending", false);
+    const data = { agent: "reviewer", status: "completed", durationMs: 1000 };
+    appendVisible({ appendEntry: (customType, data) => mode.addCustomEntryToChat({ customType, data }) }, "workflow-child", data, folds);
+    const host = chat.children.at(-1);
+    read("b");
+    assert.equal(folds.timeline.some(fact => fact.kind === "boundary"), false);
+    assert.ok(chat.render(80).map(strip).includes("• reviewer finished · 1s"));
+    pending.updateResult({ content: [{ type: "text", text: failed ? "boom" : "ok" }], isError: failed });
+    settleFold(folds, "pending", failed);
+    closeFolds(folds);
+    host.invalidate();
+    if (failed) {
+      assert.deepEqual(host.render(80).map(strip), ["", "▸ Read 1 file, finished 1 agent"]);
+      host.handleMouse({ type: "click", button: "left", x: 0, y: 1, height: 10 });
+      assert.ok(host.render(80).map(strip).some(line => line.includes("reviewer finished")));
+    } else assert.deepEqual(host.render(80), []);
+    expanded = true;
+    host.setExpanded(true);
+    assert.deepEqual(host.render(80).map(strip), failed ? ["", "▾ Read 1 file, finished 1 agent", "• reviewer finished · 1s"] : ["", "• reviewer finished · 1s"]);
+    expanded = false;
+    host.setExpanded(false);
+    if (!failed) assert.deepEqual(host.render(80), []);
+  }
 });

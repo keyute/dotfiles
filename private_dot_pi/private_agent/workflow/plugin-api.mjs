@@ -118,14 +118,14 @@ export const DRAWN_ENTRIES = new Set(["subagent_watchdog_warning", "subagent_sup
 // after the turn_end handlers or at run end, so the group closes at the first
 // event after that flush. Every other branch draws through the agent stream.
 //
-// A completion notice whose every run claimRuns claims is dropped while the
-// root is busy: the orchestrating tool call consumed those results, and the
-// root, busy inside it, got the notice as a plain steer with no wake
-// (parent-wake.js). An idle root's notice is followed by a wake, so a late
-// owned one is forwarded hidden rather than leaving that wake empty. A batch
-// with any unowned run is forwarded whole. Ownership ends at the notice, not
-// the completion event, because pi-subagents batches and defers the notice.
-export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagentSchema, isShuttingDown = () => false, subagentDescription, mcpTools = new Map(), pluginTools = new Set(), isIdle = () => true, folds = defaultFolds, claimRuns = () => false) {
+// Wholly owned completions have already reached their workflow. Native delivery
+// records wake bookkeeping before calling us, then may reserve and send an idle
+// wake immediately after. Correlate only that adjacent send, and clean up after
+// native's own post-send splice (removing early would make it splice(-1)).
+export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagentSchema, isShuttingDown = () => false, subagentDescription, mcpTools = new Map(), pluginTools = new Set(), isIdle = () => true, folds = defaultFolds, claimRuns = () => false, getSession = () => undefined) {
+  let consumed;
+  const reservationsSymbol = Symbol.for("pi.idle-wake.v1");
+  const queuedWakesSymbol = Symbol.for("pi-subagents.queued-completion-wakes.v2");
   let deferred = 0;
   const drain = () => {
     if (!deferred) return;
@@ -146,8 +146,38 @@ export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagen
         });
       };
       if (key === "sendMessage") return (message, options) => {
+        consumed = undefined;
         const runs = message?.customType === SUBAGENT_NOTIFY ? message.details?.runs : undefined;
-        if (Array.isArray(runs) && runs.length && claimRuns(runs.map(run => run?.runId)) && !isIdle()) return;
+        if (Array.isArray(runs) && runs.length && claimRuns(runs.map(run => run?.runId))) {
+          const manager = getSession();
+          const reservations = globalThis[reservationsSymbol];
+          const queued = globalThis[queuedWakesSymbol];
+          const sessionId = manager?.getSessionId?.();
+          const state = queued instanceof WeakMap ? queued.get(manager) : undefined;
+          const prior = reservations instanceof WeakMap ? reservations.get(manager) : undefined;
+          if (typeof sessionId === "string" && state?.sessionId === sessionId
+            && Array.isArray(state.wakes) && state.unansweredCompletions instanceof Map
+            && (prior === undefined || (prior?.sessionId === sessionId && (prior.sentAt === undefined || typeof prior.sentAt === "number")))
+            && reservations instanceof WeakMap && typeof message.content === "string") {
+            const { content } = message;
+            const { wakes, unansweredCompletions } = state;
+            const entry = unansweredCompletions.get(content);
+            const token = { manager, sessionId, reservations, prior, sentAt: prior?.sentAt, queued, state };
+            consumed = token;
+            queueMicrotask(() => {
+              if (consumed === token) consumed = undefined;
+              if (getSession() !== manager || manager.getSessionId() !== sessionId
+                || globalThis[queuedWakesSymbol] !== queued || queued.get(manager) !== state || state.sessionId !== sessionId
+                || state.wakes !== wakes || state.unansweredCompletions !== unansweredCompletions) return;
+              if (entry !== undefined && unansweredCompletions.get(content) === entry) {
+                unansweredCompletions.delete(content);
+                const index = wakes.lastIndexOf(content);
+                if (index !== -1) wakes.splice(index, 1);
+              }
+            });
+            return;
+          }
+        }
         if (Object.hasOwn(quietMessages, message?.customType) && quietMessages[message.customType](message)) {
           return target.sendMessage({ ...message, display: false }, isShuttingDown() ? { ...options, triggerTurn: false } : options);
         }
@@ -162,7 +192,20 @@ export function pluginApi(pi, messageRenderers = {}, quietMessages = {}, subagen
       // no user box to end the group. At shutdown the notice is already kept,
       // so the wake is dropped.
       if (key === "sendUserMessage") return (content, options) => {
+        const token = consumed;
+        consumed = undefined;
         if (typeof content !== "string" || !content.startsWith(PARENT_WAKE) || options?.deliverAs !== "steer") return target.sendUserMessage(content, options);
+        if (token && getSession() === token.manager && token.manager.getSessionId() === token.sessionId
+          && globalThis[reservationsSymbol] === token.reservations
+          && globalThis[queuedWakesSymbol] === token.queued && token.queued.get(token.manager) === token.state
+          && token.state.sessionId === token.sessionId) {
+          const current = token.reservations.get(token.manager);
+          if (current?.sessionId === token.sessionId && (token.prior === undefined || current === token.prior)
+            && typeof current.sentAt === "number" && current.sentAt !== token.sentAt) {
+            current.sentAt = token.sentAt;
+            return;
+          }
+        }
         if (!isShuttingDown()) target.sendMessage({ customType: "subagent-wake", content, display: false }, { deliverAs: "steer", triggerTurn: true });
       };
       // appendVisible places the boundary where pi mounts the entry, above a reply still streaming.

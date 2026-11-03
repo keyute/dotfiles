@@ -262,46 +262,165 @@ test("shutdown retains child results without requesting a new model turn", () =>
   assert.equal(sent[1][0].display, false);
 });
 
-test("a completion notice is dropped only when an orchestration owns every run in it and the root is busy; seeing it releases the runs", () => {
+const { createParentWake, PARENT_WAKE_TEXT } = await import(new URL("../../../node_modules/pi-subagents/src/shared/parent-wake.js", import.meta.url));
+const { default: registerSubagentNotify, createCompletionSendRegistry } = await import(new URL("../../../node_modules/pi-subagents/src/runs/background/notify.js", import.meta.url));
+const reservationsSymbol = Symbol.for("pi.idle-wake.v1");
+const queuedWakesSymbol = Symbol.for("pi-subagents.queued-completion-wakes.v2");
+const nativeNotifications = ({ idle = true, held = false, prior, batch = false } = {}) => {
   const sent = [];
-  const owned = new Set(["run-a", "run-b", "run-c", "run-d"]);
-  let idle = false;
-  const claimRuns = ids => { const all = ids.every(id => owned.has(id)); for (const id of ids) owned.delete(id); return all; };
-  const styled = pluginApi({ on() {}, sendMessage: (message, options) => sent.push([message, options]) }, {}, QUIET_MESSAGES,
-    undefined, undefined, undefined, undefined, undefined, () => idle, undefined, claimRuns);
-  const notify = runs => ({ customType: "subagent-notify", content: "Background task completed", display: true, ...(runs ? { details: { runs } } : {}) });
-  const forwarded = () => sent.map(([message]) => message.details?.runs?.map(run => run.runId));
-  assert.equal(styled.sendMessage(notify([{ runId: "run-a", status: "completed" }, { runId: "run-b", status: "failed" }]), { deliverAs: "steer" }), undefined);
-  assert.equal(sent.length, 0);
-  // A claimed run is released: a second notice for it is forwarded.
-  styled.sendMessage(notify([{ runId: "run-a" }]), { deliverAs: "steer" });
-  assert.deepEqual(forwarded(), [["run-a"]]);
-  assert.equal(sent[0][0].display, false);
-  sent.length = 0;
-  // An idle root's notice is followed by a wake, so a late owned one is forwarded hidden, and released.
-  idle = true;
-  styled.sendMessage(notify([{ runId: "run-c" }]), { triggerTurn: false });
-  idle = false;
-  styled.sendMessage(notify([{ runId: "run-c" }]), { deliverAs: "steer" });
-  assert.deepEqual(forwarded(), [["run-c"], ["run-c"]]);
-  assert.equal(sent[0][0].display, false);
-  sent.length = 0;
-  // Any unowned run forwards the whole batch, releasing its owned runs, as does a notice naming no runs.
-  styled.sendMessage(notify([{ runId: "run-d" }, { runId: "run-x" }]), { deliverAs: "steer" });
-  styled.sendMessage(notify([{ runId: "run-d" }]), { deliverAs: "steer" });
-  styled.sendMessage(notify([]));
-  styled.sendMessage(notify());
-  assert.deepEqual(forwarded(), [["run-d", "run-x"], ["run-d"], [], undefined]);
-  assert.equal(sent[0][0].display, false);
-  // Only the completion notice is matched; another customType with owned runs is untouched.
-  owned.add("run-a");
-  styled.sendMessage({ customType: "other", content: "c", details: { runs: [{ runId: "run-a" }] } });
-  assert.deepEqual(sent[4], [{ customType: "other", content: "c", details: { runs: [{ runId: "run-a" }] } }, undefined]);
-  assert.equal(owned.has("run-a"), true);
-  // Without a claimRuns every notice is forwarded.
-  const plain = [];
-  pluginApi({ on() {}, sendMessage: message => plain.push(message) }, {}, QUIET_MESSAGES).sendMessage(notify([{ runId: "run-a" }]));
-  assert.equal(plain.length, 1);
+  const users = [];
+  const owned = new Set(["owned", "owned-2"]);
+  const manager = { getSessionId: () => "session" };
+  let current = manager;
+  const handlers = new Map();
+  const on = (event, handler) => {
+    const entries = handlers.get(event) ?? new Set();
+    handlers.set(event, entries);
+    entries.add(handler);
+    return () => entries.delete(handler);
+  };
+  const pi = { on, events: { on: () => () => {} }, sendMessage: (message, options) => sent.push([message, options]), sendUserMessage: (...args) => users.push(args) };
+  const api = pluginApi(pi, {}, QUIET_MESSAGES, undefined, undefined, undefined, undefined, undefined, () => idle, undefined,
+    ids => { const all = ids.every(id => owned.has(id)); ids.forEach(id => owned.delete(id)); return all; }, () => current);
+  const wake = createParentWake(api, () => 20_000);
+  wake.bindSession({ sessionManager: manager, isIdle: () => idle });
+  // Bind creates the lazy reservation through isPending, just as native liveness can.
+  wake.isPending();
+  if (prior !== undefined) globalThis[reservationsSymbol].get(manager).sentAt = prior;
+  if (held) wake.userAborted();
+  const notifier = registerSubagentNotify({ events: pi.events, on, sendMessage: wake.sendMessage, isHeld: wake.isHeld },
+    { currentSessionId: "session", completionOwnerId: "owner" },
+    { batchConfig: { enabled: batch }, sendRegistry: createCompletionSendRegistry() });
+  notifier.bindSession(manager);
+  const deliver = (id, extra = {}) => notifier.deliver({ id, runId: id, sessionId: "session", completionOwnerId: "owner", agent: id, success: true, summary: id, ...extra });
+  const state = globalThis[queuedWakesSymbol].get(manager);
+  return { api, wake, notifier, deliver, sent, users, manager, state, handlers, replace: value => { current = value; } };
+};
+
+for (const idle of [true, false]) for (const held of [true, false]) for (const quiet of [true, false]) {
+  test(`native owned completion is consumed idle=${idle} held=${held} quiet=${quiet}`, async () => {
+    const f = nativeNotifications({ idle, held });
+    try {
+      assert.equal(await f.deliver("owned", { triggerTurn: !quiet }), true);
+      assert.deepEqual(f.sent, []);
+      assert.deepEqual(f.users, []);
+      assert.deepEqual(f.state.wakes, []);
+      assert.equal(f.state.unansweredCompletions.size, 0);
+      assert.equal(f.notifier.hasPendingDelivery(), false);
+      for (const handler of f.handlers.get("agent_before_settle") ?? []) {
+        assert.equal(handler({ outcome: "completed", context: { pendingMessages: [], contextMessages: [] }, entries: [] }), undefined);
+      }
+    } finally { f.notifier.dispose(); }
+  });
+}
+
+for (const prior of [undefined, 19_999, 1]) test(`owned idle reservation restores prior ${prior}`, async () => {
+  const f = nativeNotifications({ prior });
+  try {
+    await f.deliver("owned");
+    assert.equal(globalThis[reservationsSymbol].get(f.manager).sentAt, prior);
+    assert.deepEqual(f.sent, []);
+    await f.deliver("unowned");
+    assert.equal(f.sent[0][0].customType, "subagent-notify");
+    assert.equal(f.sent[0][0].display, false);
+    assert.equal(f.sent.filter(([m]) => m.customType === "subagent-wake").length, prior === 19_999 ? 0 : 1);
+  } finally { f.notifier.dispose(); }
+});
+
+test("owned then unowned delivery in one stack retains only unowned native bookkeeping", async () => {
+  const f = nativeNotifications();
+  try {
+    const owned = f.deliver("owned");
+    const unowned = f.deliver("unowned");
+    await Promise.all([owned, unowned]);
+    assert.deepEqual(f.sent.map(([m]) => m.customType), ["subagent-notify", "subagent-wake"]);
+    assert.equal(f.state.unansweredCompletions.size, 1);
+    assert.match([...f.state.unansweredCompletions.keys()][0], /unowned/);
+    assert.deepEqual(f.state.wakes, []);
+  } finally { f.notifier.dispose(); }
+});
+
+test("a mixed grouped native notice forwards whole and releases its owned claims", async () => {
+  const f = nativeNotifications({ batch: true });
+  try {
+    const first = f.deliver("owned");
+    const second = f.deliver("unowned");
+    f.notifier.flush();
+    await Promise.all([first, second]);
+    assert.deepEqual(f.sent[0][0].details.runs.map(run => run.runId), ["owned", "unowned"]);
+    assert.equal(f.sent[0][0].display, false);
+    assert.equal(f.state.unansweredCompletions.size, 1);
+  } finally { f.notifier.dispose(); }
+});
+
+test("missing native shape forwards owned notices rather than partially consuming them", () => {
+  const sent = [];
+  const api = pluginApi({ on() {}, sendMessage: message => sent.push(message) }, {}, QUIET_MESSAGES,
+    undefined, undefined, undefined, undefined, undefined, () => false, undefined, () => true);
+  api.sendMessage({ customType: "subagent-notify", content: "result", details: { runs: [{ runId: "owned" }] } });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].display, false);
+});
+
+for (const replacement of ["manager", "session", "state", "entry"]) test(`cleanup leaves replacement ${replacement} untouched`, async () => {
+  const f = nativeNotifications({ idle: false });
+  try {
+    const delivery = f.deliver("owned");
+    const content = [...f.state.unansweredCompletions.keys()][0];
+    if (replacement === "manager") f.replace({ getSessionId: () => "session" });
+    if (replacement === "session") f.manager.getSessionId = () => "next";
+    if (replacement === "state") globalThis[queuedWakesSymbol].set(f.manager, { ...f.state });
+    if (replacement === "entry") f.state.unansweredCompletions.set(content, { reminded: true });
+    await delivery;
+    assert.equal(f.state.unansweredCompletions.size, 1);
+    assert.equal(f.state.wakes.length, 1);
+  } finally { f.notifier.dispose(); }
+});
+
+test("an intervening send or a microtask clears owned-wake correlation", async () => {
+  for (const intervening of ["message", "user", "microtask"]) {
+    const f = nativeNotifications({ idle: false });
+    try {
+      const delivery = f.deliver("owned");
+      if (intervening === "message") f.api.sendMessage({ customType: "supervisor", content: "ask" });
+      if (intervening === "user") f.api.sendUserMessage("other");
+      if (intervening === "microtask") await Promise.resolve();
+      globalThis[reservationsSymbol].get(f.manager).sentAt = 20_000;
+      f.api.sendUserMessage(PARENT_WAKE_TEXT, { deliverAs: "steer" });
+      await delivery;
+      assert.equal(f.sent.at(-1)[0].customType, "subagent-wake");
+      assert.equal(globalThis[reservationsSymbol].get(f.manager).sentAt, 20_000);
+    } finally { f.notifier.dispose(); }
+  }
+});
+
+for (const replacement of ["reservation", "state", "session", "manager"]) test(`wake correlation leaves replacement ${replacement} untouched`, async () => {
+  const f = nativeNotifications({ idle: false });
+  try {
+    const delivery = f.deliver("owned");
+    const reservation = globalThis[reservationsSymbol].get(f.manager);
+    reservation.sentAt = 20_000;
+    if (replacement === "reservation") globalThis[reservationsSymbol].set(f.manager, { sessionId: "session", sentAt: 20_000 });
+    if (replacement === "state") globalThis[queuedWakesSymbol].set(f.manager, { ...f.state });
+    if (replacement === "session") f.manager.getSessionId = () => "next";
+    if (replacement === "manager") f.replace({ getSessionId: () => "session" });
+    f.api.sendUserMessage(PARENT_WAKE_TEXT, { deliverAs: "steer" });
+    await delivery;
+    assert.equal(f.sent.at(-1)[0].customType, "subagent-wake");
+    assert.equal(globalThis[reservationsSymbol].get(f.manager).sentAt, 20_000);
+  } finally { f.notifier.dispose(); }
+});
+
+test("native owned notifications are isolated between session managers", async () => {
+  const first = nativeNotifications({ idle: false });
+  const second = nativeNotifications();
+  try {
+    await Promise.all([first.deliver("owned"), second.deliver("unowned")]);
+    assert.equal(first.state.unansweredCompletions.size, 0);
+    assert.equal(second.state.unansweredCompletions.size, 1);
+    assert.deepEqual(first.sent, []);
+    assert.equal(second.sent.length, 2);
+  } finally { first.notifier.dispose(); second.notifier.dispose(); }
 });
 
 test("pi-subagents' parent wake is sent as a quiet custom message and dropped at shutdown, every other user message untouched", () => {

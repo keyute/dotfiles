@@ -1,5 +1,6 @@
 import { Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { AssistantMessageComponent, formatReadLineRange, getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, InteractiveMode, formatReadLineRange, getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
+import { commandMarkdown, commandMarkdownTheme } from "./command-display.mjs";
 import { highlightProse } from "./keywords.mjs";
 import { unsandboxed } from "./policy.mjs";
 
@@ -230,22 +231,29 @@ function summaryLine(name, summary, theme) {
 const durationText = durationMs => (typeof durationMs === "number" ? formatDuration(durationMs) : null);
 
 // The orchestrate row is a workflow's one outcome (docs/pi-design.md rule 4), failed or not:
-// its agents, the outcome, pi's recorded time for the call and, on a completed run, the
+// its agents, the outcome, the workflow's own duration and, on a completed run, the
 // children that failed in warning — a script may catch a child's failure (parallel,
 // pipeline) and still return, and its children draw no lines of their own. `stopped`
 // is left out: a script that returns early has its still-running children stopped.
 function workflowOutcome(result, isError, durationMs, theme) {
   const runs = result?.details?.runs ?? [];
-  const failed = isError ? 0 : runs.filter(run => run?.status !== "completed" && run?.status !== "stopped").length;
-  const head = `${SUB} ${plural(runs.length, "agent")} · ${isError ? "failed" : "completed"}`;
-  const tail = durationText(durationMs);
+  const workflow = result?.details?.workflow;
+  const status = workflow?.status ?? (isError ? "failed" : "completed");
+  const failed = status !== "completed" ? 0 : runs.filter(run => run?.status !== "completed" && run?.status !== "stopped").length;
+  const head = `${SUB} ${plural(runs.length, "agent")} · ${status}`;
+  const tail = durationText(workflow ? workflow.durationMs ?? (workflow.endedAt == null ? undefined : workflow.endedAt - workflow.startedAt) : durationMs);
   if (!failed) return theme.fg("muted", tail ? `${head} · ${tail}` : head);
   return `${theme.fg("muted", `${head} · `)}${theme.fg("warning", `${failed} failed`)}${tail ? theme.fg("muted", ` · ${tail}`) : ""}`;
 }
 
 // The lines a row's result draws: the summary line first when there is one,
 // then the body, each indented to the text column.
-export function rowLines(name, result, { expanded = false, isError = false, durationMs } = {}, theme) {
+export function rowLines(name, result, { expanded = false, isError = false, durationMs, action } = {}, theme) {
+  if (name === "orchestrate" && action) {
+    const workflow = result?.details?.workflow;
+    const summary = workflow ? `${SUB} ${workflow.id} · ${workflow.status}` : `${SUB} ${resultSummary("plugin", result)}`;
+    return [indent(theme.fg("muted", summary)), ...bodyLines("plugin", result, { expanded, isError }).map(line => indent(theme.fg(isError ? "error" : "toolOutput", line)))];
+  }
   // A subagent launch answers with its run id and finishes later.
   if (name === "subagent" && !isError && result?.details?.asyncId) return [indent(theme.fg("muted", `${SUB} launched`))];
   const lines = [];
@@ -490,40 +498,20 @@ function refold(folds, mutate) {
 // Appending an entry is what draws its line, so visible non-activity entries
 // carry their own boundary. A successful child/task completion instead appends
 // one activity fact and can extend the same chronological group as tool rows.
-//
-// Custom-entry renderers must decide once whether an entry has a component. If
-// a completion lands behind a pending tool, that tool's later failure could
-// otherwise turn a hidden completion into a standalone row. Preserve the old
-// boundary at that unresolved event-order edge; once the pending call settles,
-// later successes can form the next group without ever dropping the completion.
-const tailHasPending = (folds, end) => {
-  for (let i = end - 1; i >= 0; i--) {
-    const fact = folds.timeline[i];
-    if (fact.kind === "boundary" || fact.outcome === "failed") return false;
-    if (fact.outcome === "pending") return true;
-  }
-  return false;
-};
-
 // A successful completion's fact at `index`, shared with the fleet peek's
 // replay of a child's own entries, which keep the seq the child gave them.
 export function addCompletion(folds, type, data, index = folds.timeline.length) {
   data.seq ??= nextSeq(folds);
-  const length = folds.timeline.length;
-  if (tailHasPending(folds, index)) closeFolds(folds, index);
   const done = DONE[type];
   refold(folds, () => {
-    addFact(folds, { kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) }, index + folds.timeline.length - length);
+    addFact(folds, { kind: "activity", source: "completion", outcome: "success", id: data.seq, key: done.key, data: done.line(data) }, index);
     folds.revision += 1;
   });
 }
 
 // While a reply streams, pi mounts an entry above the reply rather than below
 // it, so the entry's fact or boundary goes in before the reply's boundary to
-// keep fold order equal to screen order. A spliced completion only ever ends
-// the run before that boundary, so it never displaces the group's first entry,
-// which alone owns a component (`doneEntryRenderer`): pi asks an entry for one
-// once, at mount, and never again.
+// keep fold order equal to screen order.
 export function appendVisible(pi, type, data, folds = defaultFolds) {
   const done = data.status === "completed" && DONE[type];
   const streaming = () => (folds.streamBoundary ? folds.timeline.indexOf(folds.streamBoundary) : -1);
@@ -705,32 +693,6 @@ function memberLine(folds, entry, theme) {
   return indent(`${theme.fg("muted", SUB)} ${title}${tail}`);
 }
 
-// Under ctrl+o, each tool result carries only the completions immediately
-// after it; a completion-led group carries only its leading completions.
-// Hidden custom entries cannot reappear, so these existing slots preserve order.
-// Expanded, each completion is its own full row with the one blank line pi
-// gives every tool row; a leading one sits on the handle as a tool row does.
-function completionMemberLines(group, theme, after, expanded = false) {
-  const lines = [];
-  const start = after === undefined ? 0 : group.entries.findIndex(entry => entry.id === after) + 1;
-  for (const entry of group.entries.slice(start)) {
-    if (entry.source !== "completion") break;
-    if (expanded) lines.push("", completionLine(entry.data, theme));
-    else lines.push(completionMemberLine(entry, theme));
-  }
-  return expanded && after === undefined ? lines.slice(1) : lines;
-}
-
-function withFollowingCompletions(body, folds, id, theme) {
-  const group = folds.toolsExpanded() && (foldGroup(folds, id) ?? liveGroup(folds, id));
-  const lines = group ? completionMemberLines(group, theme, id, true) : [];
-  if (!lines.length) return body;
-  const block = new Container();
-  block.addChild(body);
-  block.addChild(new Text(lines.join("\n"), 0, 0));
-  return block;
-}
-
 // One group row's lines at the three levels (see `rowRenderers`), shared by
 // tool rows, completion entries and the peek replay; `own` is what the row
 // shows under ctrl+o.
@@ -762,7 +724,7 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
       const id = rawContext.toolCallId;
       folds.invalidate.set(id, rawContext.invalidate);
       const context = status(rawContext);
-      const rowTitle = title(args, { inline: Boolean(rawContext.state?.inline || folds.facts.get(id)?.inline) });
+      const rowTitle = title(args, { workflow: rawContext.state?.workflow, inline: Boolean(rawContext.state?.inline || folds.facts.get(id)?.inline) });
       folds.titles.set(id, rowTitle);
       const line = `${glyph(theme, context)} ${theme.fg("toolTitle", rowTitle)}`;
       const group = foldGroup(folds, id) ?? liveGroup(folds, id);
@@ -793,9 +755,13 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
         rawContext.state.inline = true;
         queueMicrotask(() => rawContext.invalidate?.());
       }
+      if (name === "orchestrate" && rawContext.state && result?.details?.workflow && rawContext.state.workflow !== result.details.workflow) {
+        rawContext.state.workflow = result.details.workflow;
+        queueMicrotask(() => rawContext.invalidate?.());
+      }
       const context = status(rawContext);
       if (hidden(folds, context.toolCallId)) return new Text("", 0, 0);
-      return withFollowingCompletions(new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError, durationMs: context.durationMs }, theme).join("\n"), 0, 0), folds, context.toolCallId, theme);
+      return new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError, durationMs: context.durationMs, action: rawContext.args?.action }, theme).join("\n"), 0, 0);
     },
   };
 }
@@ -817,7 +783,19 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 // The background-task tool: its result is a status line and the task's output.
 export const taskTitle = args => (args.action === "list" ? "Listed background tasks" : args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`);
 export const taskRenderers = rowRenderers({ name: "plugin", title: taskTitle });
-export const orchestrateRenderers = rowRenderers({ name: "orchestrate", title: args => `Orchestrated ${shortTitle(args.title || "workflow")}` });
+export function orchestrateTitle(args, workflow) {
+  if (args.action) return `${{ status: "Checked workflow", result: "Read workflow result", stop: "Stop workflow" }[args.action] ?? `Workflow ${args.action}`} ${workflow?.title || args.id || ""}`.trimEnd();
+  const title = workflow?.title || args.title;
+  if (!workflow || workflow.status === "running") return `Started workflow${title ? ` ${shortTitle(title)}` : ""}`;
+  return `Orchestrated ${shortTitle(title || "workflow")}`;
+}
+export const orchestrateRenderers = rowRenderers({ name: "orchestrate", title: (args, { workflow }) => orchestrateTitle(args, workflow) });
+
+export function orchestrateCompletionLines(data, theme) {
+  const workflow = data.details.workflow;
+  return [`${glyph(theme, { isError: data.isError || workflow.status !== "completed" })} ${theme.fg("toolTitle", `Orchestrated ${shortTitle(workflow.title)}`)}`,
+    ...rowLines("orchestrate", data, { isError: data.isError || workflow.status !== "completed" }, theme)];
+}
 
 // Pending results carry the assembled draft; call arguments may contain only edits.
 export const planRenderers = {
@@ -874,7 +852,7 @@ export function bulletMarkdown(markdown, { messageType }, palette) {
     return `${PROMPT} ${mark(body)}`;
   }
   if (messageType !== "assistant") return markdown;
-  const body = markdown.trimStart();
+  const body = commandMarkdown(markdown.trimStart(), palette);
   if (!body) return markdown;
   const [first, ...rest] = body.split("\n");
   const heading = first.match(/^#{1,6}\s+(.*?)\s*$/);
@@ -890,18 +868,25 @@ export function bulletMarkdown(markdown, { messageType }, palette) {
 // after a thinking run between them, so with the run gone each text block that
 // follows another gets that blank line back (rule 8; docs/pi-coupling.md).
 const REASONING_HIDDEN = Symbol.for("pi-workflow:reasoning-hidden");
-export function installReasoningHide(AssistantMessage = AssistantMessageComponent) {
+export function installReasoningHide(AssistantMessage = AssistantMessageComponent, palette) {
   const prototype = AssistantMessage.prototype;
-  if (prototype.updateContent[REASONING_HIDDEN]) return;
+  if (prototype.updateContent[REASONING_HIDDEN]) {
+    if (palette) prototype.updateContent.palette = palette;
+    return;
+  }
   const original = prototype.updateContent;
   const hidden = function (message, ...rest) {
+    const markdownTheme = this.markdownTheme;
+    this.markdownTheme = commandMarkdownTheme(markdownTheme, typeof hidden.palette === "function" ? hidden.palette() : hidden.palette);
     const drawn = original.call(this, { ...message, content: message.content.filter(block => block.type !== "thinking") }, ...rest);
+    this.markdownTheme = markdownTheme;
     // By class name: pi-coding-agent may resolve its own pi-tui copy, so `instanceof` can miss.
     const text = child => child?.constructor.name === "Markdown";
     const children = this.contentContainer.children;
     for (let i = children.length - 1; i > 0; i--) if (text(children[i]) && text(children[i - 1])) children.splice(i, 0, new Spacer(1));
     return drawn;
   };
+  hidden.palette = palette;
   hidden[REASONING_HIDDEN] = true;
   prototype.updateContent = hidden;
 }
@@ -929,12 +914,8 @@ export const DONE = {
   "workflow-task": { key: "taskDone", line: data => ({ agent: `task ${data.id}`, task: data.command, status: data.status, durationMs: data.durationMs }) },
 };
 
-// A completion can own a mixed group when it is the first fact. Entry renderers
-// have no invalidate handle, so the component re-reads the shared timeline on
-// every paint and whole-TUI repaint wakes it when later activity joins. Under
-// ctrl+o it draws its leading completions as rows; later completions ride the
-// preceding tool's result, after its full output, in chronological order.
-// Residual: a branch lacking the group's first entry drops its later members; completions split by a text chunk stay ungrouped.
+// Every completion retains a component: pending tools can later fail and
+// expose it, or succeed and hand ownership to the group's first fact.
 class ActivityEntryComponent extends Text {
   constructor(folds, seq, mapped, theme) {
     super("", 0, 0);
@@ -952,17 +933,19 @@ class ActivityEntryComponent extends Text {
       state.expandedAt = toolsExpanded;
       state.open = toolsExpanded;
     }
-    const own = completionMemberLines(group, this.theme, undefined, true);
-    return groupLines(this.folds, group, { first: true, expanded: toolsExpanded, state, own }, this.theme);
+    const own = [completionLine(this.mapped, this.theme)];
+    return groupLines(this.folds, group, { first: group.entries[0].id === this.seq, expanded: toolsExpanded, state, own }, this.theme);
   }
   render(width) {
-    this.text = this.lines().join("\n");
+    const lines = this.lines();
+    if (!lines.length) return [];
+    this.text = lines.join("\n");
     return super.render(width);
   }
   handleMouse(event) {
     if (event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
     const group = doneGroup(this.folds, this.seq);
-    if (!group?.sealed || this.folds.toolsExpanded()) return undefined;
+    if (!group?.sealed || group.entries[0].id !== this.seq || this.folds.toolsExpanded()) return undefined;
     const state = view(this.folds, group);
     state.open = !state.open;
     this.folds.repaint();
@@ -970,19 +953,40 @@ class ActivityEntryComponent extends Text {
   }
 }
 
-// A resumed/foreign completion has no fact in this process and always renders
-// as a plain line. For live entries, only the group's first fact owns a
-// component; returning undefined for later completion members removes their
-// host spacer as well as their content.
+// A resumed/foreign completion has no fact and draws as a plain line.
 export function doneEntryRenderer(type, folds = defaultFolds) {
   const map = DONE[type].line;
   return (entry, _options, theme) => {
     const seq = entry.data.seq;
     if (seq == null || folds.facts.get(seq)?.source !== "completion") return new Text(completionLine(map(entry.data), theme), 0, 0);
-    const group = doneGroup(folds, seq);
-    if (group && group.entries[0].id !== seq) return undefined;
     return new ActivityEntryComponent(folds, seq, map(entry.data), theme);
   };
+}
+
+// Native custom entries unconditionally prepend a spacer. Only owned activity
+// hosts suppress spacer-only output after the native render, preserving its
+// mouse layout and following expansion/invalidate rebuilds without a second render.
+const ACTIVITY_ENTRIES = Symbol.for("pi-workflow:activity-entries");
+export function installActivityEntries(Mode = InteractiveMode) {
+  const prototype = Mode.prototype;
+  if (prototype.addCustomEntryToChat[ACTIVITY_ENTRIES]) return;
+  const original = prototype.addCustomEntryToChat;
+  const wrapped = function (entry, ...args) {
+    if (!Object.hasOwn(DONE, entry.customType)) return original.call(this, entry, ...args);
+    const before = new Set(this.chatContainer.children);
+    const result = original.call(this, entry, ...args);
+    const host = this.chatContainer.children.find(child => !before.has(child));
+    if (host) {
+      const render = host.render;
+      host.render = function (width) {
+        const lines = render.call(this, width);
+        return lines.length > 1 ? lines : [];
+      };
+    }
+    return result;
+  };
+  wrapped[ACTIVITY_ENTRIES] = true;
+  prototype.addCustomEntryToChat = wrapped;
 }
 
 const behind = (text, head) => (text.startsWith(head) ? text.slice(head.length).trimStart() : text);
@@ -1016,11 +1020,13 @@ export function noteLine(text, theme) {
   return `${theme.fg("accent", TURN_GLYPH)} ${theme.fg("muted", text)}`;
 }
 
+const runningCounts = running => [running.workflows && plural(running.workflows, "workflow"), liveWork(running)].filter(Boolean).join(", ");
+
 // `running` marks a turn the user's typing or an interrupt closed while work
 // was still live: its line names that work instead of claiming done. Entries
 // from before it existed carry none.
 export function formatTurn({ verb, ms, endedAt, aborted, running }, theme) {
-  const still = running && `${liveWork(running)} still running`;
+  const still = running && `${runningCounts(running)} still running`;
   if (aborted) return noteLine(`Interrupted after ${formatDuration(ms)}${still ? ` · ${still}` : ""}`, theme);
   const tail = still || `done ${new Date(endedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase()}`;
   return noteLine(`${verb} for ${formatDuration(ms)} · ${tail}`, theme);
@@ -1046,7 +1052,7 @@ export function createTurnClock(verbs = TURN_VERBS, pick = () => Math.floor(Math
     // clock still running. Counts can read zero while a wake is on its way.
     waitingLabel(running, now = Date.now()) {
       if (startedAt == null) return "";
-      const work = liveWork(running);
+      const work = runningCounts(running);
       return `${work ? `Waiting on ${work}` : verb[0]}… ${formatDuration(now - startedAt)}`;
     },
     stop(now = Date.now(), { aborted = false, running } = {}) {

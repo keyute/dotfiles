@@ -436,3 +436,34 @@ test("a grandchild launch reads launched", () => {
   );
   assert.ok(plain(render(state)).includes("  ↳ launched"));
 });
+
+
+test("pending tool completions join on success without a permanent boundary and remain exposed after failure", () => {
+  for (const isError of [false, true]) {
+    const state = feed(...readOk("a", "a"),
+      { type: "tool_execution_start", toolCallId: "p", toolName: "workspace_read", args: { path: "pending" } },
+      taskDone("done", "completed"), ...readOk("b", "b"),
+      { type: "tool_execution_end", toolCallId: "p", toolName: "workspace_read", isError, result: { content: [{ type: "text", text: "result" }] } }, says("Done"));
+    assert.deepEqual(foldGroup(state.folds, "b").counts, isError ? { taskDone: 1, read: 1 } : { read: 3, taskDone: 1 });
+    const expanded = plain(render(state, { expanded: true }));
+    assert.ok(expanded.indexOf("• Read pending") < expanded.indexOf("• task t1 finished · make · 12s"));
+    assert.ok(expanded.indexOf("• task t1 finished · make · 12s") < expanded.indexOf("• Read b"));
+  }
+});
+
+test("workflow launch, management snapshots and one final outcome retain structured workflow details in peek", () => {
+  const workflow = { id: "w1", title: "Audit", status: "running", startedAt: 1000 };
+  const running = { content: [{ type: "text", text: "Workflow w1 running" }], details: { workflow, runs: [] } };
+  const terminal = { content: [{ type: "text", text: "done" }], details: { workflow: { ...workflow, status: "completed", endedAt: 13000, durationMs: 12000 }, runs: [{ status: "completed" }] } };
+  const state = feed(
+    { type: "tool_execution_start", toolName: "orchestrate", toolCallId: "launch", args: { title: "Audit", script: "agent()" } },
+    { type: "tool_execution_end", toolName: "orchestrate", toolCallId: "launch", result: running },
+    { type: "tool_execution_start", toolName: "orchestrate", toolCallId: "status", args: { action: "status", id: "w1" } },
+    { type: "tool_execution_end", toolName: "orchestrate", toolCallId: "status", result: running },
+    { type: "entry_appended", entry: { type: "custom", customType: "workflow-orchestrate", data: terminal } });
+  const lines = plain(render(state));
+  assert.ok(lines.includes("• Started workflow Audit"));
+  assert.ok(lines.includes("  ↳ w1 · running"));
+  assert.equal(lines.filter(line => line.includes("Orchestrated")).length, 1);
+  assert.ok(lines.includes("  ↳ 1 agent · completed · 12s"));
+});

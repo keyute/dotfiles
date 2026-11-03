@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import net, { createConnection, createServer } from "node:net";
@@ -16,6 +16,17 @@ import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { readLines, sendLine } from "./lines.mjs";
 import { activeToolNames, taskNotifier } from "./index.mjs";
+
+// The upstream entry selects and caches its root/child registration at import.
+// This fixture exercises the real root plugin even when run by a child agent.
+const pluginEnv = Object.fromEntries(["PI_SUBAGENT_CHILD", "PI_SUBAGENTS_HERDR_BRIDGE"].map(key => [key, process.env[key]]));
+for (const key of Object.keys(pluginEnv)) delete process.env[key];
+after(() => {
+  for (const [key, value] of Object.entries(pluginEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+});
 
 // Unix sockets are unavailable in some sandboxes (EPERM on listen); probe once
 // up front so every test in this file can share one skip reason.
@@ -326,9 +337,11 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.has("tool_search"));
   assert.equal(tools.has("codemode"), false);
   assert.ok(tools.has("orchestrate"));
-  const orchestrateSchema = tools.get("orchestrate").parameters;
-  assert.deepEqual(Object.keys(orchestrateSchema.properties).sort(), ["args", "script", "title"]);
-  assert.equal(orchestrateSchema.additionalProperties, false);
+  const workflowCall = args => validateToolArguments(tools.get("orchestrate"), { type: "toolCall", id: "workflow-schema", name: "orchestrate", arguments: args });
+  for (const args of [{ script: "return args", title: "Fixture", args: { ok: true } }, { action: "status" }, { action: "status", id: "workflow" }, { action: "result", id: "workflow" }, { action: "stop", id: "workflow" }]) workflowCall(args);
+  for (const args of [{}, { action: "result" }, { action: "stop" }, { action: "steer", id: "workflow" }, { script: "return 1", model: "x" }, { action: "status", script: "return 1" }]) {
+    await assert.rejects(async () => tools.get("orchestrate").execute("workflow-invalid", workflowCall(args)));
+  }
   assert.ok(tools.has("submit_plan"));
   assert.equal(tools.get("submit_plan").executionMode, "sequential");
   assert.equal(tools.get("orchestrate").executionMode, "sequential");
@@ -458,7 +471,17 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
   ctx.hasUI = true;
   order.length = 0;
-  const run = () => tools.get("orchestrate").execute("o1", { script: 'return await agent("look", { agentType: "fixture-reader", label: "Look" })' }, new AbortController().signal, undefined, ctx);
+  const manage = (action, id) => tools.get("orchestrate").execute("manage", { action, ...(id === undefined ? {} : { id }) }, undefined, undefined, ctx);
+  const outcome = async launch => {
+    const { id } = (await launch).details.workflow;
+    for (let i = 0; i < 1000; i++) {
+      const result = await manage("result", id);
+      if (result.details.workflow.status !== "running") return result;
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.fail(`Workflow ${id} did not settle`);
+  };
+  const run = (signal = new AbortController().signal) => tools.get("orchestrate").execute("o1", { script: 'return await agent("look", { agentType: "fixture-reader", label: "Look" })' }, signal, undefined, ctx);
   // pi stops at the first `handled`, as runner.js's input dispatch does.
   const input = (text, source = "user") => { for (const handler of handlers.get("input")) { const result = handler({ source, text, streamingBehavior: "followUp" }, ctx); if (result?.action === "handled") return result; } return { action: "continue" }; };
   const deliver = text => { for (const handler of handlers.get("message_start")) handler({ message: { role: "user", content: [{ type: "text", text }] } }, ctx); };
@@ -493,13 +516,13 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   await assert.rejects(run(), /Ultracode is off/);
   deliver("ultracode: queued");
   const quick = () => tools.get("orchestrate").execute("o0", { script: "return 1" }, new AbortController().signal, undefined, ctx);
-  assert.match((await quick()).content[0].text, /^0 agents · completed/);
+  assert.match((await outcome(quick())).content[0].text, /^0 agents · completed/);
   // It stays on across a plain prompt and a tree move; a new session resets it.
   deliver("plain follow-up");
-  assert.match((await quick()).content[0].text, /^0 agents · completed/);
+  assert.match((await outcome(quick())).content[0].text, /^0 agents · completed/);
   assert.equal(statuses.get("workflow"), "plan auto ultracode");
   for (const handler of handlers.get("session_tree")) await handler({}, ctx);
-  assert.match((await quick()).content[0].text, /^0 agents · completed/);
+  assert.match((await outcome(quick())).content[0].text, /^0 agents · completed/);
   assert.equal(statuses.get("workflow"), "plan auto ultracode");
   ctx.hasUI = false;
   for (const handler of handlers.get("session_start")) await handler({ reason: "new" }, ctx);
@@ -517,7 +540,7 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.equal(statuses.get("workflow"), "plan auto ultracode");
   assert.deepEqual(entries.at(-1), { type: "workflow-note", data: { text: "Ultracode on for this session" } });
   assert.match(await section(), / Ultracode is on\.$/);
-  assert.match((await quick()).content[0].text, /^0 agents · completed/);
+  assert.match((await outcome(quick())).content[0].text, /^0 agents · completed/);
   await commands.get("ultracode").handler("", ctx);
   assert.equal(statuses.get("workflow"), "plan auto");
   assert.deepEqual(entries.at(-1), { type: "workflow-note", data: { text: "Ultracode off" } });
@@ -527,28 +550,53 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   const launched = () => new Promise(resolve => { onSpawn = () => setImmediate(resolve); });
   idle = false;
   let spawn = launched();
-  const first = run();
+  const rootAbort = new AbortController();
+  const first = await run(rootAbort.signal);
+  assert.equal(first.details.workflow.status, "running");
+  assert.ok(first.details.workflow.id);
   await spawn;
+  await assert.rejects(run(), /workflow already owns/i);
+  rootAbort.abort();
+  deliver("Narrow the root response");
+  assert.equal((await manage("status", first.details.workflow.id)).details.workflow.status, "running");
+  assert.equal((await manage("status")).details.workflows.filter(run => run.status === "running").length, 1);
+  await commands.get("ultracode").handler("", ctx);
+  assert.equal((await manage("result", first.details.workflow.id)).details.workflow.status, "running", "management remains available with ultracode off");
+  await commands.get("ultracode").handler("", ctx);
   assert.equal(spawned[0].agent, "fixture-reader");
   assert.equal(spawned[0].agentScope, "user");
   assert.equal(spawned[0].async, true);
   assert.equal("title" in spawned[0], false);
   events.emit("subagent:async-complete", { runId: "run-1", success: true, results: [{ status: "completed", output: "seen" }] });
-  const result = await first;
+  const result = await outcome(first);
   assert.match(result.content[0].text, /seen/);
   assert.equal(result.details.runs[0].runId, "run-1");
+  const workflowNotices = sent.filter(entry => entry.message.customType === "workflow-orchestrate" && entry.message.details.workflow.id === first.details.workflow.id);
+  assert.equal(workflowNotices.length, 1);
+  assert.equal(workflowNotices[0].options.triggerTurn, true);
+  assert.equal(entries.filter(entry => entry.type === "workflow-orchestrate" && entry.data.details.workflow.id === first.details.workflow.id).length, 1);
   // The workflow's child draws no completion line: the orchestrate row is its outcome.
   assert.equal(appended.includes("workflow-child"), false);
-  // index.mjs hands orchestrate's ownership to the Proxy: the notice pi-subagents
-  // sends after the completion is dropped while the root is busy; an unowned one is forwarded.
+  // Native delivery records completion bookkeeping before sending its notice.
+  // The root wiring must consume an owned notice, not an unowned one.
+  const reservations = globalThis[Symbol.for("pi.idle-wake.v1")] ??= new WeakMap();
+  const queuedWakes = globalThis[Symbol.for("pi-subagents.queued-completion-wakes.v2")] ??= new WeakMap();
+  const noticeState = { sessionId: ctx.sessionManager.getSessionId(), wakes: ["x"], unansweredCompletions: new Map([["x", {}]]) };
+  queuedWakes.set(ctx.sessionManager, noticeState);
+  t.after(() => { reservations.delete(ctx.sessionManager); queuedWakes.delete(ctx.sessionManager); });
   captured.sendMessage({ customType: "subagent-notify", content: "x", display: true, details: { runs: [{ runId: "run-1" }] } }, { triggerTurn: true });
-  assert.equal(sent.length, 0);
+  await Promise.resolve();
+  assert.deepEqual(noticeState.wakes, []);
+  assert.equal(noticeState.unansweredCompletions.size, 0);
+  assert.equal(sent.filter(entry => entry.message.customType === "subagent-notify").length, 0);
   captured.sendMessage({ customType: "subagent-notify", content: "x", display: true, details: { runs: [{ runId: "other" }] } }, { triggerTurn: true });
-  assert.equal(sent.length, 1);
-  assert.deepEqual(sent[0].message.details.runs, [{ runId: "other" }]);
+  const childNotices = sent.filter(entry => entry.message.customType === "subagent-notify");
+  assert.equal(childNotices.length, 1);
+  assert.deepEqual(childNotices[0].message.details.runs, [{ runId: "other" }]);
   // Through the root check and the live broker mode, still plan.
   onSpawn = () => setImmediate(() => events.emit("subagent:async-complete", { runId: `run-${spawned.length}`, success: true, results: [{ status: "completed", output: "ok", structuredOutput: { ok: true } }] }));
-  const planned = await tools.get("orchestrate").execute("o2", { script: 'let refused; try { await agent("x", { agentType: "fixture-writer" }) } catch (e) { refused = e.message } return [refused, await agent("x", { agentType: "fixture-reader", tier: "top" }), await agent("x", { agentType: "fixture-reader", schema: { type: "object" } })]' }, new AbortController().signal, undefined, ctx);
+  const plannedLaunch = await tools.get("orchestrate").execute("o2", { script: 'let refused; try { await agent("x", { agentType: "fixture-writer" }) } catch (e) { refused = e.message } return [refused, await agent("x", { agentType: "fixture-reader", tier: "top" }), await agent("x", { agentType: "fixture-reader", schema: { type: "object" } })]' }, new AbortController().signal, undefined, ctx);
+  const planned = await outcome(plannedLaunch);
   const [refused, top, typed] = JSON.parse(planned.content[0].text.split("\n\n")[1]);
   assert.match(refused, /plan mode/i);
   assert.deepEqual([top, typed], ["ok", { ok: true }]);
@@ -556,25 +604,27 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.equal(spawned[1].model, "openai-codex/gpt-5.6-sol");
   assert.deepEqual(spawned[2].outputSchema, { type: "object" });
   // A mode change aborts the live run, stops its child and only then switches the broker.
+  order.length = 0;
   spawn = launched();
-  const second = run().then(result => { order.push("settled"); return result; });
+  const second = await run();
   await spawn;
   await commands.get("execute").handler("", ctx);
-  const interrupted = await second;
+  const interrupted = await outcome(second);
   assert.equal(interrupted.isError, true);
   assert.match(interrupted.content[0].text, /Workflow interrupted/);
   assert.deepEqual(interrupted.details.runs.map(run => [run.runId, run.status]), [["run-4", "stopped"]]);
-  assert.deepEqual(order, ["stop:run-4", "settled", "mode:execute"]);
+  assert.deepEqual(order, ["stop:run-4", "mode:execute"]);
+  assert.equal((await manage("status")).details.workflows.filter(run => run.status === "running").length, 0, "the mode switch waits for workflow settlement");
   // Shutdown ends a live run and stops its child before the broker closes,
   // and puts back a level ultrathink raised.
   spawn = launched();
-  const third = run();
+  const third = await run();
   await spawn;
   deliver("ultrathink it");
   assert.equal(level, "max");
   await handlers.get("session_shutdown").find(handler => handler.name === "shutdown")();
   assert.equal(level, "low");
-  assert.match((await third).content[0].text, /Workflow interrupted/);
+  assert.match((await outcome(third)).content[0].text, /Workflow interrupted/);
   assert.ok(order.includes("stop:run-5") && order.indexOf("stop:run-5") < order.indexOf("close"), order.join(","));
 });
 
@@ -614,7 +664,7 @@ test("only a TUI root reports to herdr, re-anchoring first and suspending before
       sendMessage() {}, getFlag() { return false; }, getAllTools: () => [], getActiveTools: () => [], setActiveTools() {}, getMcpServers: () => [],
     };
     const policy = { mode: "plan", epoch: 1, approval: "auto" };
-    const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} };
+    const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} addCustomEntryToChat() {} };
     await installWorkflow(pi, configPath, "root", { startBroker: async () => ({ env: {}, policy, setMode: async next => { policy.mode = next; }, close }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
     const ui = { setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {} };
     const ctx = {

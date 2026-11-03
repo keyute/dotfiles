@@ -4,8 +4,9 @@ import {
   DONE, TURN_VERBS,
   addCompletion, addFold, bulletMarkdown, callTitle, closeFolds, closeLive, completionLine, createFolds, createTurnClock,
   foldGroup, foldKey, formatTurn, glyph, groupLines, isMcp, liveGroup, noteLine, pluginTitle,
-  rowLines, settleFold, shadedBlock, taskTitle,
+  orchestrateTitle, orchestrateCompletionLines, rowLines, settleFold, shadedBlock, taskTitle,
 } from "./rows.mjs";
+import { commandMarkdownTheme } from "./command-display.mjs";
 import { workerTools } from "./policy.mjs";
 
 // The fleet peek replays a background child's own events.jsonl through this
@@ -26,8 +27,10 @@ function capResult(result) {
   const content = (result.content ?? []).map(part => (part.type === "text" ? { ...part, text: capText(part.text ?? "") } : part));
   const capped = { ...result, content };
   if (result.details) {
-    const { diff, taskId, error, asyncId } = result.details;
+    const { diff, taskId, error, asyncId, workflow, runs } = result.details;
     const details = {};
+    if (workflow !== undefined) details.workflow = workflow;
+    if (runs !== undefined) details.runs = runs;
     if (diff !== undefined) details.diff = diff;
     if (taskId !== undefined) details.taskId = taskId;
     if (error !== undefined) details.error = error;
@@ -69,7 +72,8 @@ function tailText({ stopReason, errorMessage, content = [] }) {
 // The row's title and body kind, exactly as the main chat's tool rows
 // resolve them; shared between the fact stored for grouping (`folds.titles`)
 // and the row's own full rendering.
-function toolRowMeta(name, args) {
+function toolRowMeta(name, args, workflow) {
+  if (name === "orchestrate") return { title: orchestrateTitle(args, workflow), bodyName: "orchestrate" };
   const stripped = name.startsWith("workspace_") ? name.slice("workspace_".length) : null;
   if (stripped && WORKSPACE_TOOLS.has(stripped)) return { title: callTitle(stripped, args), bodyName: stripped };
   if (name === "workspace_task") return { title: taskTitle(args), bodyName: "plugin" };
@@ -144,6 +148,11 @@ function handleRecord(state, record) {
     case "entry_appended": {
       // The child's own completion lines (rows.mjs's `appendVisible`); its other entries draw nothing here.
       const { type, customType, data } = record.entry ?? {};
+      if (type === "custom" && customType === "workflow-orchestrate") {
+        state.rows.push({ kind: "workflow", data });
+        closeFolds(state.folds);
+        return;
+      }
       if (type !== "custom" || !Object.hasOwn(DONE, customType)) return;
       const mapped = DONE[customType].line(data);
       if (data.status === "completed") {
@@ -276,9 +285,9 @@ function toolRowLines(row, theme, { width, expanded } = {}) {
   return cached(row, `${width}|${expanded}|${row.version ?? 0}`, () => {
     // A backgrounded call answered inside its grace period reads as the foreground call it was (rows.mjs's `settleFold`).
     const inline = row.name === "workspace_bash" && !row.pending && row.args.run_in_background && !row.result?.details?.taskId;
-    const { title, bodyName } = toolRowMeta(row.name, inline ? { ...row.args, run_in_background: false } : row.args);
+    const { title, bodyName } = toolRowMeta(row.name, inline ? { ...row.args, run_in_background: false } : row.args, row.result?.details?.workflow);
     const titleLine = `${glyph(theme, { isPartial: row.pending, isError: row.isError })} ${theme.fg("toolTitle", title)}`;
-    return row.pending ? [titleLine] : [titleLine, ...rowLines(bodyName, row.result, { expanded, isError: row.isError }, theme)];
+    return row.pending ? [titleLine] : [titleLine, ...rowLines(bodyName, row.result, { expanded, isError: row.isError, action: row.args.action }, theme)];
   });
 }
 
@@ -293,7 +302,9 @@ function renderRow(row, width, theme) {
   return cached(row, `${width}|${row.version ?? 0}`, () => {
     switch (row.kind) {
       case "assistant":
-        return new Markdown(bulletMarkdown(row.text, { messageType: "assistant" }), 0, 0, getMarkdownTheme()).render(width);
+        return new Markdown(bulletMarkdown(row.text, { messageType: "assistant" }, theme), 0, 0, commandMarkdownTheme(getMarkdownTheme(), theme)).render(width);
+      case "workflow":
+        return orchestrateCompletionLines(row.data, theme);
       case "user":
         return userRowLines(row, width, theme);
       case "note":

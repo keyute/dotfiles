@@ -41,6 +41,14 @@ If behavior seems changed, verify against the source and update its template in 
   "$TMPDIR/x.XXXXXX"` works while a bare `mktemp -d` (macOS ignores `TMPDIR`
   without a template) hits the denied `/var/folders`. Apple's `/bin/bash` 3.2
   puts here-documents in `/var/tmp`, writable for every role.
+- Read-oriented checks can still write artifacts: test runners, bundlers and config
+  loaders may create caches, generated files or temporary modules beside source.
+  Preserve inherited `TMPDIR`; use supported tool loaders and output-directory
+  options to put artifacts in scratch. Where supported, Vite's
+  `--configLoader runner` avoids the bundled config's `node_modules/.vite-temp`;
+  `cacheDir` or `TMPDIR` alone does not relocate that bundle. Diagnose the tool's
+  write path, not just the command's intent; do not widen policy or rewrite every
+  command as a blanket workaround.
 - `run_in_background: true` on `workspace_bash` holds the call 10 s: a command
   ending inside that is answered like a foreground call and never notifies.
   A longer one returns its task id; at exit the model hears the
