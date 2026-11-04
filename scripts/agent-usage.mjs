@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Subscription-usage metrics from both harnesses' session stores, which are
 // sandbox-denied: user-run outside it (`! node scripts/agent-usage.mjs --days 30`).
-// Prints tables and writes them all to a fresh /tmp/claude/agent-usage-*/usage.json:
+// Prints tables and writes them all to a fresh $TMPDIR/agent-usage-*/usage.json:
 // a fresh dir and exclusive create, because this unsandboxed run must not
-// follow a symlink a sandboxed agent planted in /tmp/claude.
+// follow a symlink a sandboxed agent planted in a shared temp directory.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -131,6 +131,8 @@ const piFiles = [
 ];
 const piCalls = new Map();
 const piDispatches = {}, piSkills = {};
+const piUnmetered = { web_search: 0 };
+const unmeteredSearchIds = new Set();
 for (const [file, origin] of piFiles) {
   let model;
   records(file).forEach((r, n) => {
@@ -138,10 +140,16 @@ for (const [file, origin] of piFiles) {
     if (!inWindow(r)) return;
     const m = r.message;
     const usage = r.usage ?? m?.usage;
+    const classifier = r.type === "custom" && r.customType === "workflow-classifier-usage";
+    const fetchCall = m?.role === "toolResult" && m.toolName === "web_fetch";
+    if (m?.role === "toolResult" && m.toolName === "web_search" && !usage) unmeteredSearchIds.add(r.id ?? `${file}:${n}`);
+    if (classifier && r.data.outcome !== "not_attempted") {
+      piCalls.set(`classifier:${r.id ?? `${file}:${n}`}`, { key: `${r.data.model}|root`, operation: `approval_${r.data.stage}`, usage: r.data.usage });
+    }
     // Compaction and branch summaries, and usage entries (e.g. cache warming), are model calls outside the message stream.
     const sideCall = ["compaction", "branch_summary", "usage"].includes(r.type);
-    if (((r.role ?? m?.role) === "assistant" || sideCall) && usage) {
-      piCalls.set(m?.responseId ?? (sideCall && r.id ? `${r.type}:${r.id}` : `${file}:${n}`), { key: `${r.model ?? m?.model ?? model}|${origin}`, usage });
+    if (((r.role ?? m?.role) === "assistant" || sideCall || fetchCall) && usage) {
+      piCalls.set(m?.responseId ?? ((sideCall || fetchCall) && r.id ? `${fetchCall ? "web_fetch" : r.type}:${r.id}` : `${file}:${n}`), { key: `${fetchCall ? "unknown-summary-model" : r.model ?? m?.model ?? model}|${origin}`, operation: fetchCall ? "web_fetch" : sideCall ? r.type : "assistant", usage });
     }
     if (origin !== "root") return;
     for (const c of Array.isArray(m?.content) ? m.content : []) {
@@ -150,11 +158,17 @@ for (const [file, origin] of piFiles) {
     }
   });
 }
-const pi = {};
-for (const { key, usage } of piCalls.values()) {
-  pi[key] ??= { calls: 0, cacheRead: 0, output: 0, cost: 0 };
-  pi[key].calls++; pi[key].cacheRead += usage.cacheRead ?? 0; pi[key].output += usage.output ?? 0;
-  pi[key].cost += typeof usage.cost === "number" ? usage.cost : usage.cost?.total ?? 0;
+piUnmetered.web_search = unmeteredSearchIds.size;
+const pi = {}, piOperations = {};
+for (const { key, operation, usage } of piCalls.values()) {
+  for (const [table, group] of [[pi, key], [piOperations, `${operation}|${key.slice(key.lastIndexOf("|") + 1)}`]]) {
+    table[group] ??= { calls: 0, unknown: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, cost: 0 };
+    const row = table[group];
+    row.calls++;
+    if (!usage) { row.unknown++; continue; }
+    for (const token of ["input", "cacheRead", "cacheWrite", "output"]) row[token] += usage[token] ?? 0;
+    row.cost += typeof usage.cost === "number" ? usage.cost : usage.cost?.total ?? 0;
+  }
 }
 
 const out = {
@@ -171,25 +185,29 @@ const out = {
   },
   pi: {
     modelOrigin: byDesc(pi, "cost"),
+    operationOrigin: byDesc(piOperations, "cost"),
+    unmeteredCalls: piUnmetered,
+    dollarBasis: "Catalog estimates, not subscription allowance or cash paid; unknown usage excluded",
     origins: byOrigin(pi, "cost"),
     dispatches: piDispatches,
     skills: piSkills,
   },
 };
-fs.mkdirSync("/tmp/claude", { recursive: true });
-const outFile = path.join(fs.mkdtempSync("/tmp/claude/agent-usage-"), "usage.json");
+const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agent-usage-")), "usage.json");
 fs.writeFileSync(outFile, JSON.stringify(out, null, 2), { flag: "wx" });
 
 const counts = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, { n }]));
 const show = (title, rows) => { console.log(`\n${title}, last ${days} days`); console.table(rows); };
 const round2 = (o, keys) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { ...v, ...Object.fromEntries(keys.map((x) => [x, Number(v[x].toFixed(2))])) }]));
-show("claude — cost (USD; M units if unpriced) by model|origin, share of that model", round2(out.claude.modelOrigin, ["cost"]));
+show("claude — catalog cost estimate (USD; M units if unpriced) by model|origin, share of that model", round2(out.claude.modelOrigin, ["cost"]));
 show("claude — subagent cost by role|model (USD or M units per dispatch)", round2(out.claude.roles, ["costPerDispatch"]));
 show("claude — workflow runs by run|model (USD or M units)", round2(out.claude.workflowRuns, ["cost"]));
 show("claude — dispatches", counts(claudeDispatches));
 show("claude — skills and slash commands", counts(claudeSkills));
-show("pi — by model|origin (cost USD)", Object.fromEntries(Object.entries(out.pi.modelOrigin).map(([k, v]) => [k, { ...v, cost: Number(v.cost.toFixed(2)) }])));
+show("pi — by model|origin (catalog USD estimate, not allowance/cash)", Object.fromEntries(Object.entries(out.pi.modelOrigin).map(([k, v]) => [k, { ...v, cost: Number(v.cost.toFixed(2)) }])));
 show("pi — cost USD by origin", Object.fromEntries(Object.entries(out.pi.origins).map(([k, v]) => [k, { ...v, cost: Number(v.cost.toFixed(2)) }])));
+show("pi — operation|origin (catalog USD estimates)", out.pi.operationOrigin);
+show("pi — unmetered calls (usage unavailable)", counts(piUnmetered));
 show("pi — dispatches", counts(piDispatches));
 show("pi — skills", counts(piSkills));
 console.log(`\nJSON: ${outFile}`);

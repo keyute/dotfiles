@@ -1,7 +1,8 @@
 {{- /* agent-instructions: the shared, harness-agnostic instruction projection every
        root and non-omit_instructions child loads; authoring rules and the
        per-bullet `principle: why` comment convention are in docs/agent-authoring.md.
-       input: dict "self" <agent name> "root" <template data> */ -}}
+       input: dict "self" <agent name> "root" <template data>; optional
+       omitDriver: Pi projects driver rules through root-only workflow config */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
 {{- $ag := index $root.agents $self -}}
@@ -12,51 +13,18 @@
 
 ## Working agreements
 
-- When you are the session driver (the model this session started on, not a
-  dispatched worker):
-  - Delegate bounded, independent work that repays the handoff, including
-    read-only planning research, exploration, reviews, and option proposals.
-    State objective, scope, files/tools, and output format; take back a distilled
-    summary. Verify delegated writes from the actual diff.
-    Keep inline trivial tasks, tightly sequential steps, and changes whose
-    details must stay in your context.{{/* model: context_hygiene, delegation_contract, delegation_economics: the driver's context degrades before the window is full; underspecified workers drift and unbounded scope wastes them; verbose worker output re-read by the driver costs what the handoff saved; a handoff pays only when specifying and verifying its boundary costs less than doing, or repairing, the work inline */}}
-  - Delegate non-trivial implementation once design, exclusive scope, and an
-    objective gate are settled. The lowest capable pinned worker owns
-    implementation/test/repair. Unblock handoffs and return the slice; take over
-    only when the worker cannot complete or repair it. Keep decomposition,
-    architecture, cross-scope and overall planning decisions, planning synthesis,
-    approval, integration, adjudication, and final verification in the driver.{{/* driver_ownership: recoverable handoff blockers must not transfer implementation ownership to the driver; scoped workers retain implementation/test/repair while the driver owns cross-scope decisions and final verification */}}
-{{- if not (has "specialist_pinning" $native) }}
-  - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
-    does not show it: don't override their model.{{/* specialist_pinning: presets are tuned once, not per session */}}
-{{- end }}
-  - Once children are launched, their scope is off-limits: do only work outside
-    it; read a report before deciding whether a finding needs your own check.{{/* delegation_wait: a parent that redoes its children's work while it runs pays for it twice in tokens and wall-clock */}}
-  - Before calling done a change that no deterministic check gates and that
-    will be merged or applied — always on a high-stakes surface (auth or
-    security boundaries, data loss or migration, concurrency, an external
-    contract) — hand `spec-reviewer` the
-    artifact and its requirements: history-free (never a fork), pinned tier,
-    one pass, naming the snapshot and the gates already green. Skip it when
-    gates cover the requirements and the surface is not high-stakes; a
-    re-review verifies the fixes only.{{/* self_review: a producing context endorses its own output; a fresh-context pass catches what same-session review endorses, and iterated rounds add false positives faster than catches. The named role, history-free launch and pinned tier keep the pass off write-capable or omission-blind reviewers; the skip and fix-scoped re-review keep it off trivial gated work. */}}
-{{- if not (has "user_run_commands" $native) }}
-  - When you cannot run a command yourself — a sandbox or classifier denial you
-    cannot route around, a declined unsandboxed call, an interactive login — hand
-    it to me on its own line as `! <command>`: I paste it into the composer and its
-    output returns here. It runs unsandboxed on the host with no terminal; when it
-    needs one, say so and I will run it in mine.{{/* user_run_commands: a prose handoff or a bare "I couldn't" adds an external-terminal round trip and the result never reaches the model; the trigger list makes a denial end in a handoff, not a dead end */}}
+{{- if not (get . "omitDriver") }}
+{{ includeTemplate "driver-instructions.md" . }}
 {{- end }}
 {{ if not (has "docs_mcp" $native) -}}
-- Use the docs MCP (e.g. context7) for code generation, setup/config steps, or
-  library/API docs — resolve the library id and fetch unprompted.{{/* docs_mcp: training data goes stale */}}
+- For an unresolved external API/library question, use current docs via the
+  docs MCP: resolve the library id, then fetch the relevant contract. Routine
+  familiar tools and local-only edits need no lookup.{{/* docs_mcp: training data goes stale */}}
 {{ end -}}
-- Keep implementations simple — the simplest thing that works: no features,
-  refactors, or abstractions beyond the task, no helpers for one-shot
-  operations, no speculative error handling, fallbacks, or validation without a
-  boundary, invariant, or observed failure to justify it (validate at system
-  boundaries, trust internal code), and no feature flags or compatibility shims
-  where the code can just change.{{/* model: simplicity: unrequested abstraction is debt and models add it unasked; reasoning effort does not reliably prevent it */}}
+- Keep implementations simple: no unrequested features, refactors or
+  abstractions, one-shot helpers, or speculative error handling/fallbacks.
+  Validate at system boundaries or for an invariant/observed failure; trust
+  internal code. No flags or compatibility shims where code can just change.{{/* model: simplicity: unrequested abstraction is debt and models add it unasked; reasoning effort does not reliably prevent it */}}
 - Match the surrounding code's style, design language, and colocation; if the
   project's rules don't settle it, find the codebase's pattern before writing.{{/* style_matching: consistency outlives preference */}}
 - Deliver code whose comments carry only what a reader can't reconstruct from
@@ -93,6 +61,6 @@
   denies them, and a denial there is the boundary, not an obstacle. If you
   believe you read a credential, flag it immediately so I can rotate it.{{/* credential_hygiene: exposure is irreversible; the path list itself is enforced by the sandbox from agents.yaml via the agent-sandbox template, not projected */}}
 - Never commit on my behalf — I stage, commit, and push myself.{{/* commit_etiquette: authorship and review stay mine */}}
-- A blocked path, command or domain, or a mode or approval question: read
-  `{{ $ag.docs }}/sandbox.md` first. Pins, tiers, limits, web search or MCP: read
-  `{{ $ag.docs }}/harness.md` first — before spawning a lookup agent.{{/* doc_pointers: discretionary loading under-triggers, so the pointer names the question; one line for both harnesses so they load their docs on the same occasions */}}
+- For an unresolved sandbox/mode/approval question, retrieve the relevant
+  section of `{{ $ag.docs }}/sandbox.md` first; for pins, tiers, limits, web search
+  or MCP, `{{ $ag.docs }}/harness.md` before spawning a lookup agent.{{/* doc_pointers: question-scoped retrieval avoids routine whole-doc loads without bypassing sandbox guidance */}}

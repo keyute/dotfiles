@@ -25,6 +25,7 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
   (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin agents and
   teammates. `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL` (`{{ .subagent_tiers.claude.top }}`) runs every
   Workflow `agent()` on that pin, whatever its `model` or agentType (Explore included).
+  It is not cheap Explore: use direct pinned Explore for isolated bounded leaves.
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
 {{- $modelDeny := list }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ end }}

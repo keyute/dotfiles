@@ -159,7 +159,11 @@ test("renders Pi and Claude projections with isolated state", (t) => {
 
   const piInstructions = run("cat", target(".pi/agent/AGENTS.md"));
   const claudeInstructions = run("cat", target(".claude/CLAUDE.md"));
-  for (const instructions of [piInstructions, claudeInstructions]) {
+  assert.equal(typeof workflow.driverInstructions, "string");
+  assert.doesNotMatch(piInstructions, /When you are the session driver|spec-reviewer/);
+  assert.match(workflow.driverInstructions, /When you are the session driver/);
+  assert.ok(claudeInstructions.includes(workflow.driverInstructions.split("\n")[0]));
+  for (const instructions of [workflow.driverInstructions, claudeInstructions]) {
     assert.match(instructions, /The lowest capable pinned worker owns\s+implementation\/test\/repair/);
     assert.match(instructions, /Unblock handoffs and return the slice; take over\s+only when the worker cannot complete or repair it/);
     assert.doesNotMatch(instructions, /Finish a failed worker's piece yourself rather than promoting it/);
@@ -180,7 +184,7 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.match(piSandboxDoc, /`cacheDir` or `TMPDIR` alone does not relocate that bundle/);
   assert.doesNotMatch(readSource("AGENTS.md"), /TMPDIR=\/tmp\/claude\/x/);
   for (const [name, text, max] of [
-    [".pi/agent/AGENTS.md", piInstructions, PROJECTION_MAX_BYTES],
+    [".pi/agent/AGENTS.md + driver", piInstructions + workflow.driverInstructions, PROJECTION_MAX_BYTES],
     [".claude/CLAUDE.md", claudeInstructions, PROJECTION_MAX_BYTES],
     [".pi/agent/docs/harness.md", piHarness, 5607],
     [".claude/docs/harness.md", claudeHarness, ON_DEMAND_DOC_MAX_BYTES],
@@ -194,6 +198,12 @@ test("renders Pi and Claude projections with isolated state", (t) => {
     const bytes = Buffer.byteLength(text);
     assert.ok(bytes <= max, `${name} is ${bytes} bytes (max ${max}): cut, do not raise the budget`);
   }
+  // Owned static first-prompt components only, not vendor prompt/tool schemas.
+  // Baseline: 5044 global + 3886 repo + 2980 subagent + 2318 orchestrate.
+  const ownedPiBytes = [piInstructions, workflow.driverInstructions, readSource("AGENTS.md"), description, orchestrateDescription]
+    .reduce((sum, text) => sum + Buffer.byteLength(text), 0);
+  assert.ok(Buffer.byteLength(piInstructions + workflow.driverInstructions) < 5044, "moving driver text is not a reduction");
+  assert.ok(ownedPiBytes < 14228, `owned Pi aggregate ${ownedPiBytes} must shrink from 14228`);
   assert.ok(claudeHarness.includes(data.subagent_tiers.claude.top));
   // family names age with the pins; the pin id (or its tier) is the one spelling
   const nouns = familyNouns(data);
@@ -270,6 +280,13 @@ test("ship-check shares a selection-aware native approval flow across harnesses"
   assert.match(description, /not automatic implementation completion, generic review or routine verification/);
   assert.match(description, /full-branch pre-ship review and approved fixes/);
   assert.doesNotMatch(pi, /^disable-model-invocation:/m);
+  assert.match(pi, /every input ID has exactly one disposition/);
+  assert.match(pi, /kept, merged-to ID, refuted/);
+  assert.match(pi, /Before synthesis, whether using workflow\s+scripts or direct reviewer dispatch, mechanically assert that every input ID has exactly one disposition/);
+  assert.match(pi, /refuted with evidence, or deferred with reason; validate\s+merge targets/);
+  assert.match(pi, /existing workflow maps\/arrays or a bounded scratch check for\s+direct reviewer dispatch, not a new persistent tool/);
+  assert.match(pi, /Subsequent review covers fixes and affected dependencies/);
+  assert.match(pi, /Reuse completed maps/);
   assert.match(pi, /no survivors[^]*stop without a plan/);
   assert.match(pi, /explicit review-only request[^]*without seeking execution approval/);
   assert.match(pi, /in plan\s+mode, proactively submit[^]*native plan approval flow/);
@@ -484,10 +501,10 @@ test("docs/decisions.md has a row for every tier pin, driver, classifier and sea
 test("every native_coverage key gates a line of the shared projection", (t) => {
   const { data: load } = fixture(t);
   const data = load();
-  const instructions = readSource(".chezmoitemplates/agent-instructions.md");
+  const instructions = readSource(".chezmoitemplates/agent-instructions.md") + readSource(".chezmoitemplates/driver-instructions.md");
   for (const [h, agent] of Object.entries(data.agents)) {
     for (const key of agent.native_coverage ?? []) {
-      assert.ok(instructions.includes(`has "${key}" $native`), `agents.${h}.native_coverage ${key}: no line in agent-instructions.md checks it`);
+      assert.ok(instructions.includes(`has "${key}" $native`), `agents.${h}.native_coverage ${key}: no shared projection line checks it`);
     }
   }
 });
@@ -591,4 +608,33 @@ test("the whole tree applies into an isolated destination", (t) => {
   configs.forEach(walk);
   assert.ok(bins.size > 1, "no node_modules/.bin command found in the rendered configs");
   for (const bin of bins) assert.doesNotThrow(() => accessSync(bin, constants.X_OK), `missing binary: ${bin}`);
+});
+
+// Trimmed rendered bodies: baseline fixture bytes, not frontmatter or inherited context.
+const ROLE_BODY_MAX_BYTES = {
+  Explore: 770, Plan: 695, "dep-researcher": 1182, "diff-reviewer": 2259,
+  "explore-deep": 907, "general-purpose": 371, implementer: 858,
+  "infra-reviewer": 2315, researcher: 1368, "spec-reviewer": 2615,
+};
+test("rendered role bodies and owned skill advertisements stay within baseline budgets", t => {
+  const { run, target, data: load } = fixture(t);
+  const data = load();
+  for (const harness of ["pi", "claude"]) {
+    for (const role of rolesFor(data, harness)) {
+      const prefix = harness === "pi" ? ".pi/agent" : ".claude";
+      const text = run("cat", target(`${prefix}/agents/${role}.md`));
+      const body = text.split(/\n---\n/).slice(1).join("\n---\n").trim();
+      const bytes = Buffer.byteLength(body);
+      assert.ok(bytes <= ROLE_BODY_MAX_BYTES[role], `${harness}/${role}: ${bytes} body bytes exceeds baseline`);
+    }
+  }
+  let advertisementBytes = 0;
+  for (const file of readdirSync(join(source, ".chezmoitemplates/skills")).filter(file => file.endsWith(".md"))) {
+    const name = file.slice(0, -3);
+    const text = run("cat", target(`.agents/skills/${name}/SKILL.md`));
+    const description = JSON.parse(text.match(/^description: (.+)$/m)[1]);
+    advertisementBytes += Buffer.byteLength(`${name}\n${description}\n`);
+  }
+  // Owned name/description fields only; native advertisement framing is not measured here.
+  assert.ok(advertisementBytes <= 600, `skill advertisements: ${advertisementBytes} exceeds baseline 600`);
 });

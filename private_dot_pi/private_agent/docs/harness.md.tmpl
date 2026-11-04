@@ -44,7 +44,7 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
   batch independent launches.
 - With ultracode on, use `orchestrate` for substantive multi-part work, even initially independent
   investigations to reconcile; keep trivial work inline, isolated bounded tasks on `subagent`.{{/* model: Flat fan-out hides the reconciliation dependency between initially independent investigations. */}}
-  Workflows: `agent()`/`parallel()`/`pipeline()`, schemas; non-frontier tiers.
+  Workflows: `agent()`/`parallel()`/`pipeline()`, schemas; small-tier leaves.
   Launch requires ultracode (a delivered prompt enables it until next session
   start; `/ultracode` toggles it); returns a background workflow id immediately.
   One active workflow only. Management works even with ultracode off:

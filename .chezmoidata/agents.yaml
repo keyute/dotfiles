@@ -98,14 +98,14 @@ subagents:
     readonly: true
     omit_instructions: true
     tools: "Read, Bash"
-    description: "Read-only code exploration scoped to a single symbol, file, or known area — locate a definition, find callers, trace one flow. Do NOT use for sweeps spanning multiple files or subsystems — dispatch explore-deep for those."
+    description: "Read-only bounded lookup or known-area flow trace, including directly related files. Use explore-deep for broad or cross-subsystem investigation."
   explore-deep:
     tier: top
     effort: medium
     readonly: true
     omit_instructions: true
     tools: "Read, Bash"
-    description: "Read-only exploration for a sweep spanning multiple files or subsystems, tracing a flow across module boundaries, or cross-file reasoning — any exploration broad enough you'd otherwise finish it by reading several files yourself."
+    description: "Read-only broad or cross-subsystem investigation; use Explore for bounded known-area traces, even across directly related files."
   infra-reviewer:
     tier: top
     effort: medium
@@ -164,7 +164,7 @@ subagents:
     # its body's read-the-instructions line is then its only route to them
     omit_instructions: true
     tools: "Read, Bash"
-    description: "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs."
+    description: "Read-only bounded planning research: relevant files, constraints, trade-offs and proposed steps. Returns options and open decisions; the driver owns planning decisions and synthesis."
 # explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
 subagent_tiers:
   claude:

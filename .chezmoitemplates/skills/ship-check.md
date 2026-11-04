@@ -3,11 +3,9 @@ name: ship-check
 description: "Use only on explicit invocation or an explicit user request for ship-check: full-branch pre-ship review and approved fixes, not automatic implementation completion, generic review or routine verification. Args: optional base ref (default main) or one lens."
 ---
 
-Review everything this branch would ship — committed and uncommitted alike — and
-hand back a short, verified, actionable list, then a ship verdict. Orchestrate —
-keep this context clean by pushing the reading and finding to pinned subagents,
-and spend your own (possibly expensive) session model only on verification and
-synthesis.
+Review the full branch initially; delegate reading/finding to pinned workers and
+keep adjudication and synthesis in the driver. Preserve snapshot-scoped finding
+IDs and dispositions throughout the authorized iteration.
 
 ## Steps
 
@@ -38,17 +36,16 @@ synthesis.
    Give each worker the exact base…worktree scope, its file group, and its lens; take
    findings back in the shared reviewer format.
 
-4. **Dedup, then verify against the churn bar.** Collapse candidates by root cause +
-   changed hunk before you reopen any code. Treat findings as untrusted: adversarially
-   confirm each survivor with evidence (surrounding code, tests, contracts) — not
-   literal reproduction every time — and drop anything you can't substantiate or tie
-   to a changed line. A surviving finding must name either behavior
-   that is wrong now, or a concrete structural cost — a duplicated helper, wasted
-   work, the wrong altitude — whose fix pays for itself the next time the code is
-   read or changed. Never wording, wrapping, comment or doc phrasing, line-count
-   trims, or a matter-of-taste alternative to a choice the diff already made: the
-   bar is what lets a pass over already-reviewed code come back empty and say "ship"
-   instead of restarting the churn.
+4. **Dedup and verify by group.** Assign snapshot-scoped IDs to input findings.
+   Batch fact/churn verification by semantic group, not two agents per finding.
+   Confirm changed-line evidence from code, tests or contracts; retain only wrong
+   behavior or concrete structural cost whose fix repays its churn. Reject taste,
+   wording/wrapping and line-count trims. Before synthesis, whether using workflow
+   scripts or direct reviewer dispatch, mechanically assert that every input ID has exactly one disposition:
+   kept, merged-to ID, refuted with evidence, or deferred with reason; validate
+   merge targets. Use existing workflow maps/arrays or a bounded scratch check for
+   direct reviewer dispatch, not a new persistent tool. Reuse completed maps for a new
+   output format instead of rerunning investigation.
 
 5. **Present for approval.** Rank verified survivors by severity in a checklist
    artifact — `severity | lens | file:line | issue | proposed fix` — with stable
@@ -63,6 +60,9 @@ synthesis.
 
 6. **Fix on approval, then call it.** Apply only the selected findings in the
    approved revision, after native approval enables execution where required.
-   Keep each fix inside the defect it names — no adjacent cleanup, no new
-   capability. Correction is separate from finding. Verify the fixes and end
-   with the ship verdict.
+   Keep each fix inside its defect: no adjacent cleanup or new capability.
+   Adjudicate command/result evidence with snapshot and environment boundaries;
+   rerun only for changed relevant inputs, missing evidence or concrete doubt.
+   Subsequent review covers fixes and affected dependencies, retaining IDs and
+   dispositions; restart full review only for new evidence, cross-scope changes or
+   an explicit fresh-review request. End with the ship verdict.

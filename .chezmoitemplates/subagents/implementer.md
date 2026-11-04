@@ -6,7 +6,7 @@ Expect from the dispatch: objective, owned files/scope, non-goals, acceptance
 criteria, and a verification command. If any is missing, stop and report what is
 missing rather than guessing.
 
-Read the current state of every file before editing it. Never revert changes you
+Read every file before editing it. Never revert changes you
 did not make, and never run formatters or generators that touch files outside
 your scope.
 
@@ -17,6 +17,6 @@ Return:
 
 **Changed**: each file with a one-line note on what changed.
 
-**Verification**: the command you ran and its result.
+**Verification**: command + result, verified snapshot and environment boundaries.
 
-**Assumptions** (or "none"): anything you had to interpret.
+**Assumptions**: concise, or "none".

@@ -11,36 +11,64 @@ const SYSTEM_PROMPT = "You review proposed coding-agent actions, not execute the
 // an agent repeatedly denied is likely working around the classifier.
 const DENIAL_LIMIT = 3;
 
-export function parseDecision(message) {
-  if (message.stopReason === "error" || message.stopReason === "aborted") return { decision: "ask" };
+function decodeDecision(message) {
+  if (message.stopReason === "error" || message.stopReason === "aborted") return { authorization: { decision: "ask" }, outcome: message.stopReason };
   try {
     const text = message.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
     // Small models fence their JSON despite the instruction not to.
     const result = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
     // The reason reaches the agent and derives from untrusted input: one bounded line.
     const reason = typeof result.reason === "string" ? result.reason.replace(/\s+/g, " ").trim().replace(/\.+$/, "").slice(0, 200) || undefined : undefined;
-    return { decision: ["allow", "deny", "ask"].includes(result.decision) ? result.decision : "ask", reason };
-  } catch { return { decision: "ask" }; }
+    const valid = ["allow", "deny", "ask"].includes(result.decision);
+    return { authorization: { decision: valid ? result.decision : "ask", reason }, outcome: valid ? result.decision : "malformed" };
+  } catch { return { authorization: { decision: "ask" }, outcome: "malformed" }; }
 }
 
-async function classify(ctx, config, stage, content) {
-  const model = ctx.modelRegistry.find(config.models.provider, stage.model);
-  if (!model || !ctx.modelRegistry.isUsingOAuth(model)) return { decision: "ask" };
+export function parseDecision(message) {
+  return decodeDecision(message).authorization;
+}
+
+// Persist only the numeric usage contract, never provider response extensions.
+const numericUsage = (usage, stopReason) => {
+  if (!usage) return null;
+  const values = Object.fromEntries(["input", "output", "cacheRead", "cacheWrite", "totalTokens"].filter(key => Number.isFinite(usage[key])).map(key => [key, usage[key]]));
+  const cost = Object.fromEntries(["input", "output", "cacheRead", "cacheWrite", "total"].filter(key => Number.isFinite(usage.cost?.[key])).map(key => [key, usage.cost[key]]));
+  // Failed SDK responses start with zero-filled usage, not reported usage.
+  if (["error", "aborted"].includes(stopReason) && ![...Object.values(values), ...Object.values(cost)].some(value => value !== 0)) return null;
+  if (Object.keys(cost).length) values.cost = cost;
+  return Object.keys(values).length ? values : null;
+};
+
+async function classify(ctx, config, name, content, record, sessionId, skipped = false) {
+  const stage = config.models[name === "filter" ? "classifierFilter" : "classifierJudge"];
+  const started = Date.now();
+  let usage = null, outcome = skipped ? "not_attempted" : "unavailable";
   try {
-    // The shared prompt_cache_key aligns routing, not guaranteed cache reuse:
-    // the judge changes reasoning effort. SSE avoids pi-ai's root WebSocket
-    // continuation, keyed by the same id, where another body drops the delta.
-    const sessionId = ctx.sessionManager?.getSessionId?.();
-    return parseDecision(await ctx.modelRegistry.complete(model, {
+    if (skipped) return { decision: "ask" };
+    const model = ctx.modelRegistry.find(config.models.provider, stage.model);
+    if (!model || !ctx.modelRegistry.isUsingOAuth(model)) return { decision: "ask" };
+    // SSE avoids the root WebSocket continuation; both stages retain the
+    // initiating session's cache-routing key and their existing effort.
+    const message = await ctx.modelRegistry.complete(model, {
       systemPrompt: SYSTEM_PROMPT,
       messages: [{ role: "user", content, timestamp: Date.now() }],
-    }, { reasoningEffort: stage.reasoningEffort, signal: AbortSignal.timeout(30_000), sessionId, transport: "sse" }));
-  } catch { return { decision: "ask" }; }
+    }, { reasoningEffort: stage.reasoningEffort, signal: AbortSignal.timeout(30_000), sessionId, transport: "sse" });
+    usage = numericUsage(message.usage, message.stopReason);
+    const decoded = decodeDecision(message);
+    outcome = decoded.outcome;
+    return decoded.authorization;
+  } catch (error) {
+    outcome = error?.name === "TimeoutError" ? "timeout" : error?.name === "AbortError" ? "aborted" : "error";
+    return { decision: "ask" };
+  } finally {
+    // Accounting is observational: failed persistence cannot alter the gate.
+    try { await record?.({ stage: name, provider: config.models.provider, model: stage.model, effort: stage.reasoningEffort, usage, durationMs: Date.now() - started, outcome }); } catch {}
+  }
 }
 
 // Returns true when approved, else the reason shown to the agent. denials is
 // the root's consecutive classifier-deny count, shared across the fleet.
-export async function reviewAction(ctx, config, task, request, denials) {
+export async function reviewAction(ctx, config, task, request, denials, record) {
   let decision = "ask";
   let reason;
   let overridden = false;
@@ -49,8 +77,10 @@ export async function reviewAction(ctx, config, task, request, denials) {
     const content = JSON.stringify({ task: task.slice(-TASK_CHARS), history, action });
     // Anthropic's classifier shape: a low-effort filter answers the common
     // allow and only a block pays for reasoning, on the same prompt.
-    ({ decision, reason } = await classify(ctx, config, config.models.classifierFilter, content));
-    if (decision !== "allow") ({ decision, reason } = await classify(ctx, config, config.models.classifierJudge, content));
+    const sessionId = ctx.sessionManager?.getSessionId?.();
+    ({ decision, reason } = await classify(ctx, config, "filter", content, record, sessionId));
+    if (decision !== "allow") ({ decision, reason } = await classify(ctx, config, "judge", content, record, sessionId));
+    else await classify(ctx, config, "judge", content, record, sessionId, true);
     if (decision === "allow") denials.count = 0;
     else if (decision === "deny" && ++denials.count > DENIAL_LIMIT && ctx.hasUI) { decision = "ask"; overridden = true; }
   }

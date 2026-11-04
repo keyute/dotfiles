@@ -84,6 +84,8 @@ const emptyUsage = () => ({ cost: 0, input: 0, output: 0, cacheRead: 0, cacheWri
 // Subagents come from pi-subagents' cost report (null when it gave none).
 export function sessionCost(entries, report) {
   const main = emptyUsage();
+  const approvals = { ...emptyUsage(), calls: 0, unknown: 0, notAttempted: 0 };
+  let unmeteredSearches = 0;
   const models = new Map();
   const byModel = (key, usage) => {
     if (!models.has(key)) models.set(key, emptyUsage());
@@ -91,7 +93,17 @@ export function sessionCost(entries, report) {
     addUsage(main, usage);
   };
   for (const entry of entries) {
+    if (entry.type === "custom" && entry.customType === "workflow-classifier-usage") {
+      const { usage, outcome } = entry.data;
+      if (outcome === "not_attempted") approvals.notAttempted++;
+      else {
+        approvals.calls++;
+        if (usage) addUsage(approvals, usage);
+        else approvals.unknown++;
+      }
+    }
     const message = entry.type === "message" ? entry.message : null;
+    if (message?.role === "toolResult" && message.toolName === "web_search" && !message.usage) unmeteredSearches++;
     if (message?.role === "assistant" && message.usage) byModel(modelLabel(message.responseModel ?? message.model) ?? "other", message.usage);
     else if (entry.type === "usage") byModel(modelLabel(entry.model) ?? "other", entry.usage);
     // Only web_fetch: subagent tool results carry child usage the cost report already counts.
@@ -102,7 +114,9 @@ export function sessionCost(entries, report) {
   for (const child of report?.children ?? []) agents.set(child.agent ?? "unknown", (agents.get(child.agent ?? "unknown") ?? 0) + 1);
   const unavailable = report?.unresolvedAsyncChildren ?? 0;
   return {
-    total: main.cost + (report?.childTotal.cost ?? 0),
+    total: main.cost + approvals.cost + (report?.childTotal.cost ?? 0),
+    approvals,
+    unmeteredSearches,
     main,
     models: models.size > 1 ? [...models].map(([model, usage]) => ({ model, ...usage })) : [],
     subagents: report && { cost: report.childTotal.cost, runs: report.children.length + unavailable, agents: [...agents], unavailable },
@@ -193,7 +207,7 @@ function contextLines({ model, window, used, estimated, parts }, theme, width) {
   ];
 }
 
-function costLines({ total, main, models, subagents }, theme, width) {
+function costLines({ total, main, models, subagents, approvals, unmeteredSearches }, theme, width) {
   const row = (label, cost, tail) => fit(`${PAD}${pad(label, 12)}${theme.fg("muted", `${formatMoney(cost).padStart(8)}${tail ? `   ${tail}` : ""}`)}`, width);
   const tokens = usage => `${tokenText(promptTokens(usage))} in${SEP}${tokenText(usage.output)} out`;
   const lines = [fit(head("Cost", formatMoney(total), theme), width), row("Main", main.cost, tokens(main))];
@@ -206,6 +220,9 @@ function costLines({ total, main, models, subagents }, theme, width) {
     const runs = `${subagents.runs} run${subagents.runs === 1 ? "" : "s"}${subagents.unavailable ? ` (${subagents.unavailable} unavailable)` : ""}`;
     lines.push(row("Subagents", subagents.cost, [runs, top(subagents.agents, String)].filter(Boolean).join(SEP)));
   }
+  if (approvals?.calls) lines.push(row("Approvals", approvals.cost, `${tokens(approvals)}${approvals.unknown ? `${SEP}${approvals.unknown} unknown` : ""}`));
+  if (unmeteredSearches) lines.push(fit(`${PAD}Search${SEP}${unmeteredSearches} unmetered calls (usage unavailable)`, width));
+  lines.push(fit(`${PAD}Dollars: catalog estimates, not plan allowance or cash`, width));
   return lines;
 }
 

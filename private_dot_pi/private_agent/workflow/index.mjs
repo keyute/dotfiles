@@ -124,6 +124,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const requestBroker = runtime.requestBroker ?? callPolicyBroker;
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   const isRoot = role === "root";
+  if (isRoot && (typeof config.driverInstructions !== "string" || !config.driverInstructions.trim())) throw new Error("Managed driver instructions are missing");
   const subagentDescription = isRoot ? readFileSync(join(sdk.getAgentDir(), "subagent-tool-description.md"), "utf8").trim() : undefined;
   if (isRoot && !subagentDescription) throw new Error("Managed subagent description is empty");
   const orchestrateDescription = isRoot ? readFileSync(join(sdk.getAgentDir(), "orchestrate-tool-description.md"), "utf8").trim() : undefined;
@@ -157,7 +158,14 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // child arriving after a later epoch, so root must refresh this on every bump.
   const publishEpoch = () => { process.env.PI_WORKFLOW_EPOCH = String(broker.policy.epoch); };
   if (isRoot) {
-    broker = await startBroker(config, process.cwd(), request => reviewAction(currentContext, config, userTask, request, denials));
+    broker = await startBroker(config, process.cwd(), request => {
+      const ctx = currentContext;
+      const sessionId = ctx.sessionManager.getSessionId();
+      return reviewAction(ctx, config, userTask, request, denials, data => {
+        if (shuttingDown || currentContext?.sessionManager.getSessionId() !== sessionId) return;
+        return styled.appendEntry("workflow-classifier-usage", data);
+      });
+    });
     env = broker.env;
     Object.assign(process.env, env);
     publishEpoch();
@@ -428,6 +436,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     // sections and context files are diffed against the transcript and
     // patched in one mid-conversation system message instead.
     const options = event.systemPromptOptions;
+    if (isRoot) options.sections.driver = config.driverInstructions;
+    else delete options.sections.driver;
     for (const { path, content } of extraDirs.values()) options.contextFiles.push({ path, content });
     options.sections.workflow = workflowPrompt({ mode: state.mode, readonly: state.readonly, isRoot, ultracode: orchestrate?.armed() ?? false });
     // pi lists skills only when `read` or `bash` is selected, and the workflow

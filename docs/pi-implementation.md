@@ -24,6 +24,29 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   Child role shims connect to the same live policy. Tools have `workspace_`
   names to prevent native builtins satisfying child allowlists when the policy
   extension fails.
+- Prompt assembly keeps shared/project policy in native context files. The
+  root requires nonempty `workflow.json.driverInstructions` and adds it only
+  through `before_agent_start`'s `sections.driver`; children delete that section,
+  including when inherited. This does not erase a fork's earlier transcript or
+  make forks automatically lean. Registered declaration budgets cover unchanged
+  SDK/owned tool text separately from static rendered policy; estimates use
+  characters / 4, not a vendor tokenizer.
+- Approval accounting uses only public root `pi.appendEntry` custom records,
+  outside model context. Each auto review records filter and judge metadata;
+  skipped judge stages are not attempted. Only stage/provider/model/effort,
+  numeric usage, duration and enum outcomes persist; no action, history, output,
+  reason or arbitrary provider metadata. Failed persistence cannot change the
+  verdict. A captured session ID and shutdown guard discard late results rather
+  than writing them to a replacement session; the public current-session append
+  API cannot persist such results back into a departed session. No shutdown wait
+  is added to an approval dialog. Revisit if Pi adds session-bound append.
+  `/usage` separates approvals from Main (which still includes summaries) and
+  workers. The offline report includes approval-stage and web-fetch operation
+  subtotals while retaining response/stream deduplication. Historical fetch
+  records have no answering model ID and are labelled unknown-summary-model,
+  never attributed to the driver's model. Plugin searches without usage are
+  unmetered, not zero-token requests. Dollars are catalog estimates, not plan
+  allowance or cash paid; absent usage is unknown.
 - Security claim is scoped: effects and subprocess execution are sandboxed;
   path probes, diff generation, and output temp files stay host-side.
 - pi-subagents retains its executor; the existing registration proxy owns

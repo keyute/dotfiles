@@ -15,7 +15,7 @@ import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { readLines, sendLine } from "./lines.mjs";
-import { activeToolNames, taskNotifier } from "./index.mjs";
+import { activeToolNames, taskNotifier, workflowPrompt } from "./index.mjs";
 
 // The upstream entry selects and caches its root/child registration at import.
 // This fixture exercises the real root plugin even when run by a child agent.
@@ -62,7 +62,7 @@ function fixture(t) {
   writeFileSync(role.agentPath, `---\nname: fixture-reader\ndescription: Fixture\nmodel: ${role.model}\nthinking: low\ntools: workspace_read\nextensions: ${role.extensionPath}\n---\nRead only.\n`);
   writeFileSync(writer.extensionPath, "export default function () {}\n");
   writeFileSync(writer.agentPath, `---\nname: fixture-writer\ndescription: Fixture\nmodel: ${writer.model}\nthinking: low\ntools: workspace_read\nextensions: ${writer.extensionPath}\n---\nWrite enabled.\n`);
-  const config = { version: 1, agentDir, models: { provider: "openai-codex", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {}, childLimit: 3, orchestrateConcurrency: 2 };
+  const config = { version: 1, driverInstructions: "Fixture driver policy.", agentDir, models: { provider: "openai-codex", tiers: { small: "gpt-5.6-luna", top: "gpt-5.6-sol", frontier: "gpt-6-astra" } }, filesystem: { denyRead: [], denyWrite: [], allowWrite: [] }, network: { allowedDomains: [] }, agents: { "fixture-reader": role, "fixture-writer": writer }, mcp: {}, childLimit: 3, orchestrateConcurrency: 2 };
   return { root, config };
 }
 
@@ -155,6 +155,9 @@ test("Subscription Responses payloads retain distinct workflow and project-conte
 test("missing or empty managed descriptions stop root installation before broker startup", async t => {
   const { config } = fixture(t);
   const configPath = join(config.agentDir, "workflow-policy.json");
+  writeFileSync(configPath, JSON.stringify({ ...config, driverInstructions: "" }));
+  const { installWorkflow: installMissing } = await import("./index.mjs");
+  await assert.rejects(installMissing({}, configPath), /driver instructions are missing/);
   writeFileSync(configPath, JSON.stringify(config));
   const descriptionPath = join(config.agentDir, "subagent-tool-description.md");
   const { installWorkflow } = await import("./index.mjs");
@@ -799,11 +802,14 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   const ceiling = () => resolveCurrentSubagentCapabilityCeiling(ctx.sessionManager.getSessionId());
   assert.deepEqual(ceiling()?.allowedAgents, ["fixture-reader"]);
   assert.equal(broker.policy.mode, "plan");
-  const promptEvent = { systemPromptOptions: { sections: {}, contextFiles: [], skills: [{ name: "fixture-skill", description: "Fixture", filePath: "/skills/fixture/SKILL.md" }] } };
+  const promptEvent = { systemPromptOptions: { sections: { shared: "Shared fixture policy" }, contextFiles: [{ path: "/project/AGENTS.md", content: "Project fixture policy" }], skills: [{ name: "fixture-skill", description: "Fixture", filePath: "/skills/fixture/SKILL.md" }] } };
   for (const handler of handlers.get("before_agent_start")) assert.equal(await handler(promptEvent, ctx), undefined);
+  assert.equal(promptEvent.systemPromptOptions.sections.driver, config.driverInstructions);
   assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
   assert.match(promptEvent.systemPromptOptions.sections.skills, /Use the workspace_read tool[^]*<name>fixture-skill<\/name>/);
   assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
+  assert.equal(promptEvent.systemPromptOptions.sections.shared, "Shared fixture policy");
+  assert.equal(promptEvent.systemPromptOptions.contextFiles[0].content, "Project fixture policy");
   // An idle triggerTurn starts a run without prompt(); pi prepares it with
   // before_agent_start and the wrapper guards the model itself.
   const session = Object.create(AgentSession.prototype);
@@ -861,6 +867,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
     },
     _preparePromptAndToolLoadout(options) {
       preparation.push("loadout");
+      assert.equal(options.sections.driver, config.driverInstructions);
       assert.match(options.sections.workflow, /Workflow mode: plan/);
       assert.match(options.sections.skills, /<name>fixture-skill<\/name>/);
     },
@@ -892,6 +899,15 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.deepEqual(ordinaryPrompts[0].map(message => ({ role: message.role, content: message.content })), [{ role: "user", content: [{ type: "text", text: "Ordinary subscription prompt" }] }]);
   assert.equal(ordinary._runSystemPromptOptions, undefined);
   ctx.model = { provider: "openai-codex", id: "gpt-5.6-sol" };
+  const toolChars = [...tools.values()].reduce((sum, tool) => sum + JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters, promptGuidelines: tool.promptGuidelines }).length, 0);
+  // These declarations are unchanged by the driver-section extraction.
+  // Includes pinned SDK tools and fixture managed descriptions. Production
+  // driver/description bodies are separately capped by the render fixture;
+  // plugin prompt content and the vendor base prompt are not measured here.
+  assert.ok(toolChars <= 11310, `registered declarations grew: ${toolChars} chars (~${Math.ceil(toolChars / 4)} tokens)`);
+  const snippets = [...tools.values()].reduce((sum, tool) => sum + (tool.promptSnippet?.length ?? 0), 0);
+  const runtimePromptChars = toolChars + snippets + workflowPrompt({ mode: "plan", readonly: true, isRoot: true, ultracode: true }).length;
+  assert.ok(runtimePromptChars <= 12629, `runtime prompt pieces grew: ${runtimePromptChars} chars`);
   assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "orchestrate", "submit_plan", "subagent", "web_search", "web_fetch"]);
   let orchestrateVerdict;
   for (const handler of handlers.get("tool_call")) orchestrateVerdict ??= await handler({ toolName: "orchestrate", input: { script: "return 1" } }, ctx);
@@ -913,10 +929,23 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   await review({ approval: "auto", tool: "bash", args: { command: "true" } });
   assert.match(classified, /User decision: Which complete direction should we take\? → Fast — keeps the exact note; Safe — raw custom: 1,3/);
   assert.doesNotMatch(classified, /typo'd/, "a refused command stays out of the classifier task");
+  assert.deepEqual(entries.filter(entry => entry.type === "workflow-classifier-usage").map(entry => entry.data.stage), ["filter", "judge"]);
+  const recordedBeforeSwitch = entries.length;
+  let finishClassify;
+  const complete = ctx.modelRegistry.complete;
+  ctx.modelRegistry.complete = () => new Promise(resolve => { finishClassify = resolve; });
+  const late = review({ approval: "auto", tool: "bash", args: { command: "true" } });
+  ctx.sessionManager.getSessionId = () => "replacement-root";
+  finishClassify({ content: [{ type: "text", text: '{"decision":"allow"}' }] });
+  assert.equal(await late, true, "accounting cannot change the verdict");
+  assert.equal(entries.length, recordedBeforeSwitch, "a late result never goes into the replacement session");
+  ctx.sessionManager.getSessionId = () => "headless-root";
+  ctx.modelRegistry.complete = complete;
+
   for (const event of [{ ...completed, isError: true }, { ...completed, result: { ...completed.result, isError: true } }, { ...completed, result: { details: { ...completed.result.details, error: "unavailable" } } }, { ...completed, result: { details: { ...completed.result.details, cancelled: true } } }, { ...completed, result: { details: { cancelled: false, answers: [] } } }]) {
     for (const handler of handlers.get("tool_execution_end") ?? []) handler(event, ctx);
   }
-  assert.equal(entries.length, 1);
+  assert.equal(entries.filter(entry => entry.type === "workflow-answers").length, 1);
   ctx.hasUI = true;
   ctx.ui.confirm = async () => true;
   const beforeExecute = activeTools.length;
@@ -1312,6 +1341,14 @@ test("the tool renderer resolver draws plugin-registered and unregistered MCP ca
   const childHandlers = new Map();
   await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); } }, configPath, "fixture-search", { requestBroker: async () => ({ mode: broker.policy.mode, readonly: true }) });
   t.after(async () => { for (const handler of childHandlers.get("session_shutdown")) await handler({ reason: "quit" }, {}); });
+  // A fork may inherit root sections; the child hook retracts only driver.
+  for (const inherited of [false, true]) {
+    const event = { systemPromptOptions: { sections: { shared: "Shared fixture policy", ...(inherited ? { driver: config.driverInstructions } : {}) }, contextFiles: [{ path: "/project/AGENTS.md", content: "Project fixture policy" }], skills: [] } };
+    for (const handler of childHandlers.get("before_agent_start")) await handler(event, {});
+    assert.equal(event.systemPromptOptions.sections.driver, undefined);
+    assert.equal(event.systemPromptOptions.sections.shared, "Shared fixture policy");
+    assert.equal(event.systemPromptOptions.contextFiles[0].content, "Project fixture policy");
+  }
   assert.equal(typeof resolve("web_search", () => assert.fail("web_search is not deferred")).renderCall, "function");
   assert.equal(resolve("subagent", () => native), native);
 });

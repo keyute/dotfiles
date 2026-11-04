@@ -179,6 +179,7 @@ test("the entry renders four π blocks at width 70", async () => {
     "    gpt-5.5      $1.50   10k in · 200 out",
     "    summaries  $0.0200   0 in · 0 out",
     "  Subagents      $1.15   4 runs (1 unavailable) · implementer 2 · res…",
+    "  Dollars: catalog estimates, not plan allowance or cash",
     "",
     "π Cache · 1/1 requests hit",
     "  Read                 9k   90.0%",
@@ -268,4 +269,19 @@ test("every line fits a narrow terminal, and the % column is the first to go", a
   const lines = usageLines({ at: 0, limits: null, context: full, cost: sessionCost([], report([])) }, plain, 70);
   assert.match(lines.find(line => line.includes("Messages")), /272k {2}100\.0%$/);
   assert.match(lines[2], /\(100\.0%\)$/);
+});
+
+
+test("approval usage is separate from Main, unknown is explicit, search is unmetered", () => {
+  const entries = [...fixture(), ...[usage(0.03, 10, 5), null].map((u, i) => ({ type: "custom", customType: "workflow-classifier-usage", id: `a${i}`, data: { stage: "filter", outcome: "allow", usage: u } })),
+    { type: "custom", customType: "workflow-classifier-usage", data: { stage: "judge", outcome: "not_attempted", usage: null } },
+    { type: "message", message: { role: "toolResult", toolName: "web_search" } }];
+  const cost = sessionCost(entries, null);
+  assert.equal(cost.main.cost, 1.52);
+  assert.equal(cost.total, 1.55);
+  assert.equal(cost.approvals.input, 10);
+  assert.equal(cost.approvals.unknown, 1);
+  assert.equal(cost.approvals.notAttempted, 1);
+  assert.equal(cost.unmeteredSearches, 1);
+  assert.ok(usageLines({ at: 0, limits: null, context: { used: 0, window: 100, parts: [] }, cost }, plain, 100).some(line => /Approvals.*10 in.*5 out.*1 unknown/.test(line)));
 });

@@ -9,6 +9,7 @@ import { DRAWN_ENTRIES, NOTICE_RENDERERS, QUIET_MESSAGES, controlNotice, mcpConf
 import { addFold, appendVisible, closeFolds, createFolds } from "./rows.mjs";
 import { runnerPath } from "./operations.mjs";
 import { SUBAGENT_SCHEMA } from "./children.mjs";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 test("the plugin API records every registered tool name and forwards everything else untouched", () => {
   const tools = new Map();
@@ -209,6 +210,24 @@ test("a plugin entry type pi-subagents draws ends the group above it", () => {
   assert.ok(appended.every(([receiver]) => receiver === pi), "the raw function is called on the raw API");
   assert.equal(appended.length, 6);
   assert.deepEqual([...DRAWN_ENTRIES], ["subagent_watchdog_warning", "subagent_supervisor_reply"]);
+});
+
+test("classifier usage metadata persists without a row boundary or model message", () => {
+  const manager = SessionManager.inMemory("/work");
+  manager.appendMessage({ role: "user", content: "Inspect the workspace", timestamp: 1 });
+  const messages = manager.buildSessionContext().messages;
+  const folds = createFolds();
+  addFold(folds, "read", "read");
+  const timeline = [...folds.timeline];
+  const pi = { on() {}, appendEntry: (type, data) => manager.appendCustomEntry(type, data) };
+  const styled = pluginApi(pi, {}, {}, undefined, undefined, undefined, undefined, undefined, undefined, folds);
+  const data = { version: 1, requestId: "review-1", stages: [] };
+  styled.appendEntry("workflow-classifier-usage", data);
+  assert.deepEqual(folds.timeline, timeline);
+  assert.deepEqual(manager.buildSessionContext().messages, messages);
+  const entry = manager.getBranch().at(-1);
+  assert.equal(entry.customType, "workflow-classifier-usage");
+  assert.deepEqual(entry.data, data);
 });
 
 test("a plugin entry that lands while a reply streams ends the group above the reply, where pi mounts it", () => {

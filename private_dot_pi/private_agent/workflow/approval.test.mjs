@@ -16,6 +16,27 @@ test("only structured classifier decisions are accepted", () => {
   assert.deepEqual(parseDecision({ stopReason: "error", content: [] }), { decision: "ask" });
 });
 
+test("classifier authorization and telemetry share one decode, including malformed asks", async () => {
+  for (const [text, stopReason, authorization, outcome] of [
+    ['{"decision":"ask","reason":"Needs\\n review."}', "stop", { decision: "ask", reason: "Needs review" }, "ask"],
+    ['```json\n{"decision":"ask"}\n```', "stop", { decision: "ask", reason: undefined }, "ask"],
+    ['```json\n{"decision":"deny","reason":"Unsafe."}\n```', "stop", { decision: "deny", reason: "Unsafe" }, "deny"],
+    ['{"decision":"invalid","reason":"Keep\\n this..."}', "stop", { decision: "ask", reason: "Keep this" }, "malformed"],
+    ['{"decision":', "stop", { decision: "ask" }, "malformed"],
+    ['{"decision":"allow","reason":"Ignored"}', "error", { decision: "ask" }, "error"],
+    ['not json', "aborted", { decision: "ask" }, "aborted"],
+  ]) {
+    assert.deepEqual(parseDecision({ ...said(text), stopReason }), authorization);
+    let reads = 0;
+    const records = [];
+    const ctx = { hasUI: false, modelRegistry: { find: () => ({}), isUsingOAuth: () => true, complete: async () => ({ stopReason, content: [{ type: "text", get text() { reads++; return text; } }] }) } };
+    const verdict = await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }, r => records.push(r));
+    assert.equal(verdict, authorization.decision === "deny" ? 'the classifier said "Unsafe"' : "it needs user approval and no UI is attached");
+    assert.deepEqual(records.map(r => r.outcome), [outcome, outcome]);
+    assert.equal(reads, ["error", "aborted"].includes(stopReason) ? 0 : 2);
+  }
+});
+
 test("the classifier's reason is one line of at most 200 characters, or absent", () => {
   assert.deepEqual(parseDecision(said('{"decision":"deny","reason":"It reads\\n  ~/.ssh keys."}')), { decision: "deny", reason: "It reads ~/.ssh keys" });
   assert.equal(parseDecision(said(JSON.stringify({ decision: "deny", reason: `a${" b".repeat(300)}` }))).reason.length, 200);
@@ -156,4 +177,59 @@ test("a view opened while the confirm waits on a closing one is closed too befor
   holdSlot(seen, "second", 5);
   assert.equal(await review, true);
   assert.deepEqual(seen, ["first", "second", "confirm"]);
+});
+
+
+test("classifier accounting is per-stage, numeric-only and never changes authorization", async () => {
+  for (const answer of ['{"decision":"allow"}', '{"decision":"deny"}', 'bad', new Error("secret")]) {
+    const records = [];
+    const ctx = { hasUI: false, modelRegistry: { find: () => ({}), isUsingOAuth: () => true, complete: async () => { if (answer instanceof Error) throw answer; return { ...said(answer), usage: { input: 12, output: 3, cacheRead: 4, cacheWrite: 0, secret: "secret", cost: { total: 0.1 } } }; } } };
+    const verdict = await reviewAction(ctx, config, "secret", { approval: "auto", args: { command: "secret" } }, { count: 0 }, data => records.push(data));
+    assert.deepEqual(records.map(r => r.stage), ["filter", "judge"]);
+    assert.equal(records[1].outcome, answer === '{"decision":"allow"}' ? "not_attempted" : answer instanceof Error ? "error" : answer === 'bad' ? "malformed" : "deny");
+    assert.equal(JSON.stringify(records).includes("secret"), false);
+    assert.equal(records[0].usage?.input ?? null, answer instanceof Error ? null : 12);
+    assert.ok(records.every(r => Number.isFinite(r.durationMs)));
+    assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }, () => { throw new Error("persistence failed"); }), verdict);
+  }
+});
+
+test("failed SDK zero placeholders are unknown, but successful zero and reported nonzero usage remain known", async () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  for (const stopReason of ["stop", "error", "aborted"]) {
+    for (const field of [null, "input", "output", "cacheRead", "cacheWrite", "totalTokens", "cost.total"]) {
+      const usage = structuredClone(zero);
+      if (field === "cost.total") usage.cost.total = 0.01;
+      else if (field) usage[field] = 1;
+      const records = [];
+      const ctx = { hasUI: false, modelRegistry: { find: () => ({}), isUsingOAuth: () => true, complete: async () => ({ ...said('{"decision":"ask"}'), stopReason, usage: { ...usage, secret: "private usage", cost: { ...usage.cost, secret: "private cost" } }, errorMessage: "private failure" }) } };
+      await reviewAction(ctx, config, "private task", { approval: "auto" }, { count: 0 }, r => records.push(r));
+      assert.equal(records.length, 2);
+      for (const record of records) assert.deepEqual(record.usage, stopReason !== "stop" && !field ? null : usage);
+      assert.equal(JSON.stringify(records).includes("private"), false);
+    }
+  }
+});
+
+test("unavailable and absent classifier usage remain unknown", async () => {
+  for (const available of [true, false]) {
+    const records = [];
+    const ctx = { hasUI: false, modelRegistry: { find: () => available && ({}), isUsingOAuth: () => true, complete: async () => said('{"decision":"ask"}') } };
+    await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }, r => records.push(r));
+    assert.equal(records.length, 2);
+    assert.ok(records.every(r => r.usage === null));
+    assert.ok(records.every(r => r.outcome === (available ? "ask" : "unavailable")));
+  }
+});
+
+
+test("classifier timeout and returned failures retain unknown usage without leaking errors", async () => {
+  for (const response of [new DOMException("private timeout", "TimeoutError"), { stopReason: "error", errorMessage: "private failure", content: [] }, { stopReason: "aborted", content: [] }]) {
+    const records = [];
+    const ctx = { hasUI: false, modelRegistry: { find: () => ({}), isUsingOAuth: () => true, complete: async () => { if (response instanceof Error) throw response; return response; } } };
+    assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }, r => records.push(r)), "it needs user approval and no UI is attached");
+    assert.equal(records.length, 2);
+    assert.ok(records.every(r => r.usage === null && r.outcome === (response instanceof Error ? "timeout" : response.stopReason)));
+    assert.equal(JSON.stringify(records).includes("private"), false);
+  }
 });

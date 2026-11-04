@@ -10,9 +10,9 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
 - A comment opens with `model:` when the line compensates a model default;
   an untagged line is an owner contract.
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`.
-  Every subagent loads the projection too (bar the `omit_instructions`
-  roles in agents.yaml), so driver-only rules sit under its one "session
-  driver" bullet and read as the driver's, never the reader's.
+  Non-omitted workers retain shared/project policy. Driver rules live once in
+  `driver-instructions.md`: Claude includes them in its projection; Pi loads
+  them through workflow.json `driverInstructions`, root-only.
 - Subagent and skill bodies render for every harness: keep harness-specific
   nouns — tool names, agent names, instruction filenames — out of them, and take
   what varies as a parameter.
@@ -28,9 +28,11 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   trigger that names a question ("read X before changing tiers"), never a
   routine step — delegating, reviewing, starting a task — or the doc loads
   into every session; discretionary loading under-triggers.
-- An on-demand doc loads whole at its trigger, so it carries only what that
-  trigger's question needs, each fact at its current state. Quirk
-  workarounds go there too, where they expire cheaply.
+- Retrieve relevant sections for unresolved questions, not whole owned docs
+  for routine familiar tool use. Implementing workers still read full vendor-
+  mandated harness docs/examples. Keep detailed evidence in workers; return
+  essential cited contracts and uncertainty. Use native context boundaries and
+  explicit output limits: cache hits or hidden UI do not evict context.
 - Implementation mechanics a harness editor needs go to
   `docs/pi-implementation.md`, not the deployed doc.
 - Occasional workflows → skills.
