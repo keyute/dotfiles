@@ -138,7 +138,7 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   for the outermost prompt, and its end carries that prompt's kind. Inline
   dialogs now stack; their `blocked` option affects terminal program status,
   not these events. A custom dialog is a view unless `openWait` mounts it
-  (plan approval, the questionnaire); herdr
+  (plan approval, the questionnaire); terminal status
   `blocked` and `Waiting for you…`, one footer flag, take only native prompts
   and waits, pairing the end with that flag. A dialog opened inside a view's span (the
   peek, `/plan show`) would go unreported, so views mount through `openView`
@@ -146,34 +146,11 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   and the broker confirm await it. A native prompt another extension opens
   over a view (pi-subagents' authority and spawn-budget confirms) has no such
   hook and goes unreported. Closing a view also prevents native dialog stacking
-  from restoring it after an answer. *Why:* opening a peek marked herdr blocked
+  from restoring it after an answer. *Why:* opening a peek marked terminal status blocked
   and swapped the working row's clock. *On red:* fall back to forwarding every
-  prompt; lost: a view marks herdr blocked and shows `Waiting for you…`. *Pin:*
+  prompt; lost: a view marks terminal status blocked and shows `Waiting for you…`. *Pin:*
   `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`,
   `approval.test.mjs`, `plan-approval.test.mjs`, `questionnaire.test.mjs`.
-- **herdr reporter** (`herdr.mjs`, `footer.mjs` `onActivity`): the root TUI
-  reports the footer's turn to herdr's socket as `pane.report_agent` and
-  `pane.report_agent_session` under source `herdr:pi`, agent `pi` — herdr's
-  own integration identity (its docs reserve the `herdr:` prefix), the only
-  pi source herdr gives full-lifecycle authority (screen state is ignored).
-  The protocol is copied from herdr's bundled pi extension v9: one JSON line
-  per connection, acked by the first reply byte, retried once (500 ms, then
-  1500 ms); seq seeded at `Date.now()*1000`, accepted only above the source's
-  last. Idle is held 250 ms so the gap before a follow-up run reports no done.
-  herdr's own extension is uninstalled
-  (`run_onchange_after_zz-herdr-integrations.sh.tmpl`) and not loaded (`~/.zshrc`
-  `pi`, `--no-extensions`). *Why:* rule 4 — herdr's extension went idle (done)
-  at every `agent_settled` while async children or shells still ran.
-  *Residual:* runs restored by `/resume` are live with no open turn, so idle;
-  a user-opened menu (`/approvals`) reports blocked, playing herdr's Request
-  sound; plan approval and the questionnaire report blocked with no title; if
-  both delivery attempts fail, the last state stays until the next change.
-  *Re-verify:* on a herdr upgrade — its embedded pi extension still speaks v9's
-  params, and a waiting row shows `working` in `herdr pane get`. *On red:*
-  reinstall herdr's pi integration and restore the zshrc `-e`; lost: working
-  across child waits, one done per turn. *Retire:* when herdr's pi integration
-  reports a turn that outlives `agent_settled`. *Pin:* `herdr.test.mjs`,
-  `footer.test.mjs`.
 - **Activity-entry visibility** (`rows.mjs` `installActivityEntries`): wraps
   the host `InteractiveMode.addCustomEntryToChat`, retaining every owned
   completion's native host. Its render checks the current `customComponent`

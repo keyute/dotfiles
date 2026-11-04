@@ -5,9 +5,10 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { buildSegments, formatReset, installFooter, paintMode, paintSegment, parseCodexHeaders, parseCodexRateLimits, parseGitChanges, parseRateLimits, readRateLimits, windowLabel } from "./footer.mjs";
 import { createTurnClock, formatTurn } from "./rows.mjs";
 import { openWait } from "./dialog.mjs";
+import { installProgramStatus } from "./program-status.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
-function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = async () => null, mountFooter = false, orchestrate } = {}) {
+function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = async () => null, mountFooter = false, orchestrate, onActivity } = {}) {
   const path = process.env.PATH;
   process.env.PATH = ""; // git lookups fail fast instead of spawning
   const handlers = {};
@@ -42,10 +43,10 @@ function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = 
   const activity = [];
   const fleet = { attach() {}, render: () => [], activeCount: () => active, onChange: fn => changes.push(fn), changed: () => changes.forEach(fn => fn()) };
   const tasks = { live: () => live, onChange: fn => changes.push(fn), changed: () => changes.forEach(fn => fn()) };
-  const footer = installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity: next => activity.push(next), clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, settleMs, readLimits });
+  const footer = installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity: next => { activity.push(next); onActivity?.(next); }, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, settleMs, readLimits });
   process.env.PATH = path;
   const fire = (name, event = {}, eventCtx = ctx) => handlers[name]?.(event, eventCtx);
-  // What herdr would be sent, its repeats collapsed as the reporter drops them.
+  // Aggregate callback states, before the reporter maps completed work to done.
   const states = () => activity.map(a => (a.message ? `${a.state}:${a.message}` : a.state)).filter((s, i, all) => s !== all[i - 1]);
   return { fire, entries, messages, fleet, tasks, root, widget, visible, activity, states, working: footer.working, refreshUsage: footer.refreshUsage, attach: () => footer.attach(ctx), render: () => component.render(100)[0], renders: () => renders, done: () => { fire("session_shutdown"); component?.dispose(); } };
 }
@@ -830,7 +831,7 @@ test("a waiting row keeps its glyph through an invalidate, with no spinner", () 
   h.done();
 });
 
-test("herdr's state follows the turn: working through the waiting row and its wakes, idle once the work ends", t => {
+test("aggregate activity follows the turn: working through the waiting row and its wakes, idle once the work ends", t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
   let active = 1;
   const h = harness({ settleMs: 250 });
@@ -980,4 +981,43 @@ test("interrupts name workflows without counting their children twice", () => {
   assert.deepEqual(h.entries[0].data.running, { workflows: 2, agents: 1, shells: 0 });
   assert.match(formatTurn(h.entries[0].data, { fg: (_color, text) => text }), /2 workflows, 1 agent still running$/);
   h.done();
+});
+
+test("aggregate OSC waits for children, workflows and shells, while views never block", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+  const frames = [];
+  const reporter = installProgramStatus({ TUIOS_ENV: "1" }, { isTTY: true, write: frame => frames.push(frame) });
+  reporter.attach();
+  let workflows = 1;
+  const h = harness({ active: 1, live: 1, settleMs: 250, orchestrate: { live: () => workflows, onChange() {} }, onActivity: reporter.report });
+  t.after(() => { reporter.shutdown(); h.done(); });
+  const wire = state => `\x1b]7501;state=${state}:app=pi\x1b\\`;
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  t.mock.timers.tick(1000);
+  h.fire("ui_prompt_start", { kind: "custom" });
+  h.fire("ui_prompt_end", { kind: "custom" });
+  assert.deepEqual(frames, [wire("idle"), wire("working")]);
+  h.fire("ui_prompt_start", { kind: "confirm" });
+  assert.equal(frames.at(-1), wire("blocked"));
+  h.fire("ui_prompt_end");
+  h.fleet.activeCount = () => 0;
+  h.fleet.changed();
+  t.mock.timers.tick(1000);
+  h.tasks.live = () => 0;
+  h.tasks.changed();
+  t.mock.timers.tick(1000);
+  assert.equal(frames.at(-1), wire("working"), "the childless workflow still owns activity");
+  workflows = 0;
+  h.fleet.changed();
+  t.mock.timers.tick(250);
+  assert.equal(frames.at(-1), wire("working"), "the reporter's idle grace follows the footer's close grace");
+  t.mock.timers.tick(249);
+  assert.equal(frames.at(-1), wire("working"));
+  t.mock.timers.tick(1);
+  assert.equal(frames.at(-1), wire("done"));
+  h.fire("ui_prompt_start", { kind: "custom" });
+  h.fire("ui_prompt_end", { kind: "custom" });
+  assert.equal(frames.at(-1), wire("done"), "an idle view cannot erase completion");
+  assert.equal(frames.filter(frame => frame === wire("done")).length, 1);
 });

@@ -17,6 +17,10 @@ alias lsql='lazysql'
 # The CLI is the repo's lockfile-pinned copy: pi breaks extension APIs across
 # 0.x point releases, and the workflow extension must match it exactly.
 pi() {
+  # The owned workflow emitter reports turn state inside TuiOS instead of native Pi.
+  if [[ ${TUIOS_ENV:-} == 1 ]]; then
+    local -x PI_PROGRAM_STATUS=0
+  fi
   # No startup network activity (version check, catalog refresh).
   PI_OFFLINE=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions -e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts" "$@"
 }
@@ -39,7 +43,7 @@ _comp_options+=(globdots)
 # uv keeps each project's venv in-tree at .venv. Activate the nearest one on cd and
 # drop it on the way out. The walk stops at the nearest project root, not the nearest
 # .venv: a nested project without an env yet must not inherit its parent's Python.
-# Panes/multiplexers (herdr) can inherit VIRTUAL_ENV without the activate script's
+# Panes/multiplexers (TuiOS) can inherit VIRTUAL_ENV without the activate script's
 # functions, so tear down by hand when `deactivate` is missing.
 _venv_autoswitch() {
   emulate -L zsh
@@ -105,62 +109,10 @@ _sync_appearance() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _sync_appearance
 
-# Repo basenames repeat across orgs (backend, infrastructure, ...) and worktree
-# names across repos, so herdr's auto-labels collide in the sidebar. Feed the
-# $org/$repo tokens in ui.sidebar.spaces/agents.rows (config.toml); a shell hook
-# is herdr's documented reporter for cwd-derived tokens — no server-side event
-# fires on cd. Space rows read workspace metadata, Agent rows read pane
-# metadata: separate namespaces. Workspace org is reported for top-level repos
-# but cleared for worktree workspaces (the parent Space row already carries it)
-# and left untouched outside ~/Projects — sibling panes visiting $HOME must not
-# wipe workspace identity. Pane tokens have a single writer (this shell) and
-# mirror honestly: org wherever derivable, repo only in worktrees — elsewhere
-# the entry title is already the repo. No cache/--seq/--ttl: identical
-# re-reports are harmless patches and let a restarted server self-heal on the
-# next cd. Backgrounded so cd never blocks on the socket.
-_herdr_report_org() {
-  emulate -L zsh
-  # bg_nice's setpriority can fail loudly (and pointlessly) in restricted envs.
-  setopt local_options no_bg_nice
-  [[ ${HERDR_ENV:-} == 1 && -n ${HERDR_WORKSPACE_ID:-} && -n ${HERDR_PANE_ID:-} ]] || return 0
-  local root=${PWD:A} org="" repo="" wt=0
-  # Linked worktrees live under ~/.herdr; resolve to the main repo. Ordinary
-  # cds stay pure-zsh — no git spawn.
-  if [[ $root == $HOME/.herdr/worktrees/* ]]; then
-    wt=1
-    root=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-    root=${root%/.git}
-    repo=${root:t}
-  fi
-  case $root in
-    $HOME/Projects/work/*) org=${${root#$HOME/Projects/work/}%%/*} ;;
-    $HOME/Projects/*)      org=${${root#$HOME/Projects/}%%/*} ;;
-  esac
-  {
-    if (( wt )); then
-      herdr workspace report-metadata "$HERDR_WORKSPACE_ID" --source zsh-org --clear-token org
-    elif [[ -n $org ]]; then
-      herdr workspace report-metadata "$HERDR_WORKSPACE_ID" --source zsh-org --token org="$org"
-    fi
-    if [[ -n $org ]]; then
-      herdr pane report-metadata "$HERDR_PANE_ID" --source zsh-org --token org="$org"
-    else
-      herdr pane report-metadata "$HERDR_PANE_ID" --source zsh-org --clear-token org
-    fi
-    if [[ -n $repo ]]; then
-      herdr pane report-metadata "$HERDR_PANE_ID" --source zsh-org --token repo="$repo"
-    else
-      herdr pane report-metadata "$HERDR_PANE_ID" --source zsh-org --clear-token repo
-    fi
-  } &>/dev/null &!
-}
-add-zsh-hook chpwd _herdr_report_org
-_herdr_report_org
-
 eval "$(zoxide init zsh --cmd cd)"
 
 # Pin the emacs keymap: zsh picks viins whenever EDITOR/VISUAL contains "vi"
-# at zle init, so shells that inherit EDITOR=nvim from a parent env (herdr/tmux
+# at zle init, so shells that inherit EDITOR=nvim from a parent env (TuiOS/tmux
 # server panes) silently lose ^A/^E. Must precede the bindkey calls below —
 # switching keymaps resets main.
 bindkey -e

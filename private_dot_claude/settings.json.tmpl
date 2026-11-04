@@ -63,23 +63,6 @@
     {{- /* a subagent's subagent cannot spawn another (main is depth 0), matching pi's maxSubagentDepth */}}
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"
   },
-  {{- /* Mirrors herdr's canonical SessionStart entry (structural JSON equality)
-         so `herdr integration install claude` leaves this file untouched; the
-         script itself is herdr-generated and chezmoi-unmanaged. */}}
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "^(startup|resume|clear|compact|fork)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash '{{ .chezmoi.homeDir }}/.claude/hooks/herdr-agent-state.sh' session",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  },
   {{- /* no Remote Control bridge to claude.ai or the mobile app */}}
   "disableRemoteControl": true,
   {{- /* ccstatusline, and the model row for subagents */}}

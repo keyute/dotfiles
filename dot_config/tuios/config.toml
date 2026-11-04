@@ -1,0 +1,9 @@
+[appearance]
+# Match the other tools' dark Catppuccin flavor.
+theme = "catppuccin_mocha"
+# Match the other tools' light Catppuccin flavor.
+theme_light = "catppuccin_latte"
+
+[agents.checkpoints]
+# Leave repository checkpoints to the user rather than the multiplexer.
+enabled = false

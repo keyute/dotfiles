@@ -63,7 +63,7 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   because the owned fleet (rule 6) replaces them, and `intercomBridge` is off
   so children report only through their completion, as Claude Code's
   subagents do. `programStatus` is off so child runs report only through the
-  fleet and completion lines; pi's own OSC 7501 still reports the root.
+  fleet and completion lines. In TuiOS, owned OSC 7501 reports the footer's aggregate activity; elsewhere pi's native root reporting is unchanged.
   `artifactDir` is `temp`: a child report past 2,000 characters is cut to a
   pointer at its artifact file, and the default session directory sits under
   `~/.pi/agent/sessions`, which the root may not read (`project` would write
@@ -116,6 +116,18 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   their own boundary). Reversal trigger: pi-subagents gains a per-launch host
   policy hook, with equivalent cancellation and process-exit ownership → move
   to its sandboxed engine and delete `orchestrate.mjs`.
+- TuiOS status uses public pi-tui `formatProgramStatus` and terminal stdout,
+  only for the UI root in TUI mode with `TUIOS_ENV=1` and a TTY. The launcher
+  sets process-local `PI_PROGRAM_STATUS=0` before Pi starts there, so native
+  root-only reports cannot overwrite aggregate work; no session hook mutates it.
+  The footer's `onActivity` remains the sole activity authority. The reporter
+  dedupes callbacks, holds idle 250 ms, maps idle after reported work to explicit
+  done (including work across blocked waits), and leaves initial/menu-only idle
+  as idle. Attach resets timers and work; shutdown suspends before awaited
+  cleanup without writing a fake completion. No sockets, retries or child OSC
+  records. OSC-only status has no conversation identity or resume reference;
+  TuiOS native notifications differ from Herdr's sounds/toasts. Revisit when
+  native Pi program status accounts for the owned aggregate lifecycle.
 - MCP is pi's own, fed the managed servers. Accepted: a connect per server per session and per child; another extension's `pi.registerMcpServer()` adds an unmanaged server. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
 - `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt. Reversal trigger: a maintained plugin's fetch fits with a one-line seam → adopt it, delete `web_fetch` and its three packages.
 - Nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; the `timeoutMs` backstop with its `checkpointBeforeDeadlineMs` steer (`extensions/subagent/config.json`) replaces the 30-minute cutoff. Revisit when upstream delivers completion-triggered turns to headless children.

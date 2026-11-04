@@ -610,6 +610,58 @@ test("the whole tree applies into an isolated destination", (t) => {
   for (const bin of bins) assert.doesNotThrow(() => accessSync(bin, constants.X_OK), `missing binary: ${bin}`);
 });
 
+test("TuiOS config is minimal and retired Herdr integrations have no source owner", t => {
+  const { run, target } = fixture(t);
+  const config = run("cat", target(".config/tuios/config.toml"));
+  assert.deepEqual(config.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")), [
+    "[appearance]", 'theme = "catppuccin_mocha"', 'theme_light = "catppuccin_latte"',
+    "[agents.checkpoints]", "enabled = false",
+  ]);
+  const claude = JSON.parse(run("cat", target(".claude/settings.json")));
+  assert.equal(Object.hasOwn(claude, "hooks"), false);
+  assert.equal(claude.statusLine.command, join(source, "node_modules/.bin/ccstatusline"));
+  for (const path of [
+    "dot_config/herdr/config.toml", "dot_local/bin/executable_herdr-equalize",
+    "run_onchange_after_zz-herdr-integrations.sh.tmpl",
+  ]) assert.equal(existsSync(join(source, path)), false, path);
+  const brewfile = run("cat", target(".Brewfile"));
+  assert.match(brewfile, /^brew "tuios"$/m);
+  assert.doesNotMatch(brewfile, /^brew "herdr"$/m);
+  const zshrc = run("cat", target(".zshrc"));
+  assert.doesNotMatch(zshrc, /_herdr_report_org|HERDR_/);
+});
+
+test("managed Pi launch overrides native status only inside TuiOS and only for the call", t => {
+  const { run, target, data: load } = fixture(t);
+  const extension = join(load().chezmoi.homeDir, ".pi/agent/extensions/workflow.ts");
+  const zshrc = run("cat", target(".zshrc"));
+  const launcher = zshrc.match(/^pi\(\) \{\n[^]*?^\}/m)?.[0];
+  assert.ok(launcher, "rendered Pi function missing");
+  const cli = join(source, "node_modules/.bin/pi");
+  assert.ok(launcher.includes(`"${cli}" --no-builtin-tools --no-extensions -e "${extension}" "$@"`));
+  const stub = target("pi-stub");
+  writeFileSync(stub, '#!/bin/sh\nprintf "%s\\n" "${PI_PROGRAM_STATUS-unset}" "$PI_OFFLINE" "$@"\n');
+  chmodSync(stub, 0o700);
+  const script = target("launcher.zsh");
+  writeFileSync(script, `${launcher.replace(JSON.stringify(cli), JSON.stringify(stub))}\npi 'argument with spaces'\nprintf '%s\\n' "parent:\${PI_PROGRAM_STATUS-unset}"\n`);
+  for (const tuios of [undefined, "", "0", "1", "true"]) {
+    for (const status of [undefined, "user-value"]) {
+      const env = { ...process.env };
+      delete env.TUIOS_ENV;
+      delete env.PI_PROGRAM_STATUS;
+      if (tuios !== undefined) env.TUIOS_ENV = tuios;
+      if (status !== undefined) env.PI_PROGRAM_STATUS = status;
+      const result = spawnSync("zsh", ["-f", script], { encoding: "utf8", env });
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(result.stdout.trimEnd().split("\n"), [
+        tuios === "1" ? "0" : status ?? "unset", "1",
+        "--no-builtin-tools", "--no-extensions", "-e", extension,
+        "argument with spaces", `parent:${status ?? "unset"}`,
+      ]);
+    }
+  }
+});
+
 // Trimmed rendered bodies: baseline fixture bytes, not frontmatter or inherited context.
 const ROLE_BODY_MAX_BYTES = {
   Explore: 770, Plan: 695, "dep-researcher": 1182, "diff-reviewer": 2259,

@@ -11,7 +11,7 @@ import { hostEnvironment } from "./sandbox-runner.mjs";
 import { TASK_CHARS, reviewAction } from "./approval.mjs";
 import { SUBAGENT_SCHEMA, allowedChildAgents, checkChildLaunch } from "./children.mjs";
 import { installFooter } from "./footer.mjs";
-import { installHerdr } from "./herdr.mjs";
+import { installProgramStatus } from "./program-status.mjs";
 import { installHeader } from "./header.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createOrchestrate } from "./orchestrate.mjs";
@@ -306,7 +306,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   async function shutdown() {
-    surfaces?.herdr?.shutdown();
+    surfaces?.programStatus?.shutdown();
     // pi persists each level change and a resume restores the last one.
     if (isRoot) ultrathink.end();
     plans.generation++;
@@ -364,17 +364,16 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       pendingInput = installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
       if (!surfaces) {
         installFolding(pi, ctx);
-        // RPC reports hasUI too, with no pane for herdr to show. Its attach
-        // re-anchors the session before the footer reports into it.
-        const herdr = ctx.mode === "tui" ? installHerdr(pi) : undefined;
-        herdr?.attach(ctx, event.reason);
-        const footer = installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity: herdr?.report });
+        // RPC reports hasUI too, but must never write terminal status.
+        const programStatus = ctx.mode === "tui" ? installProgramStatus() : undefined;
+        programStatus?.attach(ctx, event.reason);
+        const footer = installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity: programStatus?.report });
         // `!` runs in zsh with the interactive config; workspace_bash stays on
         // bash -c without rc, which would otherwise load into every sandboxed call
         const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations({ shellPath: "/bin/zsh" }).exec, env: hostEnvironment, prefix: () => "source ~/.zshrc" });
-        surfaces = { footer, shell, herdr };
+        surfaces = { footer, shell, programStatus };
       } else {
-        surfaces.herdr?.attach(ctx, event.reason);
+        surfaces.programStatus?.attach(ctx, event.reason);
         surfaces.footer.attach(ctx);
       }
       // pi resets every extension surface when a session is invalidated

@@ -93,7 +93,7 @@ export async function reviewAction(ctx, config, task, request, denials, record) 
   // most 12k characters of it; a command it cannot show in full is not approvable.
   if (escalated && action.length > 12_000) return "the unsandboxed command is too long to show for approval";
   // The dialog can sit behind an unattended terminal; make the pending state
-  // visible. In the TUI the dialog and herdr's blocked flag carry it, and pi's
+  // visible. In the TUI the dialog and terminal's blocked status carry it, and pi's
   // warning would be a stale, unfolded line in the transcript.
   if (ctx.mode !== "tui") ctx.ui.notify?.(`Awaiting approval${escalated ? " (unsandboxed)" : ""}: ${action.slice(0, 80)}`, "warning");
   // pi's confirm takes the composer slot; whatever view holds it (the fleet

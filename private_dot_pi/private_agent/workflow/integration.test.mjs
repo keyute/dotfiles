@@ -645,29 +645,27 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.ok(order.includes("stop:run-5") && order.indexOf("stop:run-5") < order.indexOf("close"), order.join(","));
 });
 
-test("only a TUI root reports to herdr, re-anchoring first and suspending before awaited cleanup", async t => {
-  const { config, root } = fixture(t);
+test("only a TUI root reports OSC status, attaching first and suspending before awaited cleanup", async t => {
+  const { config } = fixture(t);
   config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
   const configPath = join(config.agentDir, "workflow.json");
   writeFileSync(configPath, JSON.stringify(config));
   const frames = [];
-  const socketPath = join(root, "h.sock");
-  t.mock.method(net, "createConnection", () => {
-    const socket = new EventEmitter();
-    socket.destroy = () => {};
-    socket.write = line => { frames.push(JSON.parse(line)); queueMicrotask(() => socket.emit("data", "{}\n")); };
-    queueMicrotask(() => socket.emit("connect"));
-    return socket;
+  const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+  Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+  t.after(() => { if (ttyDescriptor) Object.defineProperty(process.stdout, "isTTY", ttyDescriptor); else delete process.stdout.isTTY; });
+  const write = process.stdout.write.bind(process.stdout);
+  t.mock.method(process.stdout, "write", (frame, ...args) => {
+    if (typeof frame === "string" && frame.startsWith("\x1b]7501;")) { frames.push(frame); return true; }
+    return write(frame, ...args);
   });
-  syncBuiltinESMExports();
-  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
   const flush = () => new Promise(resolve => setImmediate(resolve));
-  const previous = { HERDR_ENV: process.env.HERDR_ENV, HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH, HERDR_PANE_ID: process.env.HERDR_PANE_ID };
-  Object.assign(process.env, { HERDR_ENV: "1", HERDR_SOCKET_PATH: socketPath, HERDR_PANE_ID: "p1" });
-  t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const previous = process.env.TUIOS_ENV;
+  process.env.TUIOS_ENV = "1";
+  t.after(() => { if (previous === undefined) delete process.env.TUIOS_ENV; else process.env.TUIOS_ENV = previous; });
   const { installWorkflow } = await import("./index.mjs");
-  // A fresh install per mode: herdr is wired only at the first UI session start.
-  const start = async (mode, close = async () => {}) => {
+  // A fresh install per mode: status is wired only at the first UI session start.
+  const start = async (mode, close = async () => {}, role = "root", hasUI = true) => {
     const handlers = new Map();
     const bus = new EventEmitter();
     const events = { on: (name, fn) => { bus.on(name, fn); return () => bus.off(name, fn); }, emit: (name, payload) => bus.emit(name, payload) };
@@ -682,11 +680,11 @@ test("only a TUI root reports to herdr, re-anchoring first and suspending before
     };
     const policy = { mode: "plan", epoch: 1, approval: "auto" };
     const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} addCustomEntryToChat() {} };
-    await installWorkflow(pi, configPath, "root", { startBroker: async () => ({ env: {}, policy, setMode: async next => { policy.mode = next; }, close }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
+    await installWorkflow(pi, configPath, role, { startBroker: async () => ({ env: {}, policy, setMode: async next => { policy.mode = next; }, close }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
     const ui = { setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {} };
     const ctx = {
-      cwd: process.cwd(), mode, hasUI: true, isIdle: () => true, isProjectTrusted: () => true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, getContextUsage: () => null,
-      sessionManager: { getSessionId: () => `herdr-${mode}`, getSessionFile: () => `/abs/${mode}.jsonl`, getBranch: () => [] },
+      cwd: process.cwd(), mode, hasUI, isIdle: () => true, isProjectTrusted: () => true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, getContextUsage: () => null,
+      sessionManager: { getSessionId: () => `status-${mode}`, getSessionFile: () => `/abs/${mode}.jsonl`, getBranch: () => [] },
       modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] }, ui,
     };
     const fire = async (name, event = {}) => { for (const handler of handlers.get(name) ?? []) await handler(event, ctx); };
@@ -694,25 +692,48 @@ test("only a TUI root reports to herdr, re-anchoring first and suspending before
     t.after(() => fire("session_shutdown", { reason: "quit" }));
     return fire;
   };
-  await start("rpc");
+  for (const mode of ["rpc", "json", "print"]) {
+    const fire = await start(mode);
+    await fire("agent_start");
+    await fire("agent_settled");
+  }
+  await start("tui", undefined, "root", false);
+  process.env.TUIOS_ENV = "0";
+  await start("tui");
+  process.env.TUIOS_ENV = "1";
+  Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
+  await start("tui");
+  Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+  // A child's policy handshake is broker I/O, never terminal status.
+  t.mock.method(net, "createConnection", () => {
+    const socket = new EventEmitter();
+    socket.destroy = () => {};
+    socket.end = () => {};
+    socket.write = () => queueMicrotask(() => socket.emit("data", '{"ok":true}\n'));
+    queueMicrotask(() => socket.emit("connect"));
+    return socket;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const child = await start("tui", undefined, "fixture-reader");
+  await child("agent_start");
+  await child("agent_settled");
   await flush();
-  assert.deepEqual(frames, [], "RPC reports hasUI with no pane to show");
+  assert.deepEqual(frames, [], "non-TUI, headless, non-TuiOS, non-TTY and child sessions never report");
   let releaseCleanup, cleanupStarted = false;
   const cleanup = new Promise(resolve => { releaseCleanup = resolve; });
   t.after(() => releaseCleanup());
   const fire = await start("tui", () => { cleanupStarted = true; return cleanup; });
   await flush();
-  assert.equal(frames[0].method, "pane.report_agent_session");
-  assert.equal(frames[0].params.session_start_source, "startup");
-  assert.equal(frames[0].params.agent_session_path, "/abs/tui.jsonl");
-  assert.ok(frames.findIndex(frame => frame.method === "pane.report_agent") > 0);
+  assert.deepEqual(frames, ["\x1b]7501;state=idle:app=pi\x1b\\"], "attach precedes the footer's initial idle report");
 
   t.mock.timers.enable({ apis: ["setTimeout"] });
   await fire("agent_start");
   await flush();
-  assert.equal(frames.at(-1).params.state, "working");
+  assert.equal(frames.at(-1), "\x1b]7501;state=working:app=pi\x1b\\");
   await fire("agent_settled");
   t.mock.timers.tick(100);
+  assert.equal(frames.length, 2, "settling has not prematurely reported done");
   const closing = fire("session_shutdown", { reason: "switch" });
   await flush();
   assert.ok(cleanupStarted, "shutdown is awaiting cleanup before later handlers run");
@@ -724,7 +745,7 @@ test("only a TUI root reports to herdr, re-anchoring first and suspending before
   await closing;
   await fire("session_start", { reason: "new" });
   await flush();
-  assert.deepEqual(frames.slice(before).map(frame => [frame.method, frame.params.session_start_source ?? frame.params.state]), [["pane.report_agent_session", "new"], ["pane.report_agent", "idle"]]);
+  assert.deepEqual(frames.slice(before), ["\x1b]7501;state=idle:app=pi\x1b\\"]);
 });
 
 test("headless root cleanup uses plugin RPC before its shutdown hook and still closes the broker on stop failure", async t => {

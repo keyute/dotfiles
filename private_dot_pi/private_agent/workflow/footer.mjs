@@ -279,13 +279,12 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
     else if (state.waiting) state.working?.snapshot(clock.waitingLabel(busy()));
     else state.working?.setMessage(clock.label());
   };
-  // The pane state herdr shows (herdr.mjs) is this footer's turn: blocked
+  // Terminal program status (program-status.mjs) follows this footer's turn: blocked
   // while a prompt waits on the user, working while the turn is open (its
   // clock runs through the waiting row and its wakes), pi compacts or a `!`
   // runs, else idle. It is reported after every turn handler and timer close;
   // the reporter drops repeats. A session that has shut down reports nothing
-  // until it is attached again, or /new would report done ahead of herdr's
-  // re-anchor.
+  // until it is attached again, so /new cannot complete the departed turn.
   const activity = () => state.prompt ? { state: "blocked", message: state.prompt.title }
     : { state: clock.running() || state.compacting || state.shell ? "working" : "idle" };
   const report = () => { if (!state.stopped) onActivity?.(activity()); };
