@@ -516,6 +516,7 @@ export function addCompletion(folds, type, data, index = folds.timeline.length) 
 // it, so the entry's fact or boundary goes in before the reply's boundary to
 // keep fold order equal to screen order.
 export function appendVisible(pi, type, data, folds = defaultFolds) {
+  if (data.display === false) return pi.appendEntry(type, data);
   const done = data.status === "completed" && DONE[type];
   const streaming = () => (folds.streamBoundary ? folds.timeline.indexOf(folds.streamBoundary) : -1);
   const end = () => (streaming() < 0 ? folds.timeline.length : streaming());

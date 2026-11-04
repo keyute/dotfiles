@@ -36,7 +36,7 @@ const scrub = text => String(text).replace(/[\p{Cc}]/gu, c => (c === "\n" ? c : 
 // graceMs sits above pi-subagents' result watcher's 60 s healthy scan
 // (result-watcher.js HEALTHY_SCAN_INTERVAL_MS), so a completion the native
 // notify missed still arrives before the exit is taken as the end.
-export function createOrchestrate({ pi, config, fleet, check, isReady, description, resultDir, rpc = rpcCall, graceMs = 120_000, generation = () => 0, onComplete = () => {} }) {
+export function createOrchestrate({ pi, config, fleet, check, isReady, description, resultDir, rpc = rpcCall, graceMs = 120_000, generation = () => 0, onComplete = () => {}, onUsage = () => {} }) {
   const owned = new Set();
   const running = new Set();
   const terminal = new Map();
@@ -44,10 +44,15 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
   let epoch = 0;
   const changed = () => { for (const fn of listeners) { try { fn(); } catch {} } };
   const current = run => run.generation === generation() && run.epoch === epoch;
+  const runDetails = run => run.records.map(({ runId, agent, label, task, asyncDir, status, phase, usage }) => ({ runId, agent, label, task, asyncDir, status, ...(phase && { phase }), ...(usage && { usage: structuredClone(usage) }) }));
+  const observeUsage = (record, payload) => {
+    const usage = payload.results?.[0]?.usage;
+    if (usage) record.usage = structuredClone(usage);
+  };
   const shaped = run => ({
     content: [{ type: "text", text: [`Workflow ${run.workflow.id} · ${run.workflow.title} · ${run.workflow.status}`,
       ...run.records.map(record => `${record.runId ?? "launching"} · ${record.agent} · ${record.label ?? record.task} · ${record.status}${record.phase ? ` · ${record.phase}` : ""}`)].join("\n") }],
-    details: { workflow: { ...run.workflow }, runs: run.records.map(({ runId, agent, label, task, asyncDir, status, phase }) => ({ runId, agent, label, task, asyncDir, status, ...(phase && { phase }) })) },
+    details: { workflow: { ...run.workflow }, runs: runDetails(run) },
   });
   let armed = false;
   const extensionInput = new Map();
@@ -93,6 +98,14 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       pi.events.on("subagent:async-started", payload => { if (!run.finished && payload?.id && run.aliases.has(payload.toolCallId)) { run.started.set(payload.id, payload); owned.add(payload.id); } }),
       pi.events.on("subagent:async-complete", payload => {
         const id = payload?.runId ?? payload?.id;
+        const record = id && run.records.find(record => record.runId === id);
+        if (record && current(run) && payload.results?.[0]?.usage) {
+          observeUsage(record, payload);
+          if (run.result) {
+            run.result.details.runs = runDetails(run);
+            try { onUsage(run.result); } catch {}
+          }
+        }
         if (run.open.has(id)) finish(id, { payload });
         else if (!run.finished && id) run.buffer.set(id, payload);
       }),
@@ -170,6 +183,8 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       if (!run.started.has(id)) owned.add(id);
       fleet.adopt(id, { agent: agentType, task, asyncDir });
       run.track(id, agentType);
+      const observed = run.done.get(id)?.payload;
+      if (observed) observeUsage(record, observed);
       if (refused !== undefined || signal.aborted) {
         await stop(run, [record]);
         throw new Error(refused !== undefined ? `${agentType} launch failed after its spawn: ${refused}` : "Workflow interrupted");
@@ -177,6 +192,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       // An observed end without a completion failed; an aborted wait stays
       // running so stop() still stops the child.
       const payload = await run.completion(id, signal).catch(error => { if (run.done.has(id)) { record.status = "failed"; run.group.changed(); } throw error; });
+      observeUsage(record, payload);
       const r = payload.results?.[0];
       const status = completionStatus(payload);
       Object.assign(record, { status, durationMs: payload.durationMs, tokens: (r?.usage?.input ?? 0) + (r?.usage?.output ?? 0) });
@@ -209,6 +225,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     const payload = run.buffer.get(id) ?? run.done.get(id)?.payload;
     Object.assign(record, { runId: id, asyncDir, status: payload ? completionStatus(payload) : run.terminal.has(id) ? "stopped" : "running" });
     if (payload) {
+      observeUsage(record, payload);
       const usage = payload.results?.[0]?.usage;
       Object.assign(record, { durationMs: payload.durationMs, tokens: (usage?.input ?? 0) + (usage?.output ?? 0) });
     }
@@ -274,7 +291,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
         await stop(run, run.records);
       } catch (error) { run.unverified.push(`unverified cleanup: ${error.message}`); }
     }
-    const details = { runs: run.records.map(({ runId, agent, label, task, asyncDir, status }) => ({ runId, agent, label, task, asyncDir, status })) };
+    const details = { runs: runDetails(run) };
     // Failures after the VM return, not throw: pi replaces a thrown tool
     // error's details with {}, and fleet restores these runs from details.runs.
     const failed = text => ({ content: [{ type: "text", text }], details, isError: true });

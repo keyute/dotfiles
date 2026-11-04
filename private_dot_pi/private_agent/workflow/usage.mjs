@@ -81,11 +81,13 @@ const emptyUsage = () => ({ cost: 0, input: 0, output: 0, cacheRead: 0, cacheWri
 
 // Main is pi's own assistant usage over every entry, not just the branch: money
 // spent on an abandoned branch was spent, as pi's own /session counts it.
-// Subagents come from pi-subagents' cost report (null when it gave none).
+// Native Subagents are branch/artifact-scoped; owned workflow snapshots cover
+// every recorded branch and are deduplicated by child runId.
 export function sessionCost(entries, report) {
   const main = emptyUsage();
   const approvals = { ...emptyUsage(), calls: 0, unknown: 0, notAttempted: 0 };
   let unmeteredSearches = 0;
+  const workflowRuns = new Map();
   const models = new Map();
   const byModel = (key, usage) => {
     if (!models.has(key)) models.set(key, emptyUsage());
@@ -103,6 +105,12 @@ export function sessionCost(entries, report) {
       }
     }
     const message = entry.type === "message" ? entry.message : null;
+    const details = entry.type === "custom" && entry.customType === "workflow-orchestrate" ? entry.data?.details
+      : entry.type === "custom_message" && entry.customType === "workflow-orchestrate" ? entry.details
+      : message?.role === "toolResult" && message.toolName === "orchestrate" ? message.details : null;
+    for (const run of details?.runs ?? []) {
+      if (run.runId && (run.usage || !workflowRuns.has(run.runId))) workflowRuns.set(run.runId, run);
+    }
     if (message?.role === "toolResult" && message.toolName === "web_search" && !message.usage) unmeteredSearches++;
     if (message?.role === "assistant" && message.usage) byModel(modelLabel(message.responseModel ?? message.model) ?? "other", message.usage);
     else if (entry.type === "usage") byModel(modelLabel(entry.model) ?? "other", entry.usage);
@@ -110,16 +118,28 @@ export function sessionCost(entries, report) {
     else if (message?.role === "toolResult" && message.toolName === "web_fetch" && message.usage) byModel("summaries", message.usage);
     else if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) byModel("summaries", entry.usage);
   }
+  for (const child of report?.children ?? []) {
+    const owned = workflowRuns.get(child.runId);
+    if (owned && !owned.usage) workflowRuns.set(child.runId, { ...owned, usage: child.usage });
+  }
+  const workflows = { ...emptyUsage(), runs: workflowRuns.size, unavailable: 0 };
+  for (const run of workflowRuns.values()) {
+    if (run.usage) addUsage(workflows, { ...run.usage, cost: { total: run.usage.cost } });
+    else workflows.unavailable++;
+  }
   const agents = new Map();
-  for (const child of report?.children ?? []) agents.set(child.agent ?? "unknown", (agents.get(child.agent ?? "unknown") ?? 0) + 1);
+  const children = (report?.children ?? []).filter(child => !workflowRuns.has(child.runId));
+  for (const child of children) agents.set(child.agent ?? "unknown", (agents.get(child.agent ?? "unknown") ?? 0) + 1);
   const unavailable = report?.unresolvedAsyncChildren ?? 0;
+  const childCost = children.reduce((sum, child) => sum + child.usage.cost, 0);
   return {
-    total: main.cost + approvals.cost + (report?.childTotal.cost ?? 0),
+    total: main.cost + approvals.cost + workflows.cost + childCost,
     approvals,
+    workflows,
     unmeteredSearches,
     main,
     models: models.size > 1 ? [...models].map(([model, usage]) => ({ model, ...usage })) : [],
-    subagents: report && { cost: report.childTotal.cost, runs: report.children.length + unavailable, agents: [...agents], unavailable },
+    subagents: report && { cost: childCost, runs: children.length + unavailable, agents: [...agents], unavailable },
   };
 }
 
@@ -127,7 +147,8 @@ export function sessionCost(entries, report) {
 // counts them. A break compares a request with its nearest such ancestor by
 // parentId — never across a compaction, a branch summary or a provider/model
 // change — and counts when the cache read falls over BREAK_FLOOR short of the
-// smaller prompt, so TTL expiry counts too. None count until its provider/model
+// smaller prompt. This is an estimated shortfall, not confirmed lost cache;
+// elapsed time never establishes a hit or miss. None count until its provider/model
 // has reported cache activity; entries are in append order, so that is time.
 export function cacheStats(entries) {
   const byId = new Map(entries.map(entry => [entry.id, entry]));
@@ -207,7 +228,7 @@ function contextLines({ model, window, used, estimated, parts }, theme, width) {
   ];
 }
 
-function costLines({ total, main, models, subagents, approvals, unmeteredSearches }, theme, width) {
+function costLines({ total, main, models, subagents, workflows, approvals, unmeteredSearches }, theme, width) {
   const row = (label, cost, tail) => fit(`${PAD}${pad(label, 12)}${theme.fg("muted", `${formatMoney(cost).padStart(8)}${tail ? `   ${tail}` : ""}`)}`, width);
   const tokens = usage => `${tokenText(promptTokens(usage))} in${SEP}${tokenText(usage.output)} out`;
   const lines = [fit(head("Cost", formatMoney(total), theme), width), row("Main", main.cost, tokens(main))];
@@ -220,6 +241,16 @@ function costLines({ total, main, models, subagents, approvals, unmeteredSearche
     const runs = `${subagents.runs} run${subagents.runs === 1 ? "" : "s"}${subagents.unavailable ? ` (${subagents.unavailable} unavailable)` : ""}`;
     lines.push(row("Subagents", subagents.cost, [runs, top(subagents.agents, String)].filter(Boolean).join(SEP)));
   }
+  if (workflows?.runs) {
+    const runs = `${workflows.runs} runs${workflows.unavailable ? ` (${workflows.unavailable} unavailable)` : ""}`;
+    lines.push(workflows.unavailable === workflows.runs
+      ? fit(`${PAD}${pad("Workflows", 12)}${theme.fg("muted", `unavailable   ${runs}`)}`, width)
+      : row("Workflows", workflows.cost, `${runs}${SEP}${tokens(workflows)}`));
+  }
+  if (subagents) {
+    lines.push(fit(`${PAD}Subagents: current branch + available artifacts`, width));
+    lines.push(fit(`${PAD}Lower bound: missing artifacts can omit spend`, width));
+  }
   if (approvals?.calls) lines.push(row("Approvals", approvals.cost, `${tokens(approvals)}${approvals.unknown ? `${SEP}${approvals.unknown} unknown` : ""}`));
   if (unmeteredSearches) lines.push(fit(`${PAD}Search${SEP}${unmeteredSearches} unmetered calls (usage unavailable)`, width));
   lines.push(fit(`${PAD}Dollars: catalog estimates, not plan allowance or cash`, width));
@@ -231,10 +262,10 @@ function costLines({ total, main, models, subagents, approvals, unmeteredSearche
 function cacheLines(main, cache, theme, width) {
   const prompt = promptTokens(main);
   const row = (label, tokens) => figureRow(label, tokenText(tokens), percent(tokens, prompt, 1), "", theme, width);
-  const lines = [fit(head("Cache", cache?.requests ? `${cache.hits}/${cache.requests} requests hit` : "", theme), width), row("Read", main.cacheRead)];
+  const lines = [fit(head("Cache", cache?.requests ? `${cache.hits}/${cache.requests} requests hit${SEP}${cache.requests - cache.hits} no cache read` : "", theme), width), row("Read", main.cacheRead)];
   if (main.cacheWrite > 0) lines.push(row("Written", main.cacheWrite));
   lines.push(row("Uncached", main.input));
-  if (cache?.requests) lines.push(figureRow("Breaks", String(cache.breaks), null, cache.breaks ? `${tokenText(cache.breakTokens)} tokens` : "", theme, width));
+  if (cache?.requests) lines.push(figureRow("Breaks (est.)", String(cache.breaks), null, cache.breaks ? `~${tokenText(cache.breakTokens)} token shortfall` : "", theme, width));
   return lines;
 }
 

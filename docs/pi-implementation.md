@@ -41,7 +41,27 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   API cannot persist such results back into a departed session. No shutdown wait
   is added to an approval dialog. Revisit if Pi adds session-bound append.
   `/usage` separates approvals from Main (which still includes summaries) and
-  workers. The offline report includes approval-stage and web-fetch operation
+  workers. Owned workflow children keep the full reported pi-subagents usage
+  in their existing run records and every details snapshot, including failures,
+  stops and recovered launches; no new ledger or artifact scraping is used.
+  `/usage` deduplicates child `runId` across owned custom entries, completion
+  messages and orchestrate tool results. Workflows remains available without
+  the native cost RPC; recorded known usage wins over a matching native child,
+  removed from Subagents so it is charged once. Native known usage fills a
+  matching owned snapshot that lacks usage, still counted only in Workflows.
+  Late usage after an emitted outcome persists a silent full snapshot in the
+  same `workflow-orchestrate` custom-entry type, without another model message,
+  wake or fold boundary; shutdown and session-generation guards still apply.
+  Missing historical/unfinished usage is unavailable, not zero; a refusal
+  before spawn has no charged run.
+  Native Subagents remains scoped to the current branch and available artifacts,
+  a lower bound that can omit spend when artifacts are missing. Revisit if the
+  plugin cost report accounts for owned RPC launches durably across branches.
+  Cache counts observed hit/no-cache-read requests separately from Uncached
+  tokens. Breaks and its token shortfall are estimates using the existing
+  1,024-token ancestor comparison and provider/model/compaction boundaries;
+  elapsed time never establishes cache expiry or a miss.
+  The offline report includes approval-stage and web-fetch operation
   subtotals while retaining response/stream deduplication. Historical fetch
   records have no answering model ID and are labelled unknown-summary-model,
   never attributed to the driver's model. Plugin searches without usage are

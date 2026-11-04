@@ -614,7 +614,10 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
   const { run, target } = fixture(t);
   const config = run("cat", target(".config/tuios/config.toml"));
   assert.deepEqual(config.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")), [
-    "[appearance]", 'theme = "catppuccin_mocha"', 'theme_light = "catppuccin_latte"',
+    "[appearance]", 'theme = "catppuccin_mocha"', 'theme_light = "catppuccin_latte"', 'click_to_type = "single"',
+    "[appearance.sidebar]", 'position = "left"',
+    "[startup]", "tiled = true", "open_default_window = true", "start_in_terminal_mode = true",
+    "[keybindings]", 'preset = "tmux"',
     "[agents.checkpoints]", "enabled = false",
   ]);
   const claude = JSON.parse(run("cat", target(".claude/settings.json")));

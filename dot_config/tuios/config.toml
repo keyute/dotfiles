@@ -3,6 +3,24 @@
 theme = "catppuccin_mocha"
 # Match the other tools' light Catppuccin flavor.
 theme_light = "catppuccin_latte"
+# Enter terminal mode with one pane click instead of two.
+click_to_type = "single"
+
+[appearance.sidebar]
+# Keep the session rail to the left of the terminal.
+position = "left"
+
+[startup]
+# Fill the workspace instead of starting with a floating terminal.
+tiled = true
+# Open the first terminal without a separate new-window action.
+open_default_window = true
+# Send typing to the terminal immediately on startup.
+start_in_terminal_mode = true
+
+[keybindings]
+# Use tmux's prefix and pane/workspace shortcuts.
+preset = "tmux"
 
 [agents.checkpoints]
 # Leave repository checkpoints to the user rather than the multiplexer.

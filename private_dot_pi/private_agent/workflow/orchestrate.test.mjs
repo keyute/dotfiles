@@ -19,7 +19,7 @@ const config = (concurrency = 8) => ({ models: { provider: "openai", tiers: { sm
 // async-started, process-terminal and async-complete. `behave(params, id)`
 // resolves to the child's results[0] (or never, for a child that hangs);
 // `gate(args)` holds a launch in its check.
-function harness({ concurrency, behave = params => ({ status: "completed", output: `done:${params.task}` }), spawn: spawnMode = "reply", status = () => null, stopFailures = () => [], gate = () => {}, onComplete = () => {}, generation = () => 0, resultDir } = {}) {
+function harness({ concurrency, behave = params => ({ status: "completed", output: `done:${params.task}` }), spawn: spawnMode = "reply", status = () => null, stopFailures = () => [], gate = () => {}, onComplete = () => {}, onUsage = () => {}, generation = () => 0, resultDir } = {}) {
   const emitter = new EventEmitter();
   emitter.setMaxListeners(0);
   const events = { on: (name, fn) => { emitter.on(name, fn); return () => emitter.off(name, fn); }, emit: (name, data) => emitter.emit(name, data) };
@@ -82,7 +82,7 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
   };
   h.results = new Map();
   h.orchestrate = createOrchestrate({
-    generation, onComplete: async result => { h.results.set(result.details.workflow.id, result); await onComplete(result); },
+    generation, onUsage, onComplete: async result => { h.results.set(result.details.workflow.id, result); await onComplete(result); },
     pi: { events }, config: config(concurrency), fleet, check, isReady: () => h.ready, description: "d",
     resultDir: resultDir ?? mkdtempSync(join(tmpdir(), "orchestrate-")),
     rpc: (ev, method, params, timeoutMs, requestId, raw) => rpcCall(ev, method, params, Math.min(timeoutMs, 100), requestId, raw),
@@ -477,7 +477,7 @@ for (const completed of [true, false]) test(`a late recovered child with ${compl
   release();
   const result = await done;
   assert.equal(result.details.workflow.status, "failed");
-  assert.deepEqual(result.details.runs, [{ runId: "late-1", agent: "scout", label: undefined, task: "t", asyncDir: "/tmp/async/late-1", status: completed ? "completed" : "stopped" }]);
+  assert.deepEqual(result.details.runs, [{ runId: "late-1", agent: "scout", label: undefined, task: "t", asyncDir: "/tmp/async/late-1", status: completed ? "completed" : "stopped", ...(completed && { usage: { input: 12, output: 3 } }) }]);
   assert.equal(h.groups[0].records[0].durationMs, completed ? 1_000 : undefined);
   assert.equal(h.groups[0].records[0].tokens, completed ? 15 : undefined);
   assert.deepEqual(h.stopped, []);
@@ -511,7 +511,7 @@ for (const exited of [true, false]) test(`explicit stop recovers a settled unkno
   h.complete("late-1", { status: "completed", output: "done", usage: { input: 12, output: 3 } });
   const stopped = await h.manage("stop", id);
   assert.equal(stopped.details.workflow.status, "stopped");
-  assert.deepEqual(stopped.details.runs, [{ runId: "late-1", agent: "scout", label: undefined, task: "t", asyncDir: "/tmp/async/late-1", status: "completed" }]);
+  assert.deepEqual(stopped.details.runs, [{ runId: "late-1", agent: "scout", label: undefined, task: "t", asyncDir: "/tmp/async/late-1", status: "completed", usage: { input: 12, output: 3 } }]);
   assert.equal(h.groups[0].records[0].durationMs, 1_000);
   assert.equal(h.groups[0].records[0].tokens, 15);
   assert.equal(h.orchestrate.live(), 0);
@@ -838,4 +838,54 @@ test("setup failure finalizes once and mutually exclusive actions are enforced",
   assert.equal(calls, 1);
   assert.equal(h.orchestrate.live(), 0);
   await assert.rejects(h.orchestrate.tool.execute("bad", { action: "status", script: "return 1" }), /either a launch/);
+});
+
+for (const status of ["completed", "failed", "stopped"]) test(`full child usage survives ${status} completion and management snapshots`, async () => {
+  const usage = { input: 123, output: 45, cacheRead: 678, cacheWrite: 90, cost: 0.123, turns: 4 };
+  const h = harness({ behave: () => ({ status, output: "done", usage }) });
+  const result = await h.run('return await agent("t", { agentType: "scout" })');
+  assert.deepEqual(h.groups[0].records[0].usage, usage);
+  assert.deepEqual(result.details.runs[0].usage, usage);
+  for (const action of ["status", "result", "stop"]) assert.deepEqual((await h.manage(action, result.details.workflow.id)).details.runs[0].usage, usage);
+});
+
+test("stopping captures observed usage even after the child wait was aborted", async () => {
+  const usage = { input: 12, output: 3, cacheRead: 40, cacheWrite: 5, cost: 0.02, turns: 1 };
+  const h = harness({ behave: () => new Promise(() => {}) });
+  const stopRuns = h.fleet.stopRuns;
+  h.fleet.stopRuns = async ids => {
+    for (const id of ids) h.complete(id, { status: "stopped", usage });
+    return stopRuns(ids);
+  };
+  const admitted = await h.launch('return await agent("hang", { agentType: "scout" })');
+  while (!h.adopted.length) await sleep(5);
+  const before = await h.manage("status", admitted.details.workflow.id);
+  assert.equal(before.details.runs[0].usage, undefined);
+  const result = await h.manage("stop", admitted.details.workflow.id);
+  assert.deepEqual(result.details.runs[0].usage, usage);
+  assert.equal(before.details.runs[0].usage, undefined, "past snapshots stay historical");
+});
+
+test("late observed usage refreshes result snapshots while cleanup remains owned", async () => {
+  const usage = { input: 12, output: 3, cacheRead: 40, cacheWrite: 5, cost: 0.02, turns: 1 };
+  let verified = false;
+  let gen = 0;
+  const updates = [];
+  const h = harness({ generation: () => gen, onUsage: result => updates.push(structuredClone(result)), behave: () => new Promise(() => {}), stopFailures: id => verified ? [] : [`${id}: no terminal proof`] });
+  const admitted = await h.launch('agent("hang", { agentType: "scout" }); return 1');
+  const result = await h.wait(admitted);
+  assert.equal(result.details.workflow.status, "cleanup-unverified");
+  h.events.emit("subagent:async-complete", { runId: "run-1", success: false, results: [{ status: "stopped" }] });
+  assert.equal(updates.length, 0, "no usage means no persistence callback");
+  h.events.emit("subagent:async-complete", { runId: "other", results: [{ usage }] });
+  assert.equal(updates.length, 0, "unowned usage is ignored");
+  h.events.emit("subagent:async-complete", { runId: "run-1", success: false, results: [{ status: "stopped", usage }] });
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].details.runs[0].usage, usage);
+  gen++;
+  h.events.emit("subagent:async-complete", { runId: "run-1", results: [{ usage: { ...usage, cost: 99 } }] });
+  assert.equal(updates.length, 1, "old-session usage cannot persist");
+  for (const action of ["status", "result"]) assert.deepEqual((await h.manage(action, admitted.details.workflow.id)).details.runs[0].usage, usage);
+  verified = true;
+  assert.deepEqual((await h.manage("stop", admitted.details.workflow.id)).details.runs[0].usage, usage);
 });

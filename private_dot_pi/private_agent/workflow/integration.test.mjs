@@ -16,6 +16,8 @@ import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { readLines, sendLine } from "./lines.mjs";
 import { activeToolNames, taskNotifier, workflowPrompt } from "./index.mjs";
+import { addFold, defaultFolds, settleFold } from "./rows.mjs";
+import { sessionCost } from "./usage.mjs";
 
 // The upstream entry selects and caches its root/child registration at import.
 // This fixture exercises the real root plugin even when run by a child agent.
@@ -643,6 +645,92 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.equal(level, "low");
   assert.match((await outcome(third)).content[0].text, /Workflow interrupted/);
   assert.ok(order.includes("stop:run-5") && order.indexOf("stop:run-5") < order.indexOf("close"), order.join(","));
+});
+
+test("late workflow usage persists silently through root wiring and serialized reload", async t => {
+  const { config } = fixture(t);
+  config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const handlers = new Map(), tools = new Map(), renderers = new Map();
+  const entries = [], history = [], sent = [];
+  const bus = new EventEmitter();
+  let stopProof = false;
+  const usage = { input: 12, output: 3, cacheRead: 40, cacheWrite: 5, cost: 0.02, turns: 1 };
+  const complete = value => bus.emit("subagent:async-complete", { runId: "late-run", results: [{ status: "stopped", usage: value }] });
+  const pi = {
+    events: { on(name, fn) { bus.on(name, fn); return () => bus.off(name, fn); }, emit: (...args) => bus.emit(...args) },
+    on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool: tool => tools.set(tool.name, tool), registerEntryRenderer: (name, render) => renderers.set(name, render),
+    appendEntry(type, data) { entries.push({ type, data }); history.push(JSON.stringify({ type: "custom", customType: type, data })); },
+    sendMessage: (...args) => sent.push(args),
+    registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {},
+    getAllTools: () => [...tools.values()], getActiveTools: () => [], setActiveTools() {}, getMcpServers: () => [],
+  };
+  bus.on("subagents:rpc:v1:request", ({ requestId, method }) => {
+    const reply = data => bus.emit(`subagents:rpc:v1:reply:${requestId}`, { success: true, data });
+    if (method === "spawn") reply({ details: { runId: "late-run" } });
+    else if (method === "ping") reply({ capabilities: { stop: true } });
+    else if (method === "stop") {
+      reply({ runId: "late-run", state: "stopping" });
+      if (stopProof) {
+        complete({ ...usage, cost: 99 });
+        bus.emit("subagent:process-terminal", { state: "observed", runId: "late-run" });
+      }
+    } else reply({ asyncSnapshot: { version: 1, runs: [] }, details: {} });
+  });
+  const policy = { mode: "plan", epoch: 1, approval: "auto" };
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "root", {
+    startBroker: async () => ({ env: {}, policy, setMode: async mode => { policy.mode = mode; }, close() {} }),
+    requestBroker: async () => ({ mode: policy.mode }), installSubagents() {},
+  });
+  const ctx = {
+    cwd: process.cwd(), hasUI: false, isIdle: () => true, isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => "late-usage-root", getBranch: () => [] },
+    modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => Object.values(config.models.tiers).map(id => ({ provider: "openai-codex", id })) },
+    ui: { setStatus() {}, notify() {} },
+  };
+  for (const handler of handlers.get("session_start")) await handler({}, ctx);
+  for (const handler of handlers.get("message_start")) handler({ message: { role: "user", content: "ultracode" } }, ctx);
+  const shutdown = handlers.get("session_shutdown").find(handler => handler.name === "shutdown");
+  t.after(async () => { stopProof = true; await shutdown(); });
+  await tools.get("orchestrate").execute("launch", { script: 'agent("hang", { agentType: "fixture-reader" }); return 1' }, undefined, undefined, { ...ctx, hasUI: true });
+  for (let i = 0; !entries.length && i < 2000; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].data.details.workflow.status, "cleanup-unverified");
+  assert.equal(sent.length, 1);
+  for (const streaming of [false, true]) {
+    addFold(defaultFolds, `late-read-${streaming}`, "read");
+    settleFold(defaultFolds, `late-read-${streaming}`, false, { content: [] });
+    if (streaming) {
+      const boundary = { kind: "boundary", id: "late-stream" };
+      defaultFolds.timeline.push(boundary);
+      defaultFolds.streamBoundary = boundary;
+    }
+    const before = structuredClone(defaultFolds.timeline);
+    const revision = defaultFolds.revision;
+    complete(usage);
+    assert.deepEqual(defaultFolds.timeline, before, "silent persistence never adds a fold boundary");
+    assert.equal(defaultFolds.revision, revision);
+    const entry = entries.at(-1);
+    assert.equal(entry.data.display, false);
+    assert.equal(renderers.get("workflow-orchestrate")({ data: entry.data }, {}, {}), undefined, "no component or native spacer");
+    assert.equal(sent.length, 1, "no extra message or wake");
+    assert.deepEqual(entry.data.details.runs[0].usage, usage);
+    defaultFolds.streamBoundary = null;
+  }
+  const snapshot = entries.at(-1).data;
+  const reloaded = history.map(line => JSON.parse(line));
+  assert.equal(reloaded.filter(entry => entry.data.display !== false).length, 1, "the initial outcome remains the only visible completion");
+  assert.equal(reloaded[0].data.details.runs[0].usage, undefined);
+  assert.deepEqual(sessionCost(reloaded, null).workflows, { input: 12, output: 3, cacheRead: 40, cacheWrite: 5, cost: 0.02, runs: 1, unavailable: 0 });
+  const count = history.length;
+  stopProof = true;
+  await shutdown();
+  assert.equal(history.length, count, "shutdown usage never writes into the session");
+  assert.equal(sent.length, 1);
+  assert.deepEqual(snapshot.details.runs[0].usage, usage, "persisted snapshots are immutable");
 });
 
 test("only a TUI root reports OSC status, attaching first and suspending before awaited cleanup", async t => {

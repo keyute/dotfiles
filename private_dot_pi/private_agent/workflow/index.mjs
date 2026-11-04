@@ -473,6 +473,10 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       generation: () => plans.generation,
       description: orchestrateDescription,
       resultDir: join(sdk.getAgentDir(), "orchestrate"),
+      onUsage: result => {
+        if (shuttingDown) return;
+        appendVisible(pi, "workflow-orchestrate", structuredClone({ ...result, display: false }));
+      },
       onComplete: result => {
         if (shuttingDown) return;
         appendVisible(pi, "workflow-orchestrate", result);
@@ -481,7 +485,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       },
     });
     pi.registerTool({ ...orchestrate.tool, ...orchestrateRenderers });
-    pi.registerEntryRenderer("workflow-orchestrate", (entry, _options, theme) => new Text(orchestrateCompletionLines(entry.data, theme).join("\n"), 0, 0));
+    pi.registerEntryRenderer("workflow-orchestrate", (entry, _options, theme) => entry.data.display === false ? undefined : new Text(orchestrateCompletionLines(entry.data, theme).join("\n"), 0, 0));
   }
   pi.on("session_shutdown", shutdown);
   if (isRoot) {

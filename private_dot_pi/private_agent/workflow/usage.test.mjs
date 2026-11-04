@@ -179,12 +179,14 @@ test("the entry renders four π blocks at width 70", async () => {
     "    gpt-5.5      $1.50   10k in · 200 out",
     "    summaries  $0.0200   0 in · 0 out",
     "  Subagents      $1.15   4 runs (1 unavailable) · implementer 2 · res…",
+    "  Subagents: current branch + available artifacts",
+    "  Lower bound: missing artifacts can omit spend",
     "  Dollars: catalog estimates, not plan allowance or cash",
     "",
-    "π Cache · 1/1 requests hit",
+    "π Cache · 1/1 requests hit · 0 no cache read",
     "  Read                 9k   90.0%",
     "  Uncached             1k   10.0%",
-    "  Breaks                0",
+    "  Breaks (est.)         0",
   ]);
 });
 
@@ -232,14 +234,14 @@ test("the cache block: Written only when written, and a stored entry without cac
   const cost = sessionCost(entries, report([]));
   const cache = lines => lines.slice(lines.findIndex(line => line.startsWith("π Cache")));
   assert.deepEqual(cache(usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost, cache: cacheStats(entries) }, plain, 70)), [
-    "π Cache · 1/2 requests hit",
+    "π Cache · 1/2 requests hit · 1 no cache read",
     "  Read                 4k   40.0%",
     "  Written              4k   40.0%",
     "  Uncached             2k   20.0%",
-    "  Breaks                0",
+    "  Breaks (est.)         0",
   ]);
   const broken = [request("a", null, 1000, 0, 4000), request("b", "a", 5000, 0)];
-  assert.equal(usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost: sessionCost(broken, report([])), cache: cacheStats(broken) }, plain, 70).at(-1), "  Breaks                1   5k tokens");
+  assert.equal(usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost: sessionCost(broken, report([])), cache: cacheStats(broken) }, plain, 70).at(-1), "  Breaks (est.)         1   ~5k token shortfall");
   assert.deepEqual(cache(usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost }, plain, 70)), [
     "π Cache",
     "  Read                 4k   40.0%",
@@ -284,4 +286,54 @@ test("approval usage is separate from Main, unknown is explicit, search is unmet
   assert.equal(cost.approvals.notAttempted, 1);
   assert.equal(cost.unmeteredSearches, 1);
   assert.ok(usageLines({ at: 0, limits: null, context: { used: 0, window: 100, parts: [] }, cost }, plain, 100).some(line => /Approvals.*10 in.*5 out.*1 unknown/.test(line)));
+});
+
+test("workflow usage deduplicates all persisted snapshots and wins over native overlap", () => {
+  const known = { runId: "owned", agent: "scout", status: "failed", usage: { input: 12, output: 3, cacheRead: 50, cacheWrite: 4, cost: 0.4, turns: 2 } };
+  const historical = { runId: "old", status: "completed" };
+  const unfinished = { runId: "live", status: "running" };
+  const details = { runs: [known, historical, unfinished, { status: "failed" }] };
+  const entries = [
+    { type: "message", message: { role: "toolResult", toolName: "orchestrate", details: { runs: [{ runId: "owned", status: "running" }] } } },
+    { type: "custom", customType: "workflow-orchestrate", data: { details } },
+    { type: "custom_message", customType: "workflow-orchestrate", details },
+    { type: "message", message: { role: "toolResult", toolName: "orchestrate", details } },
+    { type: "message", message: { role: "toolResult", toolName: "orchestrate", details: { runs: [{ runId: "owned" }] } } },
+  ];
+  const native = report([{ ...child("scout", 9), runId: "owned" }, { ...child("worker", 0.2), runId: "other" }], 1);
+  const cost = sessionCost(entries, native);
+  assert.equal(cost.total.toFixed(2), "0.60");
+  assert.deepEqual(cost.workflows, { cost: 0.4, input: 12, output: 3, cacheRead: 50, cacheWrite: 4, runs: 3, unavailable: 2 });
+  assert.deepEqual(cost.subagents, { cost: 0.2, runs: 2, unavailable: 1, agents: [["worker", 1]] });
+  const absent = sessionCost(entries, null);
+  assert.equal(absent.total, 0.4);
+  assert.equal(absent.subagents, null);
+  const render = (cost, width) => usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost }, plain, width);
+  assert.match(render(absent, 100).find(line => line.includes("Workflows")), /\$0.40.*3 runs \(2 unavailable\).*66 in.*3 out/);
+  assert.match(render(sessionCost([{ type: "custom_message", customType: "workflow-orchestrate", details: { runs: [historical] } }], null), 100).find(line => line.includes("Workflows")), /unavailable/);
+  for (const width of [30, 48, 70, 100]) for (const line of render(cost, width)) assert.ok(visibleWidth(line) <= width, line);
+  const oldSnapshot = { ...cost };
+  delete oldSnapshot.workflows;
+  assert.doesNotThrow(() => render(oldSnapshot, 48));
+});
+
+test("native known usage fills a missing owned snapshot without duplicate membership", () => {
+  const entries = [{ type: "custom", customType: "workflow-orchestrate", data: { details: { runs: [{ runId: "owned", status: "running" }] } } }];
+  const usage = { input: 12, output: 3, cacheRead: 50, cacheWrite: 4, cost: 0.4, turns: 2 };
+  const cost = sessionCost(entries, report([{ runId: "owned", agent: "scout", usage }]));
+  assert.deepEqual(cost.workflows, { cost: 0.4, input: 12, output: 3, cacheRead: 50, cacheWrite: 4, runs: 1, unavailable: 0 });
+  assert.deepEqual(cost.subagents, { cost: 0, runs: 0, agents: [], unavailable: 0 });
+  assert.equal(cost.total, 0.4);
+  assert.equal(entries[0].data.details.runs[0].usage, undefined, "report reconciliation does not rewrite history");
+});
+
+test("cache observes long-gap hits and immediate misses without TTL inference", () => {
+  const entries = [request("a", null, 1000, 9000), request("b", "a", 1000, 9000), request("c", "b", 10000, 0), request("d", "c", 4000, 6000)];
+  entries.forEach((entry, i) => { entry.timestamp = new Date(i ? 86_400_000 + i : 0).toISOString(); });
+  assert.deepEqual(cacheStats(entries), { requests: 4, hits: 3, breaks: 2, breakTokens: 14000 });
+  const cold = [request("a", null, 5000, 0), request("b", "a", 1000, 0, 4000)];
+  assert.deepEqual(cacheStats(cold), { requests: 2, hits: 0, breaks: 0, breakTokens: 0 });
+  const lines = usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost: sessionCost(entries, null), cache: cacheStats(entries) }, plain, 100);
+  assert.ok(lines.includes("π Cache · 3/4 requests hit · 1 no cache read"));
+  assert.match(lines.at(-1), /Breaks \(est\.\).*2.*~14k token shortfall/);
 });
