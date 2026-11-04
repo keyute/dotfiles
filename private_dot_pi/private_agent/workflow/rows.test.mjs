@@ -92,6 +92,8 @@ test("bodies show nothing until expanded; shell errors show head and tail, other
   assert.equal(bodyLines("bash", result(lines), { expanded: true }).length, 9);
   assert.deepEqual(bodyLines("bash", result("(no output)"), { expanded: true }), []);
   assert.deepEqual(bodyLines("write", result("wrote"), { expanded: true }), []);
+  assert.deepEqual(bodyLines("subagent", result("raw launch", { asyncId: "r1" }), { expanded: true }), []);
+  assert.deepEqual(bodyLines("subagent", result("raw launch", { asyncId: "r1" }), { expanded: true, isError: true }), ["raw launch"]);
   const failed = result("l1\nl2\nl3\nl4\nl5\nl6\n\nCommand exited with code 1");
   assert.deepEqual(bodyLines("bash", failed, { isError: true }), ["l1", "l2", "… 2 more lines", "l5", "l6", "Command exited with code 1"]);
   assert.equal(bodyLines("bash", failed, { isError: true, expanded: true }).length, 7);
@@ -147,7 +149,7 @@ test("folded rows render nothing; the first row carries the caret handle in both
   assert.deepEqual(rendered(handle), ["<muted>▸ Read 2 files, ran 1 shell command"]);
   assert.deepEqual(rendered(rows[0].renderers.renderResult(result("x"), { expanded: false }, theme, contextFor(rows[0]))), []);
   assert.deepEqual(rendered(rows[2].renderers.renderCall({ command: "c" }, theme, contextFor(rows[2]))), []);
-  // Only the summary line answers clicks; anything else is pi's own toggle.
+  // Outside the rendered group and non-click events remain unhandled.
   assert.equal(handle.handleMouse(click(1)), undefined);
   assert.equal(handle.handleMouse({ ...click(0), type: "down" }), undefined);
   assert.deepEqual(handle.handleMouse(click(0)), { handled: true });
@@ -159,7 +161,7 @@ test("folded rows render nothing; the first row carries the caret handle in both
   assert.deepEqual(rendered(open), ["<toolTitle>▾ Read 2 files, ran 1 shell command", "  <muted>↳ <toolTitle>Read a", "  <muted>↳ <toolTitle>Read b", "  <muted>↳ <toolTitle>Ran c"]);
   assert.deepEqual(rendered(rows[2].renderers.renderCall({ command: "c" }, theme, contextFor(rows[2]))), []);
   assert.deepEqual(rendered(rows[2].renderers.renderResult(result("x"), { expanded: false }, theme, contextFor(rows[2]))), []);
-  // A row's own `expanded` flag is a body toggle; the members level has no body to toggle.
+  // A stale native `expanded` flag cannot open a grouped member body.
   assert.deepEqual(rendered(rows[0].renderers.renderCall({ path: "a" }, theme, contextFor(rows[0], true))), ["<toolTitle>▾ Read 2 files, ran 1 shell command", "  <muted>↳ <toolTitle>Read a", "  <muted>↳ <toolTitle>Read b", "  <muted>↳ <toolTitle>Ran c"]);
   assert.deepEqual(rows.map(row => row.invalidated), [4, 4, 3]);
   open.handleMouse(click(0));
@@ -1315,8 +1317,8 @@ test("a completion-led agent+task group shares one sentence; sealed, clicked, an
   assert.deepEqual(component.handleMouse({ type: "click", button: "left", x: 0, y: 0 }), { handled: true });
   assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 1 agent, finished 1 background task", ...memberLines]);
 
-  // A click anywhere but the first line, or with the wrong button, changes nothing.
-  assert.equal(component.handleMouse({ type: "click", button: "left", x: 0, y: 1 }), undefined);
+  // Completion labels consume left clicks without inventing a body; other buttons pass through.
+  assert.deepEqual(component.handleMouse({ type: "click", button: "left", x: 0, y: 1 }), { handled: true });
   assert.equal(component.handleMouse({ type: "click", button: "right", x: 0, y: 0 }), undefined);
 });
 
@@ -1337,7 +1339,7 @@ test("ctrl+o shows a sealed completion-led group's members and its own toggle is
   ];
   assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...rows]);
   assert.deepEqual(rendered(doneEntryRenderer(childMapper, folds)({ data: b }, {}, theme)), [completionLine(b, theme)]);
-  assert.equal(component.handleMouse({ type: "click", button: "left", x: 0, y: 0 }), undefined);
+  assert.deepEqual(component.handleMouse({ type: "click", button: "left", x: 0, y: 0 }), { handled: true });
   assert.deepEqual(rendered(component), ["<toolTitle>▾ Finished 2 agents", ...rows]);
 });
 
@@ -1409,4 +1411,30 @@ test("async workflow admission says Started, management reads snapshots, and onl
     assert.doesNotMatch(lines.join("\n"), /running/);
     assert.deepEqual(rowLines("orchestrate", terminal, { durationMs: 1, isError: terminal.isError }, theme), lines.slice(1));
   }
+});
+
+test("member bodies use current settled results without repeating summaries, and summary-only rows never acquire a selection", () => {
+  const folds = createFolds(() => false);
+  const plain = { fg: (_color, text) => text, bold: text => text };
+  const read = toolRenderers("read", folds);
+  const write = toolRenderers("write", folds);
+  for (const [id, renderer, tool] of [["read", read, "read"], ["write", write, "write"]]) {
+    renderer.renderCall({ path: id }, plain, context({ toolCallId: id }));
+    addFold(folds, id, tool);
+  }
+  const final = result("fresh\n\nlast");
+  settleFold(folds, "read", false, final);
+  settleFold(folds, "write", false, result("wrote", { diff: "+  1 x" }));
+  // Native rebuilding may still supply an older result before its own final update.
+  read.renderResult(result("stale"), { expanded: true }, plain, context({ toolCallId: "read" }));
+  const component = read.renderCall({ path: "read" }, plain, context({ toolCallId: "read", expanded: true }));
+  const draw = () => component.render(80).map(line => line.trimEnd());
+  draw();
+  component.handleMouse({ type: "click", button: "left", y: 1 });
+  assert.deepEqual(draw(), ["• Read 1 file, wrote 1 file", "  ↳ Read read · 3 lines", "  fresh", "", "  last", "  ↳ Wrote write · +1 −0"]);
+  const state = folds.views.get(liveGroup(folds, "read").boundaryId);
+  assert.deepEqual([...state.members], ["read"]);
+  component.handleMouse({ type: "click", button: "left", y: 5 });
+  assert.deepEqual([...state.members], ["read"]);
+  assert.equal(folds.facts.get("read").result, final, "the fold retains the existing result, not a copy or a stale native snapshot");
 });

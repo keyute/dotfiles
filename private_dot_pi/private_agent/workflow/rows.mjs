@@ -193,7 +193,7 @@ export function resultSummary(name, result) {
   return name === "read" ? "" : "no output";
 }
 
-// Everything waits for ctrl+o except errors, which show head and tail with
+// Collapsed bodies stay hidden except errors, which show head and tail with
 // the exit status last (a shell error), or in full (anything else).
 export function bodyLines(name, result, { expanded = false, isError = false } = {}) {
   if (!result) return [];
@@ -205,7 +205,7 @@ export function bodyLines(name, result, { expanded = false, isError = false } = 
     if (lines.length <= 5) return [...lines, ...status];
     return [...lines.slice(0, 2), `… ${lines.length - 4} more lines`, ...lines.slice(-2), ...status];
   }
-  if (!expanded) return [];
+  if (!expanded || (name === "subagent" && result.details?.asyncId)) return [];
   if (name === "edit") return typeof result.details?.diff === "string" ? renderDiff(result.details.diff).split("\n") : [];
   if (name === "write") return [];
   return text ? text.split("\n") : [];
@@ -382,6 +382,7 @@ export function settleFold(folds, id, failed, result) {
   if (fact?.source !== "tool" || fact.outcome !== "pending") return;
   refold(folds, () => {
     fact.outcome = failed ? "failed" : "success";
+    if (!failed && !folds.quiet) fact.result = result;
     if (fact.key === "bash" && result?.details?.taskId) fact.key = "task";
     else if (fact.key === "bash" && fact.args.run_in_background) {
       fact.inline = true;
@@ -485,6 +486,8 @@ function refold(folds, mutate) {
   const before = new Map([...beforeIds].map(id => [id, groupFor(derivedBefore, id)]));
   mutate();
   const derivedAfter = derive(folds);
+  const liveViews = new Set([...derivedAfter.liveById.values()].map(group => group.boundaryId));
+  for (const key of folds.views.keys()) if (key.startsWith("live:") && !liveViews.has(key)) folds.views.delete(key);
   const afterIds = new Set([...derivedAfter.byId.keys(), ...derivedAfter.liveById.keys()]);
   let repaint = false;
   for (const id of new Set([...beforeIds, ...afterIds])) {
@@ -625,35 +628,61 @@ export function installFolding(pi, ctx, folds = defaultFolds) {
   });
 }
 
-// The group's first row draws the summary line whether the group is open or
-// closed, so the handle never moves. The handle answers its own clicks (pi's
-// MouseRegion asks the child before its own toggle), so a row's `expanded`
-// flag only ever expands its body. The handle toggles its own group between
-// the sentence and its members; ctrl+o outranks it — a group renders in full
-// while the flag is on, and a click then has nothing to change, so a group
-// clicked open against the flag still follows the flag once it drops.
+// Child-first native mouse routing lets the group consume label and body
+// clicks without changing the host's unrelated native expanded flag.
 class FoldHandle extends Text {
-  constructor(text, toggle) {
+  constructor(text, toggle, layout) {
     super(text, 0, 0);
     this.toggle = toggle;
+    this.layout = layout;
+    this.targets = [];
+    this.lineComponents = [];
+  }
+  invalidate() {
+    super.invalidate();
+    for (const component of this.lineComponents) component.invalidate();
+  }
+  render(width) {
+    if (!this.layout) return super.render(width);
+    const { lines, targets } = this.layout();
+    this.targets = [];
+    this.lineComponents.length = lines.length;
+    return lines.flatMap((line, index) => {
+      const component = this.lineComponents[index] ??= new Text("", 0, 0);
+      component.setText(line);
+      const wrapped = component.render(width);
+      const rendered = wrapped.length ? wrapped : [""];
+      this.targets.push(...rendered.map(() => targets.get(index)));
+      return rendered;
+    });
   }
   handleMouse(event) {
-    if (event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
-    this.toggle();
+    if (event.type !== "click" || event.button !== "left") return undefined;
+    if (this.targets.length && (event.y < 0 || event.y >= this.targets.length)) return undefined;
+    const target = this.targets[event.y];
+    if (target !== undefined) this.toggle(target);
+    else if (event.y === 0 && !this.targets.length) this.toggle();
     return { handled: true };
   }
 }
 
 // Open/closed lives under the run's boundary id rather than on the run itself,
 // so a re-derivation hands the same state back to the same group.
-function view(folds, group) {
+function view(folds, group, rendering) {
   let state = folds.views.get(group.boundaryId);
   if (!state) {
     // A group that seals while ctrl+o is on joins it: it records the flag as
     // already seen, so the render's transition guard would never fire for it.
     const expandedAt = folds.toolsExpanded();
-    state = { open: expandedAt === true, expandedAt };
+    state = { open: expandedAt === true, expandedAt, members: new Set() };
     folds.views.set(group.boundaryId, state);
+  }
+  const expanded = folds.toolsExpanded();
+  if (expanded !== state.expandedAt) {
+    state.expandedAt = expanded;
+    state.open = expanded === true;
+    state.members.clear();
+    if (rendering !== undefined) for (const entry of group.entries) if (entry.id !== rendering) folds.invalidate.get(entry.id)?.();
   }
   return state;
 }
@@ -669,6 +698,7 @@ const handleLine = (text, state, theme) =>
 function toggleFold(folds, group, rendering) {
   const state = view(folds, group);
   state.open = !state.open;
+  state.members.clear();
   for (const entry of group.entries) if (entry.id !== rendering) folds.invalidate.get(entry.id)?.();
 }
 
@@ -697,12 +727,48 @@ function memberLine(folds, entry, theme) {
 // tool rows, completion entries and the peek replay; `own` is what the row
 // shows under ctrl+o.
 const liveLine = (group, theme) => `${theme.fg("success", BULLET)} ${theme.fg("toolTitle", summarise(group.counts))}`;
-export function groupLines(folds, group, { first, expanded, state, own }, theme) {
+export function groupLines(folds, group, { first, expanded, state, own, targets = new Map() }, theme) {
   if (expanded) return group.sealed && first ? [handleLine(summarise(group.counts), state, theme), ...own] : own;
   if (!first) return [];
-  const members = group.entries.map(entry => memberLine(folds, entry, theme));
-  if (!group.sealed) return [liveLine(group, theme), ...members];
-  return [handleLine(summarise(group.counts), state, theme), ...(state.open ? members : [])];
+  const lines = [group.sealed ? handleLine(summarise(group.counts), state, theme) : liveLine(group, theme)];
+  if (group.sealed) targets.set(0, "handle");
+  if (group.sealed && !state.open) return lines;
+  for (const entry of group.entries) {
+    targets.set(lines.length, entry.id);
+    lines.push(memberLine(folds, entry, theme));
+    if (state?.members?.has(entry.id)) lines.push(...memberBody(entry, theme));
+  }
+  return lines;
+}
+
+function memberBody(entry, theme) {
+  if (entry.source !== "tool") return [];
+  const name = entry.bodyName ?? SUMMARY_NAME[entry.key] ?? (entry.tool === "agent" ? "subagent" : entry.tool);
+  return bodyLines(name, entry.result, { expanded: true }).map(line => indent(name === "edit" ? line : theme.fg("toolOutput", line)));
+}
+
+function groupComponent(folds, group, own, theme, previous) {
+  const toggle = (target = "handle") => {
+    if (folds.toolsExpanded()) return;
+    const state = view(folds, group);
+    if (target === "handle") toggleFold(folds, group);
+    else {
+      const entry = group.entries.find(entry => entry.id === target);
+      if (!entry || !memberBody(entry, theme).length) return;
+      if (state.members.has(target)) state.members.delete(target);
+      else state.members.add(target);
+      folds.invalidate.get(group.entries[0].id)?.();
+    }
+    folds.repaint();
+  };
+  const component = previous ?? new FoldHandle("", toggle);
+  component.toggle = toggle;
+  component.layout = () => {
+    const targets = new Map();
+    const lines = groupLines(folds, group, { first: true, expanded: folds.toolsExpanded(), state: view(folds, group), own, targets }, theme);
+    return { lines, targets };
+  };
+  return component;
 }
 
 // Below output level a member's own result slot draws nothing: the group's
@@ -711,7 +777,8 @@ const hidden = (folds, id) => !folds.toolsExpanded() && Boolean(foldGroup(folds,
 
 // A row is `glyph title` and one ↳ line; a group renders at one of three
 // levels (docs/pi-design.md rule 2): members — the sentence and one `↳` line
-// per row — while it is live or clicked open; the sentence alone once sealed;
+// per row, with independently selected bodies — while live or clicked open;
+// the sentence alone once sealed;
 // every row in full under ctrl+o, which outranks both. Only a sealed group has
 // a handle to click. A failed or pending row is never a member, so it needs no
 // exception here to stay visible.
@@ -731,14 +798,9 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
       if (!group) return new Text(line, 0, 0);
       const first = group.entries[0].id === id;
       const toolsExpanded = folds.toolsExpanded();
-      const state = group.sealed ? view(folds, group) : null;
-      if (state && toolsExpanded !== state.expandedAt) {
-        state.expandedAt = toolsExpanded;
-        if (state.open !== toolsExpanded) toggleFold(folds, group, id);
-      }
-      const text = groupLines(folds, group, { first, expanded: toolsExpanded, state, own: [line] }, theme).join("\n");
-      if (!state || !first) return new Text(text, 0, 0);
-      return new FoldHandle(text, () => { if (!folds.toolsExpanded()) toggleFold(folds, group); });
+      const state = view(folds, group, id);
+      if (first) return groupComponent(folds, group, [line], theme, rawContext.lastComponent instanceof FoldHandle ? rawContext.lastComponent : undefined);
+      return new FoldHandle(groupLines(folds, group, { first, expanded: toolsExpanded, state, own: [line] }, theme).join("\n"), () => {});
     },
     renderResult(result, options, theme, rawContext) {
       // The call slot only sees pi's isError; a failure known from the result
@@ -760,8 +822,15 @@ function rowRenderers({ name, title, folds = defaultFolds, failed = (_result, co
         queueMicrotask(() => rawContext.invalidate?.());
       }
       const context = status(rawContext);
+      const fact = folds.facts.get(context.toolCallId);
+      if (fact) {
+        if (fact.outcome === "pending") fact.result = result;
+        fact.bodyName = name;
+      }
       if (hidden(folds, context.toolCallId)) return new Text("", 0, 0);
-      return new Text(rowLines(name, result, { expanded: options.expanded, isError: context.isError, durationMs: context.durationMs, action: rawContext.args?.action }, theme).join("\n"), 0, 0);
+      const text = rowLines(name, result, { expanded: options.expanded, isError: context.isError, durationMs: context.durationMs, action: rawContext.args?.action }, theme).join("\n");
+      const grouped = foldGroup(folds, context.toolCallId) ?? liveGroup(folds, context.toolCallId);
+      return grouped ? new FoldHandle(text, () => {}) : new Text(text, 0, 0);
     },
   };
 }
@@ -933,32 +1002,32 @@ class ActivityEntryComponent extends Text {
     this.mapped = mapped;
     this.theme = theme;
   }
+  invalidate() {
+    super.invalidate();
+    this.groupComponent?.invalidate();
+  }
   lines() {
     const group = doneGroup(this.folds, this.seq);
     if (!group) return [completionLine(this.mapped, this.theme)];
     const toolsExpanded = this.folds.toolsExpanded();
-    const state = group.sealed ? view(this.folds, group) : null;
-    if (state && toolsExpanded !== state.expandedAt) {
-      state.expandedAt = toolsExpanded;
-      state.open = toolsExpanded;
-    }
+    const state = view(this.folds, group);
     const own = [completionLine(this.mapped, this.theme)];
     return groupLines(this.folds, group, { first: group.entries[0].id === this.seq, expanded: toolsExpanded, state, own }, this.theme);
   }
   render(width) {
-    const lines = this.lines();
-    if (!lines.length) return [];
-    this.text = lines.join("\n");
+    const group = doneGroup(this.folds, this.seq);
+    if (group?.entries[0].id === this.seq) {
+      this.groupComponent = groupComponent(this.folds, group, [completionLine(this.mapped, this.theme)], this.theme, this.groupComponent);
+      return this.groupComponent.render(width);
+    }
+    this.groupComponent = null;
+    this.setText(this.lines().join("\n"));
     return super.render(width);
   }
   handleMouse(event) {
-    if (event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
-    const group = doneGroup(this.folds, this.seq);
-    if (!group?.sealed || group.entries[0].id !== this.seq || this.folds.toolsExpanded()) return undefined;
-    const state = view(this.folds, group);
-    state.open = !state.open;
-    this.folds.repaint();
-    return { handled: true };
+    if (this.groupComponent) return this.groupComponent.handleMouse(event);
+    if (doneGroup(this.folds, this.seq) && event.type === "click" && event.button === "left") return { handled: true };
+    return undefined;
   }
 }
 

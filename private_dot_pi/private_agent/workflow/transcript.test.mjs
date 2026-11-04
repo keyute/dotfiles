@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { Container, Spacer } from "@earendil-works/pi-tui";
+import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, InteractiveMode, getMarkdownTheme, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, doneGroup, installActivityEntries, installFolding, installReasoningHide, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
 
@@ -517,4 +517,237 @@ test("a pending tool completion edge refolds in native hosts without a permanent
     host.setExpanded(false);
     if (!failed) assert.deepEqual(host.render(80), []);
   }
+});
+
+for (const completionFirst of [false, true]) test(`group member bodies expand independently in native hosts, completion-first=${completionFirst}`, () => {
+  let expanded = false;
+  const folds = createFolds(() => expanded);
+  const chat = new Container();
+  const mode = entryMode(chat, folds);
+  const draw = () => chat.render(100).map(strip);
+  const click = y => chat.handleMouse({ type: "click", button: "left", x: 3, y, width: 100, height: draw().length });
+  if (completionFirst) appendVisible({ appendEntry: (customType, data) => mode.addCustomEntryToChat({ customType, data }) }, "workflow-child", { agent: "reviewer", status: "completed" }, folds);
+  const rows = [];
+  const mount = id => {
+    const row = new ToolExecutionComponent("edit", id, { path: `${id}.mjs` }, {}, toolRenderers("edit", folds), { requestRender() {} }, "/repo");
+    row.markExecutionStarted();
+    chat.addChild(row);
+    addFold(folds, id, "edit");
+    const result = { content: [{ type: "text", text: "edited" }], details: { diff: `-  1 old_${id}\n+  1 new_${id}` } };
+    row.updateResult(result);
+    settleFold(folds, id, false, result);
+    rows.push(row);
+    return row;
+  };
+  const first = mount("first");
+  if (!completionFirst) first.setExpanded(true); // Standalone expansion must not leak into the group.
+  const second = mount("second");
+  const member = id => draw().findIndex(line => line.includes(`↳ Edited ${id}.mjs`));
+  const has = text => draw().some(line => line.includes(text));
+  assert.equal(has("new_first"), false);
+  click(member("second"));
+  assert.equal(has("new_second"), true);
+  assert.equal(has("new_first"), false);
+  click(member("first"));
+  assert.equal(has("new_first"), true);
+  assert.equal(has("new_second"), true);
+  assert.ok(chat.render(100).some(line => /\x1b\[/.test(line) && line.includes("new_second")), "edit bodies retain native diff highlighting");
+  const flags = rows.map(row => row.expanded);
+  click(draw().findIndex(line => line.includes("new_first")));
+  assert.deepEqual(rows.map(row => row.expanded), flags, "body clicks never reach the first host's native toggle");
+  click(member("second"));
+  assert.equal(has("new_second"), false);
+  assert.equal(has("new_first"), true);
+  mount("third");
+  assert.equal(has("new_first"), true, "live growth retains existing selections");
+  assert.equal(has("new_third"), false);
+  closeFolds(folds);
+  assert.equal(has("new_first"), false, "auto-seal clears live selections");
+  click(1);
+  assert.equal(has("new_first"), false);
+  click(member("second"));
+  assert.equal(has("new_second"), true);
+  click(1);
+  click(1);
+  assert.equal(has("new_second"), false, "collapse/reopen starts with every member collapsed");
+  click(member("first"));
+  expanded = true;
+  for (const row of rows) { row.setExpanded(true); row.invalidate(); }
+  assert.equal(has("• Edited second.mjs"), true);
+  const before = draw();
+  click(before.findIndex(line => line.includes("new_second")));
+  click(before.findIndex(line => line.includes("• Edited second.mjs")));
+  assert.deepEqual(draw(), before, "global output mode consumes clicks without changing native flags");
+  expanded = false;
+  for (const row of rows) { row.setExpanded(false); row.invalidate(); }
+  assert.equal(draw().length, 2);
+  click(1);
+  assert.equal(has("new_first"), false);
+  assert.equal(has("new_second"), false);
+  if (completionFirst) {
+    const before = draw();
+    click(before.findIndex(line => line.includes("↳ reviewer finished")));
+    assert.deepEqual(draw(), before, "completion labels have no invented output");
+  }
+});
+
+test("wrapped labels and expanded body heights route member clicks at narrow widths; native standalone behavior survives", () => {
+  let expanded = false;
+  const folds = createFolds(() => expanded);
+  const chat = new Container();
+  const rows = ["a_very_long_path_with_many_characters.mjs", "second.mjs"].map((path, index) => {
+    const id = `n${index}`;
+    const row = new ToolExecutionComponent("read", id, { path }, {}, toolRenderers("read", folds), { requestRender() {} }, "/repo");
+    row.markExecutionStarted();
+    chat.addChild(row);
+    addFold(folds, id, "read");
+    const result = { content: [{ type: "text", text: index ? "SECOND_BODY" : "FIRST_BODY with enough words to wrap across several rows\nlast body line" }], details: {} };
+    row.updateResult(result);
+    settleFold(folds, id, false, result);
+    return row;
+  });
+  const draw = () => chat.render(24).map(strip);
+  const click = y => chat.handleMouse({ type: "click", button: "left", x: 1, y, width: 24, height: draw().length });
+  let lines = draw();
+  const label = lines.findIndex(line => line.includes("↳ Read"));
+  assert.ok(label > 0);
+  click(label + 1); // The wrapped continuation, not the label's first line.
+  assert.ok(draw().some(line => line.includes("FIRST_BODY")));
+  lines = draw();
+  click(lines.findIndex(line => line.includes("↳ Read second")));
+  assert.ok(draw().some(line => line.includes("SECOND_BODY")), "second member is below the first member's wrapped body");
+  const before = draw();
+  for (const event of [{ type: "scroll", button: "none" }, { type: "down", button: "left" }, { type: "drag", button: "left" }, { type: "click", button: "right" }]) {
+    assert.equal(chat.handleMouse({ ...event, x: 1, y: label, width: 24, height: before.length }), undefined);
+  }
+  assert.deepEqual(draw(), before);
+  expanded = true;
+  rows.forEach(row => { row.setExpanded(true); row.invalidate(); });
+  draw();
+  expanded = false;
+  rows.forEach(row => { row.setExpanded(false); row.invalidate(); });
+  assert.ok(!draw().some(line => line.includes("FIRST_BODY")), "live Ctrl+O cycle clears member selections too");
+
+  const solo = new ToolExecutionComponent("read", "solo", { path: "solo" }, {}, toolRenderers("read", createFolds(() => false)), { requestRender() {} }, "/repo");
+  solo.updateResult({ content: [{ type: "text", text: "solo output" }], details: {} });
+  solo.render(80);
+  solo.handleMouse({ type: "click", button: "left", x: 0, y: 2, width: 80, height: 3 });
+  assert.equal(solo.expanded, true);
+  assert.ok(solo.render(80).map(strip).includes("  solo output"));
+});
+
+for (const completionFirst of [false, true]) test(`group paints retain native wrapping caches and current click geometry, completion-first=${completionFirst}`, t => {
+  let expanded = false;
+  let color = "\x1b[32m";
+  const palette = { fg: (_name, text) => `${color}${text}\x1b[39m` };
+  const folds = createFolds(() => expanded);
+  let component;
+  if (completionFirst) {
+    const data = { agent: "reviewer", status: "completed" };
+    appendVisible({ appendEntry() {} }, "workflow-child", data, folds);
+    component = doneEntryRenderer("workflow-child", folds)({ data }, {}, palette);
+  }
+  const renderer = toolRenderers("read", folds);
+  const results = [];
+  for (const [index, id] of ["first", "second"].entries()) {
+    const ctx = { toolCallId: id, state: {}, invalidate() {} };
+    renderer.renderCall({ path: index ? "second" : "a_very_long_path_with_many_characters.mjs" }, palette, ctx);
+    addFold(folds, id, "read");
+    const text = index ? "SECOND_BODY" : ["FIRST_BODY with enough words to wrap", "", ...Array.from({ length: 1000 }, (_, i) => `body ${i}`)].join("\n");
+    const result = { content: [{ type: "text", text }], details: {} };
+    results.push(result);
+    settleFold(folds, id, false, result);
+  }
+  if (!component) component = renderer.renderCall({ path: "a_very_long_path_with_many_characters.mjs" }, palette, { toolCallId: "first", state: {}, invalidate() {} });
+  let width = 24;
+  const draw = () => component.render(width).map(strip);
+  const click = y => component.handleMouse({ type: "click", button: "left", x: 1, y });
+  let lines = draw();
+  const label = lines.findIndex(line => line.includes("↳ Read"));
+  click(label + 1);
+  assert.ok(draw().some(line => line.includes("FIRST_BODY")), "wrapped label continuation opens its own body");
+
+  const render = Text.prototype.render;
+  const previous = new WeakMap();
+  let misses = 0;
+  t.mock.method(Text.prototype, "render", function (width) {
+    const lines = render.call(this, width);
+    if (previous.get(this) !== lines) misses += 1;
+    previous.set(this, lines);
+    return lines;
+  });
+  lines = draw();
+  assert.ok(misses >= 1003, "the large body exercises native per-line wrapping");
+  const stable = () => {
+    misses = 0;
+    const before = draw();
+    assert.equal(misses, 0, "unchanged paint reuses all native wrapped arrays");
+    assert.deepEqual(draw(), before);
+  };
+  stable();
+  assert.ok(lines.includes(""), "blank body lines keep their layout row");
+  width = 42;
+  assert.notDeepEqual(draw(), lines, "resize recomputes wrapping");
+  stable();
+  results[0].content[0].text = "CHANGED_BODY\n\nlast";
+  assert.ok(draw().includes("  CHANGED_BODY"));
+  stable();
+  click(draw().findIndex(line => line.includes("↳ Read second")));
+  assert.ok(draw().includes("  SECOND_BODY"), "body size changes update the following label's click target");
+  const handle = completionFirst ? component.groupComponent : component;
+  assert.equal(handle.lineComponents.length, completionFirst ? 8 : 7, "retained slots shrink to the current logical layout");
+  color = "\x1b[35m";
+  component.invalidate();
+  assert.ok(component.render(width).some(line => line.includes(color)), "theme invalidation refreshes styled content");
+  draw();
+  stable();
+  closeFolds(folds);
+  if (!completionFirst) {
+    const previous = component;
+    component = renderer.renderCall({ path: "a_very_long_path_with_many_characters.mjs" }, palette, { toolCallId: "first", state: {}, invalidate() {}, lastComponent: component });
+    assert.equal(component, previous, "the native call-slot rebuild retains its group handle");
+  }
+  assert.equal(draw().length, 1, "sealing clears member output");
+  assert.equal(handle.lineComponents.length, 1, "sealed layout releases body slots");
+  stable();
+  click(0);
+  assert.ok(!draw().some(line => line.includes("CHANGED_BODY")));
+  expanded = true;
+  draw();
+  stable();
+  expanded = false;
+  assert.equal(draw().length, 1);
+  stable();
+});
+
+test("async subagent launch members stay summary-only while synchronous members expand", () => {
+  let expanded = false;
+  const folds = createFolds(() => expanded);
+  const chat = new Container();
+  const rows = ["async", "sync"].map(id => {
+    const row = new ToolExecutionComponent("subagent", id, { agent: id, task: "Audit" }, {}, pluginRenderers("subagent", { folds }), { requestRender() {} }, "/repo");
+    row.markExecutionStarted();
+    chat.addChild(row);
+    addFold(folds, id, "agent");
+    const result = { content: [{ type: "text", text: `${id}_BODY` }], details: id === "async" ? { asyncId: "run" } : {} };
+    row.updateResult(result);
+    settleFold(folds, id, false, result);
+    return row;
+  });
+  const draw = () => chat.render(100).map(strip);
+  const click = y => chat.handleMouse({ type: "click", button: "left", x: 3, y, width: 100, height: draw().length });
+  for (const sealed of [false, true]) {
+    if (sealed) { closeFolds(folds); draw(); click(1); }
+    const before = draw();
+    click(before.findIndex(line => line.includes("↳ async")));
+    assert.deepEqual(draw(), before);
+    click(draw().findIndex(line => line.includes("↳ sync")));
+    assert.ok(draw().includes("  sync_BODY"));
+    assert.ok(!draw().includes("  async_BODY"));
+  }
+  expanded = true;
+  rows.forEach(row => { row.setExpanded(true); row.invalidate(); });
+  assert.ok(draw().includes("  ↳ launched"));
+  assert.ok(!draw().includes("  async_BODY"));
+  assert.ok(draw().includes("  sync_BODY"));
 });

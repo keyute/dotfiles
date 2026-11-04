@@ -214,8 +214,11 @@ test("a 100 KiB result text is capped at 64 KiB in the stored row", () => {
   const big = "x".repeat(100 * 1024);
   const state = feed(
     { type: "tool_execution_start", toolCallId: "c1", toolName: "workspace_read", args: { path: "a.txt" } },
-    { type: "tool_execution_end", toolCallId: "c1", toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: big }] } },
+    { type: "tool_execution_end", toolCallId: "c1", toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: big }], details: { unused: big } } },
   );
+  assert.equal(state.folds.facts.get("c1").result, undefined, "quiet replay must not retain the uncapped result or unused details");
+  assert.equal(state.folds.facts.get("c1").summary, "1 line");
+  assert.equal(state.rows[0].result.details, undefined);
   const stored = state.rows[0].result.content[0].text;
   assert.ok(stored.length < big.length);
   assert.ok(stored.endsWith("… truncated"));
