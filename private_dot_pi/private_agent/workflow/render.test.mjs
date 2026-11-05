@@ -619,15 +619,7 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
     "[startup]", "daemon = true", "tiled = true", "open_default_window = true", "start_in_terminal_mode = true",
     "[workspaces]", "new_window_when_empty = true",
     "[notifications.agent]", "sound = true", "suppress_focused = false",
-    "[keybindings]", 'preset = "tmux"',
-    "[keybindings.prefix_mode]",
-    'resize_pane_left_5 = ["ctrl+left", "shift+left"]',
-    'resize_pane_right_5 = ["ctrl+right", "shift+right"]',
-    'resize_pane_up_5 = ["ctrl+up", "shift+up"]',
-    'resize_pane_down_5 = ["ctrl+down", "shift+down"]',
-    "[keybindings.terminal_mode]", "terminal_focus_left = []", "terminal_focus_right = []",
-    "terminal_focus_up = []", "terminal_focus_down = []", 'terminal_prev_window = ["opt+shift+tab"]',
-    "[keybindings.global]", "command_palette = []",
+    "[keybindings]", 'preset = "tmux"', "lock = true", "repeat = []",
     "[agents.checkpoints]", "enabled = false",
   ]);
   const claude = JSON.parse(run("cat", target(".claude/settings.json")));
@@ -644,7 +636,7 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
   assert.doesNotMatch(zshrc, /_herdr_report_org|HERDR_/);
 });
 
-test("native TuiOS inspection leaves application keys free in terminal mode", t => {
+test("native TuiOS inspection retains tmux prefix actions with lock and no repeat", t => {
   const { run, target } = fixture(t);
   const path = target(".config/tuios/config.toml");
   mkdirSync(dirname(path), { recursive: true });
@@ -659,23 +651,27 @@ test("native TuiOS inspection leaves application keys free in terminal mode", t 
     return JSON.parse(result.stdout);
   };
   // A scratch-only sentinel proves the inspector loads this config, not the applied one.
-  writeFileSync(path, config.replace("command_palette = []", 'command_palette = ["ctrl+alt+f12"]'));
-  assert.equal(inspect("explain", "ctrl+alt+f12").swallowed_in_terminal, true);
+  writeFileSync(path, `${config}\n[keybindings.prefix_mode]\nnew_workspace = ["ctrl+alt+f12"]\n`);
+  assert.deepEqual(inspect("list").find(row => row.scope === "prefix" && row.action === "new_workspace").keys, ["ctrl+b ctrl+alt+f12"]);
   writeFileSync(path, config);
-  for (const key of ["alt+up", "alt+down", "alt+left", "alt+right", "alt+p", "ctrl+p", "alt+enter", "ctrl+enter", "alt+b", "alt+f", "opt+up", "opt+down", "opt+left", "opt+right", "opt+p", "opt+enter", "opt+b", "opt+f"]) {
-    const report = inspect("explain", key);
-    assert.equal(report.swallowed_in_terminal, false, key);
-    assert.ok(!(report.acts ?? []).some(act => ["terminal", "global"].includes(act.scope)), key);
-  }
+  // TerminalModeSwallowed ignores lock in 0.12.1; inspection proves bindings, not runtime passthrough.
   const rows = inspect("list");
-  assert.deepEqual(rows.find(row => row.action === "terminal_prev_window" && row.scope === "terminal").keys, ["opt+shift+tab"]);
+  const keys = action => rows.find(row => row.action === action && row.scope === "prefix")?.keys;
+  for (const [action, key] of [
+    ["new_workspace", "c"], ["next_workspace", "n"], ["prev_workspace", "p"],
+    ["prefix_split_vertical", "%"], ["prefix_split_horizontal", '"'], ["prefix_fullscreen", "z"],
+  ]) assert.ok(keys(action)?.includes(`ctrl+b ${key}`), action);
+  for (let workspace = 1; workspace <= 9; workspace++) {
+    assert.deepEqual(keys(`switch_workspace_${workspace}`), [`ctrl+b ${workspace}`]);
+  }
   for (const direction of ["left", "right", "up", "down"]) {
-    assert.deepEqual(rows.find(row => row.action === `resize_pane_${direction}_5` && row.scope === "prefix").keys, [
-      `ctrl+b ctrl+${direction}`, `ctrl+b shift+${direction}`,
+    assert.deepEqual(keys(`terminal_focus_${direction}`), [`ctrl+b ${direction}`]);
+    assert.deepEqual(keys(`resize_pane_${direction}_5`), [
+      `ctrl+b alt+${direction}`, `ctrl+b ctrl+${direction}`, `ctrl+b shift+${direction}`,
     ]);
   }
-  assert.equal(inspect("explain", "ctrl+b").swallowed_in_terminal, true);
-  assert.equal(rows.find(row => row.action === "send_prefix").unbound, true);
+  assert.match(config, /^lock = true$/m);
+  assert.match(config, /^repeat = \[\]$/m);
   assert.equal(readFileSync(path, "utf8"), config);
 });
 

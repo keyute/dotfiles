@@ -11,9 +11,8 @@ click_to_type = "single"
 position = "left"
 
 [startup]
-# Keep sessions in the daemon after the client exits.
+# Sparse configs leave omitted daemon and tiled keys false.
 daemon = true
-# Fill the workspace instead of starting with a floating terminal.
 tiled = true
 # Open the first terminal without a separate new-window action.
 open_default_window = true
@@ -33,24 +32,10 @@ suppress_focused = false
 # Use tmux's prefix and pane/workspace shortcuts.
 preset = "tmux"
 
-[keybindings.prefix_mode]
-# Reserve Option chords for applications; resize with prefix Ctrl/Shift+arrows.
-resize_pane_left_5 = ["ctrl+left", "shift+left"]
-resize_pane_right_5 = ["ctrl+right", "shift+right"]
-resize_pane_up_5 = ["ctrl+up", "shift+up"]
-resize_pane_down_5 = ["ctrl+down", "shift+down"]
-
-[keybindings.terminal_mode]
-# Leave application Alt+arrow navigation and Alt+P available while typing.
-terminal_focus_left = []
-terminal_focus_right = []
-terminal_focus_up = []
-terminal_focus_down = []
-terminal_prev_window = ["opt+shift+tab"]
-
-[keybindings.global]
-# Leave Ctrl+P history navigation to the application.
-command_palette = []
+# Route unprefixed keys to applications, not multiplexer shortcuts.
+lock = true
+# Re-lock after one prefix action, including pane focus and resize.
+repeat = []
 
 [agents.checkpoints]
 # Leave repository checkpoints to the user rather than the multiplexer.
