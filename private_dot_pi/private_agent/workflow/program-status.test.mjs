@@ -67,7 +67,41 @@ test("initial idle and menu-only block do not manufacture completed work", t => 
   assert.deepEqual(frames, [wire("idle"), `\x1b]7501;state=blocked:app=pi:msg=TWVudQ==\x1b\\`, wire("idle")]);
 });
 
-test("shutdown cancels idle with no fake done, suspends writes, and attach resets stale timers and work", t => {
+test("unused shutdown is silent and idempotent, and attach does not replay status", t => {
+  const { frames, reporter, report, tick } = harness(t);
+  reporter.shutdown();
+  reporter.shutdown();
+  report("working");
+  tick(1000);
+  assert.deepEqual(frames, []);
+  reporter.attach();
+  assert.deepEqual(frames, []);
+  report("idle");
+  assert.deepEqual(frames, [wire("idle")]);
+  reporter.shutdown();
+  reporter.shutdown();
+  tick(1000);
+  assert.deepEqual(frames, [wire("idle"), wire("clear")]);
+});
+
+test("shutdown clears completed status once without replaying it on attach", t => {
+  const { frames, reporter, report, tick } = harness(t);
+  report("working");
+  report("idle");
+  tick(250);
+  assert.deepEqual(frames, [wire("working"), wire("done")]);
+  reporter.shutdown();
+  reporter.shutdown();
+  report("idle");
+  tick(1000);
+  assert.deepEqual(frames, [wire("working"), wire("done"), wire("clear")]);
+  reporter.attach();
+  assert.equal(frames.length, 3);
+  report("idle");
+  assert.deepEqual(frames, [wire("working"), wire("done"), wire("clear"), wire("idle")]);
+});
+
+test("shutdown clears status with no fake done, cancels idle and suspends writes; attach resets timers and work", t => {
   const { frames, reporter, report, tick } = harness(t);
   report("working");
   report("idle");
@@ -76,7 +110,7 @@ test("shutdown cancels idle with no fake done, suspends writes, and attach reset
   report("blocked", "stale");
   report("working");
   tick(1000);
-  assert.deepEqual(frames, [wire("working")]);
+  assert.deepEqual(frames, [wire("working"), wire("clear")]);
   reporter.attach();
   report("idle");
   assert.equal(frames.at(-1), wire("idle"));
@@ -86,7 +120,7 @@ test("shutdown cancels idle with no fake done, suspends writes, and attach reset
   reporter.attach();
   report("blocked", "New menu");
   tick(1000);
-  assert.equal(frames.length, 4, "attach cancels the old delayed completion");
+  assert.equal(frames.length, 5, "attach cancels the old delayed completion");
   report("idle");
   tick(250);
   assert.equal(frames.at(-1), wire("idle"));

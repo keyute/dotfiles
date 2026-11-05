@@ -18,6 +18,7 @@ export function installProgramStatus(env = process.env, stdout = process.stdout)
     shutdown() {
       suspended = true;
       clearTimeout(idle);
+      if (sent) stdout.write(formatProgramStatus({ state: "clear", app: "pi" }));
       sent = undefined;
       worked = false;
     },

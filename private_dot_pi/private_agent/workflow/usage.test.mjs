@@ -104,6 +104,22 @@ test("the Subagents row reads unavailable without a cost reply or on another rep
   }
 });
 
+test("naming completion counts once in Main summaries while its started record counts nothing", () => {
+  const entries = [...fixture(),
+    { type: "custom", customType: "workflow-session-name", data: { status: "started", display: false } },
+    { type: "custom", customType: "workflow-session-name", data: { status: "completed", display: false, provider: "openai-codex", model: "small-fixture", usage: usage(0.03, 20, 5, 10) } },
+  ];
+  const cost = sessionCost(entries, null);
+  assert.equal(cost.total, 1.55);
+  assert.deepEqual(cost.models.find(model => model.model === "summaries"), { model: "summaries", cost: 0.05, input: 20, output: 5, cacheRead: 10, cacheWrite: 0 });
+  assert.equal(cost.main.input, 1020);
+  assert.equal(cost.main.output, 205);
+  assert.deepEqual(cacheStats(entries), cacheStats(fixture()), "naming does not invent assistant requests or cache ancestors");
+  const lines = usageLines({ at: 0, limits: null, context: contextUsage(ctx(1000)), cost }, plain, 100);
+  assert.ok(lines.some(line => line.startsWith("π Cost (est.)")));
+  assert.ok(!lines.some(line => /Subagents:|Lower bound:|Dollars:/.test(line)));
+});
+
 test("money shows two decimals, four below ten cents", () => {
   assert.equal(formatMoney(4.18), "$4.18");
   assert.equal(formatMoney(0.0421), "$0.0421");
@@ -174,14 +190,11 @@ test("the entry renders four π blocks at width 70", async () => {
     "  Messages          78.8k   29.0%   tool results 49.3k · assistant 19…",
     "  Free             187.8k   69.0%",
     "",
-    "π Cost · $2.67",
+    "π Cost (est.) · $2.67",
     "  Main           $1.52   10k in · 200 out",
     "    gpt-5.5      $1.50   10k in · 200 out",
     "    summaries  $0.0200   0 in · 0 out",
     "  Subagents      $1.15   4 runs (1 unavailable) · implementer 2 · res…",
-    "  Subagents: current branch + available artifacts",
-    "  Lower bound: missing artifacts can omit spend",
-    "  Dollars: catalog estimates, not plan allowance or cash",
     "",
     "π Cache · 1/1 requests hit · 0 no cache read",
     "  Read                 9k   90.0%",

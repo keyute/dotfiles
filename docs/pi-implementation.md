@@ -144,8 +144,9 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   dedupes callbacks, holds idle 250 ms, maps idle after reported work to explicit
   done (including work across blocked waits), and leaves initial/menu-only idle
   as idle. Attach resets timers and work; shutdown suspends before awaited
-  cleanup without writing a fake completion. No sockets, retries or child OSC
-  records. OSC-only status has no conversation identity or resume reference;
+  cleanup and clears its emitted root record once, without writing a fake
+  completion. TuiOS otherwise retains a done/error record after process exit.
+  No sockets, retries or child OSC records. OSC-only status has no conversation identity or resume reference;
   TuiOS native notifications differ from Herdr's sounds/toasts. Revisit when
   native Pi program status accounts for the owned aggregate lifecycle.
 - MCP is pi's own, fed the managed servers. Accepted: a connect per server per session and per child; another extension's `pi.registerMcpServer()` adds an unmanaged server. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.

@@ -11,6 +11,8 @@ click_to_type = "single"
 position = "left"
 
 [startup]
+# Keep sessions in the daemon after the client exits.
+daemon = true
 # Fill the workspace instead of starting with a floating terminal.
 tiled = true
 # Open the first terminal without a separate new-window action.
@@ -18,9 +20,30 @@ open_default_window = true
 # Send typing to the terminal immediately on startup.
 start_in_terminal_mode = true
 
+[workspaces]
+# Create an empty workspace's pane natively, preserving cwd and typing mode.
+new_window_when_empty = true
+
+[notifications.agent]
+# Announce agent events even while their pane has focus.
+sound = true
+suppress_focused = false
+
 [keybindings]
 # Use tmux's prefix and pane/workspace shortcuts.
 preset = "tmux"
+
+[keybindings.terminal_mode]
+# Leave application Alt+arrow navigation and Alt+P available while typing.
+terminal_focus_left = []
+terminal_focus_right = []
+terminal_focus_up = []
+terminal_focus_down = []
+terminal_prev_window = ["opt+shift+tab"]
+
+[keybindings.global]
+# Leave Ctrl+P history navigation to the application.
+command_palette = []
 
 [agents.checkpoints]
 # Leave repository checkpoints to the user rather than the multiplexer.

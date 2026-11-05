@@ -13,6 +13,7 @@ import { SUBAGENT_SCHEMA, allowedChildAgents, checkChildLaunch } from "./childre
 import { installFooter } from "./footer.mjs";
 import { installProgramStatus } from "./program-status.mjs";
 import { installHeader } from "./header.mjs";
+import { installSessionName } from "./session-name.mjs";
 import { installFleet } from "./fleet.mjs";
 import { createOrchestrate } from "./orchestrate.mjs";
 import { createUltrathink } from "./keywords.mjs";
@@ -133,6 +134,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   let userTask = "";
   const plans = new PlanState();
   const ultrathink = createUltrathink(pi);
+  if (isRoot) installSessionName(pi, config);
   let pendingInput;
   // This process's recent shell commands (command, sandboxed, exit code; never
   // output), sent with every bash authorization as the classifier's evidence.
@@ -306,6 +308,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   async function shutdown() {
+    surfaces?.editor?.dispose();
     surfaces?.programStatus?.shutdown();
     // pi persists each level change and a resume restores the last one.
     if (isRoot) ultrathink.end();
@@ -335,6 +338,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   }
 
   pi.on("session_start", async (event, ctx) => {
+    surfaces?.editor?.dispose();
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     if (isRoot) { ready = false; await orchestrate.reset(); }
     currentContext = ctx;
@@ -379,7 +383,11 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       // pi resets every extension surface when a session is invalidated
       // (/new, /resume), so these are applied on each session start.
       installHeader(ctx);
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell, pending: pendingInput, notify: (text, type) => ctx.ui.notify(text, type) }));
+      ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+        surfaces.editor?.dispose();
+        surfaces.editor = new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell, pending: pendingInput, notify: (text, type) => ctx.ui.notify(text, type) });
+        return surfaces.editor;
+      });
       ctx.ui.addAutocompleteProvider(argumentCompletions);
     }
     refreshActiveTools();

@@ -581,3 +581,49 @@ test("composer range survives resize and leaves autocomplete mouse routing nativ
   const result = caret.handleMouse(event("press", 3, 3));
   assert.notEqual(result?.capture, true, "autocomplete does not start an editor drag");
 });
+
+
+test("native Option+Up reaches dequeue action dispatch through CaretEditor without editing the selection", async () => {
+  const { KeybindingsManager } = await import(new URL("./core/keybindings.js", import.meta.resolve("@earendil-works/pi-coding-agent")));
+  const caret = new CaretEditor({ terminal: { rows: 24 }, requestRender() {} }, editorTheme, new KeybindingsManager(), { palette });
+  let dequeued = 0;
+  caret.actionHandlers.set("app.message.dequeue", () => { dequeued++; });
+  caret.setText("draft");
+  caret.selection = { anchor: { line: 0, col: 0 }, focus: { line: 0, col: 3 }, text: caret.getText() };
+  caret.handleInput("\x1b[1;3A");
+  assert.equal(dequeued, 1);
+  assert.equal(caret.getText(), "draft");
+  caret.handleInput("\x1b[D");
+  assert.equal(caret.getText(), "draft");
+});
+
+test("clicking the composer leaves fleet logical focus before typing and native shell submission", () => {
+  let focused = true;
+  const actions = [], sent = [];
+  const caret = editor({
+    fleet: { focused: () => focused, handleKey: action => { actions.push(action); if (action === "cancel") focused = false; return true; } },
+    shell: { submit: text => { sent.push(text); return true; }, abortable: () => false },
+  });
+  caret.setText("! echo"); caret.render(40);
+  for (const type of ["press", "release", "click"]) caret.handleMouse({ type, button: "left", clickCount: 1, x: 9, y: 1, width: 40 });
+  caret.handleInput("x"); caret.handleInput("\x1b\r");
+  assert.deepEqual(actions, ["cancel"]);
+  assert.deepEqual(sent, ["! echox"]);
+});
+
+test("mouse directory acceptance shows just the next level, unchanged directories close and wheel stays native", async () => {
+  const caret = completing();
+  caret.setText("/add-dir "); await tab(caret); caret.render(40);
+  const event = (type, y) => ({ type, button: "left", x: 4, y, width: 40, height: 12 });
+  caret.handleMouse(event("press", 4));
+  caret.handleMouse(event("release", 4));
+  caret.handleMouse({ ...event("click", 4), clickCount: 1 });
+  await settle();
+  assert.equal(caret.getText(), "/add-dir ../two/");
+  assert.deepEqual(menu(caret), ["../two/only/"]);
+  caret.setText("/add-dir ../one/"); await tab(caret); caret.render(40);
+  caret.handleMouse(event("click", 3)); await settle();
+  assert.equal(caret.getText(), "/add-dir ../one/");
+  assert.deepEqual(menu(caret), []);
+  assert.equal(caret.handleMouse({ ...event("wheel", 1), wheelDelta: 1 }), undefined);
+});

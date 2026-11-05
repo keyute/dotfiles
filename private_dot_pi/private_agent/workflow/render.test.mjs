@@ -616,8 +616,13 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
   assert.deepEqual(config.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")), [
     "[appearance]", 'theme = "catppuccin_mocha"', 'theme_light = "catppuccin_latte"', 'click_to_type = "single"',
     "[appearance.sidebar]", 'position = "left"',
-    "[startup]", "tiled = true", "open_default_window = true", "start_in_terminal_mode = true",
+    "[startup]", "daemon = true", "tiled = true", "open_default_window = true", "start_in_terminal_mode = true",
+    "[workspaces]", "new_window_when_empty = true",
+    "[notifications.agent]", "sound = true", "suppress_focused = false",
     "[keybindings]", 'preset = "tmux"',
+    "[keybindings.terminal_mode]", "terminal_focus_left = []", "terminal_focus_right = []",
+    "terminal_focus_up = []", "terminal_focus_down = []", 'terminal_prev_window = ["opt+shift+tab"]',
+    "[keybindings.global]", "command_palette = []",
     "[agents.checkpoints]", "enabled = false",
   ]);
   const claude = JSON.parse(run("cat", target(".claude/settings.json")));
@@ -632,6 +637,71 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
   assert.doesNotMatch(brewfile, /^brew "herdr"$/m);
   const zshrc = run("cat", target(".zshrc"));
   assert.doesNotMatch(zshrc, /_herdr_report_org|HERDR_/);
+});
+
+test("native TuiOS inspection leaves application keys free in terminal mode", t => {
+  const { run, target } = fixture(t);
+  const path = target(".config/tuios/config.toml");
+  mkdirSync(dirname(path), { recursive: true });
+  const config = run("cat", path);
+  writeFileSync(path, config);
+  const inspect = (...args) => {
+    const result = spawnSync("tuios", ["keybinds", ...args, "--json"], {
+      encoding: "utf8", env: { ...process.env, HOME: target(""), XDG_CONFIG_HOME: target(".config") },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    return JSON.parse(result.stdout);
+  };
+  // A scratch-only sentinel proves the inspector loads this config, not the applied one.
+  writeFileSync(path, config.replace("command_palette = []", 'command_palette = ["ctrl+alt+f12"]'));
+  assert.equal(inspect("explain", "ctrl+alt+f12").swallowed_in_terminal, true);
+  writeFileSync(path, config);
+  for (const key of ["alt+up", "alt+down", "alt+left", "alt+right", "alt+p", "ctrl+p", "alt+enter", "ctrl+enter", "alt+b", "alt+f"]) {
+    const report = inspect("explain", key);
+    assert.equal(report.swallowed_in_terminal, false, key);
+    assert.ok(!(report.acts ?? []).some(act => ["terminal", "global"].includes(act.scope)), key);
+  }
+  const rows = inspect("list");
+  assert.deepEqual(rows.find(row => row.action === "terminal_prev_window" && row.scope === "terminal").keys, ["opt+shift+tab"]);
+  for (const direction of ["left", "right", "up", "down"]) {
+    assert.ok(rows.find(row => row.action === `resize_pane_${direction}_5` && row.scope === "prefix").keys.includes(`ctrl+b alt+${direction}`));
+  }
+  assert.equal(inspect("explain", "ctrl+b").swallowed_in_terminal, true);
+  assert.equal(rows.find(row => row.action === "send_prefix").unbound, true);
+  assert.equal(readFileSync(path, "utf8"), config);
+});
+
+test("TuiOS prompt title is interactive, TTY-only and treats directory names as data", t => {
+  const { run, target } = fixture(t);
+  const zshrc = run("cat", target(".zshrc"));
+  const hook = zshrc.match(/^_tuios_directory_title\(\) \{\n[^]*?^\}\nadd-zsh-hook precmd _tuios_directory_title$/m)?.[0];
+  assert.ok(hook, "rendered title hook missing");
+  const script = target("title.zsh");
+  writeFileSync(script, `autoload -Uz add-zsh-hook\n${hook}\nfor hook in $precmd_functions; do "$hook"; done\n`);
+  const malicious = `工作流\u001b\u0007\n%$(touch executed)`;
+  const cwd = target(malicious);
+  mkdirSync(cwd);
+  const invoke = (interactive, tty, tuios, directory = cwd) => {
+    const args = ["-df", ...(interactive ? ["-i"] : []), script];
+    const ptyArgs = process.platform === "darwin"
+      ? ["-q", "/dev/null", "zsh", ...args]
+      : ["-q", "-e", "-c", `zsh ${args.map(arg => `'${arg.replaceAll("'", "'\\''")}'`).join(" ")}`, "/dev/null"];
+    const result = spawnSync(tty ? "script" : "zsh", tty ? ptyArgs : args, {
+      cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, HOME: resolve(target("")), ZDOTDIR: target(""), TUIOS_ENV: tuios },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    // BSD script echoes its injected EOF when stdin is /dev/null.
+    return tty && process.platform === "darwin" ? result.stdout.replace(/^\^D\x08\x08/, "") : result.stdout;
+  };
+  assert.equal(invoke(true, true, "1"), "\u001b]2;工作流%$(touch executed)/\u0007");
+  assert.equal(existsSync(join(cwd, "executed")), false);
+  assert.equal(invoke(true, true, "1", target("")), "\u001b]2;~/\u0007");
+  assert.equal(invoke(true, true, "1", "/"), "\u001b]2;/\u0007");
+  assert.equal(invoke(false, true, "1"), "");
+  assert.equal(invoke(true, false, "1"), "");
+  for (const value of ["", "0", "true"]) assert.equal(invoke(true, true, value), "");
 });
 
 test("managed Pi launch overrides native status only inside TuiOS and only for the call", t => {

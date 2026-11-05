@@ -5,6 +5,7 @@ import { truncateToWidth as truncate } from "@earendil-works/pi-tui";
 import { formatReset, longWindow, readRateLimits, windowLabel } from "./footer.mjs";
 import { formatTokens, modelLabel, rpcCall } from "./fleet.mjs";
 import { PAD, TURN_GLYPH, formatDuration, meter, pad } from "./rows.mjs";
+import { SESSION_NAME_ENTRY } from "./session-name.mjs";
 
 // The shape is docs/pi-design.md's /usage bullet: plan limits, context, cost
 // and cache as four π blocks. The entry stores numbers; the layout is per width.
@@ -117,6 +118,7 @@ export function sessionCost(entries, report) {
     // Only web_fetch: subagent tool results carry child usage the cost report already counts.
     else if (message?.role === "toolResult" && message.toolName === "web_fetch" && message.usage) byModel("summaries", message.usage);
     else if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) byModel("summaries", entry.usage);
+    else if (entry.type === "custom" && entry.customType === SESSION_NAME_ENTRY && entry.data?.status === "completed" && entry.data.usage) byModel("summaries", entry.data.usage);
   }
   for (const child of report?.children ?? []) {
     const owned = workflowRuns.get(child.runId);
@@ -231,7 +233,7 @@ function contextLines({ model, window, used, estimated, parts }, theme, width) {
 function costLines({ total, main, models, subagents, workflows, approvals, unmeteredSearches }, theme, width) {
   const row = (label, cost, tail) => fit(`${PAD}${pad(label, 12)}${theme.fg("muted", `${formatMoney(cost).padStart(8)}${tail ? `   ${tail}` : ""}`)}`, width);
   const tokens = usage => `${tokenText(promptTokens(usage))} in${SEP}${tokenText(usage.output)} out`;
-  const lines = [fit(head("Cost", formatMoney(total), theme), width), row("Main", main.cost, tokens(main))];
+  const lines = [fit(head("Cost (est.)", formatMoney(total), theme), width), row("Main", main.cost, tokens(main))];
   // Indented under Main: the per-model lines are its parts, not further spend.
   for (const usage of models) lines.push(row(`  ${usage.model}`, usage.cost, tokens(usage)));
   if (!subagents) lines.push(fit(`${PAD}${pad("Subagents", 12)}${theme.fg("muted", "unavailable")}`, width));
@@ -247,13 +249,8 @@ function costLines({ total, main, models, subagents, workflows, approvals, unmet
       ? fit(`${PAD}${pad("Workflows", 12)}${theme.fg("muted", `unavailable   ${runs}`)}`, width)
       : row("Workflows", workflows.cost, `${runs}${SEP}${tokens(workflows)}`));
   }
-  if (subagents) {
-    lines.push(fit(`${PAD}Subagents: current branch + available artifacts`, width));
-    lines.push(fit(`${PAD}Lower bound: missing artifacts can omit spend`, width));
-  }
   if (approvals?.calls) lines.push(row("Approvals", approvals.cost, `${tokens(approvals)}${approvals.unknown ? `${SEP}${approvals.unknown} unknown` : ""}`));
   if (unmeteredSearches) lines.push(fit(`${PAD}Search${SEP}${unmeteredSearches} unmetered calls (usage unavailable)`, width));
-  lines.push(fit(`${PAD}Dollars: catalog estimates, not plan allowance or cash`, width));
   return lines;
 }
 

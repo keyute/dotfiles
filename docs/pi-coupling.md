@@ -98,13 +98,21 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   later pastes skip literal ids in both visible text and collapsed payloads.
   Backspace uses range deletion when
   literal markers are present, avoiding native renumbering of their text.
-  Fullscreen drag endpoints
-  reuse native click mapping; private state performs atomic range deletion,
-  and visual-line/scroll metadata places the highlight. Within the range,
-  deferred fake-cursor wrappers are removed so they cannot reset its highlight;
-  the IME cursor marker stays. Copy-on-select and the copy shortcut use public
-  clipboard/preference APIs.
-  *Residual:* terminal-owned regular-mode selection is not editable.
+  Fullscreen drag endpoints reuse native click mapping and marker-aware
+  segmentation; multi-click classification arrives on the synthesized click
+  after release. Private state performs range deletion/replacement, suppressing
+  the insertion's second undo snapshot, and visual-line/scroll metadata places
+  the highlight and advances edge drags. The native capture target, read through
+  the host's stable renderer reference, ends autoscroll when fullscreen consumes
+  focus-out before extension input listeners. Logical focus loss is deferred a
+  microtask because native click focus toggles even the same component off/on;
+  the workflow disposes the editor before session replacement and shutdown.
+  Mouse completion uses the native list callback before re-opening the same
+  directory level as Tab. Within a range, deferred fake-cursor wrappers are
+  removed so they cannot reset its highlight; the IME cursor marker stays.
+  Copy-on-select and the copy shortcut use public clipboard/preference APIs.
+  *Residual:* terminal-owned regular-mode selection is not editable; secondary
+  inputs and independent composer wheel scrolling remain native.
   *On red:* repair these composer seams; retire when native editable ranges,
   shell-aware collapse and targeted paste expansion cover them.
   *Pin:* `stability.test.mjs`, `editor.test.mjs`, `caret.test.mjs`.

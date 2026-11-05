@@ -68,6 +68,15 @@ export class CaretEditor extends sdk.CustomEditor {
     // would shadow the accessor pair below forever; dropping it here lets
     // property access reach the prototype's getter/setter instead.
     delete this.onSubmit;
+    let focused = this.focused;
+    Object.defineProperty(this, "focused", {
+      get: () => focused,
+      set: value => {
+        focused = value;
+        // Native setFocus toggles false/true even when re-focusing this editor.
+        if (!value) queueMicrotask(() => { if (!focused) this.cancelDrag(); });
+      },
+    });
   }
   // pi assigns its own submit callback onto this editor once, right after
   // construction (`newEditor.onSubmit = this.defaultEditor.onSubmit`); the
@@ -178,7 +187,7 @@ export class CaretEditor extends sdk.CustomEditor {
     lines[0] = lines[0].slice(start.col);
     return this.expandPasteMarkers(lines.join("\n"));
   }
-  deleteSelection() {
+  deleteSelection(snapshot = true) {
     const range = this.selectionRange();
     this.selection = undefined;
     if (!range) return false;
@@ -187,7 +196,7 @@ export class CaretEditor extends sdk.CustomEditor {
     this.cancelAutocomplete();
     this.exitHistoryBrowsing();
     this.lastAction = null;
-    this.pushUndoSnapshot();
+    if (snapshot) this.pushUndoSnapshot();
     const before = new Set([...this.getText().matchAll(PASTE_MARKERS)].map(match => Number(match[1])).filter(id => this.pastes.has(id)));
     this.state.lines.splice(start.line, end.line - start.line + 1,
       this.state.lines[start.line].slice(0, start.col) + this.state.lines[end.line].slice(end.col));
@@ -206,44 +215,118 @@ export class CaretEditor extends sdk.CustomEditor {
     if (!this.deleteSelection()) super.handleForwardDelete();
   }
   setText(text) {
+    this.cancelDrag();
     this.selection = undefined;
     super.setText(text);
     delete this.state.pasteSeparators;
+  }
+  cancelDrag() {
+    clearTimeout(this.dragTimer);
+    this.dragTimer = undefined;
+    this.dragging = false;
+    this.dragEvent = undefined;
+  }
+  dispose() {
+    this.cancelDrag();
+  }
+  mapMouseCursor(event) {
+    // Native hit-testing owns wrapping and cell widths; whole-line segmentation
+    // also snaps a marker split across visual rows back to an atomic boundary.
+    super.handleMouse({ ...event, type: "click", button: "left", y: Math.max(1, Math.min(this.renderedVisibleLineCount, event.y)) });
+    const cursor = this.getCursor();
+    // Word lookup needs the hit before atomic caret snapping: a marker's latter
+    // half can snap to its end, which belongs to the following word (or none).
+    const hitCol = cursor.col;
+    for (const segment of this.segment(this.state.lines[cursor.line], "grapheme")) {
+      const end = segment.index + segment.segment.length;
+      if (cursor.col > segment.index && cursor.col < end) {
+        cursor.col = cursor.col - segment.index < end - cursor.col ? segment.index : end;
+        this.setCursorCol(cursor.col);
+        break;
+      }
+    }
+    return { cursor, hitCol };
+  }
+  scrollDrag() {
+    // Fullscreen consumes terminal blur before extension input listeners run.
+    if (this.tui.mode === "fullscreen" && this.tui.mouseCapture?.component !== this) {
+      this.cancelDrag();
+      return;
+    }
+    this.dragTimer = undefined;
+    if (!this.dragging || !this.dragEvent || !this.selectionRange()) return;
+    const event = { ...this.dragEvent, width: this.renderWidth };
+    const direction = event.y <= 0 ? -1 : event.y > this.renderedVisibleLineCount ? 1 : 0;
+    if (!direction) return;
+    const map = this.buildVisualLineMap(this.lastWidth);
+    const offset = Math.max(0, Math.min(map.length - this.renderedVisibleLineCount, this.scrollOffset + direction));
+    if (offset === this.scrollOffset) return;
+    this.scrollOffset = offset;
+    this.selection.focus = this.mapMouseCursor(event).cursor;
+    // Native render follows the endpoint and refreshes clipped geometry.
+    this.render(event.width);
+    this.tui.requestRender();
+    this.dragTimer = setTimeout(() => this.scrollDrag(), 60);
+    this.dragTimer.unref?.();
+  }
+  reopenCompletion(before) {
+    if (this.isShowingAutocomplete() || this.getText() === before) return;
+    const { line, col } = this.getCursor();
+    const lines = this.getLines();
+    if (/[ /]$/.test((lines[line] ?? "").slice(0, col)) && commandArgument(lines, line, col)) this.tryTriggerAutocomplete();
   }
   handleMouse(event) {
     const content = event.y > 0 && event.y <= this.renderedVisibleLineCount;
     if ((event.button === "left" && event.type === "press" && content) ||
       (this.dragging && ["drag", "release"].includes(event.type))) {
-      // A native click maps terminal cells to grapheme/marker-safe logical columns.
-      super.handleMouse({ ...event, type: "click", button: "left", y: Math.max(1, Math.min(this.renderedVisibleLineCount, event.y)) });
-      const cursor = this.getCursor();
-      // Native layout may split a wide paste marker across visual rows. The
-      // logical range must still treat that registry-backed segment atomically.
-      for (const segment of this.segment(this.state.lines[cursor.line], "grapheme")) {
-        const end = segment.index + segment.segment.length;
-        if (cursor.col > segment.index && cursor.col < end) {
-          cursor.col = cursor.col - segment.index < end - cursor.col ? segment.index : end;
-          this.setCursorCol(cursor.col);
-          break;
-        }
-      }
+      if (this.fleet?.focused()) this.fleet.handleKey("cancel");
+      const anchor = event.shift ? this.selectionRange() && this.selection.anchor : undefined;
+      const previous = this.getCursor();
+      const { cursor } = this.mapMouseCursor(event);
       if (event.type === "press") {
-        this.selection = { anchor: cursor, focus: cursor, text: this.getText() };
+        this.cancelDrag();
+        this.selection = { anchor: anchor ?? (event.shift ? previous : cursor), focus: cursor, text: this.getText() };
         this.dragging = true;
       } else if (this.selectionRange()) {
         this.selection.focus = cursor;
       }
       if (event.type === "release") {
-        this.dragging = false;
+        this.cancelDrag();
         if (this.tui.getCopyOnSelect?.()) {
           const text = this.selectionText();
           if (text) this.copySelection(text);
         }
+      } else if (event.type === "drag") {
+        this.dragEvent = event;
+        clearTimeout(this.dragTimer);
+        this.dragTimer = setTimeout(() => this.scrollDrag(), 60);
+        this.dragTimer.unref?.();
       }
       return { handled: true, capture: event.type === "press", focus: true, render: true };
     }
-    if (event.type === "click") this.selection = undefined;
-    return super.handleMouse(event);
+    if (event.type === "click" && event.button === "left" && content) {
+      if (this.fleet?.focused()) this.fleet.handleKey("cancel");
+      // Press/release already established the anchor, including Shift-click.
+      // The synthesized click alone carries native multi-click classification.
+      if (event.clickCount > 1 && !event.shift) {
+        const { cursor, hitCol } = this.mapMouseCursor(event);
+        const text = this.state.lines[cursor.line];
+        const word = [...this.segment(text, "word")].find(part => hitCol >= part.index && hitCol < part.index + part.segment.length);
+        const start = event.clickCount === 3 ? (cursor.line === 0 ? this.commandStart() : 0) : word?.index ?? cursor.col;
+        const end = event.clickCount === 3 ? text.length : word ? word.index + word.segment.length : cursor.col;
+        this.selection = { anchor: { line: cursor.line, col: start }, focus: { line: cursor.line, col: end }, text: this.getText() };
+        this.setCursorCol(end);
+        if (this.tui.getCopyOnSelect?.() && this.selectionText()) this.copySelection(this.selectionText());
+      } else if (!this.selectionRange()) {
+        const { cursor } = this.mapMouseCursor(event);
+        this.selection = { anchor: cursor, focus: cursor, text: this.getText() };
+      }
+      return { handled: true, focus: true, render: true };
+    }
+    const before = this.getText();
+    const result = super.handleMouse(event);
+    this.reopenCompletion(before);
+    return result;
   }
   async copySelection(text) {
     try { await this.copyToClipboard(text); }
@@ -253,7 +336,7 @@ export class CaretEditor extends sdk.CustomEditor {
     // Native undo merges state, so every snapshot must explicitly carry even
     // empty provenance rather than leave a later paste's separator ids behind.
     this.state.pasteSeparators ??= new Set();
-    super.pushUndoSnapshot();
+    if (!this.replacingSelection) super.pushUndoSnapshot();
     if (this.completingPaste) {
       // Reserve literal ids, including those still inside collapsed payloads,
       // after the native undo snapshot but before handlePaste allocates an id.
@@ -265,8 +348,30 @@ export class CaretEditor extends sdk.CustomEditor {
       this.completingPaste.counter = this.pasteCounter;
     }
   }
+  replaceSelection(insert) {
+    const range = this.selectionRange();
+    if (!range || (range[0].line === range[1].line && range[0].col === range[1].col)) return insert();
+    this.pushUndoSnapshot();
+    this.deleteSelection(false);
+    this.replacingSelection = true;
+    try { return insert(); } finally { this.replacingSelection = false; }
+  }
+  insertCharacter(char, skipUndoCoalescing) {
+    this.selection ??= this.inputSelection;
+    return this.replaceSelection(() => super.insertCharacter(char, skipUndoCoalescing));
+  }
+  addNewLine() {
+    this.selection ??= this.inputSelection;
+    return this.replaceSelection(() => super.addNewLine());
+  }
+  insertTextAtCursor(text) {
+    if (!text) return;
+    return this.replaceSelection(() => super.insertTextAtCursor(text));
+  }
   handlePaste(text) {
-    this.selection = undefined;
+    return this.replaceSelection(() => this.insertPaste(text));
+  }
+  insertPaste(text) {
     const { cursorLine: line, cursorCol: col } = this.state;
     this.completingPaste = { counter: this.pasteCounter, wordBefore: /\w/.test(this.state.lines[line][col - 1] ?? "") };
     try { super.handlePaste(text); } finally { this.completingPaste = undefined; }
@@ -290,7 +395,7 @@ export class CaretEditor extends sdk.CustomEditor {
       const clipboard = completing.separator ? payload.slice(1) : payload;
       const { cursorLine: line, cursorCol: col } = this.state;
       const previous = this.state.lines[line].slice(0, col).match(/\[paste #(\d+) [^\]]+\]$/);
-      if (previous) {
+      if (previous && !this.replacingSelection) {
         const previousId = Number(previous[1]);
         const stored = this.pastes.get(previousId);
         const previousClipboard = this.state.pasteSeparators?.has(previousId) ? stored?.slice(1) : stored;
@@ -342,11 +447,17 @@ export class CaretEditor extends sdk.CustomEditor {
   // enters it only when the editor itself had nothing left to do with the key,
   // so wrapped lines, line-end moves, history and autocomplete keep priority.
   handleInput(data) {
+    this.cancelDrag();
+    this.inputSelection = this.selection;
+    try { return this.handleEditorInput(data); }
+    finally { this.inputSelection = undefined; }
+  }
+  handleEditorInput(data) {
     if (this.keybindings.matches(data, "app.message.copy")) {
       const text = this.selectionText();
       if (text) { this.copySelection(text); return; }
     }
-    if (!["backspace", "shift+backspace", "delete", "shift+delete"].some(key => matchesKey(data, key)) &&
+    if (!this.isInPaste && !data.includes("\x1b[200~") && !this.keybindings.matches(data, "app.clipboard.pasteImage") && !["backspace", "shift+backspace", "delete", "shift+delete"].some(key => matchesKey(data, key)) &&
       !["tui.editor.deleteCharBackward", "tui.editor.deleteCharForward"].some(key => this.keybindings.matches(data, key))) this.selection = undefined;
     if (this.pending && matchesKey(data, "ctrl+enter") && !this.fleet?.focused() && !this.shellMode()) {
       this.cancelAutocomplete();
@@ -395,10 +506,7 @@ export class CaretEditor extends sdk.CustomEditor {
     if (this.keybindings.matches(data, "tui.input.tab") && this.isShowingAutocomplete()) {
       const before = this.getText();
       super.handleInput(data);
-      if (this.isShowingAutocomplete() || this.getText() === before) return;
-      const { line, col } = this.getCursor();
-      const lines = this.getLines();
-      if (/[ /]$/.test((lines[line] ?? "").slice(0, col)) && commandArgument(lines, line, col)) this.tryTriggerAutocomplete();
+      this.reopenCompletion(before);
       return;
     }
     const at = this.getCursor();
@@ -439,6 +547,7 @@ export class CaretEditor extends sdk.CustomEditor {
     return this.bottomRow;
   }
   render(width) {
+    this.renderWidth = width;
     const lines = super.render(width);
     // Content sits between the two shaded rows; autocomplete follows the
     // bottom one and stays unshaded.

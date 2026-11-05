@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CURSOR_MARKER, TuiMainScreen } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, TuiAltScreen, TuiMainScreen, Container } from "@earendil-works/pi-tui";
 import { CaretEditor } from "./editor.mjs";
 
 const keybindings = { matches: (key, action) => ({ "tui.editor.cursorLineStart": "\x01", "tui.editor.deleteCharBackward": "\x7f", "tui.editor.cursorUp": "\x1b[A", "tui.editor.cursorDown": "\x1b[B" })[action] === key };
@@ -635,4 +635,276 @@ test("a newline-only range is visible and deletes the line break", () => {
   assert.match(caret.render(30)[1], /\x1b\[7m/);
   caret.handleInput("\x7f");
   assert.equal(caret.getText(), "ab");
+});
+
+// Exercise the renderer's actual press -> release -> synthesized click order.
+const fullscreen = (caret, width = 40) => {
+  const tui = new TuiAltScreen({ rows: 24, columns: width });
+  tui.requestRender = () => {};
+  const container = new Container();
+  container.addChild(caret);
+  tui.dispatchMouseToLayout = event => container.handleMouse(event);
+  tui.handleScrollbarMouseEvent = () => false;
+  tui.updateScrollbarHover = () => {};
+  caret.tui = tui;
+  return (x, y, { shift = false, release = false, drag = false } = {}) =>
+    tui.handleMouseEvent({ x, y, button: (shift ? 4 : 0) | (drag ? 32 : 0), release });
+};
+
+test("native fullscreen dispatch preserves double/triple click, Shift-click and captured drag ranges", () => {
+  const caret = editor(), copies = [];
+  caret.copySelection = text => copies.push(text);
+  caret.setText("hello world\nnext"); caret.render(40);
+  const send = fullscreen(caret);
+  const click = (x, y, options = {}) => { send(x, y, options); send(x, y, { ...options, release: true }); };
+  click(9, 1);
+  assert.equal(caret.selectionText(), "");
+  click(9, 1);
+  assert.equal(caret.selectionText(), "world");
+  click(9, 1);
+  assert.equal(caret.selectionText(), "hello world");
+  click(4, 2, { shift: true });
+  assert.equal(caret.selectionText(), "hello world\nne");
+  send(2, 1); send(6, 1, { drag: true }); send(6, 1, { release: true });
+  assert.equal(caret.selectionText(), "hell");
+  assert.equal(caret.dragging, false);
+  assert.ok(copies.includes("world"));
+  caret.handleInput("X");
+  assert.equal(caret.getText(), "Xo world\nnext");
+  caret.handleInput("\x1f");
+  assert.equal(caret.getText(), "hello world\nnext");
+});
+
+test("native double-click uses wrapped marker hit provenance rather than its snapped end", () => {
+  for (const prefix of ["", "! ", "!! "]) {
+    for (const suffix of ["", "tail", "marker"]) {
+      for (const [x, y] of [[6, 2], [3, 3]]) {
+        const caret = editor(), payload = "large\n".repeat(20), survivor = "other\n".repeat(20);
+        caret.setText(prefix);
+        paste(caret, payload);
+        const markerEnd = caret.getText().length;
+        if (suffix === "marker") paste(caret, survivor);
+        else if (suffix) caret.handleInput(suffix);
+        const original = caret.getText(), registry = new Map(caret.pastes), counter = caret.pasteCounter;
+        caret.state.cursorCol = prefix.length;
+        caret.render(12);
+        const send = fullscreen(caret, 12);
+        for (let count = 0; count < 2; count++) {
+          send(x, y); send(x, y, { release: true });
+        }
+        assert.equal(caret.selectionText(), payload, `${prefix}/${suffix} at ${x},${y}`);
+        assert.deepEqual(caret.selectionRange(), [{ line: 0, col: prefix.length }, { line: 0, col: markerEnd }]);
+        const before = structuredClone({ state: caret.state, pastes: caret.pastes, counter: caret.pasteCounter });
+        caret.handleInput("X");
+        assert.equal(caret.getText(), prefix + "X" + original.slice(markerEnd));
+        assert.equal(caret.getExpandedText(), prefix + "X" + (suffix === "marker" ? survivor : suffix));
+        assert.equal(caret.pastes.has(1), false);
+        if (suffix === "marker") assert.equal(caret.pastes.get(2), registry.get(2));
+        caret.handleInput("\x1f");
+        assert.deepEqual({ state: caret.state, pastes: caret.pastes, counter: caret.pasteCounter }, before);
+        assert.equal(caret.getText(), original);
+        assert.deepEqual(caret.pastes, registry);
+        assert.equal(caret.pasteCounter, counter);
+      }
+    }
+  }
+});
+
+test("native double-click at a marker end targets following text, another marker or blank space", () => {
+  for (const suffix of ["", "tail", "marker"]) {
+    const caret = editor(), payload = "large\n".repeat(20), survivor = "other\n".repeat(20);
+    paste(caret, payload);
+    const x = 2 + caret.getText().length;
+    if (suffix === "marker") paste(caret, survivor);
+    else if (suffix) caret.handleInput(suffix);
+    caret.render(60);
+    const send = fullscreen(caret, 60);
+    for (let count = 0; count < 2; count++) {
+      send(x, 1); send(x, 1, { release: true });
+    }
+    assert.equal(caret.selectionText(), suffix === "marker" ? survivor : suffix);
+  }
+});
+
+test("selected Unicode and collapsed markers replace atomically without renumbering surviving registry ids", () => {
+  for (const replacement of ["Z", "\x1b[90;1u", "\x1b[200~replacement\x1b[201~", "\x1b[200~" + "new\n".repeat(20) + "\x1b[201~"]) {
+    const caret = editor();
+    caret.setText("!! 界e\u0301😀 ");
+    paste(caret, "first\n".repeat(20));
+    const end = caret.getCursor();
+    paste(caret, "survivor\n".repeat(20));
+    const before = structuredClone({ state: caret.state, pastes: caret.pastes, counter: caret.pasteCounter });
+    caret.selection = { anchor: { line: 0, col: 3 }, focus: end, text: caret.getText() };
+    caret.handleInput(replacement);
+    assert.ok(caret.getText().startsWith("!! "));
+    assert.ok(caret.pastes.has(2));
+    assert.equal(caret.pastes.has(1), false);
+    assert.ok(!caret.getExpandedText().includes("first"));
+    caret.handleInput("\x1f");
+    assert.deepEqual({ state: caret.state, pastes: caret.pastes, counter: caret.pasteCounter }, before);
+    caret.handleInput("\x1f");
+    assert.equal(caret.pastes.has(2), false, "no intermediate deletion-only undo state");
+  }
+});
+
+test("newline entrypoints replace a selected range in one undo", () => {
+  for (const insert of [caret => caret.handleInput("\x1b[13;2u"), caret => caret.handleInput("\n"), caret => caret.addNewLine()]) {
+    const caret = editor();
+    caret.setText("abc def");
+    caret.state.cursorCol = 3;
+    caret.selection = { anchor: { line: 0, col: 0 }, focus: caret.getCursor(), text: caret.getText() };
+    insert(caret);
+    assert.equal(caret.getText(), "\n def");
+    caret.handleInput("\x1f");
+    assert.equal(caret.getText(), "abc def");
+    caret.handleInput("\x1f");
+    assert.equal(caret.getText(), "", "replacement has no deletion-only undo state");
+  }
+});
+
+test("public insertion replaces selection while empty insertion is a no-op", () => {
+  const caret = editor();
+  caret.setText("abc def");
+  caret.state.cursorCol = 3;
+  caret.selection = { anchor: { line: 0, col: 0 }, focus: caret.getCursor(), text: caret.getText() };
+  const selection = structuredClone(caret.selection);
+  caret.insertTextAtCursor("");
+  assert.equal(caret.getText(), "abc def");
+  assert.deepEqual(caret.selection, selection);
+  caret.insertTextAtCursor("X");
+  assert.equal(caret.getText(), "X def");
+  caret.handleInput("\x1f");
+  assert.equal(caret.getText(), "abc def");
+  caret.handleInput("\x1f");
+  assert.equal(caret.getText(), "");
+});
+
+test("native clipboard shortcut retains selection until asynchronous public insertion", async () => {
+  const caret = editor();
+  caret.keybindings = { matches: (data, action) => action === "app.clipboard.pasteImage" ? data === "\x16" : keybindings.matches(data, action) };
+  caret.setText("abc def");
+  caret.state.cursorCol = 3;
+  caret.selection = { anchor: { line: 0, col: 0 }, focus: caret.getCursor(), text: caret.getText() };
+  let completion;
+  caret.onPasteImage = () => { completion = Promise.resolve().then(() => caret.insertTextAtCursor("X")); };
+  caret.handleInput("\x16");
+  await completion;
+  assert.equal(caret.getText(), "X def");
+  caret.handleInput("\x1f");
+  assert.equal(caret.getText(), "abc def");
+});
+
+test("newline and public insertion retire selected markers and undo restores registry and provenance", () => {
+  for (const insert of [caret => caret.handleInput("\x1b[13;2u"), caret => caret.insertTextAtCursor("X")]) {
+    const caret = editor();
+    caret.setText("word");
+    paste(caret, "/" + "x".repeat(1100));
+    const end = caret.getCursor();
+    paste(caret, "survivor\n".repeat(15));
+    const before = structuredClone({ state: caret.state, pastes: caret.pastes, counter: caret.pasteCounter });
+    caret.selection = { anchor: { line: 0, col: 4 }, focus: end, text: caret.getText() };
+    insert(caret);
+    assert.equal(caret.pastes.has(1), false);
+    assert.equal(caret.state.pasteSeparators.has(1), false);
+    assert.equal(caret.pastes.has(2), true);
+    assert.equal(caret.getExpandedText(), "word" + (caret.getText().includes("X") ? "X" : "\n") + "survivor\n".repeat(15));
+    caret.handleInput("\x1f");
+    assert.deepEqual({ state: caret.state, pastes: caret.pastes, counter: caret.pasteCounter }, before);
+    caret.handleInput("\x1f");
+    assert.equal(caret.pastes.has(2), false);
+  }
+});
+
+test("identical adjacent paste replaces a selected range instead of consuming it to expand", () => {
+  for (const body of ["long\n".repeat(15), "/" + "x".repeat(1100)]) {
+    const caret = editor();
+    caret.setText("word");
+    paste(caret, body);
+    const start = caret.getCursor();
+    caret.handleInput("abc");
+    const before = structuredClone({ state: caret.state, pastes: caret.pastes, counter: caret.pasteCounter });
+    caret.selection = { anchor: start, focus: caret.getCursor(), text: caret.getText() };
+    paste(caret, body);
+    const expected = "word" + (body.startsWith("/") ? " " : "") + body + body;
+    assert.equal(caret.getExpandedText(), expected);
+    assert.equal(caret.pastes.size, 2);
+    assert.equal(caret.state.pasteSeparators.has(1), body.startsWith("/"));
+    assert.equal(caret.state.pasteSeparators.has(2), false);
+    caret.handleInput("\x1f");
+    assert.deepEqual({ state: caret.state, pastes: caret.pastes, counter: caret.pasteCounter }, before);
+    caret.handleInput("\x1f");
+    assert.equal(caret.getExpandedText(), expected.slice(0, -body.length));
+  }
+});
+
+test("chunked paste retains the range until native paste completion", () => {
+  const caret = editor();
+  caret.setText("abcdef"); caret.render(30);
+  mouse(caret, "press", 3, 1); mouse(caret, "drag", 6, 1); mouse(caret, "release", 6, 1);
+  caret.handleInput("\x1b[200~new");
+  assert.equal(caret.getText(), "abcdef");
+  caret.handleInput(" text\x1b[201~");
+  assert.equal(caret.getText(), "anew textef");
+  caret.handleInput("\x1f");
+  assert.equal(caret.getText(), "abcdef");
+});
+
+test("multi-click treats a wrapped paste marker atomically and selects a logical rather than visual line", () => {
+  const caret = editor();
+  paste(caret, "large\n".repeat(20));
+  const marker = caret.getText();
+  caret.state.cursorCol = 0; caret.render(12);
+  const click = count => caret.handleMouse({ type: "click", button: "left", clickCount: count, x: 3, y: 1, width: 12 });
+  click(2);
+  assert.equal(caret.selectionText(), "large\n".repeat(20));
+  caret.setText("!! abcdefghijklmnop\nnext"); caret.state.cursorLine = 0; caret.state.cursorCol = 3; caret.render(12);
+  click(3);
+  assert.equal(caret.selectionText(), "abcdefghijklmnop");
+  assert.ok(marker.startsWith("[paste #"));
+});
+
+test("edge drag scrolls both ways and stops on release, draft replacement, keyboard cancellation, focus loss and disposal", async () => {
+  for (const stop of [caret => mouse(caret, "release", 4, 99), caret => caret.setText("draft"), caret => caret.handleInput("\x1b[D"), caret => { caret.focused = false; }, caret => caret.dispose()]) {
+    const caret = editor();
+    caret.focused = true;
+    caret.setText(Array.from({ length: 40 }, (_, index) => `line ${index}`).join("\n"));
+    caret.state.cursorLine = 15; caret.state.cursorCol = 0; caret.render(30);
+    const initial = caret.scrollOffset;
+    mouse(caret, "press", 2, 2); mouse(caret, "drag", 4, 0);
+    await new Promise(resolve => setTimeout(resolve, 140));
+    assert.ok(caret.scrollOffset < initial);
+    mouse(caret, "drag", 4, 99);
+    const upper = caret.scrollOffset;
+    await new Promise(resolve => setTimeout(resolve, 140));
+    assert.ok(caret.scrollOffset > upper);
+    stop(caret);
+    await Promise.resolve();
+    assert.equal(caret.dragTimer, undefined);
+    const cursor = caret.getCursor();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    assert.deepEqual(caret.getCursor(), cursor);
+    assert.equal(caret.dragging, false);
+  }
+});
+
+test("native fullscreen focusout cancels edge scrolling on its next tick without mutation", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const caret = editor();
+  caret.setText(Array.from({ length: 40 }, (_, index) => `line ${index}`).join("\n"));
+  caret.state.cursorLine = 15; caret.state.cursorCol = 0; caret.render(40);
+  const send = fullscreen(caret);
+  send(2, 2); send(4, 0, { drag: true });
+  await Promise.resolve();
+  assert.equal(caret.tui.mouseCapture.component, caret);
+  t.mock.timers.tick(60);
+  assert.ok(caret.dragTimer, "the captured drag continues scrolling");
+  const before = structuredClone({ cursor: caret.getCursor(), selection: caret.selection, offset: caret.scrollOffset, text: caret.getText() });
+  assert.deepEqual(caret.tui.handleViewportInput("\x1b[O"), { consume: true });
+  assert.equal(caret.tui.mouseCapture, undefined);
+  t.mock.timers.tick(60);
+  assert.equal(caret.dragTimer, undefined);
+  assert.equal(caret.dragging, false);
+  assert.equal(caret.dragEvent, undefined);
+  t.mock.timers.tick(600);
+  assert.deepEqual({ cursor: caret.getCursor(), selection: caret.selection, offset: caret.scrollOffset, text: caret.getText() }, before);
 });

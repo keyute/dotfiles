@@ -109,6 +109,19 @@ _sync_appearance() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _sync_appearance
 
+_tuios_directory_title() {
+  emulate -L zsh
+  [[ -o interactive && ${TUIOS_ENV:-} == 1 && -t 1 ]] || return 0
+  local title=${PWD:t}/
+  # A child shell may use the physical spelling of a symlinked HOME.
+  [[ $PWD -ef $HOME ]] && title='~/'
+  [[ $PWD == / ]] && title=/
+  # OSC payloads must not contain terminal controls, even in a directory name.
+  title=${title//[[:cntrl:]]/}
+  printf '\033]2;%s\007' "$title"
+}
+add-zsh-hook precmd _tuios_directory_title
+
 eval "$(zoxide init zsh --cmd cd)"
 
 # Pin the emacs keymap: zsh picks viins whenever EDITOR/VISUAL contains "vi"

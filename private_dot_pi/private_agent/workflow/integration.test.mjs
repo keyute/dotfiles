@@ -769,15 +769,19 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
     const policy = { mode: "plan", epoch: 1, approval: "auto" };
     const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} addCustomEntryToChat() {} };
     await installWorkflow(pi, configPath, role, { startBroker: async () => ({ env: {}, policy, setMode: async next => { policy.mode = next; }, close }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
-    const ui = { setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {} };
+    let editor, editorFactory;
+    const replaceEditor = () => { editor = editorFactory({ terminal: { rows: 24 }, requestRender() {} }, { borderColor: text => text, selectList: {} }, { matches: () => false }); };
+    const ui = { setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent(factory) { editorFactory = factory; replaceEditor(); }, addAutocompleteProvider() {} };
     const ctx = {
       cwd: process.cwd(), mode, hasUI, isIdle: () => true, isProjectTrusted: () => true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, getContextUsage: () => null,
-      sessionManager: { getSessionId: () => `status-${mode}`, getSessionFile: () => `/abs/${mode}.jsonl`, getBranch: () => [] },
+      sessionManager: { getSessionId: () => `status-${mode}`, getSessionFile: () => `/abs/${mode}.jsonl`, getBranch: () => [], getEntries: () => [] },
       modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] }, ui,
     };
     const fire = async (name, event = {}) => { for (const handler of handlers.get(name) ?? []) await handler(event, ctx); };
     await fire("session_start", { reason: "startup" });
     t.after(() => fire("session_shutdown", { reason: "quit" }));
+    Object.defineProperty(fire, "editor", { get: () => editor });
+    fire.replaceEditor = replaceEditor;
     return fire;
   };
   for (const mode of ["rpc", "json", "print"]) {
@@ -814,6 +818,10 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
   const fire = await start("tui", () => { cleanupStarted = true; return cleanup; });
   await flush();
   assert.deepEqual(frames, ["\x1b]7501;state=idle:app=pi\x1b\\"], "attach precedes the footer's initial idle report");
+  const replaced = fire.editor;
+  replaced.dragging = true;
+  fire.replaceEditor();
+  assert.equal(replaced.dragging, false, "factory replacement disposes the previous editor");
 
   t.mock.timers.enable({ apis: ["setTimeout"] });
   await fire("agent_start");
@@ -822,8 +830,10 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
   await fire("agent_settled");
   t.mock.timers.tick(100);
   assert.equal(frames.length, 2, "settling has not prematurely reported done");
+  fire.editor.dragging = true;
   const closing = fire("session_shutdown", { reason: "switch" });
   await flush();
+  assert.equal(fire.editor.dragging, false, "editor disposal precedes awaited shutdown cleanup");
   assert.ok(cleanupStarted, "shutdown is awaiting cleanup before later handlers run");
   const before = frames.length;
   t.mock.timers.tick(300);
@@ -831,7 +841,13 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
   assert.equal(frames.length, before, "no delayed idle while shutdown awaits cleanup");
   releaseCleanup();
   await closing;
-  await fire("session_start", { reason: "new" });
+  const previousEditor = fire.editor;
+  previousEditor.dragging = true;
+  const restarting = fire("session_start", { reason: "new" });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(previousEditor.dragging, false, "session start disposes before replacing the editor");
+  await restarting;
   await flush();
   assert.deepEqual(frames.slice(before), ["\x1b]7501;state=idle:app=pi\x1b\\"]);
 });
