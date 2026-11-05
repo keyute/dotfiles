@@ -615,7 +615,7 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
   const config = run("cat", target(".config/tuios/config.toml"));
   assert.deepEqual(config.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")), [
     "[appearance]", 'theme = "catppuccin_mocha"', 'theme_light = "catppuccin_latte"', 'click_to_type = "single"',
-    "[appearance.sidebar]", 'position = "left"', 'sections = "sessions,agents"',
+    "[appearance.sidebar]", 'position = "left"', 'sections = "sessions,terminals,agents"',
     "[startup]", "daemon = true", "tiled = true", "open_default_window = true", "start_in_terminal_mode = true",
     "[workspaces]", "new_window_when_empty = true",
     "[worktree]", 'path = "{{ repo_path }}.tuios-worktrees/{{ branch }}"',

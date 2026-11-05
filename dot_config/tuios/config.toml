@@ -9,8 +9,8 @@ click_to_type = "single"
 [appearance.sidebar]
 # Keep the session rail to the left of the terminal.
 position = "left"
-# Show only sessions and agents in the sidebar.
-sections = "sessions,agents"
+# Show sessions, terminals, and agents in the sidebar.
+sections = "sessions,terminals,agents"
 
 [startup]
 # Sparse configs leave omitted daemon and tiled keys false.
