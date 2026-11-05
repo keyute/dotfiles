@@ -119,8 +119,22 @@ _tuios_directory_title() {
   # OSC payloads must not contain terminal controls, even in a directory name.
   title=${title//[[:cntrl:]]/}
   printf '\033]2;%s\007' "$title"
+  # OSC2 is a label, not cwd metadata. Encode bytes (including OSC delimiters)
+  # without changing the locale used above to sanitize the Unicode title.
+  local LC_ALL=C
+  local uri='' char encoded
+  local -i i
+  for (( i = 1; i <= ${#PWD}; i++ )); do
+    char=$PWD[i]
+    case $char in
+      [a-zA-Z0-9/._~-]) uri+=$char ;;
+      *) printf -v encoded '%%%02X' "'$char"; uri+=$encoded ;;
+    esac
+  done
+  printf '\033]7;file://%s\007' "$uri"
 }
 add-zsh-hook precmd _tuios_directory_title
+add-zsh-hook chpwd _tuios_directory_title
 
 eval "$(zoxide init zsh --cmd cd)"
 

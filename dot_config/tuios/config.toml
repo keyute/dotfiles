@@ -9,6 +9,8 @@ click_to_type = "single"
 [appearance.sidebar]
 # Keep the session rail to the left of the terminal.
 position = "left"
+# Show only sessions and agents in the sidebar.
+sections = "sessions,agents"
 
 [startup]
 # Sparse configs leave omitted daemon and tiled keys false.
@@ -22,6 +24,10 @@ start_in_terminal_mode = true
 [workspaces]
 # Create an empty workspace's pane natively, preserving cwd and typing mode.
 new_window_when_empty = true
+
+[worktree]
+# Keep same-named repositories' worktrees separate and outside their checkouts.
+path = "{{ repo_path }}.tuios-worktrees/{{ branch }}"
 
 [notifications.agent]
 # Announce agent events even while their pane has focus.

@@ -45,8 +45,9 @@ test("one quiet background request uses small subscription model, SSE and no too
   const [model, context, options] = f.calls[0];
   assert.equal(model.id, "small-fixture");
   assert.equal(context.messages[0].content.length, 4000);
-  assert.match(context.systemPrompt, /meaningful task title of 2–4 words/);
-  assert.match(context.systemPrompt, /at most 24 characters/);
+  assert.match(context.systemPrompt, /concise, meaningful task title/);
+  assert.match(context.systemPrompt, /preferably 2–3 words; use extra words when needed for clarity/);
+  assert.doesNotMatch(context.systemPrompt, /24 characters/);
   assert.equal(context.tools, undefined);
   assert.equal(context.messages.length, 1);
   assert.equal(options.transport, "sse");
@@ -199,12 +200,12 @@ test("failure, abort and absent subscription model stay quiet and never retry", 
   assert.equal(f.calls.length, 0);
 });
 
-test("title strips terminal controls and newlines and bounds output; empty titles are ignored", async () => {
-  const f = fixture({ complete: async () => reply("\x1b]0;injected\x07\x1b[31mRepair\x1b[0m\n\tcache\x00\u2028race\u202e " + "x".repeat(100)) });
+test("title strips terminal controls and newlines without truncating text or Unicode; empty titles are ignored", async () => {
+  const f = fixture({ complete: async () => reply("\x1b]0;injected\x07\x1b[31mRepair\x1b[0m\n\tcache\x00\u2028race\u202e 工作流 🛠️") });
   f.input();
   await flush();
-  assert.equal(f.names[0].length, 24);
-  assert.match(f.names[0], /^Repair cache race /);
+  assert.equal(f.names[0], "Repair cache race 工作流 🛠️");
+  assert.ok(f.names[0].length > 24);
   assert.doesNotMatch(f.names[0], /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
   const empty = fixture({ complete: async () => reply("\x1b[31m\n\x1b[0m") });
   empty.input();

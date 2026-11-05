@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { accessSync, chmodSync, constants, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
@@ -615,9 +615,10 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
   const config = run("cat", target(".config/tuios/config.toml"));
   assert.deepEqual(config.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")), [
     "[appearance]", 'theme = "catppuccin_mocha"', 'theme_light = "catppuccin_latte"', 'click_to_type = "single"',
-    "[appearance.sidebar]", 'position = "left"',
+    "[appearance.sidebar]", 'position = "left"', 'sections = "sessions,agents"',
     "[startup]", "daemon = true", "tiled = true", "open_default_window = true", "start_in_terminal_mode = true",
     "[workspaces]", "new_window_when_empty = true",
+    "[worktree]", 'path = "{{ repo_path }}.tuios-worktrees/{{ branch }}"',
     "[notifications.agent]", "sound = true", "suppress_focused = false",
     "[keybindings]", 'preset = "tmux"', "lock = true", "repeat = []",
     "[agents.checkpoints]", "enabled = false",
@@ -675,18 +676,19 @@ test("native TuiOS inspection retains tmux prefix actions with lock and no repea
   assert.equal(readFileSync(path, "utf8"), config);
 });
 
-test("TuiOS prompt title is interactive, TTY-only and treats directory names as data", t => {
+test("TuiOS directory title and cwd are interactive, TTY-only and treat directory names as data", t => {
   const { run, target } = fixture(t);
   const zshrc = run("cat", target(".zshrc"));
-  const hook = zshrc.match(/^_tuios_directory_title\(\) \{\n[^]*?^\}\nadd-zsh-hook precmd _tuios_directory_title$/m)?.[0];
-  assert.ok(hook, "rendered title hook missing");
+  const hook = zshrc.match(/^_tuios_directory_title\(\) \{\n[^]*?^\}\nadd-zsh-hook precmd _tuios_directory_title\nadd-zsh-hook chpwd _tuios_directory_title$/m)?.[0];
+  assert.ok(hook, "rendered directory hook missing");
   const script = target("title.zsh");
-  writeFileSync(script, `autoload -Uz add-zsh-hook\n${hook}\nfor hook in $precmd_functions; do "$hook"; done\n`);
-  const malicious = `工作流\u001b\u0007\n%$(touch executed)`;
+  // No external executable is available while either hook runs.
+  writeFileSync(script, `autoload -Uz add-zsh-hook\n${hook}\npath=()\nif (( $# )); then\n  builtin cd "$1" && printf foreground\nelse\n  for hook in $precmd_functions; do "$hook"; done\nfi\n`);
+  const malicious = `工作流\u001b\u0007\n%$(printf injected > executed)`;
   const cwd = target(malicious);
   mkdirSync(cwd);
-  const invoke = (interactive, tty, tuios, directory = cwd) => {
-    const args = ["-df", ...(interactive ? ["-i"] : []), script];
+  const invoke = (interactive, tty, tuios, directory = cwd, changeTo) => {
+    const args = ["-df", ...(interactive ? ["-i"] : []), script, ...(changeTo ? [changeTo] : [])];
     const ptyArgs = process.platform === "darwin"
       ? ["-q", "/dev/null", "zsh", ...args]
       : ["-q", "-e", "-c", `zsh ${args.map(arg => `'${arg.replaceAll("'", "'\\''")}'`).join(" ")}`, "/dev/null"];
@@ -698,10 +700,35 @@ test("TuiOS prompt title is interactive, TTY-only and treats directory names as 
     // BSD script echoes its injected EOF when stdin is /dev/null.
     return tty && process.platform === "darwin" ? result.stdout.replace(/^\^D\x08\x08/, "") : result.stdout;
   };
-  assert.equal(invoke(true, true, "1"), "\u001b]2;工作流%$(touch executed)/\u0007");
+  const report = (directory, title, physical = true) => {
+    // A spawned shell resolves its initial cwd; builtin cd retains the supplied spelling.
+    if (physical) directory = realpathSync(directory);
+    const encoded = directory.split("/").map(part => encodeURIComponent(part).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)).join("/");
+    const uri = `file://${encoded}`;
+    assert.equal(fileURLToPath(new URL(uri)), directory);
+    return `\u001b]2;${title}\u0007\u001b]7;${uri}\u0007`;
+  };
+  assert.equal(invoke(true, true, "1"), report(cwd, "工作流%$(printf injected > executed)/"));
   assert.equal(existsSync(join(cwd, "executed")), false);
-  assert.equal(invoke(true, true, "1", target("")), "\u001b]2;~/\u0007");
-  assert.equal(invoke(true, true, "1", "/"), "\u001b]2;/\u0007");
+  assert.equal(invoke(true, true, "1", target("")), report(target(""), "~/"));
+  assert.equal(invoke(true, true, "1", "/"), report("/", "/"));
+  const legalName = `space %;?'\"#工作流-._~`;
+  const legal = target(legalName);
+  mkdirSync(legal);
+  assert.equal(invoke(true, true, "1", legal), report(legal, `${legalName}/`));
+  assert.equal(invoke(true, true, "1", target(""), legal), `${report(legal, `${legalName}/`, false)}foreground`);
+  assert.equal(invoke(true, true, "1", target(""), cwd), `${report(cwd, "工作流%$(printf injected > executed)/", false)}foreground`);
+  const sameName = "shared";
+  const first = target(join("parent-one", sameName));
+  const second = target(join("parent-two", sameName));
+  mkdirSync(first, { recursive: true });
+  mkdirSync(second, { recursive: true });
+  const firstCwd = report(first, `${sameName}/`);
+  const secondCwd = report(second, `${sameName}/`);
+  assert.notEqual(firstCwd, secondCwd);
+  assert.equal(invoke(true, true, "1", first), firstCwd);
+  assert.equal(invoke(true, true, "1", second), secondCwd);
+  assert.equal(existsSync(join(cwd, "executed")), false);
   assert.equal(invoke(false, true, "1"), "");
   assert.equal(invoke(true, false, "1"), "");
   for (const value of ["", "0", "true"]) assert.equal(invoke(true, true, value), "");
