@@ -45,6 +45,8 @@ test("one quiet background request uses small subscription model, SSE and no too
   const [model, context, options] = f.calls[0];
   assert.equal(model.id, "small-fixture");
   assert.equal(context.messages[0].content.length, 4000);
+  assert.match(context.systemPrompt, /meaningful task title of 2–4 words/);
+  assert.match(context.systemPrompt, /at most 24 characters/);
   assert.equal(context.tools, undefined);
   assert.equal(context.messages.length, 1);
   assert.equal(options.transport, "sse");
@@ -201,7 +203,7 @@ test("title strips terminal controls and newlines and bounds output; empty title
   const f = fixture({ complete: async () => reply("\x1b]0;injected\x07\x1b[31mRepair\x1b[0m\n\tcache\x00\u2028race\u202e " + "x".repeat(100)) });
   f.input();
   await flush();
-  assert.equal(f.names[0].length, 80);
+  assert.equal(f.names[0].length, 24);
   assert.match(f.names[0], /^Repair cache race /);
   assert.doesNotMatch(f.names[0], /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
   const empty = fixture({ complete: async () => reply("\x1b[31m\n\x1b[0m") });

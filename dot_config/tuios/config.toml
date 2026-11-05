@@ -33,6 +33,13 @@ suppress_focused = false
 # Use tmux's prefix and pane/workspace shortcuts.
 preset = "tmux"
 
+[keybindings.prefix_mode]
+# Reserve Option chords for applications; resize with prefix Ctrl/Shift+arrows.
+resize_pane_left_5 = ["ctrl+left", "shift+left"]
+resize_pane_right_5 = ["ctrl+right", "shift+right"]
+resize_pane_up_5 = ["ctrl+up", "shift+up"]
+resize_pane_down_5 = ["ctrl+down", "shift+down"]
+
 [keybindings.terminal_mode]
 # Leave application Alt+arrow navigation and Alt+P available while typing.
 terminal_focus_left = []

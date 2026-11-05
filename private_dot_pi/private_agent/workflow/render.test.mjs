@@ -620,6 +620,11 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
     "[workspaces]", "new_window_when_empty = true",
     "[notifications.agent]", "sound = true", "suppress_focused = false",
     "[keybindings]", 'preset = "tmux"',
+    "[keybindings.prefix_mode]",
+    'resize_pane_left_5 = ["ctrl+left", "shift+left"]',
+    'resize_pane_right_5 = ["ctrl+right", "shift+right"]',
+    'resize_pane_up_5 = ["ctrl+up", "shift+up"]',
+    'resize_pane_down_5 = ["ctrl+down", "shift+down"]',
     "[keybindings.terminal_mode]", "terminal_focus_left = []", "terminal_focus_right = []",
     "terminal_focus_up = []", "terminal_focus_down = []", 'terminal_prev_window = ["opt+shift+tab"]',
     "[keybindings.global]", "command_palette = []",
@@ -657,7 +662,7 @@ test("native TuiOS inspection leaves application keys free in terminal mode", t 
   writeFileSync(path, config.replace("command_palette = []", 'command_palette = ["ctrl+alt+f12"]'));
   assert.equal(inspect("explain", "ctrl+alt+f12").swallowed_in_terminal, true);
   writeFileSync(path, config);
-  for (const key of ["alt+up", "alt+down", "alt+left", "alt+right", "alt+p", "ctrl+p", "alt+enter", "ctrl+enter", "alt+b", "alt+f"]) {
+  for (const key of ["alt+up", "alt+down", "alt+left", "alt+right", "alt+p", "ctrl+p", "alt+enter", "ctrl+enter", "alt+b", "alt+f", "opt+up", "opt+down", "opt+left", "opt+right", "opt+p", "opt+enter", "opt+b", "opt+f"]) {
     const report = inspect("explain", key);
     assert.equal(report.swallowed_in_terminal, false, key);
     assert.ok(!(report.acts ?? []).some(act => ["terminal", "global"].includes(act.scope)), key);
@@ -665,7 +670,9 @@ test("native TuiOS inspection leaves application keys free in terminal mode", t 
   const rows = inspect("list");
   assert.deepEqual(rows.find(row => row.action === "terminal_prev_window" && row.scope === "terminal").keys, ["opt+shift+tab"]);
   for (const direction of ["left", "right", "up", "down"]) {
-    assert.ok(rows.find(row => row.action === `resize_pane_${direction}_5` && row.scope === "prefix").keys.includes(`ctrl+b alt+${direction}`));
+    assert.deepEqual(rows.find(row => row.action === `resize_pane_${direction}_5` && row.scope === "prefix").keys, [
+      `ctrl+b ctrl+${direction}`, `ctrl+b shift+${direction}`,
+    ]);
   }
   assert.equal(inspect("explain", "ctrl+b").swallowed_in_terminal, true);
   assert.equal(rows.find(row => row.action === "send_prefix").unbound, true);
