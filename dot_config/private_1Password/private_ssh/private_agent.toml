@@ -32,7 +32,7 @@
 vault = "Personal"
 
 [[ssh-keys]]
-vault = "Work"
+vault = "4kf2cot7qduz6t6wg4drb74nte" # Use the ID so vault renames do not affect SSH access.
 
 [[ssh-keys]]
 vault = "University"
