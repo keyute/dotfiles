@@ -9,7 +9,7 @@ import { createJiti } from "jiti";
 import { InteractiveMode, UserMessageComponent, initTheme, parseSkillBlock, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { installWorkflow } from "./index.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
-import { appendVisible, closeFolds, createFolds, doneEntryRenderer, installActivityEntries, installReasoningHide, bulletMarkdown } from "./rows.mjs";
+import { appendVisible, closeFolds, createFolds, doneEntryRenderer, installActivityEntries, installReasoningHide, bulletMarkdown, restoreFolds, toolRenderers } from "./rows.mjs";
 
 initTheme();
 const entry = readFileSync(new URL("../extensions/workflow.ts.tmpl", import.meta.url), "utf8");
@@ -70,20 +70,23 @@ test("bundled extension entry installs skill, pending-input and reasoning displa
   const start = await jiti.import(path, { default: true });
   const handlers = new Map();
   const tools = new Map();
+  const entryRenderers = new Map();
+  let contextEntries = [];
+  let toolsExpanded = false;
   const events = new EventEmitter();
   const pi = {
     events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); }, getAllTools: () => [...tools.values()], getActiveTools: () => [...tools.keys()],
-    registerCommand() {}, registerFlag() {}, getFlag() {}, registerEntryRenderer() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {},
+    registerCommand() {}, registerFlag() {}, getFlag() {}, registerEntryRenderer(type, renderer) { entryRenderers.set(type, renderer); }, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {},
     setActiveTools() {},
   };
   await start(pi);
   const ctx = { cwd: root, mode: "tui", hasUI: true,
-    sessionManager: { getSessionId: () => "skill-fixture", getBranch: () => [], getEntries: () => [] },
+    sessionManager: { getSessionId: () => "skill-fixture", getBranch: () => [], getEntries: () => [], buildContextEntries: () => contextEntries },
     // The classifier's shared id is off subscription OAuth; the frontier is on it.
     modelRegistry: { find: (provider, id) => ({ provider, id }), isUsingOAuth: model => model.id !== "gpt-6-sol" },
-    ui: { theme: palette, setStatus() {}, setToolsExpanded() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {}, notify(message, level) { notices.push([message, level]); } },
+    ui: { theme: palette, setStatus() {}, getToolsExpanded: () => toolsExpanded, setToolsExpanded(value) { toolsExpanded = value; }, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent() {}, addAutocompleteProvider() {}, notify(message, level) { notices.push([message, level]); } },
   };
   const notices = [];
   t.after(async () => { for (const handler of handlers.get("session_shutdown") ?? []) await handler({}, ctx); });
@@ -117,6 +120,21 @@ test("bundled extension entry installs skill, pending-input and reasoning displa
   assert.match(pending.map(strip).join("\n"), /π Follow-up · after current task\n\n❯ after task/);
   assert.equal(pending.filter(line => line.startsWith("\x1b[44m")).length, 6);
   assert.deepEqual(queue, { steering: ["next response"], followUp: ["after task"] });
+  for (const reason of ["startup", "resume", "fork", "reload", "new", "tree"]) {
+    for (const beforeMount of [false, true]) {
+      contextEntries = ["first", "second"].map(agent => ({ type: "custom", id: `${reason}-${agent}`, customType: "workflow-child", data: { agent, status: "completed" } }));
+      const { mode: historical } = receiver(host.InteractiveMode);
+      historical.toolOutputExpanded = false;
+      historical.runtimeHost = { session: { extensionRunner: { getEntryRenderer: type => entryRenderers.get(type) } } };
+      const initialize = async () => {
+        for (const handler of [...handlers.get(reason === "tree" ? "session_tree" : "session_start")]) await handler({ reason }, ctx);
+      };
+      if (beforeMount) await initialize();
+      for (const entry of contextEntries) historical.addCustomEntryToChat(entry);
+      if (!beforeMount) await initialize();
+      assert.deepEqual(historical.chatContainer.render(80).map(strip), ["", "▸ Finished 2 agents"], `${reason}, beforeMount=${beforeMount}`);
+    }
+  }
 });
 
 test("native skill display uses one ordinary user box and restores command-only history without modifying messages", () => {
@@ -192,4 +210,44 @@ test("bundled Pi activity hosts retain hidden children across native rebuilds an
   const message = { role: "assistant", content: [{ type: "text", text: "```sh\n! npm test\n```" }] };
   const assistant = new host.AssistantMessageComponent(message, false, host.getMarkdownTheme(), "Thinking...", 0, [(text, context) => bulletMarkdown(text, context, shellPalette)]);
   assert.ok(assistant.render(80).join("\n").includes(shellPalette.fg("error", "!")));
+});
+
+for (const beforeMount of [false, true]) test(`bundled historical hosts handle lifecycle before mount=${beforeMount} without a prehistory hook`, () => {
+  installActivityEntries(host.InteractiveMode);
+  let expanded = false;
+  const folds = createFolds();
+  const { mode } = receiver(host.InteractiveMode);
+  mode.toolOutputExpanded = false;
+  mode.runtimeHost = { session: { extensionRunner: { getEntryRenderer: type => doneEntryRenderer(type, folds) } } };
+  const completion = { type: "custom", id: "legacy", customType: "workflow-child", data: { agent: "reviewer", status: "completed" } };
+  const call = { role: "assistant", content: ["a", "b"].map(id => ({ type: "toolCall", id, name: "workspace_read", arguments: { path: id } })) };
+  const results = ["a", "b"].map(id => ({ role: "toolResult", toolCallId: id, content: [{ type: "text", text: `BODY_${id}` }], details: {} }));
+  const entries = [completion, { type: "message", message: call }, ...results.toReversed().map(message => ({ type: "message", message }))];
+  const rows = [];
+  const ctx = { sessionManager: { buildContextEntries: () => entries }, ui: { getToolsExpanded: () => expanded, setToolsExpanded(value) { expanded = value; rows.forEach(row => row.setExpanded(value)); } } };
+  if (beforeMount) restoreFolds(ctx, folds);
+  mode.addCustomEntryToChat(completion);
+  for (const [index, id] of ["a", "b"].entries()) {
+    const row = new host.ToolExecutionComponent("read", id, { path: id }, {}, toolRenderers("read", folds), { requestRender() {} }, "/fixture");
+    row.updateResult(results[index]);
+    mode.chatContainer.addChild(row);
+    rows.push(row);
+  }
+  const draw = () => mode.chatContainer.render(100).map(strip);
+  const click = y => mode.chatContainer.handleMouse({ type: "click", button: "left", x: 2, y, width: 100, height: draw().length });
+  if (!beforeMount) {
+    assert.ok(draw().includes("• reviewer finished"));
+    restoreFolds(ctx, folds);
+  }
+  assert.deepEqual(draw(), ["", "▸ Read 2 files, finished 1 agent"]);
+  click(1);
+  click(draw().findIndex(line => line.includes("↳ Read b")));
+  assert.ok(draw().includes("  BODY_b"));
+  assert.ok(!draw().includes("  BODY_a"));
+  ctx.ui.setToolsExpanded(true);
+  rows.forEach(row => row.invalidate());
+  assert.ok(draw().includes("  BODY_a"));
+  assert.ok(draw().includes("  BODY_b"));
+  restoreFolds(ctx, folds);
+  assert.deepEqual(draw(), ["", "▸ Read 2 files, finished 1 agent"]);
 });

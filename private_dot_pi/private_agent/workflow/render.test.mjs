@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { accessSync, chmodSync, constants, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
@@ -610,19 +610,13 @@ test("the whole tree applies into an isolated destination", (t) => {
   for (const bin of bins) assert.doesNotThrow(() => accessSync(bin, constants.X_OK), `missing binary: ${bin}`);
 });
 
-test("TuiOS config is minimal and retired Herdr integrations have no source owner", t => {
+test("retired terminal and Herdr integrations have no source owner", t => {
   const { run, target } = fixture(t);
-  const config = run("cat", target(".config/tuios/config.toml"));
-  assert.deepEqual(config.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#")), [
-    "[appearance]", 'theme = "catppuccin_mocha"', 'theme_light = "catppuccin_latte"', 'click_to_type = "single"',
-    "[appearance.sidebar]", 'position = "left"', 'sections = "sessions,terminals,agents"',
-    "[startup]", "daemon = true", "tiled = true", "open_default_window = true", "start_in_terminal_mode = true",
-    "[workspaces]", "new_window_when_empty = true",
-    "[worktree]", 'path = "{{ repo_path }}.tuios-worktrees/{{ branch }}"',
-    "[notifications.agent]", "sound = true", "suppress_focused = false",
-    "[keybindings]", 'preset = "tmux"', "lock = true", "repeat = []",
-    "[agents.checkpoints]", "enabled = false",
-  ]);
+  for (const path of ["dot_config/ghostty", "dot_config/tuios", "dot_tmux.conf.local", "symlink_dot_tmux.conf"]) {
+    assert.equal(existsSync(join(source, path)), false, path);
+  }
+  assert.doesNotMatch(readSource(".chezmoiexternal.toml"), /gpakosz|\.local\/share\/tmux/);
+  assert.doesNotMatch(readSource(".github/workflows/fresh.yml"), /command -v (tuios|rex)/);
   const claude = JSON.parse(run("cat", target(".claude/settings.json")));
   assert.equal(Object.hasOwn(claude, "hooks"), false);
   assert.equal(claude.statusLine.command, join(source, "node_modules/.bin/ccstatusline"));
@@ -631,110 +625,52 @@ test("TuiOS config is minimal and retired Herdr integrations have no source owne
     "run_onchange_after_zz-herdr-integrations.sh.tmpl",
   ]) assert.equal(existsSync(join(source, path)), false, path);
   const brewfile = run("cat", target(".Brewfile"));
-  assert.match(brewfile, /^brew "tuios"$/m);
+  assert.doesNotMatch(brewfile, /^(brew|cask) "(tuios|rex|ghostty|tmux)"$/m);
   assert.doesNotMatch(brewfile, /^brew "herdr"$/m);
   const zshrc = run("cat", target(".zshrc"));
-  assert.doesNotMatch(zshrc, /_herdr_report_org|HERDR_/);
-});
-
-test("native TuiOS inspection retains tmux prefix actions with lock and no repeat", t => {
-  const { run, target } = fixture(t);
-  const path = target(".config/tuios/config.toml");
-  mkdirSync(dirname(path), { recursive: true });
-  const config = run("cat", path);
-  writeFileSync(path, config);
-  const inspect = (...args) => {
-    const result = spawnSync("tuios", ["keybinds", ...args, "--json"], {
-      encoding: "utf8", env: { ...process.env, HOME: target(""), XDG_CONFIG_HOME: target(".config") },
-    });
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stderr, "");
-    return JSON.parse(result.stdout);
-  };
-  // A scratch-only sentinel proves the inspector loads this config, not the applied one.
-  writeFileSync(path, `${config}\n[keybindings.prefix_mode]\nnew_workspace = ["ctrl+alt+f12"]\n`);
-  assert.deepEqual(inspect("list").find(row => row.scope === "prefix" && row.action === "new_workspace").keys, ["ctrl+b ctrl+alt+f12"]);
-  writeFileSync(path, config);
-  // TerminalModeSwallowed ignores lock in 0.12.1; inspection proves bindings, not runtime passthrough.
-  const rows = inspect("list");
-  const keys = action => rows.find(row => row.action === action && row.scope === "prefix")?.keys;
-  for (const [action, key] of [
-    ["new_workspace", "c"], ["next_workspace", "n"], ["prev_workspace", "p"],
-    ["prefix_split_vertical", "%"], ["prefix_split_horizontal", '"'], ["prefix_fullscreen", "z"],
-  ]) assert.ok(keys(action)?.includes(`ctrl+b ${key}`), action);
-  for (let workspace = 1; workspace <= 9; workspace++) {
-    assert.deepEqual(keys(`switch_workspace_${workspace}`), [`ctrl+b ${workspace}`]);
+  assert.doesNotMatch(zshrc, /_herdr_report_org|HERDR_|_tuios_directory_title|TUIOS_ENV/);
+  assert.match(zshrc, /add-zsh-hook chpwd _venv_autoswitch/);
+  assert.match(zshrc, /^bindkey -e$/m);
+  for (const flavor of ["latte", "mocha"]) {
+    const dash = run("cat", target(`.config/gh-dash/config.catppuccin-${flavor}.yml`));
+    assert.match(dash, /GH_HOST=\$GH_HOST ENHANCE_THEME=\$ENHANCE_THEME gh enhance \{\{\.PrNumber\}\} -R \{\{\.RepoName\}\}/);
+    assert.doesNotMatch(dash, /TMUX|tmux|rex/i);
   }
-  for (const direction of ["left", "right", "up", "down"]) {
-    assert.deepEqual(keys(`terminal_focus_${direction}`), [`ctrl+b ${direction}`]);
-    assert.deepEqual(keys(`resize_pane_${direction}_5`), [
-      `ctrl+b alt+${direction}`, `ctrl+b ctrl+${direction}`, `ctrl+b shift+${direction}`,
-    ]);
-  }
-  assert.match(config, /^lock = true$/m);
-  assert.match(config, /^repeat = \[\]$/m);
-  assert.equal(readFileSync(path, "utf8"), config);
 });
 
-test("TuiOS directory title and cwd are interactive, TTY-only and treat directory names as data", t => {
+test("retired applied configs, symlinks and session data remain for manual cleanup", t => {
   const { run, target } = fixture(t);
-  const zshrc = run("cat", target(".zshrc"));
-  const hook = zshrc.match(/^_tuios_directory_title\(\) \{\n[^]*?^\}\nadd-zsh-hook precmd _tuios_directory_title\nadd-zsh-hook chpwd _tuios_directory_title$/m)?.[0];
-  assert.ok(hook, "rendered directory hook missing");
-  const script = target("title.zsh");
-  // No external executable is available while either hook runs.
-  writeFileSync(script, `autoload -Uz add-zsh-hook\n${hook}\npath=()\nif (( $# )); then\n  builtin cd "$1" && printf foreground\nelse\n  for hook in $precmd_functions; do "$hook"; done\nfi\n`);
-  const malicious = `工作流\u001b\u0007\n%$(printf injected > executed)`;
-  const cwd = target(malicious);
-  mkdirSync(cwd);
-  const invoke = (interactive, tty, tuios, directory = cwd, changeTo) => {
-    const args = ["-df", ...(interactive ? ["-i"] : []), script, ...(changeTo ? [changeTo] : [])];
-    const ptyArgs = process.platform === "darwin"
-      ? ["-q", "/dev/null", "zsh", ...args]
-      : ["-q", "-e", "-c", `zsh ${args.map(arg => `'${arg.replaceAll("'", "'\\''")}'`).join(" ")}`, "/dev/null"];
-    const result = spawnSync(tty ? "script" : "zsh", tty ? ptyArgs : args, {
-      cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, HOME: resolve(target("")), ZDOTDIR: target(""), TUIOS_ENV: tuios },
-    });
-    assert.equal(result.status, 0, result.stderr);
-    // BSD script echoes its injected EOF when stdin is /dev/null.
-    return tty && process.platform === "darwin" ? result.stdout.replace(/^\^D\x08\x08/, "") : result.stdout;
-  };
-  const report = (directory, title, physical = true) => {
-    // A spawned shell resolves its initial cwd; builtin cd retains the supplied spelling.
-    if (physical) directory = realpathSync(directory);
-    const encoded = directory.split("/").map(part => encodeURIComponent(part).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)).join("/");
-    const uri = `file://${encoded}`;
-    assert.equal(fileURLToPath(new URL(uri)), directory);
-    return `\u001b]2;${title}\u0007\u001b]7;${uri}\u0007`;
-  };
-  assert.equal(invoke(true, true, "1"), report(cwd, "工作流%$(printf injected > executed)/"));
-  assert.equal(existsSync(join(cwd, "executed")), false);
-  assert.equal(invoke(true, true, "1", target("")), report(target(""), "~/"));
-  assert.equal(invoke(true, true, "1", "/"), report("/", "/"));
-  const legalName = `space %;?'\"#工作流-._~`;
-  const legal = target(legalName);
-  mkdirSync(legal);
-  assert.equal(invoke(true, true, "1", legal), report(legal, `${legalName}/`));
-  assert.equal(invoke(true, true, "1", target(""), legal), `${report(legal, `${legalName}/`, false)}foreground`);
-  assert.equal(invoke(true, true, "1", target(""), cwd), `${report(cwd, "工作流%$(printf injected > executed)/", false)}foreground`);
-  const sameName = "shared";
-  const first = target(join("parent-one", sameName));
-  const second = target(join("parent-two", sameName));
-  mkdirSync(first, { recursive: true });
-  mkdirSync(second, { recursive: true });
-  const firstCwd = report(first, `${sameName}/`);
-  const secondCwd = report(second, `${sameName}/`);
-  assert.notEqual(firstCwd, secondCwd);
-  assert.equal(invoke(true, true, "1", first), firstCwd);
-  assert.equal(invoke(true, true, "1", second), secondCwd);
-  assert.equal(existsSync(join(cwd, "executed")), false);
-  assert.equal(invoke(false, true, "1"), "");
-  assert.equal(invoke(true, false, "1"), "");
-  for (const value of ["", "0", "true"]) assert.equal(invoke(true, true, value), "");
+  const retired = [
+    ".config/ghostty/config", ".config/tuios/config.toml", ".tmux.conf", ".tmux.conf.local",
+    "Library/Application Support/com.mitchellh.ghostty/config", ".local/share/tmux",
+  ];
+  assert.deepEqual(readdirSync(source).filter(name => /^\.chezmoiremove(?:\.|$)/.test(name)), [], "no automated target removal owner");
+  const sentinels = [
+    ".config/ghostty/keep", ".config/tuios/keep", ".local/share/tuios/sessions/session",
+    ".local/share/tuios/state.db", ".local/share/tuios/daemon.sock", "repo.tuios-worktrees/branch/keep",
+    "Library/Application Support/com.mitchellh.ghostty/keep", "symlink-referent/keep",
+  ];
+  for (const path of sentinels) {
+    mkdirSync(dirname(target(path)), { recursive: true });
+    writeFileSync(target(path), path);
+  }
+  for (const path of retired.filter(path => path !== ".tmux.conf" && path !== ".local/share/tmux")) {
+    mkdirSync(dirname(target(path)), { recursive: true });
+    writeFileSync(target(path), "retired");
+  }
+  symlinkSync(target("symlink-referent"), target(".tmux.conf"));
+  mkdirSync(target(".local/share/tmux"), { recursive: true });
+  writeFileSync(target(".local/share/tmux/retired"), "retired");
+  run("apply", "--no-tty", ["--exclude", "scripts,externals"]);
+  for (const path of retired.filter(path => path !== ".tmux.conf" && path !== ".local/share/tmux")) {
+    assert.equal(readFileSync(target(path), "utf8"), "retired", path);
+  }
+  assert.equal(readlinkSync(target(".tmux.conf")), target("symlink-referent"));
+  assert.equal(readFileSync(target(".local/share/tmux/retired"), "utf8"), "retired");
+  for (const path of sentinels) assert.equal(readFileSync(target(path), "utf8"), path);
 });
 
-test("managed Pi launch overrides native status only inside TuiOS and only for the call", t => {
+test("managed Pi launch disables native status for every terminal and only for the call", t => {
   const { run, target, data: load } = fixture(t);
   const extension = join(load().chezmoi.homeDir, ".pi/agent/extensions/workflow.ts");
   const zshrc = run("cat", target(".zshrc"));
@@ -746,20 +682,21 @@ test("managed Pi launch overrides native status only inside TuiOS and only for t
   writeFileSync(stub, '#!/bin/sh\nprintf "%s\\n" "${PI_PROGRAM_STATUS-unset}" "$PI_OFFLINE" "$@"\n');
   chmodSync(stub, 0o700);
   const script = target("launcher.zsh");
-  writeFileSync(script, `${launcher.replace(JSON.stringify(cli), JSON.stringify(stub))}\npi 'argument with spaces'\nprintf '%s\\n' "parent:\${PI_PROGRAM_STATUS-unset}"\n`);
+  writeFileSync(script, `${launcher.replace(JSON.stringify(cli), JSON.stringify(stub))}\npi 'argument with spaces'\nprintf '%s\\n' "parent:\${PI_PROGRAM_STATUS-unset}" "offline:\${PI_OFFLINE-unset}"\n`);
   for (const tuios of [undefined, "", "0", "1", "true"]) {
     for (const status of [undefined, "user-value"]) {
       const env = { ...process.env };
       delete env.TUIOS_ENV;
       delete env.PI_PROGRAM_STATUS;
+      env.PI_OFFLINE = "parent-offline";
       if (tuios !== undefined) env.TUIOS_ENV = tuios;
       if (status !== undefined) env.PI_PROGRAM_STATUS = status;
       const result = spawnSync("zsh", ["-f", script], { encoding: "utf8", env });
       assert.equal(result.status, 0, result.stderr);
       assert.deepEqual(result.stdout.trimEnd().split("\n"), [
-        tuios === "1" ? "0" : status ?? "unset", "1",
+        "0", "1",
         "--no-builtin-tools", "--no-extensions", "-e", extension,
-        "argument with spaces", `parent:${status ?? "unset"}`,
+        "argument with spaces", `parent:${status ?? "unset"}`, "offline:parent-offline",
       ]);
     }
   }

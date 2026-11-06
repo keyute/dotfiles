@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Markdown } from "@earendil-works/pi-tui";
-import { AssistantMessageComponent, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, foldKey, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, meter, noticeLine, orchestrateCompletionLines, orchestrateRenderers, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, statusTone, summarise, taskTitle, toolRenderers } from "./rows.mjs";
+import { AssistantMessageComponent, SessionManager, getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
+import { addFold, alignRight, answerLines, appendVisible, bodyLines, bulletMarkdown, callTitle, closeFolds, completionLine, createFolds, createTurnClock, doneEntryRenderer, doneGroup, foldGroup, formatDuration, foldKey, formatTurn, glyph, installFolding, installReasoningHide, liveGroup, meter, noticeLine, orchestrateCompletionLines, orchestrateRenderers, paintCounts, planRenderers, pluginRenderers, pluginTitle, resultSummary, rowLines, settleFold, statusTone, summarise, taskTitle, toolRenderers, restoreFolds } from "./rows.mjs";
 import { createShellRunner } from "./shell.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
@@ -1437,4 +1437,174 @@ test("member bodies use current settled results without repeating summaries, and
   component.handleMouse({ type: "click", button: "left", y: 5 });
   assert.deepEqual([...state.members], ["read"]);
   assert.equal(folds.facts.get("read").result, final, "the fold retains the existing result, not a copy or a stale native snapshot");
+});
+
+const historicalCalls = (...ids) => ({ type: "message", message: { role: "assistant", content: ids.map(id => ({ type: "toolCall", id, name: "workspace_read", arguments: { path: id } })) } });
+const historicalResult = (id, extra = {}) => ({ type: "message", message: { role: "toolResult", toolCallId: id, ...result(`BODY_${id}`), ...extra } });
+const historicalPair = (a, b) => [historicalCalls(a, b), historicalResult(b), historicalResult(a)];
+const historicalContext = entries => {
+  let expanded = true;
+  return { sessionManager: { buildContextEntries: () => entries, getEntries() { throw new Error("all branches forbidden"); }, buildSessionProjection() { throw new Error("model projection forbidden"); } },
+    ui: { getToolsExpanded: () => expanded, setToolsExpanded: value => { expanded = value; } } };
+};
+
+test("historical reconstruction defers timeline derivation until membership is read", () => {
+  for (const turns of [100, 200]) {
+    const entries = [];
+    for (let i = 0; i < turns; i++) {
+      entries.push(...historicalPair(`a${i}`, `b${i}`),
+        { type: "message", message: { role: "user", content: "next" } },
+        ...historicalPair(`c${i}`, `d${i}`), historicalCalls(`pending${i}`, `failed${i}`),
+        historicalResult(`failed${i}`, { isError: true }));
+    }
+    entries.push(...historicalPair("tail-a", "tail-b"));
+    const folds = createFolds();
+    let visits = 0;
+    folds.timeline[Symbol.iterator] = function* () {
+      for (let i = 0; i < this.length; i++) {
+        visits++;
+        yield this[i];
+      }
+    };
+    restoreFolds(historicalContext(entries), folds);
+    assert.equal(visits, 0, "reconstruction must not derive the growing timeline");
+    for (let i = 0; i < turns; i++) {
+      assert.deepEqual(foldGroup(folds, `a${i}`).entries.map(fact => fact.id), [`a${i}`, `b${i}`]);
+      assert.deepEqual(foldGroup(folds, `c${i}`).entries.map(fact => fact.id), [`c${i}`, `d${i}`]);
+      for (const [id, outcome] of [[`pending${i}`, "pending"], [`failed${i}`, "failed"]]) {
+        assert.equal(folds.facts.get(id).outcome, outcome);
+        assert.equal(foldGroup(folds, id), null);
+      }
+    }
+    assert.deepEqual(foldGroup(folds, "tail-a").entries.map(fact => fact.id), ["tail-a", "tail-b"]);
+    assert.equal(visits, folds.timeline.length, "membership reads share one completed-timeline derivation");
+  }
+});
+
+test("historical tail restores in place, seals two reads in source order, retains bodies and resets expansion idempotently", () => {
+  const entries = historicalPair("a", "b");
+  const before = JSON.stringify(entries);
+  const ctx = historicalContext(entries);
+  const folds = createFolds();
+  let invalidated = 0;
+  let repaints = 0;
+  folds.invalidate.set("a", () => invalidated++);
+  folds.repaint = () => repaints++;
+  const restore = () => restoreFolds(ctx, folds);
+  restore();
+  assert.deepEqual(foldGroup(folds, "a").entries.map(fact => fact.id), ["a", "b"]);
+  assert.equal(liveGroup(folds, "a"), null);
+  assert.equal(folds.facts.get("b").result.content[0].text, "BODY_b");
+  const renderer = toolRenderers("read", folds);
+  const handle = renderer.renderCall({ path: "a" }, theme, context({ toolCallId: "a", invalidate: () => invalidated++ }));
+  assert.deepEqual(rendered(handle), ["<muted>▸ Read 2 files"]);
+  handle.handleMouse({ type: "click", button: "left", y: 0 });
+  handle.render(80);
+  handle.handleMouse({ type: "click", button: "left", y: 2 });
+  assert.ok(rendered(handle).some(line => line.includes("BODY_b")));
+  restore();
+  assert.equal(folds.views.size, 0);
+  assert.equal(ctx.ui.getToolsExpanded(), false);
+  assert.equal(invalidated, 4); // Both restores, opening the group and selecting its member.
+  assert.ok(repaints >= 2);
+  assert.deepEqual(rendered(renderer.renderCall({ path: "a" }, theme, context({ toolCallId: "a" }))), ["<muted>▸ Read 2 files"]);
+  assert.equal(JSON.stringify(entries), before);
+  addFold(folds, "live-a", "read");
+  addFold(folds, "live-b", "read");
+  settleFold(folds, "live-b", false);
+  settleFold(folds, "live-a", false);
+  assert.deepEqual(liveGroup(folds, "live-a").counts, { read: 2 });
+  assert.deepEqual(foldGroup(folds, "a").counts, { read: 2 });
+});
+
+test("historical visible boundaries split groups; hidden reasoning, questions, notices and state do not", () => {
+  const visible = [
+    { type: "message", message: { role: "user", content: "next" } },
+    { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Reply" }] } },
+    ...["error", "aborted", "length"].map(stopReason => ({ type: "message", message: { role: "assistant", content: [], stopReason } })),
+    { type: "message", message: { role: "bashExecution", command: "pwd" } },
+    { type: "custom_message", display: true },
+    { type: "compaction", summary: "summary" },
+    { type: "branch_summary", summary: "branch" },
+    ...["workflow-shell", "workflow-answers", "workflow-note", "workflow-turn", "workflow-usage", "workflow-orchestrate", "plugin-visible"].map(customType => ({ type: "custom", customType, data: {} })),
+    { type: "custom", customType: "workflow-child", data: { agent: "broken", status: "failed" } },
+    ...["bg_wait", "submit_plan", "orchestrate", "some_plugin"].map(name => ({ type: "message", message: { role: "assistant", content: [{ type: "toolCall", id: "boundary-call", name, arguments: {} }] } })),
+  ];
+  const hidden = [
+    { type: "message", message: { role: "assistant", content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: " " }] } },
+    { type: "message", message: { role: "assistant", content: [{ type: "toolCall", id: "q", name: "ask_user_question", arguments: {} }] } },
+    { type: "custom_message", display: false },
+    { type: "custom", customType: "workflow-orchestrate", data: { display: false } },
+    { type: "custom", customType: "workflow-classifier-usage", data: {} },
+    { type: "model_change" }, { type: "context_edit" },
+  ];
+  for (const [boundary, closes] of [...visible.map(entry => [entry, true]), ...hidden.map(entry => [entry, false])]) {
+    const folds = createFolds();
+    restoreFolds(historicalContext([...historicalPair("a", "b"), boundary, ...historicalPair("c", "d")]), folds, { entryTypes: new Set(["plugin-visible"]) });
+    assert.equal(foldGroup(folds, "a") !== foldGroup(folds, "c"), closes, JSON.stringify(boundary));
+  }
+});
+
+test("historical failures and unanswered calls remain non-members without blocking earlier complete groups", () => {
+  for (const extra of [{ isError: true }, { details: { error: "failed" } }, null]) {
+    const folds = createFolds();
+    const entries = [...historicalPair("a", "b"), historicalCalls("bad"), ...(extra ? [historicalResult("bad", extra)] : []), ...historicalPair("c", "d")];
+    restoreFolds(historicalContext(entries), folds);
+    assert.deepEqual(foldGroup(folds, "a").counts, { read: 2 });
+    assert.equal(foldGroup(folds, "bad"), null);
+    assert.equal(folds.facts.get("bad").outcome, extra ? "failed" : "pending");
+    assert.deepEqual(foldGroup(folds, "c").counts, { read: 2 });
+  }
+  const folds = createFolds();
+  restoreFolds(historicalContext([historicalCalls("solo"), historicalResult("solo")]), folds);
+  assert.equal(foldGroup(folds, "solo"), null);
+});
+
+test("historical mixed completion identities are stable without mutating legacy entries, even before facts exist", () => {
+  const legacy = Object.freeze({ type: "custom", id: "legacy", customType: "workflow-child", data: Object.freeze({ agent: "reviewer", status: "completed" }) });
+  const task = { type: "custom", id: "task", customType: "workflow-task", data: { id: "t1", command: "make", seq: "saved-seq", status: "completed" } };
+  const folds = createFolds();
+  const component = doneEntryRenderer("workflow-child", folds)(legacy, {}, theme);
+  assert.ok(rendered(component)[0].includes("reviewer finished"));
+  const ctx = historicalContext([legacy, ...historicalPair("a", "b"), task]);
+  for (let i = 0; i < 2; i++) {
+    restoreFolds(ctx, folds);
+    assert.deepEqual(foldGroup(folds, "a").entries.map(fact => fact.id), ["entry:legacy", "a", "b", "saved-seq"]);
+    assert.ok(rendered(component)[0].includes("▸ Read 2 files, finished 1 agent"));
+    assert.equal(legacy.data.seq, undefined);
+  }
+});
+
+test("native selected-branch compaction entries, not all branches or context edits, own historical grouping", () => {
+  const sm = SessionManager.inMemory("/fixture");
+  const appendPair = (a, b) => historicalPair(a, b).map(entry => sm.appendMessage(entry.message))[0];
+  appendPair("dropped-a", "dropped-b");
+  const fork = sm.getLeafId();
+  appendPair("abandoned-a", "abandoned-b");
+  sm.branch(fork);
+  const kept = appendPair("kept-a", "kept-b");
+  sm.appendContextEdit(kept, null);
+  sm.appendCompaction("summary", kept, 1000);
+  const folds = createFolds();
+  const ctx = historicalContext([]);
+  ctx.sessionManager = sm;
+  restoreFolds(ctx, folds);
+  assert.deepEqual([...folds.facts.keys()], ["kept-a", "kept-b"]);
+  assert.deepEqual(foldGroup(folds, "kept-a").counts, { read: 2 });
+  sm.branch(fork);
+  restoreFolds(ctx, folds);
+  assert.deepEqual([...folds.facts.keys()], ["dropped-a", "dropped-b"]);
+});
+
+test("live compaction preserves restored legacy completion identity beside the kept tool rows", () => {
+  const legacy = { type: "custom", id: "legacy-kept", customType: "workflow-child", data: { agent: "reviewer", status: "completed" } };
+  const entries = [legacy, ...historicalPair("a", "b")];
+  const ctx = historicalContext(entries);
+  const folds = createFolds();
+  restoreFolds(ctx, folds);
+  const handlers = {};
+  installFolding({ on: (name, handler) => { handlers[name] = handler; } }, ctx, folds);
+  handlers.session_compact({}, ctx);
+  assert.deepEqual(foldGroup(folds, "a").counts, { agentDone: 1, read: 2 });
+  assert.equal(legacy.data.seq, undefined);
 });

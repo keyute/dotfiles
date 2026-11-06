@@ -6,29 +6,35 @@ const wire = state => `\x1b]7501;state=${state}:app=pi\x1b\\`;
 function harness(t) {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const frames = [];
-  const reporter = installProgramStatus({ TUIOS_ENV: "1" }, { isTTY: true, write: frame => frames.push(frame) });
+  const reporter = installProgramStatus({ isTTY: true, write: frame => frames.push(frame) });
   const report = (state, message) => reporter.report({ state, ...(message !== undefined && { message }) });
   return { frames, reporter, report, tick: ms => t.mock.timers.tick(ms) };
 }
 
-test("reports only in TuiOS on terminal stdout", () => {
+test("reports on terminal stdout independently of environment", t => {
   const frames = [];
-  for (const env of [{}, { TUIOS_ENV: "0" }, { TUIOS_ENV: "true" }]) {
-    assert.equal(installProgramStatus(env, { isTTY: true, write: frame => frames.push(frame) }), undefined);
+  const previous = process.env.TUIOS_ENV;
+  t.after(() => { if (previous === undefined) delete process.env.TUIOS_ENV; else process.env.TUIOS_ENV = previous; });
+  for (const value of [undefined, "0", "1", "true"]) {
+    if (value === undefined) delete process.env.TUIOS_ENV;
+    else process.env.TUIOS_ENV = value;
+    const reporter = installProgramStatus({ isTTY: true, write: frame => frames.push(frame) });
+    reporter.report({ state: "idle" });
+    reporter.shutdown();
   }
-  for (const isTTY of [false, undefined]) assert.equal(installProgramStatus({ TUIOS_ENV: "1" }, { isTTY, write: frame => frames.push(frame) }), undefined);
-  assert.deepEqual(frames, []);
+  assert.deepEqual(frames, Array(4).fill([wire("idle"), wire("clear")]).flat());
+  for (const isTTY of [false, undefined]) assert.equal(installProgramStatus({ isTTY, write: () => assert.fail("non-TTY write") }), undefined);
 });
 
-test("exact OSC states, message escaping and dedupe preserve explicit completion", t => {
-  const { frames, report, tick } = harness(t);
+test("exact OSC states omit activity bodies and dedupe preserves explicit completion", t => {
+  const { frames, reporter, report, tick } = harness(t);
   report("idle");
   report("idle");
   report("working");
   report("working");
-  report("blocked", "  Approve\x07\x1b\\\nnow\x9c  ");
-  const encoded = Buffer.from("Approve \\ now").toString("base64");
-  assert.deepEqual(frames, [wire("idle"), wire("working"), `\x1b]7501;state=blocked:app=pi:msg=${encoded}\x1b\\`]);
+  reporter.report({ state: "blocked", message: "PRIVATE QUESTION SENTINEL", title: "PRIVATE TITLE SENTINEL", id: "PRIVATE ID SENTINEL" });
+  report("blocked", "another private question");
+  assert.deepEqual(frames, [wire("idle"), wire("working"), wire("blocked")]);
   report("idle");
   tick(249);
   assert.equal(frames.length, 3);
@@ -64,7 +70,7 @@ test("initial idle and menu-only block do not manufacture completed work", t => 
   tick(249);
   assert.equal(frames.length, 2);
   tick(1);
-  assert.deepEqual(frames, [wire("idle"), `\x1b]7501;state=blocked:app=pi:msg=TWVudQ==\x1b\\`, wire("idle")]);
+  assert.deepEqual(frames, [wire("idle"), wire("blocked"), wire("idle")]);
 });
 
 test("unused shutdown is silent and idempotent, and attach does not replay status", t => {

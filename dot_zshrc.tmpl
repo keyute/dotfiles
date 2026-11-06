@@ -17,12 +17,9 @@ alias lsql='lazysql'
 # The CLI is the repo's lockfile-pinned copy: pi breaks extension APIs across
 # 0.x point releases, and the workflow extension must match it exactly.
 pi() {
-  # The owned workflow emitter reports turn state inside TuiOS instead of native Pi.
-  if [[ ${TUIOS_ENV:-} == 1 ]]; then
-    local -x PI_PROGRAM_STATUS=0
-  fi
+  # The workflow owns aggregate OSC 7501 instead of native root-only status.
   # No startup network activity (version check, catalog refresh).
-  PI_OFFLINE=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions -e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts" "$@"
+  PI_PROGRAM_STATUS=0 PI_OFFLINE=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions -e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts" "$@"
 }
 
 # `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the
@@ -43,7 +40,7 @@ _comp_options+=(globdots)
 # uv keeps each project's venv in-tree at .venv. Activate the nearest one on cd and
 # drop it on the way out. The walk stops at the nearest project root, not the nearest
 # .venv: a nested project without an env yet must not inherit its parent's Python.
-# Panes/multiplexers (TuiOS) can inherit VIRTUAL_ENV without the activate script's
+# Child shells can inherit VIRTUAL_ENV without the activate script's
 # functions, so tear down by hand when `deactivate` is missing.
 _venv_autoswitch() {
   emulate -L zsh
@@ -109,38 +106,11 @@ _sync_appearance() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _sync_appearance
 
-_tuios_directory_title() {
-  emulate -L zsh
-  [[ -o interactive && ${TUIOS_ENV:-} == 1 && -t 1 ]] || return 0
-  local title=${PWD:t}/
-  # A child shell may use the physical spelling of a symlinked HOME.
-  [[ $PWD -ef $HOME ]] && title='~/'
-  [[ $PWD == / ]] && title=/
-  # OSC payloads must not contain terminal controls, even in a directory name.
-  title=${title//[[:cntrl:]]/}
-  printf '\033]2;%s\007' "$title"
-  # OSC2 is a label, not cwd metadata. Encode bytes (including OSC delimiters)
-  # without changing the locale used above to sanitize the Unicode title.
-  local LC_ALL=C
-  local uri='' char encoded
-  local -i i
-  for (( i = 1; i <= ${#PWD}; i++ )); do
-    char=$PWD[i]
-    case $char in
-      [a-zA-Z0-9/._~-]) uri+=$char ;;
-      *) printf -v encoded '%%%02X' "'$char"; uri+=$encoded ;;
-    esac
-  done
-  printf '\033]7;file://%s\007' "$uri"
-}
-add-zsh-hook precmd _tuios_directory_title
-add-zsh-hook chpwd _tuios_directory_title
-
 eval "$(zoxide init zsh --cmd cd)"
 
 # Pin the emacs keymap: zsh picks viins whenever EDITOR/VISUAL contains "vi"
-# at zle init, so shells that inherit EDITOR=nvim from a parent env (TuiOS/tmux
-# server panes) silently lose ^A/^E. Must precede the bindkey calls below —
+# at zle init, so shells that inherit EDITOR=nvim from a parent environment
+# silently lose ^A/^E. Must precede the bindkey calls below —
 # switching keymaps resets main.
 bindkey -e
 bindkey '^[[H' beginning-of-line

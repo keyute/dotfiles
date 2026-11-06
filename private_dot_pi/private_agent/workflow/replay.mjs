@@ -2,19 +2,16 @@ import { Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import {
   DONE, TURN_VERBS,
-  addCompletion, addFold, bulletMarkdown, callTitle, closeFolds, closeLive, completionLine, createFolds, createTurnClock,
-  foldGroup, foldKey, formatTurn, glyph, groupLines, isMcp, liveGroup, noteLine, pluginTitle,
-  orchestrateTitle, orchestrateCompletionLines, rowLines, settleFold, shadedBlock, taskTitle,
+  addCompletion, addFold, bulletMarkdown, closeFolds, closeLive, completionLine, createFolds, createTurnClock,
+  foldGroup, foldKey, formatTurn, glyph, groupLines, liveGroup, noteLine,
+  orchestrateCompletionLines, rowLines, settleFold, shadedBlock, toolRowMeta,
 } from "./rows.mjs";
 import { commandMarkdownTheme } from "./command-display.mjs";
-import { workerTools } from "./policy.mjs";
 
 // The fleet peek replays a background child's own events.jsonl through this
 // extension's row grammar (docs/pi-design.md rule 6). Pure: no fs,
 // no timers, no pi context — the caller streams file chunks in and gets back
 // journal-order row facts plus a renderer.
-
-const WORKSPACE_TOOLS = new Set(workerTools);
 
 // A large tool result would otherwise hold the whole run's output in memory
 // for the life of the peek; only the fields the renderers actually read
@@ -69,19 +66,6 @@ function tailText({ stopReason, errorMessage, content = [] }) {
   return "";
 }
 
-// The row's title and body kind, exactly as the main chat's tool rows
-// resolve them; shared between the fact stored for grouping (`folds.titles`)
-// and the row's own full rendering.
-function toolRowMeta(name, args, workflow) {
-  if (name === "orchestrate") return { title: orchestrateTitle(args, workflow), bodyName: "orchestrate" };
-  const stripped = name.startsWith("workspace_") ? name.slice("workspace_".length) : null;
-  if (stripped && WORKSPACE_TOOLS.has(stripped)) return { title: callTitle(stripped, args), bodyName: stripped };
-  if (name === "workspace_task") return { title: taskTitle(args), bodyName: "plugin" };
-  if (name === "subagent") return { title: pluginTitle("subagent", args), bodyName: "subagent" };
-  if (isMcp(name)) return { title: pluginTitle(name, args), bodyName: "mcp" };
-  return { title: pluginTitle(name, args), bodyName: "plugin" };
-}
-
 function handleRecord(state, record) {
   state.version += 1;
   switch (record.type) {
@@ -105,6 +89,8 @@ function handleRecord(state, record) {
       const isError = Boolean(record.isError || record.result?.details?.error);
       settleFold(state.folds, record.toolCallId, isError, record.result);
       const result = capResult(record.result);
+      const fact = state.folds.facts.get(record.toolCallId);
+      if (fact?.result) fact.result = result;
       const existing = state.toolRowsById.get(record.toolCallId);
       if (existing) {
         existing.pending = false;

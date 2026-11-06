@@ -22,13 +22,13 @@ import { installPendingInput } from "./pending-input.mjs";
 import { createTasks } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, PlanState, requestPlanApproval, showPlan } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installActivityEntries, installFolding, installReasoningHide, isMcp, noteLine, orchestrateCompletionLines, orchestrateRenderers, planRenderers, pluginRenderers, taskRenderers, toolRenderers } from "./rows.mjs";
+import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installActivityEntries, installFolding, installReasoningHide, isMcp, noteLine, orchestrateCompletionLines, orchestrateRenderers, planRenderers, pluginRenderers, taskRenderers, toolRenderers, restoreFolds } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
 import { askBtw } from "./btw.mjs";
 import { webFetchTool } from "./web-fetch.mjs";
-import { CONTROL_NOTICE, NOTICE_RENDERERS, QUIET_MESSAGES, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
+import { CONTROL_NOTICE, DRAWN_ENTRIES, NOTICE_RENDERERS, QUIET_MESSAGES, controlNotice, mcpConfig, pluginApi } from "./plugin-api.mjs";
 
 // The classifier's only evidence source: a shell command's record (command,
 // sandboxed, exit code; never output) is taken where the worker returns it. A
@@ -125,6 +125,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const requestBroker = runtime.requestBroker ?? callPolicyBroker;
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   const isRoot = role === "root";
+  if (isRoot) installActivityEntries(runtime.InteractiveMode);
   if (isRoot && (typeof config.driverInstructions !== "string" || !config.driverInstructions.trim())) throw new Error("Managed driver instructions are missing");
   const subagentDescription = isRoot ? readFileSync(join(sdk.getAgentDir(), "subagent-tool-description.md"), "utf8").trim() : undefined;
   if (isRoot && !subagentDescription) throw new Error("Managed subagent description is empty");
@@ -362,8 +363,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     }
     if (ctx.hasUI) ctx.ui.setToolsExpanded(false);
     if (isRoot && ctx.hasUI) {
+      if (ctx.mode === "tui") restoreFolds(ctx, defaultFolds, { entryTypes: DRAWN_ENTRIES, servers: Object.keys(config.mcp) });
       installSkillDisplay(runtime.InteractiveMode);
-      installActivityEntries(runtime.InteractiveMode);
       installReasoningHide(runtime.AssistantMessageComponent, () => currentContext?.ui.theme);
       pendingInput = installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
       if (!surfaces) {
@@ -402,6 +403,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   pi.on("session_tree", async (_event, ctx) => {
     currentContext = ctx;
     pendingInput?.reset();
+    if (isRoot && ctx.hasUI && ctx.mode === "tui") restoreFolds(ctx, defaultFolds, { entryTypes: DRAWN_ENTRIES, servers: Object.keys(config.mcp) });
     if (isRoot) { plans.restore(ctx); await setMode("plan", ctx); }
   });
   // pi fires `input` at queue time and the user message_start at delivery;

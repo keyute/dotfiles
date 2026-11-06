@@ -51,7 +51,6 @@ jobs:
         run: |
           set -euo pipefail
           chezmoi -S "$GITHUB_WORKSPACE" verify --exclude scripts,externals
-          command -v tuios
           test ! -e "$HOME/.claude/hooks/herdr-agent-state.sh"
           jq -e 'has("hooks") | not' "$HOME/.claude/settings.json" > /dev/null
 

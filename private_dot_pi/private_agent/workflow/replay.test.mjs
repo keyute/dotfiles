@@ -216,7 +216,7 @@ test("a 100 KiB result text is capped at 64 KiB in the stored row", () => {
     { type: "tool_execution_start", toolCallId: "c1", toolName: "workspace_read", args: { path: "a.txt" } },
     { type: "tool_execution_end", toolCallId: "c1", toolName: "workspace_read", isError: false, result: { content: [{ type: "text", text: big }], details: { unused: big } } },
   );
-  assert.equal(state.folds.facts.get("c1").result, undefined, "quiet replay must not retain the uncapped result or unused details");
+  assert.equal(state.folds.facts.get("c1").result, state.rows[0].result, "quiet folds retain only the same capped result as the row");
   assert.equal(state.folds.facts.get("c1").summary, "1 line");
   assert.equal(state.rows[0].result.details, undefined);
   const stored = state.rows[0].result.content[0].text;

@@ -986,7 +986,7 @@ test("interrupts name workflows without counting their children twice", () => {
 test("aggregate OSC waits for children, workflows and shells, while views never block", async t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
   const frames = [];
-  const reporter = installProgramStatus({ TUIOS_ENV: "1" }, { isTTY: true, write: frame => frames.push(frame) });
+  const reporter = installProgramStatus({ isTTY: true, write: frame => frames.push(frame) });
   reporter.attach();
   let workflows = 1;
   const h = harness({ active: 1, live: 1, settleMs: 250, orchestrate: { live: () => workflows, onChange() {} }, onActivity: reporter.report });
@@ -998,8 +998,9 @@ test("aggregate OSC waits for children, workflows and shells, while views never 
   h.fire("ui_prompt_start", { kind: "custom" });
   h.fire("ui_prompt_end", { kind: "custom" });
   assert.deepEqual(frames, [wire("idle"), wire("working")]);
-  h.fire("ui_prompt_start", { kind: "confirm" });
+  h.fire("ui_prompt_start", { kind: "confirm", title: "PRIVATE QUESTION SENTINEL" });
   assert.equal(frames.at(-1), wire("blocked"));
+  assert.ok(frames.every(frame => /^\x1b\]7501;state=(idle|working|blocked):app=pi\x1b\\$/.test(frame)), "wire contains no prompt, title or other activity body");
   h.fire("ui_prompt_end");
   h.fleet.activeCount = () => 0;
   h.fleet.changed();

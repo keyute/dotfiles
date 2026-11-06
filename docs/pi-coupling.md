@@ -163,8 +163,13 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   the host `InteractiveMode.addCustomEntryToChat`, retaining every owned
   completion's native host. Its render checks the current `customComponent`
   after native rebuilds and suppresses the host spacer when the child draws
-  nothing. *Why:* a completion mounted behind a pending tool must become visible
-  after failure or merge after success without an artificial group boundary.
+  nothing. Installation precedes historical mounts; completion components stay
+  dynamic when session-start reconstruction follows mounting. Public
+  `buildContextEntries()` supplies the selected, compaction-aware history to the
+  existing fold owner in place; mounted tool rows are invalidated and repainted.
+  *Why:* a completion mounted behind a pending tool must become visible after
+  failure or merge after success without an artificial group boundary, and a
+  resumed completion must join its reconstructed group without a new host hook.
   *On red:* repair; otherwise retain plain visible completion rows rather than
   discard a component that might later be needed. *Retire:* a public entry
   renderer with dynamic zero-height host spacing. *Pin:* native and bundled

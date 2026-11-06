@@ -17,7 +17,7 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
   its public API covers the need with at most a one-line seam; own it for
   this repo's policy or layout, or when adoption needs a wrapper, pin or
   coupling workaround, or uses only a sliver.
-- Keep vendor-templated files (oh-my-tmux, ghostty, gh, 1Password) verbatim
+- Keep vendor-templated files (gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
 
 - Edit source state only; verify with `npm run test:pi` (its fixture renders every

@@ -2,7 +2,7 @@ import { Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth } from
 import { AssistantMessageComponent, InteractiveMode, formatReadLineRange, getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
 import { commandMarkdown, commandMarkdownTheme } from "./command-display.mjs";
 import { highlightProse } from "./keywords.mjs";
-import { unsandboxed } from "./policy.mjs";
+import { unsandboxed, workerTools } from "./policy.mjs";
 
 // Transcript glyphs (docs/pi-design.md): one bullet for every row, ↳ for the
 // line under a row, π for anything the harness says in its own voice, the
@@ -270,8 +270,8 @@ export function rowLines(name, result, { expanded = false, isError = false, dura
 // Grouping, as Claude Code does it: successful activity facts between two
 // things that stay visible form one chronological group, which collapses to a
 // count sentence ("Read 3 files, launched 2 agents"); clicking it restores the
-// member ladder and ctrl+o restores full tool output. State is per process — a
-// resumed session renders its old rows and completions unfolded.
+// member ladder and ctrl+o restores full tool output. Expansion is per process;
+// historical facts are reconstructed from the selected, compaction-aware branch.
 //
 // The extent is derived, never edited (docs/pi-design.md rule 2).
 // The timeline holds ordered facts — one per tool row plus its outcome, one
@@ -331,6 +331,15 @@ export const foldKey = (name, args = {}) => {
 // from the name its plain row renders with (`pluginRenderers`, `taskRenderers`).
 const SUMMARY_NAME = { web: "plugin", fetch: "plugin", toolSearch: "plugin", taskCheck: "plugin", taskStop: "plugin", taskList: "plugin" };
 
+const WORKSPACE_TOOLS = new Set(workerTools);
+export function toolRowMeta(name, args, workflow, servers = []) {
+  if (name === "orchestrate") return { title: orchestrateTitle(args, workflow), bodyName: "orchestrate" };
+  const stripped = name.startsWith("workspace_") ? name.slice("workspace_".length) : null;
+  if (stripped && WORKSPACE_TOOLS.has(stripped)) return { title: callTitle(stripped, args), bodyName: stripped };
+  if (name === "workspace_task") return { title: taskTitle(args), bodyName: "plugin" };
+  return { title: pluginTitle(name, args, servers), bodyName: name === "subagent" ? "subagent" : isMcp(name) ? "mcp" : "plugin" };
+}
+
 // One row behind one header line hides nothing and draws a caret over content
 // that is not there, so a run needs two rows to be worth a handle.
 const MIN_RUN = 2;
@@ -382,7 +391,7 @@ export function settleFold(folds, id, failed, result) {
   if (fact?.source !== "tool" || fact.outcome !== "pending") return;
   refold(folds, () => {
     fact.outcome = failed ? "failed" : "success";
-    if (!failed && !folds.quiet) fact.result = result;
+    if (!failed) fact.result = result;
     if (fact.key === "bash" && result?.details?.taskId) fact.key = "task";
     else if (fact.key === "bash" && fact.args.run_in_background) {
       fact.inline = true;
@@ -566,6 +575,70 @@ export function closeLive(folds) {
   closeFolds(folds, tail ? folds.timeline.indexOf(tail) + 1 : undefined);
 }
 
+const VISIBLE_ENTRIES = new Set(["workflow-shell", "workflow-answers", "workflow-note", "workflow-turn", "workflow-usage", "workflow-orchestrate"]);
+
+// Native history mounts raw context entries, not the model's context-edit
+// projection. Results settle the calls at their source positions, irrespective
+// of result order. No events, dialogs or persisted payloads are replayed.
+export function restoreFolds(ctx, folds = defaultFolds, { entryTypes = new Set(), servers = [] } = {}) {
+  const entries = ctx.sessionManager.buildContextEntries();
+  const results = new Map(entries.filter(entry => entry.type === "message" && entry.message.role === "toolResult").map(entry => [entry.message.toolCallId, entry.message]));
+  const quiet = folds.quiet;
+  folds.quiet = true;
+  folds.timeline.length = 0;
+  folds.facts.clear();
+  folds.titles.clear();
+  folds.views.clear();
+  folds.streamBoundary = null;
+  folds.revision += 1;
+  folds.toolsExpanded = () => ctx.ui.getToolsExpanded();
+  ctx.ui.setToolsExpanded(false);
+  for (const entry of entries) {
+    if (entry.type === "custom") {
+      if (entry.data?.display === false) continue;
+      if (Object.hasOwn(DONE, entry.customType)) {
+        if (entry.data.status === "completed") addCompletion(folds, entry.customType, { ...entry.data, seq: completionId(entry) });
+        else closeFolds(folds);
+      } else if (VISIBLE_ENTRIES.has(entry.customType) || entryTypes.has(entry.customType)) closeFolds(folds);
+    } else if (entry.type === "compaction" || (entry.type === "branch_summary" && entry.summary)) closeFolds(folds);
+    else if (entry.type === "custom_message") {
+      if (entry.display) closeFolds(folds);
+    } else if (entry.type === "message") {
+      const message = entry.message;
+      if (message.role === "user") closeFolds(folds);
+      else if (message.role === "bashExecution" || displays({ message })) closeFolds(folds);
+      else if (message.role === "assistant") {
+        if (speaks({ message }) || tails({ message })) closeFolds(folds);
+        for (const block of message.content ?? []) {
+          if (block.type !== "toolCall" || block.name === "ask_user_question") continue;
+          const args = block.arguments ?? {};
+          const key = foldKey(block.name, args);
+          if (!key) { closeFolds(folds); continue; }
+          const result = results.get(block.id);
+          // An unanswered historical call will not settle in this process. It
+          // stays visible without holding earlier completed work open.
+          if (!result) closeFolds(folds);
+          addFold(folds, block.id, key, args);
+          const fact = folds.facts.get(block.id);
+          const failed = ["error", "aborted"].includes(message.stopReason) || Boolean(result?.isError || result?.details?.error);
+          if (result || failed) settleFold(folds, block.id, failed, result);
+          else closeFolds(folds);
+          const inline = fact.inline ? { ...args, run_in_background: false } : args;
+          const meta = toolRowMeta(block.name, inline, result?.details?.workflow, servers);
+          folds.titles.set(block.id, meta.title);
+          fact.bodyName = meta.bodyName;
+        }
+      }
+    }
+  }
+  closeFolds(folds);
+  folds.quiet = quiet;
+  // Rows may already be mounted on resume/reload; keep their registrations
+  // and the singleton captured by every renderer, then rebuild those slots.
+  for (const invalidate of folds.invalidate.values()) invalidate?.();
+  folds.repaint();
+}
+
 export function installFolding(pi, ctx, folds = defaultFolds) {
   folds.toolsExpanded = () => ctx.ui.getToolsExpanded();
   pi.on("tool_execution_start", event => {
@@ -610,7 +683,7 @@ export function installFolding(pi, ctx, folds = defaultFolds) {
   pi.on("session_compact", (_event, eventCtx) => {
     const kept = new Set();
     for (const entry of eventCtx.sessionManager.buildContextEntries()) {
-      if (entry.type === "custom" && entry.data?.seq != null) kept.add(entry.data.seq);
+      if (entry.type === "custom" && Object.hasOwn(DONE, entry.customType)) kept.add(completionId(entry));
       if (entry.type === "message" && entry.message.role === "assistant") {
         for (const block of entry.message.content ?? []) if (block.type === "toolCall") kept.add(block.id);
       }
@@ -1032,14 +1105,12 @@ class ActivityEntryComponent extends Text {
   }
 }
 
-// A resumed/foreign completion has no fact and draws as a plain line.
+// Resume/reload can mount history before session_start reconstructs the facts.
+// Keep the component dynamic even when its membership is not known yet.
+const completionId = entry => entry.data.seq ?? `entry:${entry.id}`;
 export function doneEntryRenderer(type, folds = defaultFolds) {
   const map = DONE[type].line;
-  return (entry, _options, theme) => {
-    const seq = entry.data.seq;
-    if (seq == null || folds.facts.get(seq)?.source !== "completion") return new Text(completionLine(map(entry.data), theme), 0, 0);
-    return new ActivityEntryComponent(folds, seq, map(entry.data), theme);
-  };
+  return (entry, _options, theme) => new ActivityEntryComponent(folds, completionId(entry), map(entry.data), theme);
 }
 
 // Native custom entries unconditionally prepend a spacer. Only owned activity

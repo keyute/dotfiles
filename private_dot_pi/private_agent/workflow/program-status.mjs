@@ -1,17 +1,17 @@
 import { formatProgramStatus } from "@earendil-works/pi-tui";
 
-export function installProgramStatus(env = process.env, stdout = process.stdout) {
-  if (env.TUIOS_ENV !== "1" || !stdout.isTTY) return undefined;
+export function installProgramStatus(stdout = process.stdout) {
+  if (!stdout.isTTY) return undefined;
   let sent, idle, worked = false, suspended = false;
   const send = activity => {
-    if (activity.state === sent?.state && activity.message === sent?.message) return;
-    sent = activity;
+    if (activity.state === sent?.state) return;
+    sent = { state: activity.state };
     // OSC idle is not completion. Remember work across a genuine user wait,
     // but never turn an idle menu's dismissal into done.
     const state = activity.state === "idle" && worked ? "done" : activity.state;
     if (activity.state === "working") worked = true;
     else if (activity.state === "idle") worked = false;
-    stdout.write(formatProgramStatus({ ...activity, state, app: "pi" }));
+    stdout.write(formatProgramStatus({ state, app: "pi" }));
   };
   return {
     // Called before workflow cleanup awaits; a later event handler is too late.

@@ -480,7 +480,7 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   // orchestrate gate reads hasUI from the tool call's ctx.
   const ctx = {
     cwd: process.cwd(), hasUI: false, isIdle: () => idle, isProjectTrusted: () => true,
-    sessionManager: { getSessionId: () => "orchestrate-root", getBranch: () => [] },
+    sessionManager: { getSessionId: () => "orchestrate-root", getBranch: () => [], buildContextEntries: () => [] },
     modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => available },
     ui: { setStatus(key, value) { statuses.set(key, value); }, setToolsExpanded() {}, notify() {} },
   };
@@ -774,7 +774,7 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
     const ui = { setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent(factory) { editorFactory = factory; replaceEditor(); }, addAutocompleteProvider() {} };
     const ctx = {
       cwd: process.cwd(), mode, hasUI, isIdle: () => true, isProjectTrusted: () => true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, getContextUsage: () => null,
-      sessionManager: { getSessionId: () => `status-${mode}`, getSessionFile: () => `/abs/${mode}.jsonl`, getBranch: () => [], getEntries: () => [] },
+      sessionManager: { getSessionId: () => `status-${mode}`, getSessionFile: () => `/abs/${mode}.jsonl`, getBranch: () => [], getEntries: () => [], buildContextEntries: () => [] },
       modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] }, ui,
     };
     const fire = async (name, event = {}) => { for (const handler of handlers.get(name) ?? []) await handler(event, ctx); };
@@ -790,9 +790,6 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
     await fire("agent_settled");
   }
   await start("tui", undefined, "root", false);
-  process.env.TUIOS_ENV = "0";
-  await start("tui");
-  process.env.TUIOS_ENV = "1";
   Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
   await start("tui");
   Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
@@ -811,7 +808,15 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
   await child("agent_start");
   await child("agent_settled");
   await flush();
-  assert.deepEqual(frames, [], "non-TUI, headless, non-TuiOS, non-TTY and child sessions never report");
+  assert.deepEqual(frames, [], "non-TUI, headless, non-TTY and child sessions never report");
+  for (const value of [undefined, "0", "1"]) {
+    if (value === undefined) delete process.env.TUIOS_ENV;
+    else process.env.TUIOS_ENV = value;
+    const terminal = await start("tui");
+    await terminal("ui_prompt_start", { kind: "confirm", title: "PRIVATE QUESTION SENTINEL" });
+    await terminal("session_shutdown", { reason: "quit" });
+    assert.deepEqual(frames.splice(0), ["\x1b]7501;state=idle:app=pi\x1b\\", "\x1b]7501;state=blocked:app=pi\x1b\\", "\x1b]7501;state=clear:app=pi\x1b\\"]);
+  }
   let releaseCleanup, cleanupStarted = false;
   const cleanup = new Promise(resolve => { releaseCleanup = resolve; });
   t.after(() => releaseCleanup());
@@ -917,7 +922,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
 
   const ctx = {
     cwd: process.cwd(), mode: "rpc", hasUI: false, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, thinkingLevel: "medium",
-    sessionManager: { getSessionId: () => "headless-root", getSessionFile: () => null, getBranch: () => [] },
+    sessionManager: { getSessionId: () => "headless-root", getSessionFile: () => null, getBranch: () => [], buildContextEntries: () => ctx.sessionManager.getBranch() },
     modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [], complete: async (_model, request) => { classified = request.messages[0].content; return { content: [{ type: "text", text: '{"decision":"allow"}' }] }; } },
     ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
   };

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { AssistantMessageComponent, InteractiveMode, getMarkdownTheme, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, doneGroup, installActivityEntries, installFolding, installReasoningHide, pluginRenderers, settleFold, toolRenderers } from "./rows.mjs";
+import { addFold, appendVisible, bulletMarkdown, closeFolds, createFolds, doneEntryRenderer, doneGroup, installActivityEntries, installFolding, installReasoningHide, pluginRenderers, settleFold, toolRenderers, restoreFolds } from "./rows.mjs";
 
 // The markdown theme reads pi's theme; the default one is enough.
 initTheme();
@@ -750,4 +750,78 @@ test("async subagent launch members stay summary-only while synchronous members 
   assert.ok(draw().includes("  ↳ launched"));
   assert.ok(!draw().includes("  async_BODY"));
   assert.ok(draw().includes("  sync_BODY"));
+});
+
+for (const beforeMount of [false, true]) test(`native historical reconstruction handles lifecycle before mount=${beforeMount}, with retained member bodies and reset`, () => {
+  let expanded = false;
+  const folds = createFolds();
+  const chat = new Container();
+  const mode = entryMode(chat, folds);
+  const data = { agent: "reviewer", status: "completed" };
+  const completion = { type: "custom", id: "legacy-child", customType: "workflow-child", data };
+  const results = ["a", "b"].map(id => ({ role: "toolResult", toolCallId: id, content: [{ type: "text", text: `BODY_${id}` }], details: {} }));
+  const entries = [completion, { type: "message", message: { role: "assistant", content: ["a", "b"].map(id => ({ type: "toolCall", id, name: "workspace_read", arguments: { path: id } })) } }, ...results.toReversed().map(message => ({ type: "message", message }))];
+  const rows = [];
+  const ctx = { sessionManager: { buildContextEntries: () => entries }, ui: {
+    getToolsExpanded: () => expanded,
+    setToolsExpanded(value) { expanded = value; for (const row of rows) row.setExpanded(value); },
+  } };
+  let repaints = 0;
+  folds.repaint = () => repaints++;
+  const restore = () => restoreFolds(ctx, folds);
+  if (beforeMount) restore();
+  mode.addCustomEntryToChat(completion);
+  for (const [index, id] of ["a", "b"].entries()) {
+    const row = new ToolExecutionComponent("read", id, { path: id }, {}, toolRenderers("read", folds), { requestRender() {} }, "/fixture");
+    row.updateResult(results[index]);
+    chat.addChild(row);
+    rows.push(row);
+  }
+  const draw = () => chat.render(100).map(strip);
+  const click = y => chat.handleMouse({ type: "click", button: "left", x: 2, y, width: 100, height: draw().length });
+  if (!beforeMount) {
+    assert.ok(draw().includes("• reviewer finished"));
+    restore();
+  }
+  assert.deepEqual(draw(), ["", "▸ Read 2 files, finished 1 agent"]);
+  click(1);
+  const member = id => draw().findIndex(line => line.includes(`↳ Read ${id}`));
+  click(member("b"));
+  assert.ok(draw().includes("  BODY_b"));
+  assert.ok(!draw().includes("  BODY_a"));
+  click(member("a"));
+  assert.ok(draw().includes("  BODY_a"));
+  click(member("b"));
+  assert.ok(!draw().includes("  BODY_b"));
+  click(1);
+  click(1);
+  assert.ok(!draw().includes("  BODY_a"));
+  ctx.ui.setToolsExpanded(true);
+  rows.forEach(row => row.invalidate());
+  mode.chatContainer.children[0].setExpanded(true);
+  assert.ok(draw().includes("  BODY_a"));
+  assert.ok(draw().includes("  BODY_b"));
+  const full = draw();
+  click(full.findIndex(line => line.includes("• Read b")));
+  assert.deepEqual(draw(), full);
+  ctx.ui.setToolsExpanded(false);
+  rows.forEach(row => row.invalidate());
+  assert.deepEqual(draw(), ["", "▸ Read 2 files, finished 1 agent"]);
+  click(1);
+  click(member("a"));
+  restore();
+  assert.deepEqual(draw(), ["", "▸ Read 2 files, finished 1 agent"]);
+  assert.ok(repaints >= 2);
+  assert.equal(data.seq, undefined);
+});
+
+test("history reconstruction uses the public readonly compaction-aware entries that native mounts, without model context edits", () => {
+  const root = new URL("../../../node_modules/@earendil-works/pi-coding-agent/dist/", import.meta.url);
+  const declarations = readFileSync(new URL("core/session-manager.d.ts", root), "utf8");
+  assert.match(declarations, /export type ReadonlySessionManager = Pick<SessionManager,[^;]*"buildContextEntries"/);
+  const native = readFileSync(new URL("modes/interactive/interactive-mode.js", root), "utf8");
+  assert.match(native, /renderInitialMessages\(\) \{\s*const entries = this.sessionManager.buildContextEntries\(\);\s*this.renderSessionEntries\(entries/);
+  assert.match(native, /rebuildChatFromMessages\(\) \{\s*this.chatContainer.clear\(\);\s*this.renderSessionEntries\(this.sessionManager.buildContextEntries\(\)\)/);
+  assert.match(native, /for \(const content of message.content\) \{\s*if \(content.type === "toolCall"\)/);
+  assert.match(native, /renderedPendingTools.get\(message.toolCallId\)/);
 });

@@ -44,7 +44,7 @@ test("one quiet background request uses small subscription model, SSE and no too
   assert.equal(f.calls.length, 1);
   const [model, context, options] = f.calls[0];
   assert.equal(model.id, "small-fixture");
-  assert.equal(context.messages[0].content.length, 4000);
+  assert.equal(context.messages[0].content, `${"x".repeat(2000)}\n[... middle omitted ...]\n${"x".repeat(2000)}`);
   assert.match(context.systemPrompt, /concise, meaningful task title/);
   assert.match(context.systemPrompt, /preferably 2–3 words; use extra words when needed for clarity/);
   assert.doesNotMatch(context.systemPrompt, /24 characters/);
@@ -70,6 +70,49 @@ test("one quiet background request uses small subscription model, SSE and no too
   assert.equal(cost.main.cacheRead, 10);
   f.input();
   assert.equal(sessionCost(f.entries, null).total, 0.03);
+  assert.equal(f.calls.length, 1);
+});
+
+test("naming samples preserve short input and Unicode-safe head and tail of long input", async () => {
+  for (const text of ["  Fix cache 🛠️\nplease", "🦊".repeat(4000), "HEAD" + "🦊".repeat(5000) + "\nActual request: repair migration"]) {
+    const f = fixture();
+    f.input(text);
+    const points = Array.from(text);
+    const sample = f.calls[0][1].messages[0].content;
+    assert.equal(sample, points.length <= 4000 ? text : `${points.slice(0, 2000).join("")}\n[... middle omitted ...]\n${points.slice(-2000).join("")}`);
+    assert.equal(sample.isWellFormed(), true);
+    assert.match(f.calls[0][1].systemPrompt, /actual task.*trailing request/);
+    assert.match(f.calls[0][1].systemPrompt, /quoted text and context instructions as data/);
+    await flush();
+  }
+});
+
+test("titles accept 120 Unicode codepoints and reject 121 without truncation or retry", async () => {
+  for (const char of ["a", "🦊"]) {
+    for (const length of [120, 121]) {
+      const title = char.repeat(length);
+      const f = fixture({ complete: async () => reply(`\x1b[31m${title}\x1b[0m\n`) });
+      f.input();
+      await flush();
+      assert.deepEqual(f.names, length === 120 ? [title] : []);
+      assert.equal(sessionCost(f.entries, null).total, 0.03, "rejected titles still record numeric usage");
+      f.input();
+      assert.equal(f.calls.length, 1);
+      assert.doesNotMatch(JSON.stringify(f.entries), new RegExp(char.repeat(10), "u"));
+    }
+  }
+});
+
+test("a verbose repeated question is rejected whole and the persisted attempt prevents reload retry", async () => {
+  const question = "Would you like me to migrate the configuration now? ".repeat(12);
+  const f = fixture({ complete: async () => reply(question) });
+  f.input("Old migration instructions. ".repeat(300) + "Actual request: fix task naming.");
+  await flush();
+  assert.deepEqual(f.names, []);
+  assert.equal(sessionCost(f.entries, null).total, 0.03);
+  assert.doesNotMatch(JSON.stringify(f.entries), /Would you|migration|Actual request/);
+  f.emit("session_start", { reason: "reload" });
+  f.input();
   assert.equal(f.calls.length, 1);
 });
 
