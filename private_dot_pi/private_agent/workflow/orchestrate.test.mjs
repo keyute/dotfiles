@@ -69,13 +69,13 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
     stopRuns: async ids => { h.stopped.push(...ids); return ids.flatMap(stopFailures); },
   };
   h.fleet = fleet;
-  const check = async (args, { outputSchema, model } = {}) => {
+  const check = async (args, { outputSchema, model } = {}, mode = h.mode) => {
     await gate(args);
     delete args.title;
     if (outputSchema) args.outputSchema = outputSchema;
     if (model) args.model = model;
     if (!roster[args.agent]) throw new Error("A configured agent and bounded task are required");
-    if (h.mode === "plan" && !roster[args.agent].readonly) throw new Error("Plan mode only permits read-only child agents");
+    if (mode === "plan" && !roster[args.agent].readonly) throw new Error("Plan mode only permits read-only child agents");
     if (args.model === "openai/f-id") throw new Error("Children never run the frontier tier");
     args.agentScope = "user";
     args.async = true;
@@ -83,7 +83,7 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
   h.results = new Map();
   h.orchestrate = createOrchestrate({
     generation, onUsage, onComplete: async result => { h.results.set(result.details.workflow.id, result); await onComplete(result); },
-    pi: { events }, config: config(concurrency), fleet, check, isReady: () => h.ready, description: "d",
+    pi: { events }, config: config(concurrency), fleet, check, mode: () => h.mode, isReady: () => h.ready, description: "d",
     resultDir: resultDir ?? mkdtempSync(join(tmpdir(), "orchestrate-")),
     rpc: (ev, method, params, timeoutMs, requestId, raw) => rpcCall(ev, method, params, Math.min(timeoutMs, 100), requestId, raw),
     graceMs: 200,
@@ -136,7 +136,7 @@ test("agent() returns the child's text and spawns exactly the checked object", a
   const h = harness();
   const result = await h.run(`return await agent("look around", { agentType: "scout", label: "Look" })`);
   assert.equal(value(result), "done:look around");
-  assert.deepEqual(h.spawns[0], { agent: "scout", task: "look around", context: "fresh", agentScope: "user", async: true });
+  assert.deepEqual(h.spawns[0], { agent: "scout", task: "look around", agentScope: "user", async: true });
   assert.deepEqual(result.details.runs, [{ runId: "run-1", agent: "scout", label: "Look", task: "Look", asyncDir: "/tmp/async/run-1", status: "completed" }]);
   assert.deepEqual(h.adopted, [{ id: "run-1", agent: "scout", task: "Look", asyncDir: "/tmp/async/run-1" }]);
   assert.deepEqual(h.owned, [`rpc-spawn-${h.lastRequestId}`]);
@@ -162,8 +162,13 @@ test("parallel() keeps order with null for a failed item; a failed child names i
   const h = harness({ behave: params => params.task === "b" ? { status: "failed", summary: "broke\nlater" } : { status: "completed", output: params.task } });
   const result = await h.run(`return await parallel(["a", "b", "c"].map(t => () => agent(t, { agentType: "scout" })))`);
   assert.deepEqual(value(result), ["a", null, "c"]);
+  assert.match(result.content[0].text, /\nparallel item failed: scout failed: broke\n/);
   const message = await h.run(`try { await agent("b", { agentType: "scout" }) } catch (e) { return e.message }`);
   assert.equal(value(message), "scout failed: broke");
+  // A malformed call is as visible as a failed child.
+  const bare = await h.run(`return await pipeline(["x"], item => agent(item))`);
+  assert.deepEqual(value(bare), [null]);
+  assert.match(bare.content[0].text, /\npipeline item failed: agent\(\) needs opts\.agentType/);
 });
 
 test("pipeline() has no barrier: a fast item reaches stage 2 before a slow item's stage 1 ends", async () => {
@@ -273,13 +278,13 @@ test("a record keeps its start once running and the completion's duration and in
   assert.deepEqual([typeof r.startedAt, r.durationMs, r.tokens], ["number", 1_000, 1_234]);
 });
 
-test("opt-in: ultracode stays on across prompts until disarm; toggle flips it", async () => {
+test("opt-in: ultracode stays on across prompts until toggled off", async () => {
   const h = harness();
   assert.ok(saysUltracode("use ULTRACODE here") && !saysUltracode("ultracoder"));
   await h.run(`return 1`);
   h.orchestrate.delivered({ role: "user", content: [{ type: "text", text: "just a question" }] });
   await h.run(`return 2`);
-  h.orchestrate.disarm();
+  assert.equal(h.orchestrate.toggle(), false);
   assert.equal(h.orchestrate.armed(), false);
   await assert.rejects(h.run(`return 1`), /Ultracode is off/);
   assert.equal(h.orchestrate.toggle(), true);
@@ -292,7 +297,7 @@ test("opt-in: ultracode stays on across prompts until disarm; toggle flips it", 
 
 test("opt-in: the delivered text decides; extension text is consumed once; a skill decides by its args", async () => {
   const h = harness();
-  h.orchestrate.disarm();
+  h.orchestrate.toggle();
   const armed = () => h.run(`return 1`).then(() => true, () => false);
   const deliver = text => h.orchestrate.delivered({ role: "user", content: [{ type: "text", text }, { type: "image", data: "x" }] });
   deliver("don't run a workflow");
@@ -310,7 +315,7 @@ test("opt-in: the delivered text decides; extension text is consumed once; a ski
   // Both noted copies are spent: the same text from the user decides.
   deliver("ultracode");
   assert.equal(await armed(), true);
-  h.orchestrate.disarm();
+  h.orchestrate.toggle();
   deliver(skill("ultracode the auth flow"));
   assert.equal(await armed(), true);
   // The decided text is the return value: a skill's args, nothing for extension input.
@@ -318,9 +323,9 @@ test("opt-in: the delivered text decides; extension text is consumed once; a ski
   h.orchestrate.noteExtensionInput("ultrathink");
   assert.equal(deliver("ultrathink"), undefined);
   h.orchestrate.noteExtensionInput("ultracode");
-  h.orchestrate.disarm();
+  await h.orchestrate.reset();
   deliver("ultracode");
-  assert.equal(await armed(), true, "disarm clears the noted extension text");
+  assert.equal(await armed(), true, "reset clears the noted extension text");
 });
 
 test("check refusals and tier overrides: plan-mode writer, top pin, frontier, unknown tier, opts.model", async () => {
@@ -328,6 +333,10 @@ test("check refusals and tier overrides: plan-mode writer, top pin, frontier, un
   const attempt = opts => h.run(`try { return await agent("t", ${opts}) } catch (e) { return "error: " + e.message }`).then(value);
   h.mode = "plan";
   assert.equal(await attempt(`{ agentType: "worker" }`), "error: Plan mode only permits read-only child agents");
+  // A run keeps the mode it started under: approval mid-run does not let its script launch a writer.
+  const approvedMidRun = harness({ gate: () => { approvedMidRun.mode = "execute"; } });
+  approvedMidRun.mode = "plan";
+  assert.equal(value(await approvedMidRun.run(`await agent("t", { agentType: "scout" }); try { return await agent("t", { agentType: "worker" }) } catch (e) { return "error: " + e.message }`)), "error: Plan mode only permits read-only child agents");
   h.mode = "execute";
   assert.equal(await attempt(`{ agentType: "worker", tier: "top" }`), "done:t");
   assert.equal(h.spawns.at(-1).model, "openai/t-id");
@@ -616,6 +625,13 @@ test("a script error carries its kind, message, the children and the logs", asyn
   assert.equal(h.groups[0].log.at(-1), "end");
 });
 
+test("a script that returns nothing says so, never the literal undefined", async () => {
+  const h = harness();
+  const { content: [{ text }] } = await h.run(`log("done")`);
+  assert.match(text, /The script returned nothing/);
+  assert.doesNotMatch(text, /undefined/);
+});
+
 test("a result over 64 KiB is cut, its child lines kept, and written whole to result.txt", async () => {
   const h = harness();
   const result = await h.run(`await agent("t", { agentType: "scout", label: "L" }); log("y".repeat(1000)); return "x".repeat(70000)`);
@@ -688,7 +704,7 @@ test("launch is detached from the root signal; management works with ultracode o
   assert.equal(status, "running");
   assert.equal(typeof startedAt, "number");
   root.abort();
-  h.orchestrate.disarm();
+  h.orchestrate.toggle();
   while (!h.adopted.length) await sleep(5);
   assert.equal((await h.manage("status", id)).details.workflow.status, "running");
   assert.equal((await h.manage("result", id)).details.workflow.status, "running");

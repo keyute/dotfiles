@@ -1,8 +1,8 @@
 {{- $sizes := dict "small" 5 "medium" 10 "large" 50 -}}
-{{- if not (or (hasKey $sizes .workflow_size) (eq .workflow_size "unrestricted")) -}}{{- fail (printf "workflow_size: unknown size %s" .workflow_size) -}}{{- end -}}
+{{- if not (hasKey $sizes .workflow_size) -}}{{- fail (printf "workflow_size: unknown size %s" .workflow_size) -}}{{- end -}}
 {{- $tiers := list -}}
 {{- range $tier, $_ := .subagent_tiers.pi -}}{{- if ne $tier "frontier" -}}{{- $tiers = append $tiers $tier -}}{{- end -}}{{- end -}}
-Launch plain JavaScript in an isolated VM; returns a background workflow id immediately, then the script's return value as JSON. title names the run's row. Keep trivial work inline and isolated bounded delegations on subagent; with ultracode on, use workflows for substantive multi-part work, including initially independent investigations needing reconciliation.{{/* model: Flat fan-out hides the reconciliation dependency between initially independent investigations. */}} For dependent work or research needing validation, await dependencies and pass intermediate evidence to downstream children; return only their cited synthesis, coverage gaps and unresolved disagreement, not raw reports or logs. Ultracode is on if the <workflow> system-prompt section says so or the latest user prompt says ultracode. Launch is refused when off; management still works.
+Launch plain JavaScript in an isolated VM; returns a background workflow id immediately, then the script's return value as JSON. title names the run's row. Keep trivial work inline and isolated bounded delegations on subagent; with ultracode on, use workflows for substantive multi-part work, including initially independent investigations needing reconciliation.{{/* model: Flat fan-out hides the reconciliation dependency between initially independent investigations. */}} A workflow is stages: later agents verify, reconcile or synthesise earlier results and the script returns the distilled result. For a staging shape or an execute-mode example, load the `workflow-authoring` skill. Ultracode is on if the <workflow> system-prompt section says so or the latest user prompt says ultracode. Launch is refused when off; management still works.
 
 Manage with {action: "status", id?} to list runs or inspect one, {action: "result", id} to retrieve its outcome, or {action: "stop", id} to stop it. Only one workflow may be active at a time.
 
@@ -11,14 +11,10 @@ The script reaches only:
 - phase(title): default heading for later agent() calls, not a dependency; use await.
 - parallel([() => agent(...), ...]): runs the thunks concurrently; results in order, null where one failed.
 - pipeline(items, ...stages): each item runs through stage(previous, item, index) on its own, with no barrier between stages; null where a stage failed.
-- log(message): adds a line to the result, as console.log does.
+- log(message): a progress line, cut at 2,000 characters; return the result from the script.
 - args: the call's args value.
 A leading `export const meta = {...}` is ignored. Nothing else is reachable: no files, shell, network, timers or modules.
 
 Notes:
-{{- with get $sizes .workflow_size }}
-- Keep a run under {{ . }} agents.
-{{- end }}
-- Plan mode admits read-only agents only.
-- One writer per write scope: broker approval is not write isolation, so give concurrent writers disjoint files.
-- One fleet row; Enter lists agents by phase. Root steering does not rewrite the script; steer named children via subagent controls. Root Escape/Ctrl+Enter interrupts the root, not the workflow; use stop to cancel it.
+- Keep a run under {{ get $sizes .workflow_size }} agents unless the prompt asks for breadth.
+- Root steering does not rewrite the script; steer named children via subagent controls. Root Escape/Ctrl+Enter interrupts the root, not the workflow; use stop to cancel it.

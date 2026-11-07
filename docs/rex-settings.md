@@ -3,12 +3,15 @@
 Set these manually in native Settings:
 
 - Appearance: Auto; light theme Catppuccin Latte, dark theme Catppuccin Mocha.
-  Use built-ins if present; otherwise import the actual Ghostty/iTerm palette.
+  Rex ships no Catppuccin; import the Latte and Mocha palettes (e.g. from the
+  Catppuccin Ghostty/iTerm theme files) as custom themes.
 - Font: PragmataPro VF Mono Liga, 13 pt; prefer ligatures enabled.
 - Copy on selection: on.
-- Option as Alt: on. Left-only Option is undocumented; do not add a shim.
+- Option as Alt: on. Left-only Option is unavailable; do not add a shim.
 - Match program backgrounds: **off**. Enabling it caused the confirmed large
   Pi prompt background issue.
+- Integrations › Coding Agents: off, and do not run `rex skill setup` — it writes
+  a hook into `~/.claude/settings.json` and skills into directories chezmoi owns.
 
 Keep Cmd+K as the default picker; no `init.lua` or custom key bindings.
 

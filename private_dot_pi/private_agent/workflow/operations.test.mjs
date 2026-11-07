@@ -11,7 +11,7 @@ import { startToolWorker, workerOperations, executeSandboxGrep } from "./operati
 // Drives the real SDK tools through worker operations against a directly
 // spawned worker (no broker/SRT), covering the host↔worker seam end to end.
 const opsWorker = fileURLToPath(new URL("./ops-worker.mjs", import.meta.url));
-const direct = (tool, cwd) => startToolWorker(tool, { spawnProcess: () => spawn(process.execPath, [opsWorker, tool], { cwd, stdio: ["pipe", "pipe", "pipe"] }) });
+const direct = (tool, cwd, env = process.env) => startToolWorker(tool, { spawnProcess: () => spawn(process.execPath, [opsWorker, tool], { cwd, env, stdio: ["pipe", "pipe", "pipe"] }) });
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-operations-test-"));
@@ -73,6 +73,24 @@ test("sandboxed grep matches with context and respects the glob filter", async t
     const filtered = await executeSandboxGrep(client, { pattern: "needle", glob: "*.md" });
     assert.equal(filtered.content[0].text, "No matches found");
   } finally { await client.close(); }
+});
+
+test("grep and find ignore hostile RIPGREP_CONFIG_PATH settings", async t => {
+  const root = fixture(t);
+  const config = join(root, "ripgrep.conf");
+  writeFileSync(config, "--glob\n!*.txt\n");
+  const env = { ...process.env, RIPGREP_CONFIG_PATH: config };
+  for (const tool of ["grep", "find"]) {
+    const client = direct(tool, root, env);
+    try {
+      const result = tool === "grep"
+        ? await executeSandboxGrep(client, { pattern: "needle" })
+        : await createFindToolDefinition(root, { operations: workerOperations(client).find }).execute("test", { pattern: "*.txt" });
+      assert.deepEqual(result.content[0].text.split("\n").sort(), tool === "grep"
+        ? ["alpha.txt:2: needle here", "sub/gamma.txt:1: needle deep"]
+        : ["alpha.txt", "sub/gamma.txt"], `${tool} ignores ripgrep config`);
+    } finally { await client.close(); }
+  }
 });
 
 test("sandboxed grep matches literal and ignoreCase parity with the old JS matcher", async t => {

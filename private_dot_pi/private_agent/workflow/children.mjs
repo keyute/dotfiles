@@ -1,12 +1,11 @@
 import { canonical } from "./policy.mjs";
 
-const launchKeys = new Set(["agent", "task", "async", "context", "agentScope"]);
+const launchKeys = new Set(["agent", "task", "async", "agentScope"]);
 const controlKeys = new Set(["action", "id", "message", "options"]);
 const controlOptions = new Set(["index", "view", "mode", "lines"]);
 const listKeys = new Set(["action", "options"]);
 const listOptions = new Set(["capabilities"]);
 const managementActions = ["list", "status", "interrupt", "stop", "steer"];
-const launchContexts = new Set(["fresh", "fork"]);
 
 // Owned and static, so the model sees only the managed launch/control surface
 // whatever pi-subagents' own schema exposes. Option ranges mirror its
@@ -17,7 +16,6 @@ export const SUBAGENT_SCHEMA = {
     agent: { type: "string", description: "Configured agent name to launch" },
     task: { type: "string", description: "Bounded task for the launched agent" },
     title: { type: "string", description: "3–6 word label for this launch, shown in the transcript and fleet" },
-    context: { type: "string", enum: [...launchContexts], description: "fresh starts a clean session; fork inherits this conversation" },
     action: { type: "string", enum: managementActions, description: "Management only; omit to launch" },
     id: { type: "string", description: "Run id or prefix for status/control" },
     message: { type: "string", description: "steer guidance" },
@@ -71,7 +69,6 @@ export async function checkChildLaunch(args, config, role, ctx, resolveContract,
     throw new Error("Read-only children cannot delegate to writers");
   }
   args.agentScope = "user";
-  if (args.context !== undefined && !launchContexts.has(args.context)) delete args.context;
   const modelName = args.model ?? child.model;
   // The frontier tier is the driver's alone: a child on it is the measured
   // quota failure the tier policy exists to stop.

@@ -14,6 +14,7 @@ lens:
 - **tests** — missing coverage for behavior the diff changed, or real regression risk.
 
 Review the exact base…head snapshot and file group named in your prompt; deletion-only
-defects count (cite the removed line).
+defects count (cite the removed line). Run a deterministic gate only to answer a
+question your review leaves open.
 
 {{ includeTemplate "reviewer-common.md" (dict "formatting" "pure style/naming/formatting handled by the language's own formatter" "conventions" "error handling, naming, module layout, where types and helpers live") }}

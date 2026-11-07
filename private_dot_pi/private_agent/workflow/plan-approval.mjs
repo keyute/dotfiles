@@ -12,7 +12,7 @@ const FEEDBACK_PLACEHOLDER = "What should change?";
 
 export function planDecisionResult(decision, feedback = "") {
   if (decision === PLAN_APPROVED) return {
-    content: [{ type: "text", text: "Plan approved; scoped execution enabled." }],
+    content: [{ type: "text", text: "Plan approved; execution enabled." }],
     details: { decision: PLAN_APPROVED },
   };
   const text = trimFeedback(feedback);

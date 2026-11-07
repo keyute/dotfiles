@@ -52,6 +52,7 @@ jobs:
               - '**'
               - '!docs/pi-*.md'
               - '!docs/agent-authoring.md'
+              - '!docs/rex-settings.md'
               - '!README.md'
 
   # Fast gate on every PR and push to main: render.test applies the whole tree

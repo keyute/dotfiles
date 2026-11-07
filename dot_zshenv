@@ -1,0 +1,3 @@
+# Claude Code's Bash runs bash-shaped one-liners through this zsh: unquoted globs and `====` separators otherwise fail.
+# That shell is non-interactive, so .zshrc never loads and .zshenv is the only rc file it reads.
+if [[ -n $CLAUDECODE ]]; then setopt no_nomatch no_equals; fi

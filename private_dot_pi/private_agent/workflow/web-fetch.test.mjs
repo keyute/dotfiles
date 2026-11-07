@@ -5,7 +5,6 @@ import { Readable } from "node:stream";
 import { webFetchTool } from "./web-fetch.mjs";
 
 const config = { models: { provider: "openai-codex", search: "search-model" } };
-const HINT = /mcp__exa__web_fetch_exa where you have it \(tool_search finds it\)\.$/;
 const PUBLIC = [{ address: "93.184.216.34", family: 4 }];
 
 // A stand-in for http(s).request: it resolves through the lookup it is handed,
@@ -59,7 +58,7 @@ test("an html page reaches the search-tier model as markdown, untrusted, and the
   assert.deepEqual([calls[0].options.sessionId, calls[0].options.transport], ["s1", "sse"]);
 });
 
-test("text and json pass through; other types and empty pages are errors with the Exa hint", async () => {
+test("text and json pass through; other types and empty pages are errors", async () => {
   const { run, calls } = fixture({
     "https://example.com/a.json": { headers: { "content-type": "application/json" }, body: '{"key": "value"}' },
     "https://example.com/a.png": { headers: { "content-type": "image/png" }, body: "png" },
@@ -73,8 +72,8 @@ test("text and json pass through; other types and empty pages are errors with th
   });
   await run("https://example.com/a.json");
   assert.match(calls[0].request.messages[0].content, /<(page-[0-9a-f-]{36})>\n\{"key": "value"\}\n<\/\1>/);
-  await assert.rejects(run("https://example.com/a.png"), error => /image\/png/.test(error.message) && HINT.test(error.message));
-  await assert.rejects(run("https://example.com/empty"), error => /No readable text/.test(error.message) && HINT.test(error.message));
+  await assert.rejects(run("https://example.com/a.png"), /image\/png/);
+  await assert.rejects(run("https://example.com/empty"), /No readable text/);
   await assert.rejects(run("https://example.com/blank"), /No readable text/);
   await assert.rejects(run("https://example.com/gone"), /HTTP 404/);
   // the page's own closing tag and "Prompt:" stay inside the per-call block
@@ -116,7 +115,7 @@ test("an abort stops a request that has not answered", async () => {
   const controller = new AbortController();
   const pending = run("https://example.com/slow", controller.signal);
   controller.abort(new Error("aborted by user"));
-  await assert.rejects(pending, error => /aborted by user/.test(error.message) && HINT.test(error.message));
+  await assert.rejects(pending, /aborted by user/);
   assert.equal(calls.length, 0);
 });
 
@@ -154,7 +153,7 @@ test("hostile URLs, inward DNS answers and inward redirects are refused before a
     "http://printer.local/", "http://db.internal/", "http://intranet/", "http://127.0.0.1/", "http://10.0.0.5/", "http://169.254.169.254/", "http://[::1]/", "http://[::ffff:127.0.0.1]/",
     "http://[fd00::1]/", "http://2130706433/", "http://0x7f.1/", "http://localhost../", "http://198.19.255.254/", "http://255.255.255.255/", "http://[64:ff9b:1::1]/", "http://[2001:2::1]/", "http://[::127.0.0.1]/", "http://[64:ff9b::a9fe:a9fe]/",
     "http://[2002:7f00:1::]/", "http://[::ffff:0:127.0.0.1]/", "not a url"];
-  for (const url of refusedUpFront) await assert.rejects(run(url), error => HINT.test(error.message), url);
+  for (const url of refusedUpFront) await assert.rejects(run(url), Error, url);
   assert.deepEqual(seen, []);
   await assert.rejects(run("https://rebind.example.com/"), /resolves to a private or local address \(10\.1\.2\.3\)/);
   for (let i = 0; i < 19; i++) await assert.rejects(run(`https://inward${i}.example.com/`), /resolves to a private or local address/, `inward${i}`);

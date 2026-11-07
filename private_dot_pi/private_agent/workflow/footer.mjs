@@ -116,17 +116,15 @@ export const paintSegment = (segment, theme) => {
 };
 
 // The mode takes the pair the plan row already gives approved and not approved:
-// scoped execution is success, a plan awaiting approval is warning. The word
-// carries the meaning, so nothing rests on the colour. The approval setting
-// rides beside it dim — /approvals changes what the broker prompts for and had
-// no visible trace anywhere. Ultracode leads in accent while on, the colour
-// the keyword takes in the composer, so the typed word and its state read as one.
+// execution is success, a plan awaiting approval is warning. The word
+// carries the meaning, so nothing rests on the colour. Ultracode leads in
+// accent while on, the colour the keyword takes in the composer, so the typed
+// word and its state read as one.
 export function paintMode(status, theme) {
   if (!status) return "";
-  const [mode, approval, ultracode] = status.split(" ");
+  const [mode, ultracode] = status.split(" ");
   const painted = theme.fg(mode === "execute" ? "success" : "warning", mode);
-  const modeText = approval ? `${painted}${theme.fg("dim", ` · ${approval}`)}` : painted;
-  return ultracode ? `${theme.fg("accent", ultracode)}${theme.fg("dim", " · ")}${modeText}` : modeText;
+  return ultracode ? `${theme.fg("accent", ultracode)}${theme.fg("dim", " · ")}${painted}` : painted;
 }
 
 export function parseGitChanges(shortstat) {
@@ -279,14 +277,15 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
     else if (state.waiting) state.working?.snapshot(clock.waitingLabel(busy()));
     else state.working?.setMessage(clock.label());
   };
-  // Terminal program status (program-status.mjs) follows this footer's turn: blocked
+  // Terminal program status (program-status.mjs) follows the work, not the turn: blocked
   // while a prompt waits on the user, working while the turn is open (its
-  // clock runs through the waiting row and its wakes), pi compacts or a `!`
+  // clock runs through the waiting row and its wakes), anything is live (also
+  // after an abort or a typed prompt closed the turn), pi compacts or a `!`
   // runs, else idle. It is reported after every turn handler and timer close;
   // the reporter drops repeats. A session that has shut down reports nothing
   // until it is attached again, so /new cannot complete the departed turn.
   const activity = () => state.prompt ? { state: "blocked", message: state.prompt.title }
-    : { state: clock.running() || state.compacting || state.shell ? "working" : "idle" };
+    : { state: clock.running() || live() || state.compacting || state.shell ? "working" : "idle" };
   const report = () => { if (!state.stopped) onActivity?.(activity()); };
   const on = (name, handler) => pi.on(name, (...args) => { const result = handler(...args); report(); return result; });
   const stopWorking = () => {
@@ -354,7 +353,8 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
     if (state.waiting && !state.stopped && !state.wake && state.ctx.isIdle() && !live()) close({ at: state.endedAt });
   };
   const workChanged = () => {
-    if (!state.waiting || state.stopped) return;
+    // With the turn closed, work ending still moves program status.
+    if (!state.waiting || state.stopped) return report();
     state.endedAt = Date.now();
     showLabel();
     clearSettle();
@@ -467,9 +467,8 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
           // remains to orient the row; at narrow widths it yields before mode.
           const right = shellCount > 0 && width - PAD.length * 2 - visibleWidth(shells) >= 8 ? shells : mode;
           // The left side yields first. Truncating the composed line instead
-          // eats the mode, and `· auto` and `· ask` clip to the same string —
-          // the mode says what the agent may do to the tree, where a branch and
-          // its counts are one `git status` away. The composed line already
+          // eats the mode — it says what the agent may do to the tree, where a
+          // branch and its counts are one `git status` away. The composed line already
           // measures the full width; the outer truncate only bounds a terminal
           // too narrow to hold the mode at all.
           const rightWidth = visibleWidth(right);

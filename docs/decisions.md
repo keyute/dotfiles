@@ -31,7 +31,8 @@ a tier nothing uses is dropped.
   `chezmoi diff`; re-confirm live after apply.
 - **New family.** As above; then read the vendor's prompting guide for the
   pin and delete a `model:`-tagged line in
-  `.chezmoitemplates/agent-instructions.md` when every pin that loads it
+  `.chezmoitemplates/agent-instructions.md` or
+  `.chezmoitemplates/driver-instructions.md` when every pin that loads it
   (drivers, and roles without `omit_instructions`, on harnesses whose
   native_coverage does not skip it) behaves so natively or the guide warns
   against the steer. Add nothing in this pass.
@@ -60,7 +61,7 @@ a tier nothing uses is dropped.
   a recent re-pin whose rows cost more than its predecessor's (Claude
   role|model per dispatch, in $ or seconds; pi model|origin per call) is
   reverted first, or its row is rewritten as measured.
-  Otherwise lower that driver's effort, then its tier, per its row.
+  Otherwise lower that driver's effort, then its tier.
 
 ## Decisions
 
@@ -74,14 +75,14 @@ a tier nothing uses is dropped.
 | agents.pi.defaults.classifier | vendor: top tier for both stages on its system card's injection defence, judge medium; preference: filter low, the pin having no off level | an observed false allow, or false denies blocking work → re-judge; the pi pool binds → judge low, then a cheaper tier |
 | agents.pi.defaults.context_window | measured: an 838,180-input-token request accepted on the frontier tier via the subscription route (2026-09-29); small and top tiers unprobed | a re-pin, or context_length_exceeded below the window → re-probe that tier at ~840k input tokens, drop it if rejected; the pi pool binds on long turns → a larger reserve |
 | agents.pi.search_tier | preference: each search is one extra request on the pool, so the small tier | an observed search miss the top tier catches → top |
-| setting.native_coverage | measured: covered lines are in Claude Code's driver and subagent prompts or pi's subagent-tool-description; docs_mcp in context7's server instructions (Claude); initiative is driver-only: a child cannot check back | a Claude Code release lacks a covered line → unshave it; a context7 bump → re-check docs_mcp |
+| setting.native_coverage | measured: covered lines are in Claude Code's driver and subagent prompts; pi's specialist_pinning by the managed subagent schema having no model field; initiative is driver-only: a child cannot check back | a Claude Code release lacks a covered line → unshave it |
 | measure.role_matrix | preference: top/medium default, lookups lower, recall-critical higher; benchmark: Explore at high, where the small pin first matches the old pin; pi unmeasured | an observed Explore miss → a mid tier; Explore slower than explore-deep → medium; a lens miss a later review catches → high; a small re-pin → probe a role at small |
-| parity.researcher_no_bash | forced: upstream release-note hosts are off the shared Bash allowlist, so curl there fails confusingly; WebFetch/WebSearch reach them without widening every role's Bash | the allowlist covers upstream hosts, or a fetch tool fails on them → Bash |
+| parity.researcher_no_bash | forced: an off-list host costs a reviewed per-command `allowed_domains` in Bash on both harnesses, while WebFetch/WebSearch reach it unreviewed | the allowlist covers upstream hosts, or a fetch tool fails on them → Bash |
 | subagents.infra-reviewer | preference: chart/CRD/GitOps hazards are not inferable from surrounding manifests | a manifest review where diff-reviewer's lens finds the same hazards → fold in |
 | subagents.diff-reviewer | preference: one any-language reviewer; the go/python/ts/shell presets were generic checklists dispatched only by ship-check | a shipped language-specific defect the correctness lens missed → restore that preset |
 | setting.pi_mcp_exposure | measured: declarations cost context7 ~1,150, exa ~460, playwright ~4,400 tokens (2026-09-30); the root defers every MCP server to tool_search as Claude does; children declare the tools their role names | the root pays the tool_search hop for one server most turns → a direct exposure for that server in mcpConfig |
-| workflow_size | measured: workflows were 62.3% of top-tier units (30 days to 2026-09-28) with unguided runs of 11, 3, 8 agents → small; pi follows by preference, unmeasured | a workflow on either driver stops short of work it needed → `unrestricted` |
-| setting.explore_routing | preference: route bounded known-area traces, including directly related files, to Explore; reserve explore-deep for broad/cross-subsystem questions | an observed Explore miss on a question routed to it → revert the descriptions |
+| workflow_size | measured: under `small` Claude ran a median 7 agents, 44 over 50 (30-day window to 2026-11-06); pi over 60 days never exceeded 4 → medium for both; the CLAUDE.md sizing line steers Claude's tail | a workflow stops short of work it needed → large; Claude runs over 50 persist → a breadth clause in the sizing line |
+| setting.explore_routing | preference: bounded known-area traces go to Explore, broad/cross-subsystem questions to explore-deep; the steer lives in Explore's description only; baseline Explore:explore-deep dispatches 37:99 Claude (30-day window), 25:120 pi | an observed Explore miss on a question routed to it → revert the descriptions |
 | measure.omitClaudeMd | measured: a child's first turn was 16.2k tokens with the instructions; lookup, planning and research roles need no repo conventions. explore-deep joins by preference, unmeasured | a named miss traced to missing instruction context → revert for that role; the pool binds → measure explore-deep's rows |
 | instruction.scope_of_extras | measured: pi-side replay arms shipped 2.8–3.5× the tests; no reversible-change test ban yet | a shipped diff carries unrequested tests after a model release → the vendor's no-tests-for-reversible-changes line |
 | measure.single_writer | measured: implementer median 17 calls per dispatch (2026-09-26); the only write-capable specialist | implementer dispatches run out of turns or deadline on bounded slices → a second write-capable specialist |

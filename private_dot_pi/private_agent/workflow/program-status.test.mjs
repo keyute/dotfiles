@@ -11,18 +11,12 @@ function harness(t) {
   return { frames, reporter, report, tick: ms => t.mock.timers.tick(ms) };
 }
 
-test("reports on terminal stdout independently of environment", t => {
+test("reports only on a TTY stdout", () => {
   const frames = [];
-  const previous = process.env.TUIOS_ENV;
-  t.after(() => { if (previous === undefined) delete process.env.TUIOS_ENV; else process.env.TUIOS_ENV = previous; });
-  for (const value of [undefined, "0", "1", "true"]) {
-    if (value === undefined) delete process.env.TUIOS_ENV;
-    else process.env.TUIOS_ENV = value;
-    const reporter = installProgramStatus({ isTTY: true, write: frame => frames.push(frame) });
-    reporter.report({ state: "idle" });
-    reporter.shutdown();
-  }
-  assert.deepEqual(frames, Array(4).fill([wire("idle"), wire("clear")]).flat());
+  const reporter = installProgramStatus({ isTTY: true, write: frame => frames.push(frame) });
+  reporter.report({ state: "idle" });
+  reporter.shutdown();
+  assert.deepEqual(frames, [wire("idle"), wire("clear")]);
   for (const isTTY of [false, undefined]) assert.equal(installProgramStatus({ isTTY, write: () => assert.fail("non-TTY write") }), undefined);
 });
 

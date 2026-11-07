@@ -28,7 +28,7 @@ const isObject = value => typeof value === "object" && value !== null && !Array.
 // One line, so VM line numbers equal the script's. Bounds are in the VM because
 // the host sees only single agent() calls. phase() sets the default that an
 // explicit opts.phase overrides on the host.
-const PRELUDE = 'const log = (...a) => console.log(...a); let __phase; const phase = title => { __phase = title; }; const agent = (prompt, opts) => tools.agent({ prompt, opts: opts ?? {}, phase: __phase }); const __bound = items => { if (!Array.isArray(items) || items.length > 4096) throw new RangeError("parallel takes an array of at most 4096 items"); }; const parallel = thunks => { __bound(thunks); return Promise.all(thunks.map(t => Promise.resolve().then(() => typeof t === "function" ? t() : t).catch(() => null))); }; const __failed = Symbol("failed"); const pipeline = (items, ...stages) => { __bound(items); return Promise.all(items.map((item, i) => stages.reduce((p, stage) => p.then(prev => prev === __failed ? prev : stage(prev, item, i)), Promise.resolve(item)).catch(() => __failed).then(v => v === __failed ? null : v))); }; ';
+const PRELUDE = 'const log = (...a) => console.log(...a); let __phase; const phase = title => { __phase = title; }; const agent = (prompt, opts) => tools.agent({ prompt, opts: opts ?? {}, phase: __phase }); const __bound = items => { if (!Array.isArray(items) || items.length > 4096) throw new RangeError("parallel takes an array of at most 4096 items"); }; const parallel = thunks => { __bound(thunks); return Promise.all(thunks.map(t => Promise.resolve().then(() => typeof t === "function" ? t() : t).catch(e => (log("parallel item failed: " + (e?.message ?? e)), null)))); }; const __failed = Symbol("failed"); const pipeline = (items, ...stages) => { __bound(items); return Promise.all(items.map((item, i) => stages.reduce((p, stage) => p.then(prev => prev === __failed ? prev : stage(prev, item, i)), Promise.resolve(item)).catch(e => (log("pipeline item failed: " + (e?.message ?? e)), __failed)).then(v => v === __failed ? null : v))); }; ';
 
 // Control characters out of text the VM or a child wrote, newlines kept.
 const scrub = text => String(text).replace(/[\p{Cc}]/gu, c => (c === "\n" ? c : ""));
@@ -36,7 +36,7 @@ const scrub = text => String(text).replace(/[\p{Cc}]/gu, c => (c === "\n" ? c : 
 // graceMs sits above pi-subagents' result watcher's 60 s healthy scan
 // (result-watcher.js HEALTHY_SCAN_INTERVAL_MS), so a completion the native
 // notify missed still arrives before the exit is taken as the end.
-export function createOrchestrate({ pi, config, fleet, check, isReady, description, resultDir, rpc = rpcCall, graceMs = 120_000, generation = () => 0, onComplete = () => {}, onUsage = () => {} }) {
+export function createOrchestrate({ pi, config, fleet, check, mode, isReady, description, resultDir, rpc = rpcCall, graceMs = 120_000, generation = () => 0, onComplete = () => {}, onUsage = () => {} }) {
   const owned = new Set();
   const running = new Set();
   const terminal = new Map();
@@ -74,7 +74,9 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
   }
 
   function startRun() {
-    const run = { records: [], unverified: [], logs: [], droppedLogs: 0, calls: 0, inflight: 0, waiters: [], settling: new Set(), open: new Map(), buffer: new Map(), terminal: new Set(), started: new Map(), done: new Map(), lost: [], finished: false, aliases: new Set() };
+    // A run keeps the mode it started under: approval lets a plan-mode run
+    // finish, never widens what its script may launch.
+    const run = { mode: mode(), records: [], unverified: [], logs: [], droppedLogs: 0, calls: 0, inflight: 0, waiters: [], settling: new Set(), open: new Map(), buffer: new Map(), terminal: new Set(), started: new Map(), done: new Map(), lost: [], finished: false, aliases: new Set() };
     // Per open id: { agent, wait, timer }. Completions for ids not
     // yet known are buffered while the run lives (a spawn reply can lag its child).
     const finish = (id, outcome) => {
@@ -145,8 +147,8 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
     try {
       if (signal.aborted || !current(run)) throw new Error("Workflow interrupted");
       if (!isReady()) throw new Error("Managed workflow is not ready");
-      const args = { agent: agentType, task: prompt, context: "fresh", title: label };
-      await check(args, { outputSchema: schema, model: tier ? `${config.models.provider}/${config.models.tiers[tier]}` : undefined });
+      const args = { agent: agentType, task: prompt, title: label };
+      await check(args, { outputSchema: schema, model: tier ? `${config.models.provider}/${config.models.tiers[tier]}` : undefined }, run.mode);
       if (signal.aborted || !current(run)) throw new Error("Workflow interrupted");
       const task = label ?? firstLine(prompt);
       const record = { runId: undefined, agent: agentType, label, phase, task, asyncDir: undefined, status: "launching" };
@@ -301,7 +303,7 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       const stack = result.error.stack?.split("\n").find(line => line.trim());
       return failed(scrub(`${result.error.kind}: ${result.error.message}${stack ? `\n${stack.trim()}` : ""}`) + trailer(run));
     }
-    const value = JSON.stringify(result.value, null, 1) ?? "undefined";
+    const value = JSON.stringify(result.value, null, 1) ?? "The script returned nothing: return its result (log lines are cut short).";
     // The first line counts the agents for the model; the value follows, then
     // the logs and per-child lines. The cap cuts the value and logs, never the
     // per-child and cleanup lines.
@@ -453,7 +455,6 @@ export function createOrchestrate({ pi, config, fleet, check, isReady, descripti
       if (saysUltracode(authored)) armed = true;
       return authored;
     },
-    disarm: () => { armed = false; extensionInput.clear(); },
     armed: () => armed,
     toggle: () => (armed = !armed),
     // True iff every id is owned; releases each owned one, since a run's

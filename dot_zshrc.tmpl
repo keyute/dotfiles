@@ -81,7 +81,6 @@ _sync_appearance() {
     local mode=$(theme-mode 2>/dev/null || echo dark)
     [[ $mode == $_APPEARANCE ]] && return
     _APPEARANCE=$mode
-    export LC_THEME_MODE=$mode
 
     # One canonical flavor per mode; every Catppuccin-themed tool derives its var
     # from it, so adding a tool below is a single line.
@@ -103,7 +102,6 @@ _sync_appearance() {
         zstyle -d ':fzf-tab:*' fzf-flags
     fi
 }
-autoload -Uz add-zsh-hook
 add-zsh-hook precmd _sync_appearance
 
 eval "$(zoxide init zsh --cmd cd)"
@@ -115,8 +113,6 @@ eval "$(zoxide init zsh --cmd cd)"
 bindkey -e
 bindkey '^[[H' beginning-of-line
 bindkey '^[[F' end-of-line
-bindkey '^[[1~' beginning-of-line
-bindkey '^[[4~' end-of-line
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 

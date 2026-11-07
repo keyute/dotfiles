@@ -13,6 +13,9 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   workers.
 - Root Unix-socket broker owns mode, approvals and process leases (owned code:
   re-check when a pi release ships per-tool approval or a policy hook API).
+  A lease's network allowlist is the shared list plus that lease's own hosts:
+  an MCP server's `domains`, or a reviewed command's `allowed_domains` (Claude
+  Code's per-command list), which its single-use ticket carries to one process.
   Child sessions carry the policy epoch they were launched under (via the
   parent's environment) and are refused if it changed before they connected.
   Known bound: a launch admitted before a transition but spawned after it
@@ -27,13 +30,12 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
 - Prompt assembly keeps shared/project policy in native context files. The
   root requires nonempty `workflow.json.driverInstructions` and adds it only
   through `before_agent_start`'s `sections.driver`; children delete that section,
-  including when inherited. This does not erase a fork's earlier transcript or
-  make forks automatically lean. Registered declaration budgets cover unchanged
+  including when inherited. Registered declaration budgets cover unchanged
   SDK/owned tool text separately from static rendered policy; estimates use
   characters / 4, not a vendor tokenizer.
 - Approval accounting uses only public root `pi.appendEntry` custom records,
-  outside model context. Each auto review records filter and judge metadata;
-  skipped judge stages are not attempted. Only stage/provider/model/effort,
+  outside model context. Each auto review records the filter's metadata, and the
+  judge's when the filter did not allow. Only stage/provider/model/effort,
   numeric usage, duration and enum outcomes persist; no action, history, output,
   reason or arbitrary provider metadata. Failed persistence cannot change the
   verdict. A captured session ID and shutdown guard discard late results rather
@@ -82,9 +84,7 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   In `extensions/subagent/config.json`, `fleetView`/`asyncWidget` are off
   because the owned fleet (rule 6) replaces them, and `intercomBridge` is off
   so children report only through their completion, as Claude Code's
-  subagents do. `programStatus` is off so child runs report only through the
-  fleet and completion lines. Owned OSC 7501 reports the footer's aggregate
-  activity on interactive TTYs, independently of terminal identity.
+  subagents do.
   `artifactDir` is `temp`: a child report past 2,000 characters is cut to a
   pointer at its artifact file, and the default session directory sits under
   `~/.pi/agent/sessions`, which the root may not read (`project` would write
@@ -97,10 +97,7 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   nesting child's own `subagent` description (built from this config, not
   replaced by the root proxy).
   The refusing `contact_supervisor` the plugin registers at the root stays
-  undeclared there (not in `rootTools`), so a fork's first request misses the
-  parent's prompt cache; accepted, since most roles' tools differ from the
-  root's anyway. Reversal trigger: fork cache misses show up for a role whose
-  tools match the root's → add it to `rootTools`.
+  undeclared there (not in `rootTools`).
   Re-judge when Pi ships native subagents.
 - Model workflow scripts run only through the owned `orchestrate` runner: the
   plugin's `runs.run` children skip `checkChildLaunch`; its sandbox does not
@@ -112,7 +109,8 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   its VM, children and bounded terminal results, with nonblocking status/result
   and explicit stop; root steering does not rewrite script state. One live owner
   preserves the former serialization limit, including unverified cleanup. Root
-  abort does not cancel it; mode/session transitions and shutdown do. A
+  abort and approval do not cancel it; a return to plan mode, `/remove-dir`,
+  a session transition and shutdown do. A
   generation-bound finalizer records one outcome and sends the existing hidden
   completion/wake pattern before releasing liveness. No-child workflows count
   as work too. Results do not stand in for child process-exit proof.
@@ -137,29 +135,28 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   their own boundary). Reversal trigger: pi-subagents gains a per-launch host
   policy hook, with equivalent cancellation and process-exit ownership → move
   to its sandboxed engine and delete `orchestrate.mjs`.
-- Terminal status uses public pi-tui `formatProgramStatus` and terminal stdout,
-  only for the UI root in TUI mode with a TTY, without a terminal whitelist.
-  The managed launcher sets invocation-local `PI_PROGRAM_STATUS=0` before Pi
-  starts, so native root-only reports cannot overwrite aggregate work; no
-  session hook mutates it.
-  The footer's `onActivity` remains the sole activity authority. The reporter
-  dedupes callbacks, holds idle 250 ms, maps idle after reported work to explicit
-  done (including work across blocked waits), and leaves initial/menu-only idle
-  as idle. Attach resets timers and work; shutdown suspends before awaited
-  cleanup and clears its emitted root record once, without writing a fake
-  completion. Only state and `app: pi` reach the wire; question bodies and task
-  names are not status labels. Native Pi retains terminal-title ownership and
-  independent root-run terminal progress. No sockets, retries, capability
-  negotiation or child OSC records; terminals decide whether and how to display
-  the protocol. OSC-only status has no conversation identity or resume reference.
-  Revisit when native Pi program status accounts for the owned aggregate lifecycle.
+- Owned OSC 7501 reports the footer's aggregate activity, children included,
+  for the TUI root; Rex renders it natively. The launcher sets
+  `PI_PROGRAM_STATUS=0` so pi's native root-only status cannot overwrite it;
+  the same check is all that holds off the plugin's per-job reporter.
+  Revisit when native status accounts for background work.
 - MCP is pi's own, fed the managed servers. Accepted: a connect per server per session and per child; another extension's `pi.registerMcpServer()` adds an unmanaged server. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
 - `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt. Reversal trigger: a maintained plugin's fetch fits with a one-line seam → adopt it, delete `web_fetch` and its three packages.
 - Nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; the `timeoutMs` backstop with its `checkpointBeforeDeadlineMs` steer (`extensions/subagent/config.json`) replaces the 30-minute cutoff. Revisit when upstream delivers completion-triggered turns to headless children.
 - `toolDescriptionMode` is `compact`: any explicit mode drops the plugin's
   `promptSnippet`, which teaches workflow calls; the managed description
   replaces its safety guidance.
-- Mode changes and shutdown stop detached children through
+- Modes are plan and execute, switched by `/plan`, `/execute`, `submit_plan`
+  approval or Shift+Tab (Claude Code's one key; pi's native binding there
+  cycled the thinking level this repo manages).
+  Approval is the auto classifier: the `/approvals` ask mode was removed as a
+  simplification, and its confirm dialog stays as the fallback for a classifier
+  `ask` or error and for the denial override (reversal trigger: an observed
+  false allow the classifier row's re-judge step cannot fix). Children
+  start fresh; the fork launch was removed (reversal trigger: a task where a
+  child must reason over the root's own reads).
+- Approval and `/execute` from plan keep running read-only work; a narrowing
+  (return to plan mode, `/remove-dir`), a session change and shutdown stop detached children through
   session-owned RPC and require observed process-terminal proof, not a
   completion notification. Unverified cleanup blocks mode changes; shutdown
   still closes the broker and reports cleanup failures, and shutdown child

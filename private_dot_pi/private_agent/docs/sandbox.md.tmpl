@@ -5,24 +5,22 @@ If behavior seems changed, verify against the source and update its template in 
 
 ## Planning and permissions
 
-- New sessions start in plan mode with auto-reviewed approvals. In the normal
-  sandbox, source writes stay disabled; build/cache artifacts use designated
-  writable roots. A reviewed unsandboxed plan action is not OS-enforced read-only.
-- Plan mode admits only configured read-only child roles; writers (including
-  `general-purpose`) are refused before launch. Approval restores writer
-  admission without widening read-only roles.
-- `/execute` or approval of `submit_plan` enables scoped execution. Every mode
-  switch (`/plan`, `/execute`, plan approval) first revokes child sessions and
-  sandbox processes, so a child still running when the plan is approved ends
-  aborted. An approval is single-use: a mode change before its call runs voids it.
-- `ask_user_question` works in either mode.
-- `/approvals` selects auto review or individual prompts. Hard denial, inherited
-  role scope and mode restrictions run before approval; approval cannot widen them.
+- New sessions start in plan mode. In the normal sandbox, source writes stay
+  disabled; build/cache artifacts use designated writable roots. A reviewed unsandboxed plan action is not OS-enforced read-only.
+- `/execute` or approval of `submit_plan` enables execution. Leaving plan
+  mode keeps running work alive, read-only (a child still starting is
+  refused); a workflow there admits only read-only agents.
+  `/plan` (any mode), `/remove-dir` and a session change stop children
+  and sandbox processes; `/execute` in execute is a no-op. An approval is
+  single-use and voided by a mode change before its call runs. Shift+Tab
+  toggles `/plan` and `/execute`.
+- Hard denial, inherited role scope and mode restrictions run before approval;
+  approval cannot widen them.
 - Shell commands execute inside the SRT profile, as sandboxed commands do in Claude
   Code, and run without review; the profile is the boundary. Only remote-mutating
   commands it cannot judge (pushes, publishes, non-read `gh` calls, data-sending
   `curl`/`wget`, remote shells and copies; `workflow/policy.mjs` owns the list) and
-  `git commit` (the user commits) go to the classifier, then a confirm dialog on `ask`.
+  `git commit` (the user commits) go to the classifier.
   Workspace file edits run without review once execution is approved.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
   A pending dialog is announced in the footer: the call fails after ten minutes;
@@ -32,15 +30,12 @@ If behavior seems changed, verify against the source and update its template in 
   pre-sandbox hooks (`BASH_ENV`, `ENV`, `SHELLOPTS`, `PS4`, `LD_*`, `DYLD_*`);
   toolchain variables such as `GOPATH` arrive as exported.
 - `workspace_bash` with `dangerouslyDisableSandbox: true` (Claude Code's flag) runs
-  on the host, environment minus the workflow's own variables. Every such call is
-  reviewed, plan mode included (classifier under auto, else the confirm dialog);
-  read-only roles are refused; the row reads `Ran … · unsandboxed`. Set it only
-  after a sandbox-attributable failure of that command or on request, per command.
-  The docker socket is one: no `--config`/`DOCKER_HOST` workaround reaches it.
-- Temp files: `$TMPDIR` is the lease's scratch directory, so `mktemp -d
-  "$TMPDIR/x.XXXXXX"` works while a bare `mktemp -d` (macOS ignores `TMPDIR`
-  without a template) hits the denied `/var/folders`. Apple's `/bin/bash` 3.2
-  puts here-documents in `/var/tmp`, writable for every role.
+  on the host, environment minus the workflow's own variables, reviewed by the
+  classifier in plan mode too; read-only roles are refused; the row reads
+  `Ran … · unsandboxed`. The docker socket needs it: no `--config`/`DOCKER_HOST`
+  workaround reaches it.
+- A host off the allowlist goes in the call's `allowed_domains`, not the
+  unsandboxed flag: reviewed with the command and opened for it alone.
 - Read-oriented checks can still write artifacts: test runners, bundlers and config
   loaders may create caches, generated files or temporary modules beside source.
   Preserve inherited `TMPDIR`; use supported tool loaders and output-directory
@@ -67,12 +62,8 @@ If behavior seems changed, verify against the source and update its template in 
   and the broker's scratch TMPDIR; its disposable profile is not containment.
   Approvals, denials, role checks and cleanup still apply.
 
-Interactive `!` commands are the user's own (Claude Code's `!`): pi's local shell
-on the host, the host environment minus the workflow's own variables, no sandbox,
-no review, in any mode.
-
 Sensitive paths come from the shared denylist. File tools resolve symlinks and
-confine edits to the workspace; git metadata and live-loaded code (`~/.pi/agent`,
+confine edits to the workspace and session scratch; git metadata and live-loaded code (`~/.pi/agent`,
 the repository `node_modules`) are write-protected in every mode, the
 repository source editable once execution is approved. A refusal names its reason
 (`Writes are disabled in this scope`, `Path denied by managed policy`, `File edits

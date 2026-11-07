@@ -86,7 +86,7 @@ const emptyUsage = () => ({ cost: 0, input: 0, output: 0, cacheRead: 0, cacheWri
 // every recorded branch and are deduplicated by child runId.
 export function sessionCost(entries, report) {
   const main = emptyUsage();
-  const approvals = { ...emptyUsage(), calls: 0, unknown: 0, notAttempted: 0 };
+  const approvals = { ...emptyUsage(), calls: 0, unknown: 0 };
   let unmeteredSearches = 0;
   const workflowRuns = new Map();
   const models = new Map();
@@ -98,8 +98,8 @@ export function sessionCost(entries, report) {
   for (const entry of entries) {
     if (entry.type === "custom" && entry.customType === "workflow-classifier-usage") {
       const { usage, outcome } = entry.data;
-      if (outcome === "not_attempted") approvals.notAttempted++;
-      else {
+      // Older sessions recorded a skipped judge for every allow.
+      if (outcome !== "not_attempted") {
         approvals.calls++;
         if (usage) addUsage(approvals, usage);
         else approvals.unknown++;

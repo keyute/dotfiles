@@ -1,4 +1,4 @@
 {{ includeTemplate "agent-instructions.md" (dict "self" "claude" "root" .) }}
-- As the driver, give each Workflow `agent()` its roster `agentType` (no model
-  or effort); a repeat review starts from the last findings, covering only
-  changes.{{/* workflow_burn: cost is agent count x lifetime x read volume, mostly cache, which effort barely moves; agentType inherits the roster's tier and effort */}}
+- As the driver, give each Workflow `agent()` its roster `agentType` (no
+  effort). A loop over a discovered list counts toward the size guideline;
+  verify findings in batches per group, not one agent per finding.{{/* workflow_burn: cost is agent count x lifetime x read volume; agentType carries the role's tools, body and effort while CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL fixes the model; the size setting alone did not bound templated and per-finding fan-outs */}}

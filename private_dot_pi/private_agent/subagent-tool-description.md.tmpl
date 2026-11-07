@@ -1,11 +1,9 @@
-Delegate one bounded task to one named child: { agent, task, title }. Children always run in the background. One writer owns each write scope; do not give concurrent children the same files or worktree.
+Delegate one bounded task to one named child: { agent, task, title }. Children always run in the background and know only the task you write: state the goal, the scope and files, and the output you need. A child costs a fresh context and returns only its report: do a handful of tool calls or a known lookup yourself, and when in doubt, don't launch. One writer owns each write scope; do not give concurrent children the same files or worktree.
 
-Agents (models are pinned; don't pass model):
+Agents:
 {{ range $name, $_ := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 - {{ $name }}: {{ (index $.subagents $name).description }}
 {{ end }}
 Notes:
-- Launch by name from the list above.
 - Plan mode launches read-only agents only.
-- Children start with fresh context. Pass context:"fork" only when the child should reason over what this session already read.
-- In an interactive root, consume native completion notifications: work outside the child's scope or yield, rather than polling. Read artifacts only for missing or truncated results. Controls: status (fleet or transcript), interrupt, stop, steer.{{/* completion_delivery: a dependency is not a reason for a second retrieval path; waiting then reading an artifact before its native notification duplicated work */}}
+- Completion arrives as a notification. While a child runs, stay out of its scope; after it reports, check only a finding you will act on, and a writer's changes by diff. Steer only to correct a running child's direction. Controls: status (fleet or transcript), interrupt, stop, steer.{{/* completion_delivery: re-reading a child's files after its report, and steering finished children, were the measured waste; the notification is the one retrieval path */}}

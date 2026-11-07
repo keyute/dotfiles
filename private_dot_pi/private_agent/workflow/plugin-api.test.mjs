@@ -49,10 +49,9 @@ test("the plugin API replaces only the subagent description without changing its
 });
 
 test("the subagent schema exposes only the managed launch and control surface", () => {
-  assert.deepEqual(Object.keys(SUBAGENT_SCHEMA.properties).sort(), ["action", "agent", "context", "id", "message", "options", "task", "title"]);
+  assert.deepEqual(Object.keys(SUBAGENT_SCHEMA.properties).sort(), ["action", "agent", "id", "message", "options", "task", "title"]);
   assert.equal(SUBAGENT_SCHEMA.additionalProperties, false);
   assert.deepEqual(SUBAGENT_SCHEMA.properties.action.enum, ["list", "status", "interrupt", "stop", "steer"]);
-  assert.deepEqual(SUBAGENT_SCHEMA.properties.context.enum, ["fresh", "fork"]);
   const { options } = SUBAGENT_SCHEMA.properties;
   assert.deepEqual(Object.keys(options.properties).sort(), ["capabilities", "index", "lines", "mode", "view"]);
   assert.equal(options.additionalProperties, false);
@@ -247,13 +246,6 @@ test("a plugin entry that lands while a reply streams ends the group above the r
 test("pi-subagents' shaded notices draw as unshaded rows, and an unknown payload stays the plugin's", () => {
   const theme = { fg: (color, text) => `<${color}>${text}` };
   const render = (type, message) => NOTICE_RENDERERS[type](message, {}, theme)?.render(200).map(line => line.trimEnd());
-  assert.deepEqual(render("subagent-incremental-child-notify", { content: "Workflow child paused (needs attention): **review**\nWorkflow run: w1\nStatus: workflow still running" }),
-    ["<warning>• <toolTitle>review paused", "  <muted>Workflow run: w1", "  <muted>Status: workflow still running"]);
-  assert.deepEqual(render("subagent-incremental-child-notify", { content: [{ type: "text", text: "Workflow child failed: **build**" }] }), ["<error>• <toolTitle>build failed"]);
-  assert.equal(render("subagent-incremental-child-notify", { content: "Something else" }), undefined);
-  assert.deepEqual(render("subagent-workflow-result-write-failed", { content: "Failed to write async workflow result /r.json: EACCES" }),
-    ["<error>• <toolTitle>workflow result write failed", "  <muted>Failed to write async workflow result /r.json: EACCES"]);
-  assert.equal(render("subagent-workflow-result-write-failed", { content: "" }), undefined);
   assert.deepEqual(render("subagent_watchdog_clarification", { content: "Main watchdog clarification:\nWhich branch?\nEvidence: two remotes" }),
     ["<accent>π <muted>Main watchdog clarification:", "  <muted>Which branch?", "  <muted>Evidence: two remotes"]);
   assert.equal(render("subagent_watchdog_clarification", { content: [] }), undefined);
@@ -493,23 +485,21 @@ test("the control notice row is built from the event pi-subagents puts in detail
   assert.equal(controlNotice({}, {}, theme), undefined);
 });
 
-test("the root planning contract requires proposals for changes and actionable investigations, with direct-answer exemptions", () => {
+test("plan mode's root prompt offers submit_plan; a child's prompt and execute mode carry no approval framing", () => {
   const base = { mode: "plan", readonly: true };
   const root = workflowPrompt({ ...base, isRoot: true });
   assert.match(root, /Workflow mode: plan\. Investigate only/);
-  assert.match(root, /For requested changes, and investigations and reviews that identify concrete changes you recommend within the requested scope/);
-  assert.match(root, /Submit the plan with submit_plan for explicit approval before ending the task; do not wait for a separate request to implement/);
-  assert.match(root, /Read-only research restricts execution, not proposal preparation/);
-  assert.match(root, /Answer informational questions, command-only requests, clean reviews with no recommended changes, and explicit report-only\/no-plan requests directly without a plan/);
-  assert.match(root, /Approval switches the mode and revokes running child sessions/);
+  assert.match(root, /For requested changes, and investigations and reviews that identify concrete changes you recommend within the requested scope, research through to an actionable plan/);
+  assert.match(root, /Submit the plan with submit_plan for explicit approval; do not wait for a separate request to implement/);
+  assert.match(root, /Answer questions, report-only requests and reviews that find nothing to change directly, without a plan/);
+  assert.match(root, /for a question about a pending plan, answer and re-submit only if the answer changes it/);
   // A child in plan mode is read-only too, but has neither submit_plan nor ask_user_question.
-  assert.doesNotMatch(workflowPrompt({ ...base, isRoot: false }), /submit_plan|research through|Answer informational/i);
-  // Execute mode replaces the investigate clause outright, so the addendum cannot ride it.
-  const executing = workflowPrompt({ mode: "execute", readonly: false, isRoot: true });
-  assert.equal(executing, "Workflow mode: execute. Execute only the user-approved task.");
+  assert.doesNotMatch(workflowPrompt({ ...base, isRoot: false }), /submit_plan|ask_user_question/);
+  // Execute mode carries no approval framing: a follow-up is carried out, not re-approved.
+  assert.equal(workflowPrompt({ mode: "execute", readonly: false, isRoot: true }), "Workflow mode: execute.");
   // Ultracode rides the end of the section while on.
-  assert.equal(workflowPrompt({ mode: "execute", readonly: false, isRoot: true, ultracode: true }), "Workflow mode: execute. Execute only the user-approved task. Ultracode is on.");
-  assert.match(workflowPrompt({ ...base, isRoot: true, ultracode: true }), /launch them after\. Ultracode is on\.$/);
+  assert.equal(workflowPrompt({ mode: "execute", readonly: false, isRoot: true, ultracode: true }), "Workflow mode: execute. Ultracode is on.");
+  assert.match(workflowPrompt({ ...base, isRoot: true, ultracode: true }), /Ultracode is on\.$/);
   // The section body is standalone: no base prompt riding in front of it.
   assert.match(root, /^Workflow mode:/);
 });
@@ -580,6 +570,6 @@ test("exported pi-subagents bundle consumes owned completions without wake, remi
     assert.match(state.wakes[0], /unowned-bundle/);
     for (const handler of handlers.get("session_shutdown") ?? []) await handler({ reason: "quit" }, ctx);
     assert.equal(entries.filter(([type, data]) => type === "subagent-notify-pending" && data.message.details.runs.some(run => run.runId === "owned-bundle")).length, 0);
-  `], { cwd: new URL("../../../", import.meta.url), env: { ...process.env, PI_CODING_AGENT_DIR: root, PI_SUBAGENT_CHILD: "", HERDR_PI_MODE: "" }, encoding: "utf8", timeout: 30_000 });
+  `], { cwd: new URL("../../../", import.meta.url), env: { ...process.env, PI_CODING_AGENT_DIR: root, PI_SUBAGENT_CHILD: "" }, encoding: "utf8", timeout: 30_000 });
   assert.equal(result.status, 0, result.stderr || result.stdout || String(result.error));
 });

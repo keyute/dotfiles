@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { Policy, workerTools, publicToolName, unsandboxed, mayReachServer } from "./policy.mjs";
+import { Policy, workerTools, publicToolName, unsandboxed, commandDomains, mayReachServer } from "./policy.mjs";
 import { endLine, readLines, sendLine } from "./lines.mjs";
 
 const equal = (a, b) => typeof a === "string" && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -36,7 +36,7 @@ export async function startBroker(config, cwd, review) {
     if (request.action !== "authorize") return { ok: true };
     const ticket = randomBytes(16).toString("hex");
     if (tickets.size >= 256) tickets.delete(tickets.keys().next().value);
-    tickets.set(ticket, { epoch: policy.epoch, role: request.role, tool: request.tool, sandbox: !unsandboxed(request.tool, request.args) });
+    tickets.set(ticket, { epoch: policy.epoch, role: request.role, tool: request.tool, sandbox: !unsandboxed(request.tool, request.args), domains: commandDomains(request.tool, request.args) });
     return { ok: true, ticket };
   }
 
@@ -53,7 +53,7 @@ export async function startBroker(config, cwd, review) {
       .filter(entry => typeof entry?.command === "string" && typeof entry.sandboxed === "boolean" && (entry.exitCode === null || typeof entry.exitCode === "number"))
       .slice(-20)
       .map(({ command, sandboxed, exitCode }) => ({ command, sandboxed, exitCode }));
-    const pending = reviewQueue.then(() => review({ role, tool, server, args, history, mode: policy.mode, approval: policy.approval }));
+    const pending = reviewQueue.then(() => review({ role, tool, server, args, history, mode: policy.mode }));
     reviewQueue = pending.catch(() => {});
     const allowed = await pending;
     if (closed || policy.transitioning || epoch !== policy.epoch) throw new Error("Policy changed while approval was pending");
@@ -82,7 +82,7 @@ export async function startBroker(config, cwd, review) {
         policy.role(request.role);
         if (request.action === "child") {
           // The epoch travels through the launching parent's environment, so a
-          // child spawned before a mode/approval change cannot connect after it
+          // child spawned before a mode or scope change cannot connect after it
           // and inherit the newer, possibly wider policy.
           if (request.role === "root" || children.size >= config.childLimit || policy.transitioning || request.epoch !== policy.epoch) throw new Error("Child capacity unavailable");
           children.add(socket);
@@ -98,12 +98,14 @@ export async function startBroker(config, cwd, review) {
         let command;
         let args;
         let sandbox = true;
+        let domains;
         if (request.kind === "tool") {
           const issued = tickets.get(request.ticket);
           if (typeof request.ticket === "string") tickets.delete(request.ticket);
           if (!issued || issued.epoch !== policy.epoch || issued.role !== request.role || issued.tool !== request.name) throw new Error("Tool process denied");
           if (!workerTools.includes(request.name) || !policy.role(request.role).tools.includes(publicToolName(request.name))) throw new Error("Tool process denied");
           sandbox = issued.sandbox;
+          domains = issued.domains;
         } else if (request.kind === "server") {
           if (!mayReachServer(config, request.role, request.name)) throw new Error("MCP process denied");
           const connection = config.mcp[request.name]?.connection;
@@ -112,11 +114,12 @@ export async function startBroker(config, cwd, review) {
           args = connection.args;
           Object.assign(env, connection.env);
           sandbox = config.mcp[request.name].policy.unsandboxed !== true;
+          domains = config.mcp[request.name].policy.domains;
         } else throw new Error("Unknown process kind");
         leases.add(socket);
         // A null profile is either an approved unsandboxed tool run or a server
         // the managed config marks unsandboxed; clients never select it.
-        sendLine(socket, { ok: true, profile: sandbox ? policy.profile(request.role) : null, cwd: policy.cwd, env, command, args });
+        sendLine(socket, { ok: true, profile: sandbox ? policy.profile(request.role, domains) : null, cwd: policy.cwd, env, command, args });
       // The message is the model's only signal for why a call was refused
       // (plan mode vs. protected path vs. capacity); every thrown text here is
       // authored in this module or policy.mjs.
@@ -152,11 +155,11 @@ export async function startBroker(config, cwd, review) {
   return {
     policy,
     env: { PI_WORKFLOW_SOCKET: socketPath, PI_WORKFLOW_TOKEN: token },
-    async setMode(mode, current = () => true) {
+    async setMode(mode, current = () => true, { keepProcesses = false } = {}) {
       if (!["plan", "execute"].includes(mode)) throw new Error("Unknown workflow mode");
       policy.transitioning = true;
       const epoch = ++policy.epoch;
-      await stopProcesses();
+      if (!keepProcesses) await stopProcesses();
       // Cleanup can outlive a session switch or a newer mode request.
       if (policy.epoch !== epoch || !current()) throw new Error("Mode transition superseded");
       policy.mode = mode;

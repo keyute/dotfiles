@@ -926,7 +926,7 @@ export function pluginRenderers(name, { servers = [], folds = defaultFolds } = {
 // The background-task tool: its result is a status line and the task's output.
 export const taskTitle = args => (args.action === "list" ? "Listed background tasks" : args.action === "stop" ? `Stopped task ${args.id ?? ""}` : `Task ${args.id ?? ""} output`);
 export const taskRenderers = rowRenderers({ name: "plugin", title: taskTitle });
-export function orchestrateTitle(args, workflow) {
+function orchestrateTitle(args, workflow) {
   if (args.action) return `${{ status: "Checked workflow", result: "Read workflow result", stop: "Stop workflow" }[args.action] ?? `Workflow ${args.action}`} ${workflow?.title || args.id || ""}`.trimEnd();
   const title = workflow?.title || args.title;
   if (!workflow || workflow.status === "running") return `Started workflow${title ? ` ${shortTitle(title)}` : ""}`;

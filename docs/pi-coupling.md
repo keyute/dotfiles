@@ -30,7 +30,7 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   shutting down. User messages pass through untouched. After a UI abort the
   plugin sends no wake until the parent's next run.
   Owned rows are composed over pi-subagents' shaded `[subagent]` renderer for
-  six notice types (`NOTICE_RENDERERS` and the steering and settle-reminder
+  four notice types (`NOTICE_RENDERERS` and the steering and settle-reminder
   rows), answering undefined on an unknown payload. *Why:*
   rules 2, 4, 9 and 10 for plugin output, and the model sees only calls the
   `tool_call` hook admits. *Residual:* the settle reminders
@@ -143,10 +143,9 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   *Pin:* `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`.
 - **Prompt span** (`dialog.mjs` `openView`/`openWait`/`blocksUser`): pi wraps
   every `ctx.ui.custom` in one `custom` prompt span, emits `ui_prompt_*` only
-  for the outermost prompt, and its end carries that prompt's kind. Inline
-  dialogs now stack; their `blocked` option affects terminal program status,
-  not these events. A custom dialog is a view unless `openWait` mounts it
-  (plan approval, the questionnaire); terminal status
+  for the outermost prompt, and its end carries that prompt's kind. A custom
+  dialog is a view unless `openWait` mounts it (plan approval, the
+  questionnaire); terminal status
   `blocked` and `Waiting for you…`, one footer flag, take only native prompts
   and waits, pairing the end with that flag. A dialog opened inside a view's span (the
   peek, `/plan show`) would go unreported, so views mount through `openView`

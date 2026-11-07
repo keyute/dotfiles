@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, matchesGlob, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 
@@ -8,7 +8,7 @@ export const publicToolName = name => workerTools.includes(name) ? `workspace_${
 // The parent session's tool set; children get theirs from the roster config.
 export const rootTools = [...workerTools.map(publicToolName), "workspace_task", "tool_search", "subagent", "ask_user_question", "submit_plan", "web_search", "web_fetch", "orchestrate"];
 // Mirrors pi's MCP tool naming.
-export const mcpToolName = (server, tool) => `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/g, "_");
+const mcpToolName = (server, tool) => `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/g, "_");
 // The root reaches every configured MCP server; a child those its roster names a tool of.
 export const mayReachServer = (config, role, server) => role === "root" || config.agents[role].tools.some(tool => tool.startsWith(mcpToolName(server, "")));
 
@@ -39,6 +39,22 @@ const PREFIX = /^(?:(?:\w+=\S*|sudo|env|command|exec|nohup|time|xargs)\s+)+/;
 // extra properties, so a flagged read must stay a sandboxed read.
 export const unsandboxed = (tool, args) => tool === "bash" && args?.dangerouslyDisableSandbox === true;
 
+// Claude Code's allowed_domains: hosts a sandboxed command needs beyond the
+// allowlist, reviewed with the command and opened for that one process. The
+// text is model-supplied and becomes proxy configuration, so only plain
+// hostnames and `*.domain` pass. The last label starts with a letter and is
+// not `localhost`: SRT never re-judges an allowlisted IP literal and dials a
+// `.localhost` name on loopback, either of which would open loopback or
+// metadata addresses. A name resolving to a private range still passes (SRT's
+// guard leaves those opt-in), so review is the boundary there.
+const HOST = /^(?!.*\.localhost$)(\*\.)?([a-z0-9-]+\.)+[a-z][a-z0-9-]*$/i;
+export function commandDomains(tool, args) {
+  if (tool !== "bash" || unsandboxed(tool, args) || args?.allowed_domains === undefined) return [];
+  const hosts = args.allowed_domains;
+  if (!Array.isArray(hosts) || hosts.length > 16 || !hosts.every(host => typeof host === "string" && host.length <= 253 && HOST.test(host))) throw new Error("allowed_domains takes at most 16 hostnames");
+  return hosts;
+}
+
 export function needsReview(command) {
   return command.replace(/\\\n/g, " ").split(/\|\||&&|[;|&\n]/).some(segment => {
     const text = segment.trim().replace(PREFIX, "");
@@ -46,12 +62,21 @@ export function needsReview(command) {
   });
 }
 
-export function canonical(path) {
+// hops: dangling links followed so far; a lexical cycle (`l -> d/../l`) never
+// reaches the kernel's own ELOOP, so it stops at the kernel's 40.
+export function canonical(path, hops = 0) {
   try { return realpathSync(path); } catch (error) {
     if (!["ENOENT", "ENOTDIR"].includes(error.code)) throw error;
     const parent = dirname(path);
     if (parent === path) throw error;
-    return join(canonical(parent), path.slice(parent.length));
+    // A dangling link is judged by where a write through it lands. EINVAL: not a link.
+    let target;
+    try { target = readlinkSync(path); } catch (failure) {
+      if (!["EINVAL", "ENOENT", "ENOTDIR"].includes(failure.code)) throw failure;
+    }
+    if (target !== undefined && hops >= 40) throw Object.assign(new Error(`Too many levels of symbolic links: ${path}`), { code: "ELOOP" });
+    const base = canonical(parent, hops);
+    return target === undefined ? join(base, path.slice(parent.length)) : canonical(resolve(base, target), hops + 1);
   }
 }
 
@@ -94,7 +119,6 @@ export class Policy {
     if (inside(canonical(homedir()), this.cwd)) throw new Error("Start Pi in a project directory, not your home directory or its ancestors");
     this.scratch = canonical(scratch);
     this.mode = "plan";
-    this.approval = "auto";
     this.epoch = 0;
     this.transitioning = false;
     this.baseDenyRead = this.resolvePaths([...config.filesystem.denyRead, controlDir], this.cwd);
@@ -190,13 +214,15 @@ export class Policy {
 
   readonly(name) { return this.mode === "plan" || this.role(name).readonly; }
 
-  checkPath(input, write = false, role = "root") {
+  // `scratch` admits a write inside the session scratch in every scope, as the
+  // sandboxed shell has; only the file tools pass it.
+  checkPath(input, write = false, role = "root", scratch = false) {
     if (typeof input !== "string" || !input || input.includes("\0")) throw new Error("Invalid tool path");
     const lexical = expand(input, this.cwd);
     if (denied(lexical, write ? this.denyWrite : this.denyRead)) throw new Error("Path denied by managed policy");
     const path = canonical(lexical);
     if (denied(path, write ? this.denyWrite : this.denyRead)) throw new Error("Resolved path denied by managed policy");
-    if (write) {
+    if (write && !(scratch && inside(path, this.scratch))) {
       if (this.readonly(role)) throw new Error("Writes are disabled in this scope");
       if (![this.cwd, ...this.roots.keys()].some(root => inside(path, root))) throw new Error("File edits must remain inside the workspace");
     }
@@ -208,7 +234,7 @@ export class Policy {
     if (!this.role(role).tools.includes(publicToolName(tool))) throw new Error("Tool outside the role's capability ceiling");
     if (fileTools.includes(tool)) {
       const write = tool === "write" || tool === "edit";
-      this.checkPath(args.path ?? ".", write, role);
+      this.checkPath(args.path || ".", write, role, true);
       return "allow";
     }
     if (tool === "bash") {
@@ -216,9 +242,11 @@ export class Policy {
       if (unsandboxed(tool, args)) {
         // The profile is a read-only role's only enforcement.
         if (this.role(role).readonly) throw new Error("Unsandboxed shell is unavailable to read-only roles");
+        // The classifier is told a call carrying allowed_domains stays sandboxed.
+        if (args.allowed_domains !== undefined) throw new Error("allowed_domains and dangerouslyDisableSandbox cannot be combined: drop one");
         return "review";
       }
-      return this.approval === "ask" || needsReview(args.command) ? "review" : "allow";
+      return commandDomains(tool, args).length || needsReview(args.command) ? "review" : "allow";
     }
     return "review";
   }
@@ -239,14 +267,15 @@ export class Policy {
     return readOnly && entry.policy.auto_approve_tools ? "allow" : "review";
   }
 
-  profile(role) {
+  // domains: the hosts this one lease adds, an MCP server's own or a reviewed command's.
+  profile(role, domains = []) {
     return {
       filesystem: {
         denyRead: this.denyRead,
         allowWrite: [this.scratch, ...this.caches, ...(!this.readonly(role) ? [this.cwd, ...this.roots.keys()] : [])],
         denyWrite: this.denyWrite,
       },
-      network: { allowedDomains: this.config.network.allowedDomains, deniedDomains: [], allowLocalBinding: this.config.network.allowLocalBinding },
+      network: { allowedDomains: [...this.config.network.allowedDomains, ...domains], deniedDomains: [], allowLocalBinding: this.config.network.allowLocalBinding },
     };
   }
 }

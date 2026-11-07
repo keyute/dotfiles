@@ -236,7 +236,7 @@ test("the plan renders as markdown while the decision is open, then hands its bo
   // and from there only `expanded` shows the plan.
   const settled = context({ executionStarted: true, args: { plan: "wrong args" } });
   assert.deepEqual(rendered(planRenderers.renderCall({ plan }, theme, settled)), [`<success>${title}`]);
-  const approved = result("Plan approved; scoped execution enabled.", { decision: "approved", plan });
+  const approved = result("Plan approved; execution enabled.", { decision: "approved", plan });
   assert.deepEqual(rendered(planRenderers.renderResult(approved, { expanded: false }, theme, settled)), ["  <muted>↳ <success>approved"]);
   assert.deepEqual(rendered(planRenderers.renderResult(approved, { expanded: true }, theme, settled)), ["  <muted>↳ <success>approved", ...body]);
   const revision = result("Plan revision requested.", { decision: "revision_requested" });

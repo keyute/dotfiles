@@ -79,7 +79,7 @@ function listFiles(root, extraIgnores, signal) {
   return new Promise((resolvePromise, rejectPromise) => {
     // --hidden matches the SDK grep's own rg invocation; .git needs an
     // explicit exclusion once hidden entries are included.
-    const args = ["--files", "--hidden", "--glob", "!.git", ...extraIgnores.flatMap(pattern => ["--glob", `!${pattern}`])];
+    const args = ["--no-config", "--files", "--hidden", "--glob", "!.git", ...extraIgnores.flatMap(pattern => ["--glob", `!${pattern}`])];
     const child = spawn("rg", args, { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
     const abort = () => killGroup(child);
     signal.addEventListener("abort", abort, { once: true });
@@ -111,7 +111,7 @@ async function grep(params, { signal }) {
   const rootIsDirectory = (await stat(root)).isDirectory();
   const contextLines = params.context > 0 ? params.context : 0;
   const limit = Math.max(1, params.limit ?? GREP_DEFAULT_LIMIT);
-  const args = ["--json", "--hidden", "--glob", "!.git"];
+  const args = ["--no-config", "--json", "--hidden", "--glob", "!.git"];
   if (params.ignoreCase) args.push("-i");
   if (params.literal) args.push("-F");
   if (contextLines > 0) args.push("-C", String(contextLines));

@@ -30,7 +30,7 @@ test("classifier authorization and telemetry share one decode, including malform
     let reads = 0;
     const records = [];
     const ctx = { hasUI: false, modelRegistry: { find: () => ({}), isUsingOAuth: () => true, complete: async () => ({ stopReason, content: [{ type: "text", get text() { reads++; return text; } }] }) } };
-    const verdict = await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }, r => records.push(r));
+    const verdict = await reviewAction(ctx, config, "test", {}, { count: 0 }, r => records.push(r));
     assert.equal(verdict, authorization.decision === "deny" ? 'the classifier said "Unsafe"' : "it needs user approval and no UI is attached");
     assert.deepEqual(records.map(r => r.outcome), [outcome, outcome]);
     assert.equal(reads, ["error", "aborted"].includes(stopReason) ? 0 : 2);
@@ -45,17 +45,17 @@ test("the classifier's reason is one line of at most 200 characters, or absent",
 
 test("classifier failure asks root UI and denies unattended requests", async () => {
   const ctx = { hasUI: false, modelRegistry: { find: () => undefined } };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }), "it needs user approval and no UI is attached");
+  assert.equal(await reviewAction(ctx, config, "test", {}, { count: 0 }), "it needs user approval and no UI is attached");
   ctx.hasUI = true;
   ctx.ui = { confirm: async () => true };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }), true);
+  assert.equal(await reviewAction(ctx, config, "test", {}, { count: 0 }), true);
 });
 
 test("an unsandboxed request is named as such in the notice and the dialog", async () => {
   const seen = [];
   const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: text => seen.push(text), confirm: async title => { seen.push(title); return true; } } };
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true } });
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true } }, { count: 0 });
+  await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true" } }, { count: 0 });
   assert.match(seen[0], /^Awaiting approval \(unsandboxed\): /);
   assert.equal(seen[1], "Approve this unsandboxed action once?");
   assert.match(seen[2], /^Awaiting approval: /);
@@ -65,15 +65,17 @@ test("an unsandboxed request is named as such in the notice and the dialog", asy
 test("the TUI draws no approval notice; the dialog carries the pending state", async () => {
   const seen = [];
   const ctx = { mode: "tui", hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => { throw new Error("must not notify"); }, confirm: async title => { seen.push(title); return true; } } };
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true } });
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true", dangerouslyDisableSandbox: true } }, { count: 0 });
+  await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true" } }, { count: 0 });
   assert.deepEqual(seen, ["Approve this unsandboxed action once?", "Approve this action once?"]);
 });
 
 test("an unsandboxed request the dialog cannot show in full is refused without prompting", async () => {
   const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => { throw new Error("must not notify"); }, confirm: async () => { throw new Error("must not prompt"); } } };
   const command = `printf ok # ${"x".repeat(12_000)}`;
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command, dangerouslyDisableSandbox: true } }), "the unsandboxed command is too long to show for approval");
+  assert.equal(await reviewAction(ctx, config, "test", { tool: "bash", args: { command, dangerouslyDisableSandbox: true } }, { count: 0 }), "the unsandboxed command is too long to show for approval");
+  // So is a sandboxed one whose requested hosts the dialog would cut off.
+  assert.equal(await reviewAction(ctx, config, "test", { tool: "bash", args: { command, allowed_domains: ["api.example.com"] } }, { count: 0 }), "the command is too long to show for approval");
 });
 
 test("the classifier sees the session's shell history beside the action, and a filter block is re-judged", async () => {
@@ -81,13 +83,14 @@ test("the classifier sees the session's shell history beside the action, and a f
   const answers = ['{"decision":"deny"}', '{"decision":"allow"}'];
   const ctx = { hasUI: false, sessionManager: { getSessionId: () => "s1" }, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async (model, request, options) => { calls.push({ model, request, options }); return { content: [{ type: "text", text: answers[calls.length - 1] }] }; } } };
   const history = [{ command: "gh pr list", sandboxed: true, exitCode: 1 }];
-  assert.equal(await reviewAction(ctx, config, "list the open PRs", { approval: "auto", tool: "bash", args: { command: "gh pr list", dangerouslyDisableSandbox: true }, history }, { count: 0 }), true);
+  assert.equal(await reviewAction(ctx, config, "list the open PRs", { tool: "bash", args: { command: "gh pr list", dangerouslyDisableSandbox: true }, history }, { count: 0 }), true);
   assert.deepEqual(calls.map(call => [call.model.id, call.options.reasoningEffort]), [["filter", "minimal"], ["judge", "medium"]]);
   const content = JSON.parse(calls[0].request.messages[0].content);
   assert.deepEqual(content.history, history);
   assert.equal("history" in content.action, false);
   assert.equal(content.action.args.dangerouslyDisableSandbox, true);
   assert.match(calls[0].request.systemPrompt, /exit code/);
+  assert.match(calls[0].request.systemPrompt, /allowed_domains/);
   // The judge re-reads the same prompt and message.
   assert.equal(calls[1].request.messages[0].content, calls[0].request.messages[0].content);
   assert.equal(calls[1].request.systemPrompt, calls[0].request.systemPrompt);
@@ -95,22 +98,31 @@ test("the classifier sees the session's shell history beside the action, and a f
   assert.deepEqual(calls.map(call => [call.options.sessionId, call.options.transport]), [["s1", "sse"], ["s1", "sse"]]);
 });
 
+test("requested hosts reach the classifier and the approval dialog", async () => {
+  const contents = [];
+  const bodies = [];
+  const ctx = { hasUI: true, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async (_model, request) => { contents.push(request.messages[0].content); return said('{"decision":"ask"}'); } }, ui: { notify: () => {}, confirm: async (_title, body) => { bodies.push(body); return true; } } };
+  assert.equal(await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true", allowed_domains: ["api.example.com"] } }, { count: 0 }), true);
+  assert.deepEqual(JSON.parse(contents[0]).action.args.allowed_domains, ["api.example.com"]);
+  assert.deepEqual(JSON.parse(bodies[0]).args.allowed_domains, ["api.example.com"]);
+});
+
 test("a filter allow ends the review, and a judge that cannot answer asks the UI", async () => {
   let calls = 0;
   const ctx = { hasUI: true, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async () => { calls++; return { content: [{ type: "text", text: '{"decision":"allow"}' }] }; } }, ui: { confirm: async () => { throw new Error("must not prompt"); } } };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, { count: 0 }), true);
+  assert.equal(await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "git push" } }, { count: 0 }), true);
   assert.equal(calls, 1);
   const asked = [];
   ctx.modelRegistry.complete = async () => ({ content: [{ type: "text", text: "not json" }] });
   ctx.ui = { notify: () => {}, confirm: async title => { asked.push(title); return false; } };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, { count: 0 }), "the user declined it");
+  assert.equal(await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "git push" } }, { count: 0 }), "the user declined it");
   assert.deepEqual(asked, ["Approve this action once?"]);
 });
 
 test("a classifier deny returns the judge's reason, or a generic one", async () => {
   const answers = ['{"decision":"deny","reason":"filter"}', '{"decision":"deny","reason":"It pushes to a remote."}', '{"decision":"deny"}', '{"decision":"deny"}'];
   const ctx = { hasUI: false, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async () => said(answers.shift()) } };
-  const request = { approval: "auto", tool: "bash", args: { command: "git push" } };
+  const request = { tool: "bash", args: { command: "git push" } };
   assert.equal(await reviewAction(ctx, config, "test", request, { count: 0 }), "the classifier said \"It pushes to a remote\"");
   assert.equal(await reviewAction(ctx, config, "test", request, { count: 0 }), "the classifier denied it");
 });
@@ -121,7 +133,7 @@ test("after three consecutive classifier denials the next goes to the user until
   const asked = [];
   const ctx = { hasUI: true, modelRegistry: { find: (_provider, id) => ({ id }), isUsingOAuth: () => true, complete: async () => said(answer) }, ui: { notify: () => {}, confirm: async title => { asked.push(title); return approve; } } };
   const denials = { count: 0 };
-  const review = () => reviewAction(ctx, config, "test", { approval: "auto", tool: "bash", args: { command: "git push" } }, denials);
+  const review = () => reviewAction(ctx, config, "test", { tool: "bash", args: { command: "git push" } }, denials);
   for (let i = 0; i < 3; i++) assert.equal(await review(), "the classifier said \"unsafe\"");
   assert.equal(asked.length, 0);
   // A user decline leaves the count, so the next deny still reaches the user.
@@ -144,9 +156,6 @@ test("after three consecutive classifier denials the next goes to the user until
   answer = '{"decision":"deny","reason":"unsafe"}';
   assert.equal(await review(), "the classifier said \"unsafe\"");
   assert.equal(asked.length, 3);
-  // Ask mode never touches the count.
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } }, denials);
-  assert.equal(denials.count, 1);
 });
 
 // A view mount that holds the slot until aborted, then settles after `ms`.
@@ -156,7 +165,7 @@ test("the confirm's slot is cleared first: an open view closes before ctx.ui.con
   const seen = [];
   const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => {}, confirm: async () => { seen.push("confirm"); return true; } } };
   holdSlot(seen, "close");
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true" } }, { count: 0 });
   assert.deepEqual(seen, ["close", "confirm"]);
 });
 
@@ -164,7 +173,7 @@ test("the confirm waits for the closing view to settle", async () => {
   const seen = [];
   const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => {}, confirm: async () => { seen.push("confirm"); return true; } } };
   holdSlot([], "closing", 5).then(() => seen.push("closed"));
-  await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true" } }, { count: 0 });
   assert.deepEqual(seen, ["closed", "confirm"]);
 });
 
@@ -172,7 +181,7 @@ test("a view opened while the confirm waits on a closing one is closed too befor
   const seen = [];
   const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => {}, confirm: async () => { seen.push("confirm"); return true; } } };
   holdSlot(seen, "first", 5);
-  const review = reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } });
+  const review = reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true" } }, { count: 0 });
   await new Promise(resolve => setTimeout(resolve, 1));
   holdSlot(seen, "second", 5);
   assert.equal(await review, true);
@@ -184,13 +193,15 @@ test("classifier accounting is per-stage, numeric-only and never changes authori
   for (const answer of ['{"decision":"allow"}', '{"decision":"deny"}', 'bad', new Error("secret")]) {
     const records = [];
     const ctx = { hasUI: false, modelRegistry: { find: () => ({}), isUsingOAuth: () => true, complete: async () => { if (answer instanceof Error) throw answer; return { ...said(answer), usage: { input: 12, output: 3, cacheRead: 4, cacheWrite: 0, secret: "secret", cost: { total: 0.1 } } }; } } };
-    const verdict = await reviewAction(ctx, config, "secret", { approval: "auto", args: { command: "secret" } }, { count: 0 }, data => records.push(data));
-    assert.deepEqual(records.map(r => r.stage), ["filter", "judge"]);
-    assert.equal(records[1].outcome, answer === '{"decision":"allow"}' ? "not_attempted" : answer instanceof Error ? "error" : answer === 'bad' ? "malformed" : "deny");
+    const verdict = await reviewAction(ctx, config, "secret", { args: { command: "secret" } }, { count: 0 }, data => records.push(data));
+    // An allow ends at the filter; only a block pays for the judge.
+    const allowed = answer === '{"decision":"allow"}';
+    assert.deepEqual(records.map(r => r.stage), allowed ? ["filter"] : ["filter", "judge"]);
+    if (!allowed) assert.equal(records[1].outcome, answer instanceof Error ? "error" : answer === 'bad' ? "malformed" : "deny");
     assert.equal(JSON.stringify(records).includes("secret"), false);
     assert.equal(records[0].usage?.input ?? null, answer instanceof Error ? null : 12);
     assert.ok(records.every(r => Number.isFinite(r.durationMs)));
-    assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }, () => { throw new Error("persistence failed"); }), verdict);
+    assert.equal(await reviewAction(ctx, config, "test", {}, { count: 0 }, () => { throw new Error("persistence failed"); }), verdict);
   }
 });
 
@@ -203,7 +214,7 @@ test("failed SDK zero placeholders are unknown, but successful zero and reported
       else if (field) usage[field] = 1;
       const records = [];
       const ctx = { hasUI: false, modelRegistry: { find: () => ({}), isUsingOAuth: () => true, complete: async () => ({ ...said('{"decision":"ask"}'), stopReason, usage: { ...usage, secret: "private usage", cost: { ...usage.cost, secret: "private cost" } }, errorMessage: "private failure" }) } };
-      await reviewAction(ctx, config, "private task", { approval: "auto" }, { count: 0 }, r => records.push(r));
+      await reviewAction(ctx, config, "private task", {}, { count: 0 }, r => records.push(r));
       assert.equal(records.length, 2);
       for (const record of records) assert.deepEqual(record.usage, stopReason !== "stop" && !field ? null : usage);
       assert.equal(JSON.stringify(records).includes("private"), false);
@@ -215,7 +226,7 @@ test("unavailable and absent classifier usage remain unknown", async () => {
   for (const available of [true, false]) {
     const records = [];
     const ctx = { hasUI: false, modelRegistry: { find: () => available && ({}), isUsingOAuth: () => true, complete: async () => said('{"decision":"ask"}') } };
-    await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }, r => records.push(r));
+    await reviewAction(ctx, config, "test", {}, { count: 0 }, r => records.push(r));
     assert.equal(records.length, 2);
     assert.ok(records.every(r => r.usage === null));
     assert.ok(records.every(r => r.outcome === (available ? "ask" : "unavailable")));
@@ -227,7 +238,7 @@ test("classifier timeout and returned failures retain unknown usage without leak
   for (const response of [new DOMException("private timeout", "TimeoutError"), { stopReason: "error", errorMessage: "private failure", content: [] }, { stopReason: "aborted", content: [] }]) {
     const records = [];
     const ctx = { hasUI: false, modelRegistry: { find: () => ({}), isUsingOAuth: () => true, complete: async () => { if (response instanceof Error) throw response; return response; } } };
-    assert.equal(await reviewAction(ctx, config, "test", { approval: "auto" }, { count: 0 }, r => records.push(r)), "it needs user approval and no UI is attached");
+    assert.equal(await reviewAction(ctx, config, "test", {}, { count: 0 }, r => records.push(r)), "it needs user approval and no UI is attached");
     assert.equal(records.length, 2);
     assert.ok(records.every(r => r.usage === null && r.outcome === (response instanceof Error ? "timeout" : response.stopReason)));
     assert.equal(JSON.stringify(records).includes("private"), false);

@@ -296,7 +296,7 @@ test("approval usage is separate from Main, unknown is explicit, search is unmet
   assert.equal(cost.total, 1.55);
   assert.equal(cost.approvals.input, 10);
   assert.equal(cost.approvals.unknown, 1);
-  assert.equal(cost.approvals.notAttempted, 1);
+  assert.equal(cost.approvals.calls, 2, "an older session's skipped-judge row is not a call");
   assert.equal(cost.unmeteredSearches, 1);
   assert.ok(usageLines({ at: 0, limits: null, context: { used: 0, window: 100, parts: [] }, cost }, plain, 100).some(line => /Approvals.*10 in.*5 out.*1 unknown/.test(line)));
 });

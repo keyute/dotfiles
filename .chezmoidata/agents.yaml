@@ -3,7 +3,7 @@ agents:
     home: "~/.claude"
     # lines this harness's own prompt surface already carries; the shared
     # projection skips them
-    native_coverage: [call_batching, docs_mcp, user_run_commands, initiative]
+    native_coverage: [call_batching, user_run_commands, initiative]
     # on-demand docs the shared doc-pointer line names
     docs: "~/.claude/docs"
     defaults:
@@ -105,7 +105,7 @@ subagents:
     readonly: true
     omit_instructions: true
     tools: "Read, Bash"
-    description: "Read-only broad or cross-subsystem investigation; use Explore for bounded known-area traces, even across directly related files."
+    description: "Read-only broad or cross-subsystem investigation."
   infra-reviewer:
     tier: top
     effort: medium
@@ -164,7 +164,7 @@ subagents:
     # its body's read-the-instructions line is then its only route to them
     omit_instructions: true
     tools: "Read, Bash"
-    description: "Read-only bounded planning research: relevant files, constraints, trade-offs and proposed steps. Returns options and open decisions; the driver owns planning decisions and synthesis."
+    description: "Read-only bounded planning research: relevant files, constraints, trade-offs and proposed steps. Returns options and open decisions."
 # explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
 subagent_tiers:
   claude:
@@ -178,7 +178,7 @@ subagent_tiers:
     frontier: gpt-6-astra
 # advisory fan-out size both drivers' workflow tools show: small <5 agents,
 # medium <10, large <50
-workflow_size: small
+workflow_size: medium
 agent_sandbox:
   filesystem:
     paths:
@@ -230,7 +230,7 @@ agent_mcp_servers:
   context7:
     package_bin: context7-mcp
     args: []
-    # pi runs the server inside SRT, so its API hosts join that sandbox's allowlist
+    # pi runs the server inside SRT; these hosts open for its process alone
     domains: [context7.com]
     auto_approve_tools: true
     readonly_tools: [resolve-library-id, query-docs]
@@ -240,7 +240,7 @@ agent_mcp_servers:
   exa:
     package_bin: exa-mcp-server
     args: []
-    # pi runs the server inside SRT, so its API host joins that sandbox's allowlist
+    # pi runs the server inside SRT; this host opens for its process alone
     domains: [api.exa.ai]
     auto_approve_tools: true
     readonly_tools: [web_search_exa, web_fetch_exa]

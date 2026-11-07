@@ -17,8 +17,8 @@
 {{- $_ := set $managed "fullscreenExitOutput" "resume-hint" -}}
 {{- /* hides pi's startup key hints, model scope and resource listing; header.mjs draws the session header */ -}}
 {{- $_ := set $managed "quietStartup" true -}}
-{{- /* no inline images in the terminal; shows turn progress in the terminal tab */ -}}
-{{- $_ := set $managed "terminal" (dict "showImages" false "showTerminalProgress" true) -}}
+{{- /* no inline images in the terminal */ -}}
+{{- $_ := set $managed "terminal" (dict "showImages" false) -}}
 {{- /* no horizontal transcript padding */ -}}
 {{- $_ := set $managed "outputPad" 0 -}}
 {{- /* drops the subagent extension's built-in agents; the roster is the whole set */ -}}
@@ -36,9 +36,11 @@
 # this declared subset does not name (theme and thinking level are managed, so
 # they reset on apply; objects merge recursively, arrays and scalars are replaced).
 # modelThinkingLevels is deleted: per-model overrides outrank defaultThinkingLevel.
+# terminal.showTerminalProgress is deleted (pi's default is off): its OSC 9;4 bar tracks the
+# root run only and contradicts the owned OSC 7501 report while children run; `/settings` can persist it.
 set -euo pipefail
 
 input=$(cat)
 [ -z "$input" ] && input='{}'
 
-printf '%s\n' "$input" | jq --argjson managed '{{ $managed | toJson }}' '. * $managed | del(.modelThinkingLevels)'
+printf '%s\n' "$input" | jq --argjson managed '{{ $managed | toJson }}' '. * $managed | del(.modelThinkingLevels, .terminal.showTerminalProgress)'

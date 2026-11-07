@@ -330,11 +330,11 @@ test("pinned upstream packages register against the managed extension and prefli
   assert.ok(tools.has("subagent"));
   assert.equal(tools.has("subagents_enable"), false);
   const subagentSchema = tools.get("subagent").parameters;
-  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "context", "id", "message", "options", "task", "title"]);
+  assert.deepEqual(Object.keys(subagentSchema.properties).sort(), ["action", "agent", "id", "message", "options", "task", "title"]);
   assert.equal(subagentSchema.additionalProperties, false);
   // pi validates every call against the registered schema before any hook runs.
   const call = (id, args) => validateToolArguments(tools.get("subagent"), { type: "toolCall", id, name: "subagent", arguments: args });
-  call("v-launch", { agent: "fixture-reader", task: "Inspect fixture", title: "Fixture check", context: "fresh" });
+  call("v-launch", { agent: "fixture-reader", task: "Inspect fixture", title: "Fixture check" });
   call("v-status", { action: "status", id: "run", options: { view: "transcript", lines: 50 } });
   assert.equal(call("v-coerce", { action: "status", id: "run", options: { view: "transcript", lines: "50" } }).options.lines, 50);
   assert.equal(call("v-integer", { action: "status", id: "run", options: { view: "transcript", lines: 1.5 } }).options.lines, 1);
@@ -371,10 +371,12 @@ test("pinned upstream packages register against the managed extension and prefli
   await assert.rejects(tools.get("workspace_read").execute("test", { path: "fixture" }), /not ready/);
   // The unsandboxed flag is offered to root and withheld from a read-only role (policy refuses it regardless).
   assert.ok(tools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox);
+  assert.ok(tools.get("workspace_bash").parameters.properties.allowed_domains);
   const childHandlers = new Map();
   const childTools = new Map();
   await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); }, registerTool(tool) { childTools.set(tool.name, tool); } }, configPath, "fixture-shell", runtime);
   assert.equal(childTools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox, undefined);
+  assert.ok(childTools.get("workspace_bash").parameters.properties.allowed_domains);
   await childHandlers.get("session_shutdown").at(-1)();
   // A child reaching MCP gets pi's MCP extension, without tool_search: its allowlist names its tools.
   const docsTools = new Map();
@@ -397,8 +399,7 @@ test("pinned upstream packages register against the managed extension and prefli
   const noisy = { ...args, title: "Fixture check", cwd: "/elsewhere", toolBudget: { hard: 20 }, acceptance: false, context: "fork", model: "openai-codex/gpt-5.6-sol", outputSchema: { type: "object" } };
   let contract;
   await checkChildLaunch(noisy, config, "root", ctx, async request => { const result = await resolveSubagentLaunchContract(request); contract = result.contract; return result; }, "plan");
-  assert.deepEqual(Object.keys(noisy).sort(), ["agent", "agentScope", "async", "context", "task"]);
-  assert.equal(noisy.context, "fork");
+  assert.deepEqual(Object.keys(noisy).sort(), ["agent", "agentScope", "async", "task"]);
   assert.match(contract.model, /^openai-codex\/gpt-5\.6-luna(:|$)/);
   const titled = { action: "status", id: "run", title: "Fixture status" };
   await checkChildLaunch(titled, config, "root", ctx, resolveSubagentLaunchContract, "plan");
@@ -425,7 +426,7 @@ test("pinned upstream packages register against the managed extension and prefli
 
 });
 
-test("orchestrate runs through the root wiring: owned notices drop while busy, and a mode change stops a live run before the broker switches", async t => {
+test("orchestrate runs through the root wiring: owned notices drop while busy, and approval keeps a live run and a narrowing stops it before the broker switches", async t => {
   const { config } = fixture(t);
   config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
   const configPath = join(config.agentDir, "workflow.json");
@@ -433,6 +434,7 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   const handlers = new Map();
   const tools = new Map();
   const commands = new Map();
+  const shortcuts = new Map();
   const sent = [];
   const order = [];
   const appended = [];
@@ -444,7 +446,7 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
     events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
     on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
     registerTool(tool) { tools.set(tool.name, tool); }, registerCommand(name, command) { commands.set(name, command); },
-    registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry: (type, data) => { appended.push(type); entries.push({ type, data }); },
+    registerShortcut(key, shortcut) { shortcuts.set(key, shortcut); }, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry: (type, data) => { appended.push(type); entries.push({ type, data }); },
     sendMessage: (message, options) => { sent.push({ message, options }); },
     getFlag() { return false; }, getAllTools() { return [...tools.values()]; },
     getActiveTools() { return [...tools.keys()]; }, setActiveTools() {}, getMcpServers() { return []; },
@@ -464,7 +466,7 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
       events.emit("subagent:async-complete", { runId: params.id, success: false, state: "stopped", results: [{ status: "stopped" }] });
     }
   });
-  const policy = { mode: "plan", epoch: 1, approval: "auto" };
+  const policy = { mode: "plan", epoch: 1 };
   const broker = { env: {}, policy, setMode: async mode => { order.push(`mode:${mode}`); policy.mode = mode; }, close: async () => { order.push("close"); } };
   let captured, pluginContext;
   const { installWorkflow } = await import("./index.mjs");
@@ -536,15 +538,15 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   // It stays on across a plain prompt and a tree move; a new session resets it.
   deliver("plain follow-up");
   assert.match((await outcome(quick())).content[0].text, /^0 agents · completed/);
-  assert.equal(statuses.get("workflow"), "plan auto ultracode");
+  assert.equal(statuses.get("workflow"), "plan ultracode");
   for (const handler of handlers.get("session_tree")) await handler({}, ctx);
   assert.match((await outcome(quick())).content[0].text, /^0 agents · completed/);
-  assert.equal(statuses.get("workflow"), "plan auto ultracode");
+  assert.equal(statuses.get("workflow"), "plan ultracode");
   ctx.hasUI = false;
   for (const handler of handlers.get("session_start")) await handler({ reason: "new" }, ctx);
   ctx.hasUI = true;
   await assert.rejects(run(), /Ultracode is off/);
-  assert.equal(statuses.get("workflow"), "plan auto");
+  assert.equal(statuses.get("workflow"), "plan");
   const section = async () => {
     const event = { systemPromptOptions: { sections: {}, contextFiles: [], skills: [] } };
     for (const handler of handlers.get("before_agent_start")) await handler(event, ctx);
@@ -553,12 +555,12 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.doesNotMatch(await section(), /Ultracode/);
   // /ultracode toggles it, with a π note and the status word.
   await commands.get("ultracode").handler("", ctx);
-  assert.equal(statuses.get("workflow"), "plan auto ultracode");
+  assert.equal(statuses.get("workflow"), "plan ultracode");
   assert.deepEqual(entries.at(-1), { type: "workflow-note", data: { text: "Ultracode on for this session" } });
   assert.match(await section(), / Ultracode is on\.$/);
   assert.match((await outcome(quick())).content[0].text, /^0 agents · completed/);
   await commands.get("ultracode").handler("", ctx);
-  assert.equal(statuses.get("workflow"), "plan auto");
+  assert.equal(statuses.get("workflow"), "plan");
   assert.deepEqual(entries.at(-1), { type: "workflow-note", data: { text: "Ultracode off" } });
   await assert.rejects(quick(), /Ultracode is off/);
   arm();
@@ -613,7 +615,8 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.equal(childNotices.length, 1);
   assert.deepEqual(childNotices[0].message.details.runs, [{ runId: "other" }]);
   // Through the root check and the live broker mode, still plan.
-  onSpawn = () => setImmediate(() => events.emit("subagent:async-complete", { runId: `run-${spawned.length}`, success: true, results: [{ status: "completed", output: "ok", structuredOutput: { ok: true } }] }));
+  const settle = () => events.emit("subagent:async-complete", { runId: `run-${spawned.length}`, success: true, results: [{ status: "completed", output: "ok", structuredOutput: { ok: true } }] });
+  onSpawn = () => setImmediate(settle);
   const plannedLaunch = await tools.get("orchestrate").execute("o2", { script: 'let refused; try { await agent("x", { agentType: "fixture-writer" }) } catch (e) { refused = e.message } return [refused, await agent("x", { agentType: "fixture-reader", tier: "top" }), await agent("x", { agentType: "fixture-reader", schema: { type: "object" } })]' }, new AbortController().signal, undefined, ctx);
   const planned = await outcome(plannedLaunch);
   const [refused, top, typed] = JSON.parse(planned.content[0].text.split("\n\n")[1]);
@@ -622,18 +625,57 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.deepEqual(spawned.slice(1).map(params => params.agent), ["fixture-reader", "fixture-reader"]);
   assert.equal(spawned[1].model, "openai-codex/gpt-5.6-sol");
   assert.deepEqual(spawned[2].outputSchema, { type: "object" });
-  // A mode change aborts the live run, stops its child and only then switches the broker.
+  // Approval widens: the live run survives it and the broker switches at once.
   order.length = 0;
   spawn = launched();
   const second = await run();
   await spawn;
   await commands.get("execute").handler("", ctx);
+  assert.deepEqual(order, ["mode:execute"]);
+  assert.equal((await manage("status")).details.workflows.filter(run => run.status === "running").length, 1, "approval leaves the run alive");
+  // A narrowing aborts the live run, stops its child and only then switches the broker.
+  order.length = 0;
+  await commands.get("plan").handler("", ctx);
   const interrupted = await outcome(second);
   assert.equal(interrupted.isError, true);
   assert.match(interrupted.content[0].text, /Workflow interrupted/);
   assert.deepEqual(interrupted.details.runs.map(run => [run.runId, run.status]), [["run-4", "stopped"]]);
-  assert.deepEqual(order, ["stop:run-4", "mode:execute"]);
+  assert.deepEqual(order, ["stop:run-4", "mode:plan"]);
   assert.equal((await manage("status")).details.workflows.filter(run => run.status === "running").length, 0, "the mode switch waits for workflow settlement");
+  // A run started under plan stays plan-limited through the root check once the live mode is execute.
+  spawn = launched();
+  const carried = await tools.get("orchestrate").execute("o3", { script: 'await agent("look", { agentType: "fixture-reader" }); try { return await agent("x", { agentType: "fixture-writer" }) } catch (e) { return e.message }' }, new AbortController().signal, undefined, ctx);
+  await spawn;
+  await commands.get("execute").handler("", ctx);
+  assert.equal(policy.mode, "execute");
+  onSpawn = () => setImmediate(settle);
+  settle();
+  assert.match(JSON.parse((await outcome(carried)).content[0].text.split("\n\n")[1]), /plan mode/i);
+  // /execute in execute changes nothing: the live run survives, the broker is not called.
+  order.length = 0;
+  spawn = launched();
+  const repeated = await run();
+  await spawn;
+  await commands.get("execute").handler("", ctx);
+  assert.deepEqual(order, []);
+  // Shift+Tab toggles through the same path: to plan it stops the live run first.
+  await shortcuts.get("shift+tab").handler(ctx);
+  assert.match((await outcome(repeated)).content[0].text, /Workflow interrupted/);
+  await commands.get("plan").handler("", ctx);
+  assert.deepEqual(order, ["stop:run-6", "mode:plan", "mode:plan"], "/plan in plan still runs its stopping transition");
+  await shortcuts.get("shift+tab").handler(ctx);
+  assert.equal(policy.mode, "execute");
+  // A press while its own switch is in flight is ignored.
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const setBrokerMode = broker.setMode;
+  broker.setMode = async (...args) => { await held; return setBrokerMode(...args); };
+  order.length = 0;
+  const presses = [shortcuts.get("shift+tab").handler(ctx), shortcuts.get("shift+tab").handler(ctx)];
+  release();
+  await Promise.all(presses);
+  broker.setMode = setBrokerMode;
+  assert.deepEqual(order, ["mode:plan"]);
   // Shutdown ends a live run and stops its child before the broker closes,
   // and puts back a level ultrathink raised.
   spawn = launched();
@@ -644,7 +686,7 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   await handlers.get("session_shutdown").find(handler => handler.name === "shutdown")();
   assert.equal(level, "low");
   assert.match((await outcome(third)).content[0].text, /Workflow interrupted/);
-  assert.ok(order.includes("stop:run-5") && order.indexOf("stop:run-5") < order.indexOf("close"), order.join(","));
+  assert.ok(order.includes("stop:run-7") && order.indexOf("stop:run-7") < order.indexOf("close"), order.join(","));
 });
 
 test("late workflow usage persists silently through root wiring and serialized reload", async t => {
@@ -679,7 +721,7 @@ test("late workflow usage persists silently through root wiring and serialized r
       }
     } else reply({ asyncSnapshot: { version: 1, runs: [] }, details: {} });
   });
-  const policy = { mode: "plan", epoch: 1, approval: "auto" };
+  const policy = { mode: "plan", epoch: 1 };
   const { installWorkflow } = await import("./index.mjs");
   await installWorkflow(pi, configPath, "root", {
     startBroker: async () => ({ env: {}, policy, setMode: async mode => { policy.mode = mode; }, close() {} }),
@@ -748,9 +790,6 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
     return write(frame, ...args);
   });
   const flush = () => new Promise(resolve => setImmediate(resolve));
-  const previous = process.env.TUIOS_ENV;
-  process.env.TUIOS_ENV = "1";
-  t.after(() => { if (previous === undefined) delete process.env.TUIOS_ENV; else process.env.TUIOS_ENV = previous; });
   const { installWorkflow } = await import("./index.mjs");
   // A fresh install per mode: status is wired only at the first UI session start.
   const start = async (mode, close = async () => {}, role = "root", hasUI = true) => {
@@ -766,7 +805,7 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
       registerTool() {}, registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
       sendMessage() {}, getFlag() { return false; }, getAllTools: () => [], getActiveTools: () => [], setActiveTools() {}, getMcpServers: () => [],
     };
-    const policy = { mode: "plan", epoch: 1, approval: "auto" };
+    const policy = { mode: "plan", epoch: 1 };
     const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} addCustomEntryToChat() {} };
     await installWorkflow(pi, configPath, role, { startBroker: async () => ({ env: {}, policy, setMode: async next => { policy.mode = next; }, close }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
     let editor, editorFactory;
@@ -809,14 +848,10 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
   await child("agent_settled");
   await flush();
   assert.deepEqual(frames, [], "non-TUI, headless, non-TTY and child sessions never report");
-  for (const value of [undefined, "0", "1"]) {
-    if (value === undefined) delete process.env.TUIOS_ENV;
-    else process.env.TUIOS_ENV = value;
-    const terminal = await start("tui");
-    await terminal("ui_prompt_start", { kind: "confirm", title: "PRIVATE QUESTION SENTINEL" });
-    await terminal("session_shutdown", { reason: "quit" });
-    assert.deepEqual(frames.splice(0), ["\x1b]7501;state=idle:app=pi\x1b\\", "\x1b]7501;state=blocked:app=pi\x1b\\", "\x1b]7501;state=clear:app=pi\x1b\\"]);
-  }
+  const terminal = await start("tui");
+  await terminal("ui_prompt_start", { kind: "confirm", title: "PRIVATE QUESTION SENTINEL" });
+  await terminal("session_shutdown", { reason: "quit" });
+  assert.deepEqual(frames.splice(0), ["\x1b]7501;state=idle:app=pi\x1b\\", "\x1b]7501;state=blocked:app=pi\x1b\\", "\x1b]7501;state=clear:app=pi\x1b\\"]);
   let releaseCleanup, cleanupStarted = false;
   const cleanup = new Promise(resolve => { releaseCleanup = resolve; });
   t.after(() => releaseCleanup());
@@ -894,7 +929,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   };
   const broker = {
     env: { PI_WORKFLOW_SOCKET: "fake-socket", PI_WORKFLOW_TOKEN: "fake-token" },
-    policy: { mode: "plan", approval: "auto", epoch: 1, roots: new Map(), addableDirs: () => [] },
+    policy: { mode: "plan", epoch: 1, roots: new Map(), addableDirs: () => [] },
     async setMode(mode) { this.policy.mode = mode; log.push(`mode:${mode}`); },
     async close() { log.push("broker:close"); },
   };
@@ -936,7 +971,7 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   for (const handler of handlers.get("before_agent_start")) assert.equal(await handler(promptEvent, ctx), undefined);
   assert.equal(promptEvent.systemPromptOptions.sections.driver, config.driverInstructions);
   assert.match(promptEvent.systemPromptOptions.sections.workflow, /Workflow mode: plan/);
-  assert.match(promptEvent.systemPromptOptions.sections.skills, /Use the workspace_read tool[^]*<name>fixture-skill<\/name>/);
+  assert.match(promptEvent.systemPromptOptions.sections.skills, /Load a skill's file[^]*<name>fixture-skill<\/name>[^]*<skill name=…> message is loaded/);
   assert.equal(promptEvent.systemPromptOptions.forceSystemPrompt, undefined);
   assert.equal(promptEvent.systemPromptOptions.sections.shared, "Shared fixture policy");
   assert.equal(promptEvent.systemPromptOptions.contextFiles[0].content, "Project fixture policy");
@@ -1034,10 +1069,10 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   // Includes pinned SDK tools and fixture managed descriptions. Production
   // driver/description bodies are separately capped by the render fixture;
   // plugin prompt content and the vendor base prompt are not measured here.
-  assert.ok(toolChars <= 11310, `registered declarations grew: ${toolChars} chars (~${Math.ceil(toolChars / 4)} tokens)`);
+  assert.ok(toolChars <= 11540, `registered declarations grew: ${toolChars} chars (~${Math.ceil(toolChars / 4)} tokens)`);
   const snippets = [...tools.values()].reduce((sum, tool) => sum + (tool.promptSnippet?.length ?? 0), 0);
   const runtimePromptChars = toolChars + snippets + workflowPrompt({ mode: "plan", readonly: true, isRoot: true, ultracode: true }).length;
-  assert.ok(runtimePromptChars <= 12629, `runtime prompt pieces grew: ${runtimePromptChars} chars`);
+  assert.ok(runtimePromptChars <= 12650, `runtime prompt pieces grew: ${runtimePromptChars} chars`);
   assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "orchestrate", "submit_plan", "subagent", "web_search", "web_fetch"]);
   let orchestrateVerdict;
   for (const handler of handlers.get("tool_call")) orchestrateVerdict ??= await handler({ toolName: "orchestrate", input: { script: "return 1" } }, ctx);
@@ -1056,15 +1091,15 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   };
   for (const handler of handlers.get("tool_execution_end") ?? []) handler(completed, ctx);
   assert.deepEqual(entries.at(-1), { type: "workflow-answers", data: { answers: [{ question: "Which complete direction should we take?", answer: "Fast — keeps the exact note; Safe", notes: "raw custom: 1,3" }] } });
-  await review({ approval: "auto", tool: "bash", args: { command: "true" } });
+  await review({ tool: "bash", args: { command: "true" } });
   assert.match(classified, /User decision: Which complete direction should we take\? → Fast — keeps the exact note; Safe — raw custom: 1,3/);
   assert.doesNotMatch(classified, /typo'd/, "a refused command stays out of the classifier task");
-  assert.deepEqual(entries.filter(entry => entry.type === "workflow-classifier-usage").map(entry => entry.data.stage), ["filter", "judge"]);
+  assert.deepEqual(entries.filter(entry => entry.type === "workflow-classifier-usage").map(entry => entry.data.stage), ["filter"], "an allow ends at the filter");
   const recordedBeforeSwitch = entries.length;
   let finishClassify;
   const complete = ctx.modelRegistry.complete;
   ctx.modelRegistry.complete = () => new Promise(resolve => { finishClassify = resolve; });
-  const late = review({ approval: "auto", tool: "bash", args: { command: "true" } });
+  const late = review({ tool: "bash", args: { command: "true" } });
   ctx.sessionManager.getSessionId = () => "replacement-root";
   finishClassify({ content: [{ type: "text", text: '{"decision":"allow"}' }] });
   assert.equal(await late, true, "accounting cannot change the verdict");
@@ -1095,13 +1130,18 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   assert.equal(broker.policy.mode, "execute", "show does not change mode");
   assert.equal(notifications.at(-1), "No current plan");
   const submit = tools.get("submit_plan");
+  // Outside plan mode a plan call changes nothing: no mode flip, no stored draft.
+  await assert.rejects(submit.execute("x", { plan: "# First\n\nChange A" }), /Not in plan mode/);
+  assert.equal(broker.policy.mode, "execute");
+  assert.equal((await submit.execute("r", { action: "read" })).content[0].text, "No current plan");
+  await commands.get("plan").handler("", ctx);
   const updates = [];
   ctx.abort = () => {};
   const cancelled = await submit.execute("p", { plan: "# First\n\nChange A" }, undefined, update => updates.push(update));
   assert.equal(cancelled.details.decision, "cancelled");
   assert.equal(cancelled.details.revision, 1);
   assert.equal(updates[0].details.plan, cancelled.details.plan);
-  assert.equal(broker.policy.mode, "plan", "changed draft revokes execute before approval");
+  assert.equal(broker.policy.mode, "plan");
   const read = await submit.execute("r", { action: "read" });
   assert.match(read.content[0].text, /Change A/);
   await assert.rejects(submit.execute("bad", { revision: 0, edits: [{ oldText: "A", newText: "B" }] }), /current revision/);
@@ -1140,6 +1180,25 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   for (const handler of handlers.get("tool_call")) verdict ??= await handler({ toolName: "workspace_read", input: {} }, ctx);
   assert.equal(verdict?.block, true, "the unavailable workflow refuses every call");
   assert.deepEqual(log, ["stop:owned-run"], "a failed child stop does not reach the broker mode update");
+  await assert.rejects(commands.get("execute").handler("", ctx), /owned-run: stop request failed/);
+  assert.equal(broker.policy.mode, "plan", "a switch out of a failed transition cleans up, even a widening one");
+  running = false;
+  await commands.get("execute").handler("", ctx);
+  running = true;
+  await assert.rejects(commands.get("plan").handler("", ctx), /owned-run: stop request failed/);
+  assert.equal(broker.policy.mode, "execute", "the failed /plan stopped before the broker switched");
+  // Settled in execute's mode but not ready, /execute still retries the cleanup.
+  log.length = 0;
+  await assert.rejects(commands.get("execute").handler("", ctx), /owned-run: stop request failed/);
+  assert.deepEqual(log, ["stop:owned-run"]);
+  running = false;
+  log.length = 0;
+  await commands.get("execute").handler("", ctx);
+  assert.deepEqual(log, ["mode:execute"]);
+  verdict = undefined;
+  for (const handler of handlers.get("tool_call")) verdict ??= await handler({ toolName: "workspace_read", input: {} }, ctx);
+  assert.equal(verdict, undefined, "the retried switch restores ready");
+  running = true;
   log.length = 0;
   let cleanupError;
   for (const handler of handlers.get("session_shutdown") ?? []) {
@@ -1184,7 +1243,7 @@ test("every MCP call is resolved to its server and tool and put to the broker; u
   };
   const broker = {
     env: { PI_WORKFLOW_SOCKET: "fake-socket", PI_WORKFLOW_TOKEN: "fake-token" },
-    policy: { mode: "plan", approval: "auto", epoch: 1, roots: new Map(), addableDirs: () => [] },
+    policy: { mode: "plan", epoch: 1, roots: new Map(), addableDirs: () => [] },
     async setMode(mode) { this.policy.mode = mode; },
     async close() {},
   };
@@ -1323,6 +1382,13 @@ test("child sessions share one capacity ceiling and acknowledge revocation befor
   assert.equal(stopped, config.childLimit);
   assert.equal(broker.policy.mode, "plan");
   assert.equal(broker.policy.transitioning, false);
+  // Approval widens: a child registered under plan survives it, and the next narrowing stops it.
+  let kept = 0;
+  await acquireChild(childEnv(), "fixture-reader", release => { kept++; release(); });
+  await broker.setMode("execute", undefined, { keepProcesses: true });
+  assert.equal(kept, 0);
+  await broker.setMode("plan");
+  assert.equal(kept, 1);
 });
 
 test("a disconnected child without terminal proof blocks further work and mode changes", { skip }, async t => {
@@ -1386,13 +1452,18 @@ test("tool leases require a single-use ticket bound to the current epoch", { ski
   assert.deepEqual(histories.at(-1), []);
   const flaggedRead = await requestBroker(broker.env, "root", { action: "authorize", tool: "read", args: { path: "fixture", dangerouslyDisableSandbox: true } });
   assert.ok((await leaseTool({ name: "read", ticket: flaggedRead.ticket })).profile.filesystem);
+  // A reviewed command's hosts open for its own lease and no later one.
+  const hosted = await requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "true", allowed_domains: ["api.example.com"] } });
+  assert.ok((await leaseTool({ name: "bash", ticket: hosted.ticket })).profile.network.allowedDomains.includes("api.example.com"));
+  assert.ok(!(await leaseTool({ name: "bash", ticket: (await authorize()).ticket })).profile.network.allowedDomains.includes("api.example.com"));
+  await assert.rejects(requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "true", allowed_domains: ["*"] } }), /allowed_domains/);
 });
 
 test("only a server the config marks unsandboxed receives the managed null-profile lease", { skip }, async t => {
   const { root, config } = fixture(t);
   config.mcp = {
     playwright: { connection: { type: "stdio", command: "managed-playwright", args: ["--stdio"], env: { SERVER_TOKEN: "configured" } }, policy: { denied_tools: [], unsandboxed: true } },
-    docs: { connection: { type: "stdio", command: "managed-docs", args: ["--stdio"], env: {} }, policy: { denied_tools: [], unsandboxed: false } },
+    docs: { connection: { type: "stdio", command: "managed-docs", args: ["--stdio"], env: {} }, policy: { denied_tools: [], unsandboxed: false, domains: ["docs.example.com"] } },
   };
   config.agents["fixture-browser"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "mcp__playwright__browser_navigate"] };
   const broker = await startBroker(config, root, async () => true);
@@ -1420,6 +1491,8 @@ test("only a server the config marks unsandboxed receives the managed null-profi
 
   const docs = await leaseServer("docs");
   assert.ok(docs.profile.filesystem);
+  // A server's own hosts reach its lease.
+  assert.ok(docs.profile.network.allowedDomains.includes("docs.example.com"));
   assert.equal(docs.command, "managed-docs");
   assert.deepEqual(docs.args, ["--stdio"]);
   assert.equal((await leaseServer("unconfigured")).ok, false);
@@ -1427,6 +1500,43 @@ test("only a server the config marks unsandboxed receives the managed null-profi
   // A child's server lease follows the MCP tools its role names.
   assert.equal((await leaseServer("playwright", "fixture-browser")).ok, true);
   assert.equal((await leaseServer("docs", "fixture-browser")).ok, false);
+});
+
+test("message_end isolates submit_plan from its siblings in plan mode only", async t => {
+  const { config } = fixture(t);
+  config.models.classifierFilter = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const broker = { env: {}, policy: { mode: "plan", epoch: 1, roots: new Map(), addableDirs: () => [] }, async setMode(mode) { this.policy.mode = mode; }, async close() {} };
+  const handlers = new Map();
+  const events = new EventEmitter();
+  const pi = {
+    events: { on(name, fn) { events.on(name, fn); return () => events.off(name, fn); }, emit: (...args) => events.emit(...args) },
+    on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool() {}, registerToolRenderer() {},
+    registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+    getFlag() { return false; }, getAllTools() { return []; }, getActiveTools() { return []; }, setActiveTools() {}, getMcpServers() { return []; },
+  };
+  const installSubagents = async api => {
+    api.registerTool({ name: "subagent", execute() {} });
+    api.events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
+      ? { capabilities: { fleetStatus: { version: 1 }, stop: true, processTerminalProof: { version: 1 } }, events: { jobsChanged: "subagent:jobs-changed" } }
+      : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, omitted: { runs: 0 }, runs: [] } } }));
+  };
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => broker, requestBroker: async () => ({ mode: broker.policy.mode, readonly: true }), installSubagents });
+  t.after(async () => { for (const handler of handlers.get("session_shutdown")) await handler({ reason: "quit" }, {}); });
+  const batch = () => ({ role: "assistant", content: [{ type: "toolCall", id: "r", name: "workspace_read", arguments: {} }, { type: "toolCall", id: "p", name: "submit_plan", arguments: {} }] });
+  const [messageEnd] = handlers.get("message_end");
+  const ids = message => message.content.map(block => block.id);
+  const planned = batch();
+  assert.deepEqual(messageEnd({ message: planned }), { message: planned });
+  assert.deepEqual(ids(planned), ["p"]);
+  broker.policy.mode = "execute";
+  const refused = batch();
+  assert.equal(messageEnd({ message: refused }), undefined);
+  assert.deepEqual(ids(refused), ["r", "p"]);
 });
 
 test("the tool renderer resolver draws plugin-registered and unregistered MCP calls as plugin rows, in every role, and defers other names", async t => {
@@ -1437,7 +1547,7 @@ test("the tool renderer resolver draws plugin-registered and unregistered MCP ca
   config.agents["fixture-search"] = { ...config.agents["fixture-reader"], tools: ["workspace_read", "web_search"] };
   const configPath = join(config.agentDir, "workflow.json");
   writeFileSync(configPath, JSON.stringify(config));
-  const broker = { env: {}, policy: { mode: "plan", approval: "auto", epoch: 1, roots: new Map(), addableDirs: () => [] }, async setMode(mode) { this.policy.mode = mode; }, async close() {} };
+  const broker = { env: {}, policy: { mode: "plan", epoch: 1, roots: new Map(), addableDirs: () => [] }, async setMode(mode) { this.policy.mode = mode; }, async close() {} };
   const handlers = new Map();
   const resolvers = [];
   const events = new EventEmitter();
@@ -1471,7 +1581,7 @@ test("the tool renderer resolver draws plugin-registered and unregistered MCP ca
   const childHandlers = new Map();
   await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); } }, configPath, "fixture-search", { requestBroker: async () => ({ mode: broker.policy.mode, readonly: true }) });
   t.after(async () => { for (const handler of childHandlers.get("session_shutdown")) await handler({ reason: "quit" }, {}); });
-  // A fork may inherit root sections; the child hook retracts only driver.
+  // A child that inherits root sections keeps them; the child hook retracts only driver.
   for (const inherited of [false, true]) {
     const event = { systemPromptOptions: { sections: { shared: "Shared fixture policy", ...(inherited ? { driver: config.driverInstructions } : {}) }, contextFiles: [{ path: "/project/AGENTS.md", content: "Project fixture policy" }], skills: [] } };
     for (const handler of childHandlers.get("before_agent_start")) await handler(event, {});

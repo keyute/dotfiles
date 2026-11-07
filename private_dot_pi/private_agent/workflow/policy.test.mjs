@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Policy, canonical, needsReview, workerTools, publicToolName, mayReachServer } from "./policy.mjs";
+import { Policy, canonical, commandDomains, needsReview, workerTools, publicToolName, mayReachServer } from "./policy.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-policy-test-"));
@@ -19,13 +19,32 @@ function fixture(t) {
 test("plan denies direct writes and sandbox omits workspace writes", t => {
   const p = fixture(t);
   assert.throws(() => p.inspect("root", "write", { path: "new" }), /disabled/);
+  // Scratch stays writable to file tools, as it is to the shell; an empty search path means cwd.
+  assert.equal(p.inspect("root", "write", { path: join(p.scratch, "note") }), "allow");
+  // A scratch symlink is judged by where it lands.
+  writeFileSync(join(p.cwd, "x"), "");
+  symlinkSync(join(p.cwd, "x"), join(p.scratch, "link"));
+  assert.throws(() => p.inspect("root", "write", { path: join(p.scratch, "link") }), /disabled/);
+  // So is a dangling one, a relative one through a symlinked directory, and a new leaf under a symlinked directory.
+  symlinkSync(join(p.cwd, "new"), join(p.scratch, "dangling"));
+  assert.throws(() => p.inspect("root", "write", { path: join(p.scratch, "dangling") }), /disabled/);
+  mkdirSync(join(p.cwd, "sub"));
+  symlinkSync("../new", join(p.cwd, "sub", "relative"));
+  symlinkSync(join(p.cwd, "sub"), join(p.scratch, "sub"));
+  assert.throws(() => p.inspect("root", "write", { path: join(p.scratch, "sub", "relative") }), /disabled/);
+  symlinkSync(p.cwd, join(p.scratch, "dir"));
+  assert.throws(() => p.inspect("root", "write", { path: join(p.scratch, "dir", "new") }), /disabled/);
+  // A link whose target normalizes back to itself fails cleanly, not by overflowing the stack.
+  symlinkSync("d/../l", join(p.scratch, "l"));
+  assert.throws(() => p.inspect("root", "write", { path: join(p.scratch, "l") }), error => error.code === "ELOOP" && !(error instanceof RangeError));
+  assert.equal(p.inspect("root", "grep", { path: "" }), "allow");
   assert.ok(!p.profile("root").filesystem.allowWrite.includes(p.cwd));
   p.mode = "execute";
   assert.equal(p.inspect("root", "write", { path: "new" }), "allow");
   assert.throws(() => p.inspect("reviewer", "edit", { path: "new" }), /disabled/);
 });
 
-test("sandboxed shell skips review except remote-mutating verbs or approvals set to ask", t => {
+test("sandboxed shell skips review except remote-mutating verbs", t => {
   const p = fixture(t);
   for (const command of ["git log --since='2026-09-01' | wc -l", "npm run test:pi", "grep -R \"a\\|b\" -n src", "gh pr view 1", "gh run list --json status", "gh api repos/x/y/pulls --jq .[].title", "curl -sSL https://x -o f", "node - <<'EOF'\nconsole.log(1)\nEOF", "rm -rf build", "git log --grep ssh", "git log --oneline | grep push"]) {
     assert.equal(needsReview(command), false, command);
@@ -42,8 +61,6 @@ test("sandboxed shell skips review except remote-mutating verbs or approvals set
     assert.throws(() => p.inspect("reviewer", "bash", { command: "true", dangerouslyDisableSandbox: true }), /read-only/);
     assert.equal(p.inspect("root", "read", { path: "x", dangerouslyDisableSandbox: true }), "allow");
   }
-  p.approval = "ask";
-  assert.equal(p.inspect("root", "bash", { command: "git status" }), "review");
 });
 
 test("canonical checks cover missing files, symlinks, sensitive and managed paths", t => {
@@ -64,6 +81,9 @@ test("canonical checks cover missing files, symlinks, sensitive and managed path
   assert.throws(() => p.inspect("root", "write", { path: "../outside" }), /workspace/);
   assert.throws(() => p.inspect("root", "write", { path: ".pi/settings.json" }), /denied/);
   assert.equal(canonical(join(p.cwd, "missing", "file")), join(p.cwd, "missing", "file"));
+  // A path through a plain file is ENOTDIR, not a link to follow.
+  writeFileSync(join(p.cwd, "plain"), "");
+  assert.equal(canonical(join(p.cwd, "plain", "file")), join(p.cwd, "plain", "file"));
 });
 
 test("an added directory widens edits and the sandbox write list; home, denied and duplicate roots are refused", t => {
@@ -207,6 +227,8 @@ test("MCP output arguments are writes even on a read-only tool", t => {
   const p = fixture(t);
   assert.equal(p.inspectMcp("root", "docs", "search", { query: "x" }), "allow");
   assert.throws(() => p.inspectMcp("root", "docs", "search", { filename: "snap.md" }), /disabled/);
+  // The file tools' scratch exemption does not reach an MCP output path.
+  assert.throws(() => p.inspectMcp("root", "docs", "search", { filename: join(p.scratch, "snap.md") }), /disabled/);
   p.mode = "execute";
   assert.equal(p.inspectMcp("root", "docs", "search", { filename: "snap.md" }), "allow");
   assert.throws(() => p.inspectMcp("root", "docs", "search", { outputPath: "../outside" }), /workspace/);
@@ -218,6 +240,29 @@ test("the sandbox profile carries local binding from the managed network policy"
   assert.equal(p.profile("root").network.allowLocalBinding, undefined);
   p.config.network.allowLocalBinding = true;
   assert.equal(p.profile("root").network.allowLocalBinding, true);
+});
+
+test("a lease's own hosts join the allowlist for that lease only; a command's are reviewed and shape-checked", t => {
+  const p = fixture(t);
+  p.config.network.allowedDomains = ["registry.npmjs.org"];
+  assert.deepEqual(p.profile("root", ["api.example.com"]).network.allowedDomains, ["registry.npmjs.org", "api.example.com"]);
+  assert.deepEqual(p.profile("root").network.allowedDomains, ["registry.npmjs.org"]);
+  // Naming hosts sends an otherwise unreviewed command to review, a read-only role's included.
+  assert.equal(p.inspect("root", "bash", { command: "curl https://api.example.com", allowed_domains: ["api.example.com", "*.example.org"] }), "review");
+  assert.equal(p.inspect("reviewer", "bash", { command: "true", allowed_domains: ["api.example.com"] }), "review");
+  assert.equal(p.inspect("root", "bash", { command: "true", allowed_domains: [] }), "allow");
+  // An unsandboxed call and a file tool carry none.
+  assert.deepEqual(commandDomains("bash", { command: "true", allowed_domains: ["a.example.com"], dangerouslyDisableSandbox: true }), []);
+  assert.deepEqual(commandDomains("read", { allowed_domains: ["a.example.com"] }), []);
+  // The classifier is told a call naming hosts stays sandboxed, so the flag cannot ride along.
+  for (const allowed_domains of [["a.example.com"], [], "*"]) {
+    assert.throws(() => p.inspect("root", "bash", { command: "true", allowed_domains, dangerouslyDisableSandbox: true }), /cannot be combined/);
+  }
+  assert.throws(() => p.inspect("reviewer", "bash", { command: "true", allowed_domains: ["a.example.com"], dangerouslyDisableSandbox: true }), /read-only/);
+  // Model-supplied text that would become proxy configuration.
+  for (const hostile of ["*", ["*"], ["*.*"], ["*.com"], ["com"], ["a.example.com:443"], ["a.example.com/x"], ["a example.com"], ["a.example.com\nb.example.com"], [".example.com"], ["a..b"], ["169.254.169.254"], ["127.0.0.1"], ["0x7f.0.0.1"], ["[::1]"], ["localhost"], ["x.localhost"], ["x.localhost."], ["*.a.LOCALHOST"], [["a.example.com"]], [42], [`${"a".repeat(250)}.com`], Array(17).fill("a.example.com")]) {
+    assert.throws(() => p.inspect("root", "bash", { command: "true", allowed_domains: hostile }), /allowed_domains/, JSON.stringify(hostile).slice(0, 40));
+  }
 });
 
 test("removed tools and calls during tightening fail closed", t => {

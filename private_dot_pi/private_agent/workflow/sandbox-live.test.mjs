@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startBroker, requestBroker } from "./broker.mjs";
@@ -26,10 +26,24 @@ test("live SRT rejects source writes and sensitive symlinks, then permits approv
   // lease; the broker forwards the policy's own reason.
   await assert.rejects(call("write", { path: "file" }, "writeFile", { path: join(work, "file"), data: "blocked" }), /Writes are disabled in this scope/);
   await assert.rejects(call("read", { path: "link" }, "readFile", { path: join(work, "link") }), /Resolved path denied by managed policy/);
-  // SRT layer: an approved bash lease still cannot write the workspace in plan mode.
-  const planBash = await call("bash", { command: "printf blocked > file" }, "exec", { command: "printf blocked > file", cwd: work });
+  // Complete an operation before approval so the retained worker has a live plan lease.
+  const planTicket = await requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "printf blocked > file" } });
+  const planWorker = startToolWorker("bash", { cwd: work, env: { ...broker.env, PI_WORKFLOW_ROLE: "root" }, ticket: planTicket.ticket });
+  t.after(() => planWorker.close());
+  assert.equal((await planWorker.call("exec", { command: "true", cwd: work })).exitCode, 0);
+  const planBash = await planWorker.call("exec", { command: "printf blocked > file", cwd: work });
   assert.notEqual(planBash.exitCode, 0);
-  await broker.setMode("execute");
+  assert.equal(existsSync(join(work, "file")), false);
+  await broker.setMode("execute", undefined, { keepProcesses: true });
+  assert.equal((await planWorker.call("exec", { command: "true", cwd: work })).exitCode, 0);
+  const retainedWrite = await planWorker.call("exec", { command: "printf blocked > file", cwd: work });
+  assert.notEqual(retainedWrite.exitCode, 0);
+  assert.equal(existsSync(join(work, "file")), false);
+  const executeTicket = await requestBroker(broker.env, "root", { action: "authorize", tool: "bash", args: { command: "printf execute > file" } });
+  const executeWorker = startToolWorker("bash", { cwd: work, env: { ...broker.env, PI_WORKFLOW_ROLE: "root" }, ticket: executeTicket.ticket });
+  t.after(() => executeWorker.close());
+  assert.equal((await executeWorker.call("exec", { command: "printf execute > file", cwd: work })).exitCode, 0);
+  assert.equal(readFileSync(join(work, "file"), "utf8"), "execute");
   await call("write", { path: "file" }, "writeFile", { path: join(work, "file"), data: "approved" });
   assert.equal(readFileSync(join(work, "file"), "utf8"), "approved");
   let streamed = "";
@@ -50,4 +64,13 @@ test("live SRT rejects source writes and sensitive symlinks, then permits approv
   const bare = startToolWorker("bash", { cwd: work, env: { ...broker.env, PI_WORKFLOW_ROLE: "root" } });
   await assert.rejects(bare.call("exec", { command: "true" }));
   await bare.close();
+  // Narrowing must collect both generations, with terminal proof before returning.
+  await broker.setMode("plan");
+  assert.equal(broker.policy.mode, "plan");
+  assert.equal(broker.policy.transitioning, false);
+  for (const client of [planWorker, executeWorker]) {
+    await assert.rejects(client.call("exec", { command: "printf stale > file", cwd: work }), /Sandboxed bash (?:unavailable|failed)/);
+    await client.close();
+  }
+  assert.equal(readFileSync(join(work, "file"), "utf8"), "approved");
 });

@@ -32,7 +32,7 @@ export const CONTROL_NOTICE = "subagent_control_notice";
 // bare agent name, so the visible box said nothing. pi draws a custom message
 // only when `display` is truthy, so the wrapper sends it quiet; the content,
 // session-file path included, still reaches the model.
-export const SUBAGENT_NOTIFY = "subagent-notify";
+const SUBAGENT_NOTIFY = "subagent-notify";
 export const controlNotice = (message, _options, theme) => {
   const event = message?.details?.event;
   if (!event?.agent || !event.message) return undefined;
@@ -43,16 +43,12 @@ export const controlNotice = (message, _options, theme) => {
 // (rule 9). Ours, composed over it, takes the transcript's shape — a rule 4
 // status line or a π line, the rest two in — and answers undefined for a
 // payload it does not recognise, leaving the plugin's block as the fallback.
-// The incremental child notice's status is read from the first line
-// formatIncrementalChildCompletion writes, which sessions from before its
-// details still carry. The settle reminders arrive as entries pi-subagents
-// returns from agent_before_settle, outside sendMessage, so they close no group.
-export const INCREMENTAL_CHILD = "subagent-incremental-child-notify";
-export const RESULT_WRITE_FAILED = "subagent-workflow-result-write-failed";
-export const WATCHDOG_CLARIFICATION = "subagent_watchdog_clarification";
-export const STEERING_NOTICE = "subagent_steering_notice";
-export const COMPLETION_UNANSWERED = "subagent-completion-unanswered";
-export const COMPLETION_UNHANDLED = "subagent-completion-unhandled";
+// The settle reminders arrive as entries pi-subagents returns from
+// agent_before_settle, outside sendMessage, so they close no group.
+const WATCHDOG_CLARIFICATION = "subagent_watchdog_clarification";
+const STEERING_NOTICE = "subagent_steering_notice";
+const COMPLETION_UNANSWERED = "subagent-completion-unanswered";
+const COMPLETION_UNHANDLED = "subagent-completion-unhandled";
 const STEERING_STATES = new Set(["failed", "partial", "recovered"]);
 export const QUIET_MESSAGES = {
   [SUBAGENT_NOTIFY]: () => true,
@@ -61,15 +57,6 @@ const textOf = content => typeof content === "string" ? content
   : Array.isArray(content) ? content.filter(part => part?.type === "text").map(part => part.text).join("\n") : "";
 const notice = (head, rest, theme) => new Text([head, ...rest.filter(line => line.trim()).map(line => `${PAD}${theme.fg("muted", line)}`)].join("\n"), 0, 0);
 export const NOTICE_RENDERERS = {
-  [INCREMENTAL_CHILD]: (message, _options, theme) => {
-    const [first, ...rest] = textOf(message?.content).split("\n");
-    const match = first.match(/^Workflow child (completed|failed|paused \(needs attention\)|stopped): \*\*(.+)\*\*$/);
-    return match ? notice(completionLine({ agent: match[2], status: match[1].split(" ")[0] }, theme), rest, theme) : undefined;
-  },
-  [RESULT_WRITE_FAILED]: (message, _options, theme) => {
-    const text = textOf(message?.content).trim();
-    return text ? notice(completionLine({ agent: "workflow result write", status: "failed" }, theme), text.split("\n"), theme) : undefined;
-  },
   [WATCHDOG_CLARIFICATION]: (message, _options, theme) => {
     const [first, ...rest] = textOf(message?.content).trim().split("\n");
     return first ? notice(noteLine(first, theme), rest, theme) : undefined;

@@ -549,7 +549,7 @@ test("the broker confirm closes an open plan view before it asks", async () => {
   const ctx = { mode: "tui", hasUI: true, modelRegistry: { find: () => undefined }, ui };
   const shown = showPlan(ctx, { plan: "Change A", revision: 1 });
   const config = { models: { provider: "openai-codex" } };
-  assert.equal(await reviewAction(ctx, config, "test", { approval: "ask", tool: "bash", args: { command: "true" } }), true);
+  assert.equal(await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true" } }, { count: 0 }), true);
   assert.equal(await shown, undefined);
   assert.deepEqual(reported, ["start view", "end", "start blocked", "end"]);
 });

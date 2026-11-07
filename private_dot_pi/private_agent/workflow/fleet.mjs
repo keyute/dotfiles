@@ -46,7 +46,7 @@ const isLive = status => RUNNING_RECORD.has(status);
 
 // A live workflow's children fold into its one overview row (rule 6): a row
 // whose bound run id belongs to a tracked group's records is hidden.
-export function fleetRows(state) {
+function fleetRows(state) {
   if (!state.groups.length) return state.entries;
   const owned = new Set(state.groups.flatMap(group => group.records.map(record => record.runId)).filter(Boolean));
   return [...state.groups, ...state.entries.filter(entry => !owned.has(runIdFor(state, entry)))];
@@ -71,7 +71,7 @@ export function progressLine(name, records, tail, theme, width, paint = text => 
 
 // The phase is the latest live launch's, else the last launch's. The local
 // clock repaints it even after an interrupt stops the turn clock.
-export function groupRow({ title, records, startedAt }, theme, width, now = Date.now()) {
+function groupRow({ title, records, startedAt }, theme, width, now = Date.now()) {
   const phase = (records.findLast(record => isLive(record.status)) ?? records.at(-1))?.phase;
   const name = title ? `workflow${NAME_SEP}${shortTitle(title)}` : "workflow";
   return progressLine(name, records, [phase, formatDuration(now - startedAt)], theme, width);

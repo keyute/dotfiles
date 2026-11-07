@@ -346,18 +346,17 @@ test("the branch's counts paint green and red, the rest of the segment does not"
   assert.equal(visibleWidth(paintSegment({ text: "main", color: "accent", changes: "+14 -2" }, ansi)), "main +14 -2".length);
 });
 
-test("the mode takes the plan row's approved/not-approved pair and carries its approval setting", () => {
+test("the mode takes the plan row's approved/not-approved pair", () => {
   const theme = { fg: (color, text) => `<${color}>${text}` };
-  assert.equal(paintMode("execute auto", theme), "<success>execute<dim> · auto");
-  assert.equal(paintMode("plan ask", theme), "<warning>plan<dim> · ask");
+  assert.equal(paintMode("execute", theme), "<success>execute");
   assert.equal(paintMode("plan", theme), "<warning>plan");
   assert.equal(paintMode("", theme), "");
   // Ultracode leads in the keyword's accent while on.
-  assert.equal(paintMode("execute auto ultracode", theme), "<accent>ultracode<dim> · <success>execute<dim> · auto");
+  assert.equal(paintMode("execute ultracode", theme), "<accent>ultracode<dim> · <success>execute");
   // The status line pads from this string too.
   const ansi = { fg: (_color, text) => `\x1b[32m${text}\x1b[39m` };
-  assert.equal(visibleWidth(paintMode("execute auto", ansi)), "execute · auto".length);
-  assert.equal(visibleWidth(paintMode("execute auto ultracode", ansi)), "ultracode · execute · auto".length);
+  assert.equal(visibleWidth(paintMode("execute", ansi)), "execute".length);
+  assert.equal(visibleWidth(paintMode("execute ultracode", ansi)), "ultracode · execute".length);
 });
 
 test("reset timestamps format as time, weekly with weekday", () => {
@@ -384,32 +383,25 @@ test("footer renders the status line first and the fleet rows under it", () => {
     const ctx = { cwd: ".", model: { id: "gpt-5.6-sol" }, getContextUsage: () => ({ percent: 27.2 }), ui: { setFooter: make => { factory = make; }, setWorkingVisible() {}, setWidget() {} } };
     installFooter({ on() {}, registerEntryRenderer() {}, appendEntry() {} }, ctx, { fleet, tasks, readLimits: async () => null });
     const tui = { requestRender() {} };
-    let status = "execute auto";
+    let status = "execute";
     const footerData = { onBranchChange: () => () => {}, getGitBranch: () => "main", getExtensionStatuses: () => new Map([["workflow", status]]) };
     const render = width => factory(tui, { fg: (_color, text) => text }, footerData).render(width);
     const lines = render(70);
     assert.deepEqual(attached, [tui]);
-    assert.equal(lines[0], "  gpt-5.6-sol · 27.2% · main" + " ".repeat(70 - 4 - 26 - 25) + "2 shells · execute · auto  ");
+    assert.equal(lines[0], "  gpt-5.6-sol · 27.2% · main" + " ".repeat(70 - 4 - 26 - 18) + "2 shells · execute  ");
     assert.deepEqual(lines.slice(1), ["rows@70"]);
-    status = "execute auto ultracode";
-    assert.ok(render(70)[0].endsWith("2 shells · ultracode · execute · auto  "));
-    status = "execute auto";
-    // Too narrow for both: the left gives way, so the mode and its approval
-    // survive whole. Truncating the composed line clipped the right first, and
-    // `· auto` and `· ask` clip to the same string — two states, one reading.
-    const auto = render(30)[0];
-    status = "plan ask";
-    const ask = render(30)[0];
-    assert.ok(auto.endsWith("execute · auto  "), auto);
-    assert.ok(ask.endsWith("plan · ask  "), ask);
-    assert.doesNotMatch(auto, /shell/, "shell count yields before the mode at narrow widths");
-    assert.doesNotMatch(ask, /shell/, "shell count yields before the mode at narrow widths");
-    assert.equal(visibleWidth(auto), 30);
-    assert.equal(visibleWidth(ask), 30);
+    status = "execute ultracode";
+    assert.ok(render(70)[0].endsWith("2 shells · ultracode · execute  "));
+    status = "execute";
+    // Too narrow for both: the left gives way, so the mode survives whole.
+    // Truncating the composed line clipped the right first.
+    const narrow = render(28)[0];
+    assert.ok(narrow.endsWith("execute  "), narrow);
+    assert.doesNotMatch(narrow, /shell/, "shell count yields before the mode at narrow widths");
+    assert.equal(visibleWidth(narrow), 28);
     live = 0;
-    status = "execute auto";
     const zero = render(60)[0];
-    assert.ok(zero.endsWith("execute · auto  "), zero);
+    assert.ok(zero.endsWith("execute  "), zero);
     assert.doesNotMatch(zero, /shell/);
   } finally {
     process.env.PATH = path;
@@ -857,18 +849,18 @@ test("a waiting prompt reports blocked with its title over a waiting turn and wi
   h.fire("agent_settled");
   h.fire("ui_prompt_start", { kind: "confirm", title: "Approve" });
   h.fire("ui_prompt_end", { kind: "confirm" });
-  assert.deepEqual(h.states(), ["idle", "working", "blocked:Approve", "working"]);
+  assert.deepEqual(h.states(), ["working", "blocked:Approve", "working"], "a child live at attach is working");
   h.fire("ui_prompt_start", { kind: "custom" });
   h.fire("ui_prompt_end", { kind: "custom" });
-  assert.deepEqual(h.states(), ["idle", "working", "blocked:Approve", "working"], "a bare custom dialog is a view");
+  assert.deepEqual(h.states(), ["working", "blocked:Approve", "working"], "a bare custom dialog is a view");
   await openWait({ ui: { custom: async () => { h.fire("ui_prompt_start", { kind: "custom" }); h.fire("ui_prompt_end", { kind: "custom" }); } } }, () => {});
-  assert.deepEqual(h.states().slice(4), ["blocked", "working"], "a wait mounted through openWait blocks");
+  assert.deepEqual(h.states().slice(3), ["blocked", "working"], "a wait mounted through openWait blocks");
   h.fire("agent_settled", { aborted: true });
-  h.fire("ui_prompt_start", { kind: "select", title: "Approval mode" });
-  assert.equal(h.states().at(-1), "blocked:Approval mode");
+  h.fire("ui_prompt_start", { kind: "select", title: "Select model" });
+  assert.equal(h.states().at(-1), "blocked:Select model");
   assert.match(h.widget.row.render(80)[0], /^π Waiting for you…/, "shown with no turn, without a spinner frame");
   h.fire("ui_prompt_end", { kind: "select" });
-  assert.equal(h.states().at(-1), "idle");
+  assert.equal(h.states().at(-1), "working", "the child still runs");
   assert.deepEqual(h.widget.row.render(80), []);
   h.done();
 });
@@ -904,8 +896,10 @@ test("a waiting turn that closes under a waiting prompt keeps the prompt's row",
   h.done();
 });
 
-test("a compaction and a `!` report working with no turn, an interrupt reports idle naming live work, and a shutdown reports nothing until attach", () => {
-  const h = harness({ active: 2 });
+test("a compaction and a `!` report working with no turn, an interrupt over live work stays working, and a shutdown reports nothing until attach", () => {
+  let active = 0;
+  const h = harness();
+  h.fleet.activeCount = () => active;
   h.fire("session_before_compact");
   h.fire("session_compact");
   h.working({ command: "npm test", startedAt: Date.now() });
@@ -920,9 +914,10 @@ test("a compaction and a `!` report working with no turn, an interrupt reports i
   h.working(null);
   assert.match(h.widget.row.render(80)[0], /^π Waiting for you…/, "a `!` ending under a waiting prompt leaves the prompt's row");
   h.fire("ui_prompt_end", { kind: "confirm" });
+  active = 2;
   h.fire("agent_start");
   h.fire("agent_settled", { aborted: true });
-  assert.equal(h.states().at(-1), "idle");
+  assert.equal(h.states().at(-1), "working");
   assert.deepEqual([h.entries[0].data.aborted, h.entries[0].data.running], [true, { agents: 2, shells: 0 }]);
   h.fire("agent_start");
   h.fire("session_before_compact");
@@ -930,6 +925,7 @@ test("a compaction and a `!` report working with no turn, an interrupt reports i
   const reported = h.activity.length;
   h.fire("session_shutdown");
   assert.equal(h.activity.length, reported, "a shutdown reports nothing");
+  active = 0;
   h.attach();
   assert.equal(h.states().at(-1), "idle", "attach reports the new session's state, the cut-off prompt and compaction dropped");
   h.done();
@@ -997,7 +993,7 @@ test("aggregate OSC waits for children, workflows and shells, while views never 
   t.mock.timers.tick(1000);
   h.fire("ui_prompt_start", { kind: "custom" });
   h.fire("ui_prompt_end", { kind: "custom" });
-  assert.deepEqual(frames, [wire("idle"), wire("working")]);
+  assert.deepEqual(frames, [wire("working")], "work live at attach is working");
   h.fire("ui_prompt_start", { kind: "confirm", title: "PRIVATE QUESTION SENTINEL" });
   assert.equal(frames.at(-1), wire("blocked"));
   assert.ok(frames.every(frame => /^\x1b\]7501;state=(idle|working|blocked):app=pi\x1b\\$/.test(frame)), "wire contains no prompt, title or other activity body");
@@ -1021,4 +1017,29 @@ test("aggregate OSC waits for children, workflows and shells, while views never 
   h.fire("ui_prompt_end", { kind: "custom" });
   assert.equal(frames.at(-1), wire("done"), "an idle view cannot erase completion");
   assert.equal(frames.filter(frame => frame === wire("done")).length, 1);
+});
+
+test("OSC stays working after an abort or a typed prompt closes the turn over a live child, and is done when it ends", t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+  const frames = [];
+  const reporter = installProgramStatus({ isTTY: true, write: frame => frames.push(frame) });
+  reporter.attach();
+  let active = 1;
+  const h = harness({ settleMs: 250, onActivity: reporter.report });
+  h.fleet.activeCount = () => active;
+  t.after(() => { reporter.shutdown(); h.done(); });
+  const wire = state => `\x1b]7501;state=${state}:app=pi\x1b\\`;
+  for (const close of [() => h.fire("agent_settled", { aborted: true }), () => { h.fire("agent_settled"); h.fire("input", { source: "interactive" }); }]) {
+    frames.length = 0;
+    active = 1;
+    h.fire("agent_start");
+    close();
+    t.mock.timers.tick(1000);
+    assert.equal(h.entries.at(-1).data.running.agents, 1, "the turn closed naming the child");
+    assert.equal(frames.at(-1), wire("working"));
+    active = 0;
+    h.fleet.changed();
+    t.mock.timers.tick(250);
+    assert.equal(frames.at(-1), wire("done"));
+  }
 });

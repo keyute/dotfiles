@@ -9,12 +9,12 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
   pin with the extensions and worker SDK) with native tools and ambient extensions
   off; a binary run outside it bypasses the workflow. Sessions load the applied
   `~/.pi/agent`, so a source edit needs `chezmoi apply`. Sign in through Pi's
-  OpenAI subscription login; do not import another harness's auth files.
+  OpenAI subscription login.
 
 ## Models
 
 - Default: `{{ .agents.pi.defaults.provider }}/{{ index .subagent_tiers.pi .agents.pi.defaults.tier }}`, {{ .agents.pi.defaults.reasoning_effort }} reasoning.
-- The approval classifier (MCP calls, remote-mutating shell verbs, unsandboxed requests)
+- The approval classifier (MCP calls, remote-mutating shell verbs, extra-host and unsandboxed requests)
 {{- $cls := .agents.pi.defaults.classifier }}{{ $clsModel := index .subagent_tiers.pi $cls.tier }}
   runs two tool-less stages: `{{ $clsModel }}` at {{ $cls.filter_effort }} reasoning screens each reviewed action; anything
   but allow goes to `{{ $clsModel }}` at {{ $cls.judge_effort }} reasoning on the same prompt, whose verdict is final.
@@ -39,22 +39,13 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
   explicit model, tool list and policy extension; read-only ones stay read-only in
   execution. Only `general-purpose` may launch children, to Claude Code's depth.
 {{- $sub := include "private_dot_pi/private_agent/extensions/subagent/config.json" | fromJson }}
-- Children run in the background, sharing the root policy, up to {{ .agents.pi.child_limit }} at once
-  across the tree; they start fresh with no channel back (intercom off);
-  batch independent launches.
-- With ultracode on, use `orchestrate` for substantive multi-part work, even initially independent
-  investigations to reconcile; keep trivial work inline, isolated bounded tasks on `subagent`.{{/* model: Flat fan-out hides the reconciliation dependency between initially independent investigations. */}}
-  Workflows: `agent()`/`parallel()`/`pipeline()`, schemas; small-tier leaves.
-  Launch requires ultracode (a delivered prompt enables it until next session
-  start; `/ultracode` toggles it); returns a background workflow id immediately.
-  One active workflow only. Management works even with ultracode off:
-  `{action: "status", id?}`, `{action: "result", id}`, `{action: "stop", id}`.
-  Root steering does not rewrite the script; steer named children via subagent controls. Root Escape/Ctrl+Enter interrupts the root response, not the workflow.
-- Chains, role overrides, revival and mutating management are refused; status, stop,
-  interrupt and steer work. Runs stop after {{ div $sub.timeoutMs 60000 }} minutes, with a checkpoint steer
-  {{ div $sub.checkpointBeforeDeadlineMs 60000 }} minutes before.
+- Children share the root policy, up to {{ .agents.pi.child_limit }} at once across the tree, with
+  no channel back (intercom off).
+- `ultracode` in a delivered prompt stays on until the next session start; `/ultracode` toggles it.
+- Chains, role overrides, revival and mutating management are refused. Runs stop after
+  {{ div $sub.timeoutMs 60000 }} minutes, with a checkpoint steer {{ div $sub.checkpointBeforeDeadlineMs 60000 }} minutes before.
 - Skills are listed in the root's system prompt and load by `/skill:name` or on the model's own
-  read. A child's MCP reach is its role's tool list; the policy refuses a tool outside it.
+  read.
 
 ## Web search
 
@@ -71,15 +62,14 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
 
 ## MCP and code intelligence
 
-- MCP tools are pi's native `mcp__<server>__<tool>` (e.g. `mcp__context7__query_docs`),
-  called directly. The root's MCP tools are all deferred: `tool_search` finds and
-  loads them for the calls that follow. For Context7, discover `resolve-library-id`
-  and `query-docs` together (`query: "+context7 resolve-library-id query-docs"`,
-  `limit: 2`), then check the returned names; a one-result search can load only
-  the query tool when the resolver is needed. A child is declared exactly the
-  MCP tools its role lists.
+- MCP tools are pi's native `mcp__<server>__<tool>` (e.g. `mcp__context7__query_docs`).
+  For Context7, discover `resolve-library-id` and `query-docs` together with
+  `tool_search` (`query: "+context7 resolve-library-id query-docs"`, `limit: 2`),
+  then check the returned names; a one-result search can load only the query tool
+  when the resolver is needed. A child is declared exactly the MCP tools its role
+  lists; the policy refuses a tool outside it.
 - MCP servers other than Playwright (see `sandbox.md`) run inside SRT; Node servers
   use `NODE_USE_ENV_PROXY=1` so fetch follows the sandbox proxy. If every call
-  fails with `fetch failed`, check that setting, then the allowed domains.
+  fails with `fetch failed`, check that setting, then the server's `domains`.
 - No LSP: diagnostics come from project toolchains via `workspace_bash` (`tsc --noEmit`,
   `go vet`, pyright, linters). Claude's proprietary plugins and cloud services: use Claude.

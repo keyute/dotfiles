@@ -4,8 +4,9 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "@earendil-wo
 // outlives the tool call, output is kept in memory (tail-capped), and the end
 // of a task reaches the model through pi.sendMessage — with its next tool
 // result, or as a new turn when idle — while the transcript gets one
-// completion line. A task holds a process lease, so a mode change stops it
-// like any other sandbox process; the worker then reports the exec as aborted.
+// completion line. A task holds a process lease, so a narrowing mode change
+// stops it like any other sandbox process; the worker then reports the exec as
+// aborted.
 const OUTPUT_KEEP = 256 * 1024;
 const TAIL_LINES = 20;
 

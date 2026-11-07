@@ -10,10 +10,6 @@
        writable cwd to fall back on */ -}}
 {{- $allowWrite := append $sandbox.allowWrite "/var/tmp" -}}
 {{- $mcp := includeTemplate "mcp-servers" (dict "root" . "harness" "pi") | fromJson -}}
-{{- /* MCP servers run inside SRT here, so each server's own hosts join the allowlist */ -}}
-{{- $domains := .agent_sandbox.network.allowed_domains -}}
-{{- range $mcp -}}{{- $domains = concat $domains .policy.domains -}}{{- end -}}
-{{- $domains = $domains | uniq | sortAlpha -}}
 {{- $roles := includeTemplate "pi-roles" (dict "root" .) | fromJson -}}
 {{- /* a run's in-flight launches must leave leases for direct launches */ -}}
 {{- if ge $pi.orchestrate_concurrency $pi.child_limit -}}{{- fail "agents.pi.orchestrate_concurrency must be below child_limit" -}}{{- end -}}
@@ -37,6 +33,6 @@
           "denyRead" $denyRead
           "denyWrite" $denyWrite
           "allowWrite" $allowWrite)
-      "network" (dict "allowedDomains" $domains "allowLocalBinding" .agent_sandbox.network.allow_local_binding)
+      "network" (dict "allowedDomains" .agent_sandbox.network.allowed_domains "allowLocalBinding" .agent_sandbox.network.allow_local_binding)
       "agents" $roles
       "mcp" $mcp | toPrettyJson -}}

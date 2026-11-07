@@ -20,10 +20,8 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
 - Keep vendor-templated files (gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
 
-- Edit source state only; verify with `npm run test:pi` (its fixture renders every
-  target into a scratch destination with a stubbed `op` and reports template
-  errors; preserve the inherited `TMPDIR`), plus
-  `chezmoi cat <target>` where the target is readable.
+- Edit source state only; verify with `npm run test:pi` (preserve the inherited
+  `TMPDIR`).
 - Declare a subagent or MCP server once in `.chezmoidata/agents.yaml`,
   scoped with `harnesses:` where not for every harness; a shared skill
   body lives once in `.chezmoitemplates/skills/` with a one-line stub per
@@ -32,7 +30,7 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
   treats caller-supplied paths, repos and arguments as hostile: pin its config,
   refuse sandbox-writable roots, and ship a malicious-input test.
 - Before adding to `private_dot_pi/private_agent/workflow/`, read the module map atop
-  `docs/pi-design.md` (the whole doc for a module it marks TUI).
+  `docs/pi-design.md`.
 - Leave `chezmoi apply` and 1Password signin to me. Resolved values belong
   only in applied private targets, never in source files, commits, or
   terminal output.
@@ -54,8 +52,7 @@ what the event touches, never as a scheduled or whole-harness sweep.
   state where each can, not a faithful port. Name the boundary that enforces a restriction — sandbox, policy, tool list — never
   imply one.
 - **Set a vendor setting only to change its default**, to pin a value the
-  harness UI persists, or because owned code reads it; a one-line comment
-  beside the key names the behaviour it changes; a row only if measured.
+  harness UI persists, or because owned code reads it.
 - **A line earns its place.** An always-loaded instruction line, or a rule in
   this file, the `docs/decisions.md` header or `docs/agent-authoring.md`,
   exists only for a diagnosed, recurring failure that the harness prompt, the
