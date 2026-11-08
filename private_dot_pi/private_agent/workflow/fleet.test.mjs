@@ -959,6 +959,32 @@ test("closeView before the text-tail's status reply mounts nothing and notifies 
 });
 
 
+test("a peek rejecting after session shutdown notifies nothing; one rejecting before notifies once", async () => {
+  for (const shutdownFirst of [true, false]) {
+    const bus = fakeBus();
+    const hooks = {};
+    const notices = [];
+    let reject;
+    const pi = { events: bus, on: (name, handler) => { hooks[name] = handler; }, appendEntry() {}, registerEntryRenderer() {} };
+    const ctx = { mode: "tui", hasUI: true, ui: { notify: (message, level) => notices.push(level) } };
+    const fleet = installFleet(pi, ctx, { pollMs: 5, quietMs: 20, timeoutMs: 10, openPeek: () => new Promise((_resolve, fail) => { reject = fail; }) });
+    hooks.tool_execution_start({ toolName: "subagent", toolCallId: "c1", args: { agent: "worker", task: "t" } });
+    hooks.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { runId: "run1", asyncDir: "/tmp/run1" } } });
+    bus.runs.push({ id: "run1", label: "worker", state: "running", startedAt: 1000 });
+    bus.entries.push({ key: "fleet-1", agent: "worker", startedAt: 1000 });
+    await sleep(20);
+    fleet.handleKey("enter");
+    fleet.handleKey("confirm");
+    await sleep(10);
+    if (shutdownFirst) hooks.session_shutdown();
+    reject(new Error("peek failed"));
+    await sleep(10);
+    assert.deepEqual(notices, shutdownFirst ? [] : ["error"]);
+    if (!shutdownFirst) hooks.session_shutdown();
+  }
+});
+
+
 test("workflow aliases exclude owned children from counts without changing total agents or regular children", async () => {
   const bus = fakeBus();
   const hooks = {};

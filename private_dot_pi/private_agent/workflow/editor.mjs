@@ -55,11 +55,12 @@ export function argumentCompletions(current) {
 export class CaretEditor extends sdk.CustomEditor {
   // The editor factory is handed an EditorTheme (borders and autocomplete only),
   // so the palette for the shade and the caret arrives separately.
-  constructor(tui, theme, keybindings, { fleet, palette, shell, pending, notify, copyToClipboard = sdk.copyToClipboard } = {}) {
+  constructor(tui, theme, keybindings, { fleet, palette, shell, agentBash, pending, notify, copyToClipboard = sdk.copyToClipboard } = {}) {
     super(tui, theme, keybindings, { paddingX: PROMPT_PADDING, embedWorkingStatus: false });
     this.fleet = fleet;
     this.palette = palette;
     this.shell = shell;
+    this.agentBash = agentBash;
     this.pending = pending;
     this.notify = notify;
     this.copyToClipboard = copyToClipboard;
@@ -90,12 +91,8 @@ export class CaretEditor extends sdk.CustomEditor {
   get onSubmit() {
     if (!this.shell) return this.hostSubmit;
     return text => {
-      const result = this.shell.submit(text);
-      if (result === false) { this.hostSubmit?.(text); return; }
-      // submitValue() already cleared the editor before calling onSubmit; a
-      // busy runner restores the text instead of losing it.
-      if (result === "busy") this.setText(text);
-      else this.addToHistory(text);
+      if (this.shell.submit(text)) this.addToHistory(text);
+      else this.hostSubmit?.(text);
     };
   }
   // The palette is pi's live theme (a theme switch invalidates this editor
@@ -462,6 +459,14 @@ export class CaretEditor extends sdk.CustomEditor {
     if (this.pending && matchesKey(data, "ctrl+enter") && !this.fleet?.focused() && !this.shellMode()) {
       this.cancelAutocomplete();
       void this.pending.sendNow(this);
+      return;
+    }
+    // Ctrl+B is pi-tui's cursor-left alias; only while a foreground `!` or
+    // agent bash call runs does it move them all to background tasks (Claude
+    // Code's Ctrl+B). A registered shortcut would take cursor-left everywhere.
+    if (matchesKey(data, "ctrl+b") && (this.shell?.running() || this.agentBash?.live() > 0)) {
+      this.shell?.background();
+      this.agentBash?.detachAll();
       return;
     }
     // Native Alt+Enter queues raw editor text as a follow-up. Shell input

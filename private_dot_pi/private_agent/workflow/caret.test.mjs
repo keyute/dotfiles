@@ -179,29 +179,20 @@ test("Alt+Enter submits expanded pasted shell text and cancels an open completio
   }
 });
 
-test("Alt+Enter preserves busy shell text and leaves non-shell follow-ups native", () => {
+test("Alt+Enter submits shell text even behind a running one, and leaves non-shell follow-ups native", () => {
   const submitted = [];
   const followUps = [];
-  const caret = editor({ shell: { submit: text => { submitted.push(text); return "busy"; }, abortable: () => false } });
+  const caret = editor({ shell: { submit: text => { submitted.push(text); return true; }, abortable: () => false } });
   caret.actionHandlers.set("app.message.followUp", () => followUps.push(caret.getText()));
-  caret.setText("!!echo busy");
+  caret.setText("!!echo queued");
   caret.handleInput("\x1b\r");
-  assert.deepEqual(submitted, ["!!echo busy"]);
-  assert.equal(caret.getText(), "!!echo busy");
+  assert.deepEqual(submitted, ["!!echo queued"]);
+  assert.equal(caret.getText(), "");
   for (const text of ["plain follow-up", "!"]) {
     caret.setText(text);
     caret.handleInput("\x1b\r");
   }
   assert.deepEqual(followUps, ["plain follow-up", "!"]);
-});
-
-test("a busy runner keeps the composer text instead of clearing it", () => {
-  const shell = { submit: () => "busy", abortable: () => false, abort() {} };
-  const caret = editor({ shell });
-  caret.onSubmit = () => { throw new Error("must not reach native submit"); };
-  caret.setText("!ls");
-  caret.handleInput("\r");
-  assert.equal(caret.getText(), "!ls");
 });
 
 test("Esc with a running, abortable shell command aborts it instead of falling through", () => {

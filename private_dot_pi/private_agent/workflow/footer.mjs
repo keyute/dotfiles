@@ -260,7 +260,9 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
     clearInterval(state.tick);
     state.tick = null;
   };
-  const busy = () => ({ agents: fleet?.activeCount?.({ excludeWorkflows: true }) ?? 0, shells: tasks?.live?.() ?? 0, ...(orchestrate && { workflows: orchestrate.live() }) });
+  // A user task (a `!` sent to the background) is the user's, not the turn's:
+  // the status line counts it, but it holds neither the turn nor program status.
+  const busy = () => ({ agents: fleet?.activeCount?.({ excludeWorkflows: true }) ?? 0, shells: tasks?.live?.({ leased: true }) ?? 0, ...(orchestrate && { workflows: orchestrate.live() }) });
   const live = () => { const { agents, shells, workflows = 0 } = busy(); return agents + shells + workflows > 0; };
   // A prompt waiting on the user outranks the rest (rule 11), drawn without a
   // spinner frame when nothing animates the row. A running `!` command

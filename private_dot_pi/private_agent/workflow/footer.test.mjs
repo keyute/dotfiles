@@ -461,6 +461,17 @@ test("the turn line waits for background tasks as it waits for children", () => 
   h.done();
 });
 
+test("a user task counts on the status line but holds neither the turn nor program status", () => {
+  const h = harness({ mountFooter: true });
+  h.tasks.live = options => (options?.leased ? 0 : 1);
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  assert.equal(h.entries.length, 1, "the turn closes with only a user task live");
+  assert.equal(h.activity.at(-1).state, "idle");
+  assert.match(h.render(), /1 shell · *$/);
+  h.done();
+});
+
 test("a settled root waits on live work with a ticking clock and no spinner, naming that work", t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
   const h = harness({ active: 1 });

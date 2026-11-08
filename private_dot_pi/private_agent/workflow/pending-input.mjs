@@ -2,17 +2,23 @@ import * as sdk from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { PAD, PROMPT, TURN_GLYPH, padRow, shadedBlock } from "./rows.mjs";
 import { skillCommand } from "./skill-display.mjs";
+import { pendingShellLines } from "./shell.mjs";
 
 const INSTALLED = Symbol.for("pi-workflow:pending-input");
 
 // The host owns both queues, including messages waiting for compaction.
-export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode) {
+// `shellRuns` lists the `!` runs not yet in the transcript (shell.mjs), drawn
+// after the queues.
+export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode, shellRuns = () => []) {
   const prototype = InteractiveMode.prototype;
   const installed = prototype.updatePendingMessagesDisplay[INSTALLED];
-  if (installed) { installed.theme = theme; installed.reset(); return installed; }
+  if (installed) { installed.theme = theme; installed.shellRuns = shellRuns; installed.reset(); return installed; }
   const state = {
-    theme, host: null, sending: null, epoch: 0,
+    theme, shellRuns, host: null, mode: null, sending: null, epoch: 0,
     reset() { this.epoch++; this.host = null; this.sending = null; },
+    // A `!` run changes with no queue event; pi calls this display only for
+    // its own, so a run submitted first in a session has no host yet.
+    refresh() { (this.host ?? this.mode)?.updatePendingMessagesDisplay(); },
     async sendNow(editor) {
       const host = this.host;
       if (!host) { editor.submitValue(); return; }
@@ -89,12 +95,20 @@ export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode
     if (state.sending?.host === this && state.sending.session === this.session && !state.sending.starting) return Promise.resolve();
     return flush.apply(this, args);
   };
+  // The workflow sets its editor at every session start, so the host is
+  // known before any `!` can be submitted.
+  const setEditor = prototype.setCustomEditorComponent;
+  prototype.setCustomEditorComponent = function (...args) {
+    state.mode = this;
+    return setEditor.apply(this, args);
+  };
   const display = function () {
     state.host = this;
     this.pendingMessagesContainer.clear();
     const { steering, followUp } = this.getAllQueuedMessages();
     if (state.sending?.host === this && state.sending.starting && !steering.length) state.sending = null;
-    if (!steering.length && !followUp.length) return;
+    const runs = state.shellRuns();
+    if (!steering.length && !followUp.length && !runs.length) { this.ui.requestRender(); return; }
     const groups = [[steering, "Steering · next response", "ctrl+enter send now"], [followUp, "Follow-up · after current task", ""]].filter(([messages]) => messages.length);
     this.pendingMessagesContainer.addChild({ render(width) {
       if (width <= 0) return [];
@@ -113,6 +127,7 @@ export function installPendingInput(theme, InteractiveMode = sdk.InteractiveMode
           lines.push(...shadedBlock(theme, wrapped.map(line => theme.fg("userMessageText", line)), width, { prompt: PROMPT, fit: padRow }));
         }
       }
+      for (const run of runs) lines.push("", ...pendingShellLines(run, theme, width));
       // Pi's above-editor container supplies the single gap below this section.
       return lines;
     }, keyHint: this.getAppKeyDisplay("app.message.dequeue"), invalidate() {} });

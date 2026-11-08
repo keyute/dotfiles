@@ -1,7 +1,9 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
-import { createTasks } from "./tasks.mjs";
+import { createTasks, outputLog } from "./tasks.mjs";
 
 // A task whose exec is a promise the test settles; `close` records the worker shutdown.
 function harness() {
@@ -18,7 +20,9 @@ function harness() {
     return { id, exec, closed: () => closed };
   };
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
-  return { tasks, notices, records, start, settle, tick: ms => { clock += ms; }, expire: () => timers.splice(0).forEach(fn => fn()) };
+  // Past the log file's close, which a timer tick does not outlast.
+  const ended = () => new Promise(resolve => tasks.onChange(resolve));
+  return { tasks, notices, records, start, settle, ended, tick: ms => { clock += ms; }, expire: () => timers.splice(0).forEach(fn => fn()) };
 }
 
 test("a task that ends inside the grace is answered inline and neither records nor notifies", async () => {
@@ -91,9 +95,25 @@ test("a task reports its tail and duration when it ends, and counts as live unti
   await h.settle();
   assert.equal(h.tasks.live(), 0);
   assert.ok(closed());
-  assert.deepEqual(h.records, [{ id: "t1", command: "npm test", status: "completed", durationMs: 2500 }]);
+  assert.deepEqual(h.records, [{ id: "t1", command: "npm test", status: "completed", exitCode: 0, durationMs: 2500 }]);
   assert.equal(h.notices[0], "Background task t1 completed (exit 0): npm test\nline 1\nline 2");
   assert.equal(h.tasks.output(id), "completed (exit 0)\nline 1\nline 2\n");
+});
+
+test("an adopted task's completion duration includes its foreground execution", async () => {
+  const records = [];
+  let clock = 1000;
+  let finish;
+  const running = new Promise(resolve => { finish = resolve; });
+  const tasks = createTasks({ notify() {}, record: entry => records.push(entry), now: () => clock });
+  const startedAt = clock;
+  clock += 4000;
+  tasks.start({ command: "adopted", startedAt, run: () => running });
+  clock += 2500;
+  const ended = new Promise(resolve => tasks.onChange(resolve));
+  finish({ exitCode: 0 });
+  await ended;
+  assert.equal(records[0].durationMs, 6500);
 });
 
 test("a single huge output line reaches the completion notice only up to pi's byte cap", async () => {
@@ -101,9 +121,10 @@ test("a single huge output line reaches the completion notice only up to pi's by
   const { exec } = h.start("cat bundle.min.json");
   exec.onChunk("x".repeat(200_000));
   exec.resolve({ exitCode: 0 });
-  await h.settle();
-  assert.ok(Buffer.byteLength(h.notices[0]) <= DEFAULT_MAX_BYTES + 200);
-  assert.ok(h.notices[0].endsWith("x"));
+  await h.ended();
+  const [notice] = h.notices[0].split("\nFull output: ");
+  assert.ok(Buffer.byteLength(notice) <= DEFAULT_MAX_BYTES + 200);
+  assert.ok(notice.endsWith("x"));
 });
 
 test("output past the bash tool's line cap reaches the model as its tail behind a one-line note", async () => {
@@ -117,7 +138,7 @@ test("output past the bash tool's line cap reaches the model as its tail behind 
   exec.resolve({ exitCode: 0 });
   const { output } = await settled;
   assert.ok(output.startsWith(shown));
-  assert.ok(output.endsWith("\n3000"));
+  assert.match(output, /\n3000\nFull output: \S+$/, "an inline answer names the full log too");
 });
 
 test("the completion notice keeps only the last 20 output lines", async () => {
@@ -221,4 +242,102 @@ test("onChange fires once each task ends, answered inline or notified", async ()
   await h.settle();
   assert.equal(changes, 2);
   assert.equal(h.notices.length, 1);
+});
+
+test("a hidden task is unknown to the model and never notifies it, but still records its line", async () => {
+  const h = harness();
+  const id = h.tasks.start({ command: "ls", hidden: true, user: true, run: () => Promise.resolve({ exitCode: 0 }) });
+  assert.deepEqual(h.tasks.list(), []);
+  assert.throws(() => h.tasks.output(id), /Unknown/);
+  assert.throws(() => h.tasks.stop(id), /Unknown/);
+  await h.ended();
+  assert.deepEqual(h.notices, []);
+  assert.deepEqual(h.records, [{ id, command: "ls", status: "completed", exitCode: 0, durationMs: 0, user: true, hidden: true }]);
+});
+
+test("a mode change's leased stop leaves user tasks running; shutdown stops them too", async () => {
+  const h = harness();
+  h.start("npm run dev");
+  const user = h.tasks.start({ command: "tail -f log", user: true, run: (_onChunk, signal) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")))) });
+  await h.tasks.stopAll({ leased: true });
+  assert.equal(h.tasks.live({ leased: true }), 0);
+  assert.equal(h.tasks.live(), 1);
+  await h.tasks.stopAll({ silent: true });
+  assert.equal(h.tasks.live(), 0);
+  assert.equal(h.tasks.list().find(task => task.id === user).status, "stopped");
+});
+
+test("an output log keeps only a bounded tail in memory and every byte in its file", async t => {
+  const OUTPUT_KEEP = 256 * 1024;
+  const log = outputLog();
+  const chunk = Buffer.from("x".repeat(1023) + "\n");
+  for (let i = 0; i < 300; i++) log.append(chunk);
+  assert.ok(log.tail.length <= OUTPUT_KEEP);
+  await log.close();
+  // Only the file: a later test removes the shared log directory.
+  t.after(() => rmSync(log.path, { force: true }));
+  assert.equal(readFileSync(log.path).length, chunk.length * 300);
+});
+
+test("an output log remembers eviction even after appending and closing an empty tail", async () => {
+  const log = outputLog({ file: false });
+  log.append("meaningful output\n");
+  log.append("\n".repeat(256 * 1024 + 1));
+  assert.equal(log.tail, "\n".repeat(256 * 1024));
+  assert.equal(log.dropped, true);
+  log.append("");
+  await log.close();
+  assert.equal(log.dropped, true);
+  assert.equal(log.path, null);
+});
+
+test("an output log marks eviction caused by final decoder flushing, but not an exactly full tail", async () => {
+  const log = outputLog({ file: false });
+  log.append("x".repeat(256 * 1024));
+  log.append(Buffer.from([0xc3]));
+  assert.equal(log.dropped, false);
+  await log.close();
+  assert.equal(log.dropped, true);
+  assert.equal(log.tail.length, 256 * 1024);
+  assert.ok(log.tail.endsWith("\ufffd"));
+});
+
+test("an output log keeps normal output without marking it dropped", async () => {
+  const log = outputLog();
+  log.append("hi\n");
+  await log.close();
+  assert.equal(log.tail, "hi\n");
+  assert.equal(log.dropped, false);
+  assert.equal(log.path, null);
+});
+
+test("output past the inline limits is logged in full, and only then named in the summary and notice", async () => {
+  const h = harness();
+  const small = h.start("echo hi");
+  small.exec.onChunk("hi\n");
+  small.exec.resolve({ exitCode: 0 });
+  await h.ended();
+  assert.doesNotMatch(h.notices[0], /Full output/);
+  assert.doesNotMatch(h.tasks.output(small.id), /Full output/);
+  const big = h.start("seq 3000");
+  const lines = Array.from({ length: 3000 }, (_, i) => `${i + 1}\n`);
+  // Split across the threshold, so the log must also hold what came before it.
+  big.exec.onChunk(Buffer.from(lines.slice(0, 1500).join("")));
+  big.exec.onChunk(Buffer.from(lines.slice(1500).join("")));
+  big.exec.resolve({ exitCode: 0 });
+  await h.ended();
+  const path = h.notices[1].match(/\nFull output: (.+)$/)[1];
+  // The process's one log directory, shared by every test in this file.
+  after(() => rmSync(dirname(path), { recursive: true, force: true }));
+  assert.equal(readFileSync(path, "utf8"), lines.join(""));
+  assert.ok(h.tasks.output(big.id).endsWith(`\nFull output: ${path}`));
+});
+
+test("the completion notice carries the recorded entry itself as its details", async () => {
+  const records = [];
+  const notices = [];
+  const tasks = createTasks({ notify: (text, options) => notices.push(options), record: entry => records.push(entry) });
+  tasks.start({ command: "true", run: () => Promise.resolve({ exitCode: 0 }) });
+  await new Promise(resolve => tasks.onChange(resolve));
+  assert.equal(notices[0].details, records[0]);
 });

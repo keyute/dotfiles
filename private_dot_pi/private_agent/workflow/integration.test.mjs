@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import net, { createConnection, createServer } from "node:net";
 import { syncBuiltinESMExports } from "node:module";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
@@ -16,7 +16,7 @@ import { startBroker, requestBroker, acquireChild } from "./broker.mjs";
 import { checkChildLaunch } from "./children.mjs";
 import { readLines, sendLine } from "./lines.mjs";
 import { activeToolNames, taskNotifier, workflowPrompt } from "./index.mjs";
-import { addFold, defaultFolds, settleFold } from "./rows.mjs";
+import { addFold, closeFolds, defaultFolds, settleFold, toolRenderers } from "./rows.mjs";
 import { sessionCost } from "./usage.mjs";
 
 // The upstream entry selects and caches its root/child registration at import.
@@ -689,6 +689,55 @@ test("orchestrate runs through the root wiring: owned notices drop while busy, a
   assert.ok(order.includes("stop:run-7") && order.indexOf("stop:run-7") < order.indexOf("close"), order.join(","));
 });
 
+test("a narrowing mode switch resolves and leaves a backgrounded ! running", { skip: !existsSync("/bin/zsh") && "no /bin/zsh" }, async t => {
+  const { root, config } = fixture(t);
+  config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const handlers = new Map();
+  const tools = new Map();
+  const commands = new Map();
+  const bus = new EventEmitter();
+  const events = { on: (name, fn) => { bus.on(name, fn); return () => bus.off(name, fn); }, emit: (name, payload) => bus.emit(name, payload) };
+  events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
+    ? { capabilities: { stop: true } }
+    : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, runs: [] } } }));
+  const pi = {
+    events, getThinkingLevel: () => "low", setThinkingLevel() {},
+    on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool(tool) { tools.set(tool.name, tool); }, registerCommand(name, command) { commands.set(name, command); },
+    registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+    sendMessage() {}, getFlag() { return false; }, getAllTools: () => [...tools.values()], getActiveTools: () => [...tools.keys()], setActiveTools() {}, getMcpServers: () => [],
+  };
+  const order = [];
+  const policy = { mode: "execute", epoch: 1 };
+  const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} getAllQueuedMessages() { return { steering: [], followUp: [] }; } getAppKeyDisplay() { return "alt+up"; } addCustomEntryToChat() {} };
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => ({ env: {}, policy, setMode: async next => { order.push(`mode:${next}`); policy.mode = next; }, close() {} }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
+  let editorFactory;
+  const ui = { theme: { fg: (_color, text) => text, bg: (_color, text) => text, bold: text => text }, setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent(factory) { editorFactory = factory; }, addAutocompleteProvider() {} };
+  const ctx = {
+    cwd: process.cwd(), mode: "tui", hasUI: true, isIdle: () => true, isProjectTrusted: () => true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, getContextUsage: () => null, ui,
+    sessionManager: { getSessionId: () => "user-task-root", getSessionFile: () => "/abs/user-task.jsonl", getBranch: () => [], getEntries: () => [], buildContextEntries: () => [] },
+    modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] },
+  };
+  for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
+  t.after(async () => { for (const handler of handlers.get("session_shutdown")) await handler({ reason: "quit" }, ctx); });
+  const previousHome = process.env.HOME;
+  process.env.HOME = root;
+  t.after(() => { process.env.HOME = previousHome; });
+  writeFileSync(join(root, ".zshrc"), "");
+  const { shell } = editorFactory({ terminal: { rows: 24 }, requestRender() {} }, { borderColor: text => text, selectList: {} }, { matches: () => false });
+  shell.submit("!sleep 30");
+  shell.background();
+  const list = async () => (await tools.get("workspace_task").execute("list", { action: "list" })).content[0].text;
+  assert.equal(await list(), "t1 · running · sleep 30");
+  order.length = 0;
+  await commands.get("plan").handler("", ctx);
+  assert.deepEqual(order, ["mode:plan"]);
+  assert.equal(await list(), "t1 · running · sleep 30", "a user task holds no lease, so the narrowing leaves it live");
+});
+
 test("late workflow usage persists silently through root wiring and serialized reload", async t => {
   const { config } = fixture(t);
   config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
@@ -890,6 +939,91 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
   await restarting;
   await flush();
   assert.deepEqual(frames.slice(before), ["\x1b]7501;state=idle:app=pi\x1b\\"]);
+});
+
+test("a frame between session_shutdown and the next session_start never reads the stale ctx, nor records an entry", { skip: !existsSync("/bin/zsh") && "no /bin/zsh" }, async t => {
+  const { root, config } = fixture(t);
+  config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const handlers = new Map();
+  const bus = new EventEmitter();
+  const events = { on: (name, fn) => { bus.on(name, fn); return () => bus.off(name, fn); }, emit: (name, payload) => bus.emit(name, payload) };
+  events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
+    ? { capabilities: { stop: true } }
+    : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, runs: [] } } }));
+  let transform;
+  const pi = {
+    events, getThinkingLevel: () => "low", setThinkingLevel() {},
+    on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool() {}, registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer(fn) { transform = fn; }, registerEntryRenderer() {}, appendEntry(type, data) { entries.push({ type, data }); },
+    sendMessage() {}, getFlag() { return false; }, getAllTools: () => [], getActiveTools: () => [], setActiveTools() {}, getMcpServers: () => [],
+  };
+  const entries = [];
+  const policy = { mode: "plan", epoch: 1 };
+  const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} getAllQueuedMessages() { return { steering: ["queued"], followUp: [] }; } getAppKeyDisplay() { return "alt+up"; } addCustomEntryToChat() {} };
+  const AssistantMessageComponent = class { updateContent() { this.markdownTheme.code("! ls"); } };
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => ({ env: {}, policy, setMode: async next => { policy.mode = next; }, close() {} }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent });
+  // pi marks the old runner stale after session_shutdown; any read of its ui throws.
+  let stale = false;
+  let editorFactory;
+  const session = toolsExpanded => {
+    const ui = { theme: { fg: (_color, text) => text, bg: (_color, text) => text, bold: text => text }, setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => toolsExpanded, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent(factory) { editorFactory = factory; }, addAutocompleteProvider() {} };
+    return {
+      cwd: process.cwd(), mode: "tui", hasUI: true, isIdle: () => true, isProjectTrusted: () => true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, getContextUsage: () => null,
+      sessionManager: { getSessionId: () => "stale-root", getSessionFile: () => "/abs/stale.jsonl", getBranch: () => [], getEntries: () => [], buildContextEntries: () => [] },
+      modelRegistry: { find: (_provider, id) => ({ provider: "openai-codex", id }), isUsingOAuth: () => true, getAvailable: () => [] },
+      get ui() { if (stale) throw new Error("stale ctx"); return ui; },
+    };
+  };
+  const fire = async (name, event, ctx) => { for (const handler of handlers.get(name) ?? []) await handler(event, ctx); };
+  const ctx = session(false);
+  await fire("session_start", { reason: "startup" }, ctx);
+  for (const id of ["stale-r1", "stale-r2"]) {
+    await fire("tool_execution_start", { toolName: "workspace_read", toolCallId: id, args: { path: id } }, ctx);
+    await fire("tool_execution_end", { toolCallId: id, isError: false, result: { content: [], details: {} } }, ctx);
+  }
+  closeFolds(defaultFolds);
+  const mode = new InteractiveMode();
+  const pending = [];
+  mode.pendingMessagesContainer = { clear: () => { pending.length = 0; }, addChild: child => pending.push(child) };
+  mode.ui = { requestRender() {} };
+  mode.updatePendingMessagesDisplay();
+  // A `!!` runs zsh with `source ~/.zshrc`; an empty rc keeps it hermetic.
+  const previousHome = process.env.HOME;
+  process.env.HOME = root;
+  t.after(() => { process.env.HOME = previousHome; });
+  writeFileSync(join(root, ".zshrc"), "");
+  const { shell } = editorFactory({ terminal: { rows: 24 }, requestRender() {} }, { borderColor: text => text, selectList: {} }, { matches: () => false });
+  await fire("agent_start", {}, ctx);
+  shell.submit("!!echo late");
+  await shell.pending;
+  shell.submit("!!sleep 30");
+  assert.equal(shell.running(), true);
+  await fire("session_shutdown", { reason: "new" }, ctx);
+  // Shutdown aborts the live command and drops it from the queue.
+  assert.equal(shell.running(), false);
+  // A result still waiting on the run when shutdown began belongs to the departing session.
+  await fire("agent_settled", {}, ctx);
+  stale = true;
+  const theme = { fg: (_color, text) => text, bold: text => text };
+  const row = toolRenderers("read", defaultFolds).renderCall({ path: "stale-r1" }, theme, { toolCallId: "stale-r1", isPartial: false, isError: false, expanded: false, state: {}, invalidate() {} });
+  assert.match(row.render(80).join("\n"), /Read 2 files/);
+  assert.match(pending[0].render(80).join("\n"), /queued/);
+  assert.match(transform("! ls", { messageType: "assistant" }), /ls/);
+  const message = Object.assign(new AssistantMessageComponent(), { markdownTheme: { code: text => text }, contentContainer: { children: [] } });
+  message.updateContent({ content: [] });
+  // The next session rebinds ctrl+o to its own ctx.
+  stale = false;
+  await fire("session_start", { reason: "new" }, session(true));
+  t.after(() => fire("session_shutdown", { reason: "quit" }, ctx));
+  assert.equal(defaultFolds.toolsExpanded(), true);
+  const freshAt = Date.now();
+  shell.submit("!!echo fresh");
+  await shell.pending;
+  assert.ok(Date.now() - freshAt < 10_000, "the stopped sleep never held up the queue");
+  assert.deepEqual(entries.filter(entry => entry.type === "workflow-shell").map(entry => entry.data.output), ["fresh"]);
 });
 
 test("headless root cleanup uses plugin RPC before its shutdown hook and still closes the broker on stop failure", async t => {
@@ -1591,4 +1725,161 @@ test("the tool renderer resolver draws plugin-registered and unregistered MCP ca
   }
   assert.equal(typeof resolve("web_search", () => assert.fail("web_search is not deferred")).renderCall, "function");
   assert.equal(resolve("subagent", () => native), native);
+});
+
+test("an agent foreground bash keeps the SDK tool's result and Esc kill, and Ctrl+B moves a running one into a task that notifies when it ends", { skip }, async t => {
+  const completions = [];
+  let clock = 1000;
+  t.mock.method(Date, "now", () => clock);
+  const { root, config } = fixture(t);
+  config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const handlers = new Map();
+  const tools = new Map();
+  const sent = [];
+  const bus = new EventEmitter();
+  const events = { on: (name, fn) => { bus.on(name, fn); return () => bus.off(name, fn); }, emit: (name, payload) => bus.emit(name, payload) };
+  events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
+    ? { capabilities: { stop: true } }
+    : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, runs: [] } } }));
+  const pi = {
+    events,
+    on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool(tool) { tools.set(tool.name, tool); },
+    registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
+    sendMessage(message) { sent.push(message.content); completions.push(message.details); }, getFlag() { return false; }, getAllTools: () => [...tools.values()], getActiveTools: () => [...tools.keys()], setActiveTools() {}, getMcpServers: () => [],
+  };
+  let broker;
+  const { installWorkflow } = await import("./index.mjs");
+  const { agentBash } = await installWorkflow(pi, configPath, "root", { startBroker: async () => (broker = await startBroker(config, root, async () => true)), installSubagents() {}, AgentSession });
+  const ctx = {
+    cwd: root, mode: "rpc", hasUI: false, isIdle: () => true, abort() {}, model: { provider: "openai-codex", id: "gpt-5.6-sol" },
+    sessionManager: { getSessionId: () => "foreground-bash", getSessionFile: () => null, getBranch: () => [] },
+    modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
+    ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
+  };
+  for (const handler of handlers.get("session_start")) await handler({ reason: "startup" }, ctx);
+  t.after(async () => { for (const handler of handlers.get("session_shutdown")) await handler({ reason: "quit" }, ctx); });
+  await broker.setMode("execute");
+  const until = async condition => {
+    for (let i = 0; i < 200 && !condition(); i++) await new Promise(resolve => setTimeout(resolve, 25));
+    assert.ok(condition());
+  };
+  // Host bash: the worker gets a null-profile lease, so no SRT is needed here.
+  const bash = (command, signal, onUpdate) => tools.get("workspace_bash").execute("call", { command, dangerouslyDisableSandbox: true }, signal, onUpdate, ctx);
+
+  const { OutputAccumulator } = await import(new URL("./core/tools/output-accumulator.js", import.meta.resolve("@earendil-works/pi-coding-agent")));
+  const processed = [];
+  const append = OutputAccumulator.prototype.append;
+  t.mock.method(OutputAccumulator.prototype, "append", function (chunk) { processed.push(Buffer.from(chunk).toString()); return append.call(this, chunk); });
+  const plain = await bash("printf 'one\\n'; exit 3");
+  assert.equal(processed.join(""), "one\n", "normal foreground chunks still reach the SDK accumulator");
+  assert.equal(plain.content[0].text, "one\n\n\nCommand exited with code 3");
+  assert.equal(plain.isError, true);
+  assert.equal(plain.structuredContent.exit_code, 3);
+  assert.equal(plain.details, undefined);
+  assert.equal(agentBash.live(), 0);
+  // Past the inline limits the detach copy is logged; with no Ctrl+B it is deleted, the SDK tool's own file standing.
+  const logs = () => readdirSync(tmpdir(), { withFileTypes: true }).filter(entry => entry.isDirectory() && entry.name.startsWith("pi-output-")).flatMap(dir => readdirSync(join(tmpdir(), dir.name)).map(file => join(dir.name, file)));
+  // Other test files log into the same tmpdir in parallel, so only a new log holding this command's marked output counts.
+  const logsBefore = new Set(logs());
+  const read = file => { try { return readFileSync(join(tmpdir(), file), "utf8"); } catch { return ""; } };
+  assert.match((await bash("seq -f 'fg-%g' 3000")).content[0].text, /\nfg-3000\n/);
+  assert.deepEqual(logs().filter(file => !logsBefore.has(file) && read(file).includes("fg-3000")), []);
+  const esc = new AbortController();
+  const killed = bash("sleep 30", esc.signal);
+  await until(() => agentBash.live() === 1);
+  esc.abort();
+  assert.equal(agentBash.live(), 0, "an aborting call has nothing left to move");
+  agentBash.detachAll();
+  // As before the detach path: the op abort and the runner kill race, so either message.
+  await assert.rejects(killed, /Command aborted|Sandboxed bash failed/);
+  assert.equal(agentBash.live(), 0);
+
+  const turn = new AbortController();
+  const updates = [];
+  processed.length = 0;
+  const moving = bash("printf 'start\\n'; sleep 1; seq -f 'detached-%g' 3000; printf 'end\\n'", turn.signal, update => updates.push(update.content[0]?.text ?? ""));
+  await until(() => updates.some(text => text.includes("start")));
+  const seen = updates.length;
+  clock += 4000;
+  agentBash.detachAll();
+  const moved = await moving;
+  assert.equal(moved.content[0].text, "Moved to background task t1; its output arrives when it ends. Use workspace_task to read or stop it.");
+  assert.deepEqual(moved.details, { taskId: "t1" });
+  assert.equal(agentBash.live(), 0);
+  // The ended turn no longer reaches the process, and the call's row gets no more updates.
+  turn.abort();
+  clock += 2500;
+  assert.match((await tools.get("workspace_task").execute("output", { action: "output", id: "t1" })).content[0].text, /^running\nstart\n/);
+  await until(() => sent.length === 1);
+  assert.equal(processed.join(""), "start\n", "post-detach chunks never reach SDK processing or its full-output file");
+  const taskOutput = (await tools.get("workspace_task").execute("output", { action: "output", id: "t1" })).content[0].text;
+  const path = taskOutput.match(/\nFull output: (.+)$/)[1];
+  t.after(() => rmSync(path, { force: true }));
+  assert.equal(readFileSync(path, "utf8"), "start\n" + Array.from({ length: 3000 }, (_, i) => `detached-${i + 1}\n`).join("") + "end\n", "the task log retains every chunk across adoption");
+  assert.match(sent[0], /^Background task t1 completed/);
+  assert.equal(completions[0].durationMs, 6500, "the adopted task includes four seconds of foreground execution");
+  assert.equal(updates.length, seen);
+
+  // A moved task stops through workspace_task: the stop reaches the exec the task adopted.
+  const long = bash("sleep 30");
+  await until(() => agentBash.live() === 1);
+  agentBash.detachAll();
+  const { details: { taskId } } = await long;
+  assert.equal((await tools.get("workspace_task").execute("stop", { action: "stop", id: taskId })).content[0].text, `Stopping task ${taskId}`);
+  await until(() => sent.length === 2);
+  assert.match(sent[1], new RegExp(`^Background task ${taskId} stopped .*: sleep 30\\n`));
+  assert.match((await tools.get("workspace_task").execute("list", { action: "list" })).content[0].text, new RegExp(`${taskId} · stopped · sleep 30`));
+});
+
+test("an agent background task's line waits for the message_start carrying its notice, and lands a copy of its details", { skip }, async t => {
+  const { root, config } = fixture(t);
+  config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
+  const configPath = join(config.agentDir, "workflow.json");
+  writeFileSync(configPath, JSON.stringify(config));
+  const handlers = new Map();
+  const tools = new Map();
+  const notices = [];
+  const entries = [];
+  const bus = new EventEmitter();
+  const events = { on: (name, fn) => { bus.on(name, fn); return () => bus.off(name, fn); }, emit: (name, payload) => bus.emit(name, payload) };
+  events.on("subagents:rpc:v1:request", request => events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: request.method === "ping"
+    ? { capabilities: { stop: true } }
+    : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, runs: [] } } }));
+  const pi = {
+    events,
+    on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
+    registerTool(tool) { tools.set(tool.name, tool); },
+    registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry: (type, data) => entries.push({ type, data }),
+    sendMessage(message) { notices.push(message.details); }, getFlag() { return false; }, getAllTools: () => [...tools.values()], getActiveTools: () => [...tools.keys()], setActiveTools() {}, getMcpServers: () => [],
+  };
+  let broker;
+  const { installWorkflow } = await import("./index.mjs");
+  await installWorkflow(pi, configPath, "root", { startBroker: async () => (broker = await startBroker(config, root, async () => true)), installSubagents() {}, AgentSession });
+  const ctx = {
+    cwd: root, mode: "rpc", hasUI: false, isIdle: () => false, abort() {}, model: { provider: "openai-codex", id: "gpt-5.6-sol" },
+    sessionManager: { getSessionId: () => "background-task", getSessionFile: () => null, getBranch: () => [] },
+    modelRegistry: { find: () => true, isUsingOAuth: () => true, getAvailable: () => [] },
+    ui: { setStatus() {}, setToolsExpanded() {}, notify() {} },
+  };
+  const fire = async (name, event) => { for (const handler of handlers.get(name) ?? []) await handler(event, ctx); };
+  await fire("session_start", { reason: "startup" });
+  t.after(() => fire("session_shutdown", { reason: "quit" }));
+  await broker.setMode("execute");
+  await fire("agent_start", {});
+  // An aborted turn ends the grace at once, so the task reports by notice rather than inline.
+  const turn = new AbortController();
+  turn.abort();
+  const started = await tools.get("workspace_bash").execute("call", { command: "printf done", run_in_background: true, dangerouslyDisableSandbox: true }, turn.signal, undefined, ctx);
+  assert.deepEqual(started.details, { taskId: "t1" });
+  for (let i = 0; i < 200 && !notices.length; i++) await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(notices.length, 1);
+  const lines = () => entries.filter(entry => entry.type === "workflow-task");
+  assert.deepEqual(lines(), []);
+  await fire("message_start", { message: { details: notices[0] } });
+  assert.equal(lines().length, 1);
+  assert.deepEqual(lines()[0].data, notices[0]);
+  assert.notEqual(lines()[0].data, notices[0]);
 });

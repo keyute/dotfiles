@@ -908,3 +908,22 @@ test("native fullscreen focusout cancels edge scrolling on its next tick without
   t.mock.timers.tick(600);
   assert.deepEqual({ cursor: caret.getCursor(), selection: caret.selection, offset: caret.scrollOffset, text: caret.getText() }, before);
 });
+
+test("Ctrl+B backgrounds a live ! and agent bash calls, and is cursor-left otherwise", () => {
+  const kb = { matches: (key, action) => action === "tui.editor.cursorLeft" && ["\x1b[D", "\x02"].includes(key) };
+  let running = false, live = 0;
+  const moved = [];
+  const shell = { submit: () => false, abortable: () => false, running: () => running, background: () => moved.push("shell") };
+  const agentBash = { live: () => live, detachAll: () => moved.push("agent") };
+  const caret = new CaretEditor({ terminal: { rows: 24 }, requestRender() {} }, theme, kb, { palette, shell, agentBash });
+  caret.setText("abc");
+  caret.handleInput("\x02");
+  assert.equal(caret.getCursor().col, 2, "nothing to background: the native alias moves the cursor");
+  assert.deepEqual(moved, []);
+  for ([running, live] of [[true, 0], [false, 1], [true, 2]]) {
+    moved.length = 0;
+    caret.handleInput("\x02");
+    assert.equal(caret.getCursor().col, 2, "consumed, not a cursor move");
+    assert.deepEqual(moved, ["shell", "agent"]);
+  }
+});

@@ -81,12 +81,23 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   `createLocalBashOperations` in zsh sourcing `~/.zshrc`.
   Completed `!` results use native custom-message steering so the next model
   request sees them, rather than waiting for the whole tool-calling run to end;
-  the visible entry is separate from context delivery.
+  the visible entry is separate from context delivery. An entry appended while
+  a reply streams mounts above it, so a busy agent's entry waits for the
+  extension `message_start` of its steered message, matched by the `details`
+  object `sendCustomMessage` and the agent loop pass through unchanged, or for
+  `agent_settled` when no message reaches the loop; background-task completion
+  lines take the same path (`rows.mjs` `deliveryLanding`). Unwritten runs draw
+  in pi's pending container through the owned `updatePendingMessagesDisplay`;
+  a `!` changes no native queue, so the host is taken from
+  `setCustomEditorComponent`, which the workflow's editor install calls at each
+  session start. Output past pi's inline limits streams to the tasks module's
+  full-output log, named in the context.
   *Why:* rule 5's shell block; pi has no renderer
-  hook for its own. *Residual:* no `bash_execution_update`, no full-output file
-  on truncation, no pi pending shell component. Native `clearQueue()` drops queued
+  hook for its own. *Residual:* no `bash_execution_update`, no pi pending shell
+  component. Native `clearQueue()` drops queued
   custom messages while restoring only human text; steering does not repair that
-  upstream loss path. *On red:* repair. *Retire:*
+  upstream loss path, and the dropped result's entry lands at `agent_settled`.
+  *On red:* repair. *Retire:*
   when pi exposes a renderer for its shell block.
   One optional separator after `!`/`!!` is hidden with the marker in the
   command view; visual cursor positions map back to unchanged editor text.

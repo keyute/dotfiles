@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createJiti } from "jiti";
 import { Type } from "typebox";
@@ -19,10 +19,10 @@ import { createOrchestrate } from "./orchestrate.mjs";
 import { createUltrathink } from "./keywords.mjs";
 import { installShell } from "./shell.mjs";
 import { installPendingInput } from "./pending-input.mjs";
-import { createTasks } from "./tasks.mjs";
+import { createTasks, outputLog } from "./tasks.mjs";
 import { applyPlanDecision, isolatePlanApproval, PlanState, requestPlanApproval, showPlan } from "./plan-approval.mjs";
 import { registerQuestionnaire } from "./questionnaire.mjs";
-import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, doneEntryRenderer, installActivityEntries, installFolding, installReasoningHide, isMcp, noteLine, orchestrateCompletionLines, orchestrateRenderers, planRenderers, pluginRenderers, taskRenderers, toolRenderers, restoreFolds } from "./rows.mjs";
+import { answerLines, appendVisible, bulletMarkdown, closeFolds, defaultFolds, deliveryLanding, detachFolds, doneEntryRenderer, installActivityEntries, installFolding, installReasoningHide, isMcp, noteLine, orchestrateCompletionLines, orchestrateRenderers, planRenderers, pluginRenderers, taskRenderers, toolRenderers, restoreFolds } from "./rows.mjs";
 import { CaretEditor, argumentCompletions } from "./editor.mjs";
 import { installSkillDisplay } from "./skill-display.mjs";
 import { readUsage, usageComponent } from "./usage.mjs";
@@ -132,6 +132,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const orchestrateDescription = isRoot ? readFileSync(join(sdk.getAgentDir(), "orchestrate-tool-description.md"), "utf8").trim() : undefined;
   if (isRoot && !orchestrateDescription) throw new Error("Managed orchestrate description is empty");
   let currentContext;
+  // pi's `ui.theme` is a proxy over its current theme, so a theme switch
+  // reaches renders through it; captured, renders never touch a stale ctx.
+  let palette;
   let userTask = "";
   const plans = new PlanState();
   const ultrathink = createUltrathink(pi);
@@ -196,13 +199,82 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   const workerEnv = { ...env, PI_WORKFLOW_ROLE: role };
 
   const notify = taskNotifier(pi);
+  const landing = deliveryLanding(pi);
+  const land = landing.land;
   const tasks = createTasks({
     notify,
-    record: entry => appendVisible(pi, "workflow-task", entry),
+    // A backgrounded `!` ends as its own output block (shell.mjs). The line
+    // gets a copy: drawing a completion stamps its data, and the notify's
+    // details are the matched original.
+    record: entry => (entry.user ? surfaces?.shell?.taskEnded(entry) : land("workflow-task", { ...entry }, { details: entry })),
   });
   pi.registerEntryRenderer("workflow-task", doneEntryRenderer("workflow-task"));
   const background = permittedTools.includes("workspace_task");
   const TASK_GRACE_MS = 10_000;
+
+  // Ctrl+B on a root foreground bash call (Claude Code's backgrounding of a
+  // running Bash): the call returns at once and its process carries on as a
+  // task. Until then it is the SDK tool's own call, result and Esc kill: the
+  // turn signal reaches the worker through `abort` only while undetached, and
+  // the exec's chunks also fill a log the task adopts.
+  const foreground = new Set();
+  const MOVED = Symbol("moved");
+  // Only a call whose exec has started and not settled, under a live turn,
+  // has a process to move; Ctrl+B is cursor-left otherwise. Never while
+  // unready: a mode transition's task cleanup would find the moved one live.
+  const detachable = () => (ready ? [...foreground].filter(call => call.detachable()) : []);
+  const agentBash = { live: () => detachable().length, detachAll: () => { for (const call of detachable()) call.detach(); } };
+  async function foregroundBash(id, args, signal, onUpdate, ctx, ticket) {
+    const abort = new AbortController();
+    let detached = false;
+    const forward = () => { if (!detached) abort.abort(); };
+    if (signal?.aborted) abort.abort();
+    else signal?.addEventListener("abort", forward, { once: true });
+    const client = startToolWorker("bash", { cwd: currentContext.cwd, env: workerEnv, ticket, signal: abort.signal });
+    const log = outputLog();
+    let running;
+    let startedAt;
+    let phase = "pending";
+    const { exec } = workerOperations(client).bash;
+    const operations = { exec: recordingExec(shellHistory, args, (command, cwd, options) => {
+      startedAt = Date.now();
+      running = exec(command, cwd, { ...options, onData: chunk => { if (!detached) options.onData(chunk); log.append(chunk); } });
+      phase = "running";
+      running.then(() => { phase = "settled"; }, () => { phase = "settled"; });
+      return running;
+    }) };
+    const tool = toolFactory("bash")(currentContext.cwd, { operations });
+    let detach;
+    const moved = new Promise(resolve => { detach = () => { detached = true; resolve(MOVED); }; });
+    const foregroundCall = { detach, detachable: () => phase === "running" && !abort.signal.aborted };
+    foreground.add(foregroundCall);
+    let adopted = false;
+    try {
+      // After a detach the SDK call runs on unseen: its updates and result go nowhere.
+      const call = tool.execute(id, args, abort.signal, onUpdate && (update => { if (!detached) onUpdate(update); }), ctx);
+      const result = await Promise.race([call, moved]);
+      if (result !== MOVED) return result;
+      call.catch(() => {});
+      adopted = true;
+      const taskId = tasks.start({
+        command: args.command,
+        startedAt,
+        log,
+        run: (_onChunk, taskSignal) => { taskSignal.addEventListener("abort", () => abort.abort(), { once: true }); return running; },
+        close: () => client.close(),
+      });
+      return { content: [{ type: "text", text: `Moved to background task ${taskId}; its output arrives when it ends. Use workspace_task to read or stop it.` }], details: { taskId } };
+    } finally {
+      foreground.delete(foregroundCall);
+      signal?.removeEventListener("abort", forward);
+      if (!adopted) {
+        await client.close();
+        // The SDK tool keeps its own full-output file; this copy only served a detach.
+        await log.close();
+        if (log.path) rmSync(log.path, { force: true });
+      }
+    }
+  }
 
   function sandboxTool(name) {
     if (!permittedTools.includes(publicToolName(name))) return;
@@ -230,7 +302,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         const exec = recordingExec(shellHistory, args, (params, options) => client.call("exec", params, options));
         const taskId = tasks.start({
           command: args.command,
-          run: (onChunk, taskSignal) => exec({ command: args.command, cwd: currentContext.cwd, timeout: args.timeout }, { signal: taskSignal, onChunk: chunk => onChunk(chunk.toString()) }),
+          run: (onChunk, taskSignal) => exec({ command: args.command, cwd: currentContext.cwd, timeout: args.timeout }, { signal: taskSignal, onChunk }),
           close: () => client.close(),
         });
         // Answered like a foreground call: a failure throws with the SDK bash
@@ -244,6 +316,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         }
         return { content: [{ type: "text", text: `Started background task ${taskId}; its output arrives when it ends. Use workspace_task to read or stop it.` }], details: { taskId } };
       }
+      if (name === "bash" && isRoot && background) return foregroundBash(id, args, signal, onUpdate, ctx, ticket);
       const client = startToolWorker(name, { cwd: currentContext.cwd, env: workerEnv, ticket, signal });
       try {
         if (name === "grep") return await executeSandboxGrep(client, args, signal);
@@ -305,8 +378,8 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       // Stop owners while unavailable, before the broker changes its policy:
       // shells settle normally, then detached plugin runners are stopped.
       await orchestrate.stopAll();
-      await tasks.stopAll();
-      if (tasks.live()) throw new Error("Background shell cleanup did not finish; workflow remains unavailable");
+      await tasks.stopAll({ leased: true });
+      if (tasks.live({ leased: true })) throw new Error("Background shell cleanup did not finish; workflow remains unavailable");
       await fleet.stopAll();
     }
     if (generation !== plans.generation) throw new Error("Mode transition superseded by a session change");
@@ -323,6 +396,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   async function shutdown() {
     surfaces?.editor?.dispose();
     surfaces?.programStatus?.shutdown();
+    landing.close();
+    surfaces?.shell?.stop();
+    detachFolds(defaultFolds);
     // pi persists each level change and a resume restores the last one.
     if (isRoot) ultrathink.end();
     plans.generation++;
@@ -347,6 +423,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       delete process.env.PI_WORKFLOW_EPOCH;
       for (const [key, value] of Object.entries(env)) if (process.env[key] === value) delete process.env[key];
     }
+    currentContext = undefined;
     if (failures.length) throw new Error(`Workflow shutdown cleanup failed: ${failures.join("; ")}`);
   }
 
@@ -355,6 +432,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (!installed) throw new Error("Workflow installation failed; tools remain disabled");
     if (isRoot) { ready = false; await orchestrate.reset(); }
     currentContext = ctx;
+    landing.open();
     if (isRoot) plans.restore(ctx);
     if (runtime.AgentSession) installManagedRun(runtime.AgentSession, assertManagedRun);
     shuttingDown = false;
@@ -377,8 +455,9 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
     if (isRoot && ctx.hasUI) {
       if (ctx.mode === "tui") restoreFolds(ctx, defaultFolds, { entryTypes: DRAWN_ENTRIES, servers: Object.keys(config.mcp) });
       installSkillDisplay(runtime.InteractiveMode);
-      installReasoningHide(runtime.AssistantMessageComponent, () => currentContext?.ui.theme);
-      pendingInput = installPendingInput(() => currentContext.ui.theme, runtime.InteractiveMode);
+      palette = ctx.ui.theme;
+      installReasoningHide(runtime.AssistantMessageComponent, () => palette);
+      pendingInput = installPendingInput(() => palette, runtime.InteractiveMode, () => surfaces?.shell?.runs() ?? []);
       if (!surfaces) {
         installFolding(pi, ctx);
         // RPC reports hasUI too, but must never write terminal status.
@@ -386,7 +465,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
         const footer = installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity: programStatus?.report });
         // `!` runs in zsh with the interactive config; workspace_bash stays on
         // bash -c without rc, which would otherwise load into every sandboxed call
-        const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations({ shellPath: "/bin/zsh" }).exec, env: hostEnvironment, prefix: () => "source ~/.zshrc" });
+        const shell = installShell(pi, () => currentContext, { working: footer.working, exec: sdk.createLocalBashOperations({ shellPath: "/bin/zsh" }).exec, env: hostEnvironment, prefix: () => "source ~/.zshrc", land, tasks, changed: () => pendingInput?.refresh() });
         surfaces = { footer, shell, programStatus };
       } else {
         surfaces.programStatus?.attach();
@@ -397,7 +476,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       installHeader(ctx);
       ctx.ui.setEditorComponent((tui, theme, keybindings) => {
         surfaces.editor?.dispose();
-        surfaces.editor = new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell, pending: pendingInput, notify: (text, type) => ctx.ui.notify(text, type) });
+        surfaces.editor = new CaretEditor(tui, theme, keybindings, { fleet, palette: ctx.ui.theme, shell: surfaces.shell, agentBash, pending: pendingInput, notify: (text, type) => ctx.ui.notify(text, type) });
         return surfaces.editor;
       });
       ctx.ui.addAutocompleteProvider(argumentCompletions);
@@ -478,7 +557,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // registrations themselves are the plugins' own.
   const rowsFor = name => pluginRenderers(name, { servers: Object.keys(config.mcp) });
   const pluginTools = new Set();
-  const styled = pluginApi(pi, { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, SUBAGENT_SCHEMA, () => shuttingDown, subagentDescription, mcpTools, pluginTools, () => currentContext.isIdle(), defaultFolds, ids => orchestrate?.claim(ids) ?? false, () => currentContext?.sessionManager);
+  const styled = pluginApi(pi, { [CONTROL_NOTICE]: controlNotice, ...NOTICE_RENDERERS }, QUIET_MESSAGES, SUBAGENT_SCHEMA, () => shuttingDown, subagentDescription, mcpTools, pluginTools, () => currentContext?.isIdle() ?? true, defaultFolds, ids => orchestrate?.claim(ids) ?? false, () => currentContext?.sessionManager);
   // Resolvers run in registration order and pi's MCP extension, installed
   // below through the same API, only fills in its card: registered first,
   // this draws every plugin and mcp__ row, a resumed MCP one before its
@@ -583,7 +662,7 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
       appendVisible(pi, "workflow-answers", { answers });
     });
     pi.registerEntryRenderer("workflow-answers", (entry, _options, theme) => new Text(answerLines(entry.data.answers, theme).join("\n"), 0, 0));
-    pi.registerMarkdownTransformer((markdown, context) => bulletMarkdown(markdown, context, currentContext?.ui.theme));
+    pi.registerMarkdownTransformer((markdown, context) => bulletMarkdown(markdown, context, palette));
     pi.on("message_end", event => {
       // Outside plan mode submit_plan is refused, so its siblings still run.
       if (broker.policy.mode !== "plan") return undefined;
@@ -644,4 +723,5 @@ export async function installWorkflow(pi, configPath = join(sdk.getAgentDir(), "
   // last and restores the managed exposure after every startup or resume.
   pi.on("session_start", refreshActiveTools);
   installed = true;
+  return { agentBash };
 }

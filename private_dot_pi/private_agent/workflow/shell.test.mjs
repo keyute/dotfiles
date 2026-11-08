@@ -1,17 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import { Agent } from "@earendil-works/pi-agent-core";
 import { AgentSession, InteractiveMode, SessionManager, createLocalBashOperations, initTheme } from "@earendil-works/pi-coding-agent";
-import { addFold, createFolds, foldGroup, liveGroup, settleFold } from "./rows.mjs";
-import { contextText, createShellRunner, installShell, parseShellInput, shellComponent, shellLines } from "./shell.mjs";
+import { addFold, createFolds, deliveryLanding, foldGroup, liveGroup, settleFold } from "./rows.mjs";
+import { contextText, createShellRunner, installShell, parseShellInput, pendingShellLines, shellComponent, shellLines } from "./shell.mjs";
+import { createTasks } from "./tasks.mjs";
 
 // Real ANSI codes (not the readable `<color>` tags other suites use) so
 // visibleWidth/wrapTextWithAnsi/pad, which this row depends on, measure the
 // rendered lines the way a real theme would.
-const CODES = { error: 31, warning: 33, success: 32, muted: 90, userMessageText: 97 };
+const CODES = { error: 31, warning: 33, success: 32, muted: 90, dim: 2, userMessageText: 97 };
 const fg = (color, text) => `\x1b[${CODES[color]}m${text}\x1b[39m`;
 const BG = "\x1b[48;5;1m";
 const theme = { fg, bg: (_color, text) => `${BG}${text}\x1b[49m` };
@@ -206,11 +207,13 @@ test("native in-memory safe boundary retains one visible entry and delays a canc
   session._startRun = () => { throw new Error("shell input must not start a model turn"); };
   session._refreshFinalizedContext = () => { session.agent.state.messages = manager.buildSessionContext().messages; };
   const pi = {
+    on() {},
     appendEntry: (type, data) => manager.appendCustomEntry(type, data),
     sendMessage: (message, options) => session.sendCustomMessage(message, options),
   };
   let exec = (_command, _cwd, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
-  const runner = createShellRunner({ pi, folds: createFolds(), working() {}, cwd: () => "/work", notify() {}, env: () => ({}), exec: (...args) => exec(...args) });
+  const folds = createFolds();
+  const runner = createShellRunner({ pi, folds, land: deliveryLanding(pi, folds).land, working() {}, cwd: () => "/work", notify() {}, env: () => ({}), exec: (...args) => exec(...args) });
   manager.appendMessage({ role: "assistant", content: [{ type: "toolCall", id: "t1", name: "bash", arguments: {} }], timestamp: Date.now() });
   runner.submit("!pwd");
   runner.abort();
@@ -263,7 +266,9 @@ for (const exitCode of [0, 2]) test(`native steering delivers shell exit ${exitC
     },
   });
   t.after(() => { releaseTool(); agent.abort(); });
+  const starts = [];
   agent.subscribe(event => {
+    if (event.type === "message_start") starts.forEach(fn => fn(event));
     if (event.type === "message_end") {
       const message = event.message;
       if (message.role === "custom") manager.appendCustomMessageEntry(message.customType, message.content, message.display, message.details);
@@ -277,16 +282,21 @@ for (const exitCode of [0, 2]) test(`native steering delivers shell exit ${exitC
   session._followUpMessages = [];
   session._emit = () => {};
   session._startRun = () => { throw new Error("must not start a competing run"); };
+  const runStarts = [];
+  const pi = { on: (name, fn) => { if (name === "message_start") starts.push(fn); if (name === "agent_start") runStarts.push(fn); }, appendEntry: (type, data) => manager.appendCustomEntry(type, data), sendMessage: (message, options) => session.sendCustomMessage(message, options) };
+  const folds = createFolds();
   const runner = createShellRunner({
-    pi: { appendEntry: (type, data) => manager.appendCustomEntry(type, data), sendMessage: (message, options) => session.sendCustomMessage(message, options) },
-    folds: createFolds(), working() {}, cwd: () => "/work", notify() {}, env: () => ({}), idle: () => false,
+    pi, folds, land: deliveryLanding(pi, folds).land,
+    working() {}, cwd: () => "/work", notify() {}, env: () => ({}), idle: () => false,
     exec: async (_command, _cwd, { onData }) => { onData(Buffer.from("shell result")); return { exitCode }; },
   });
   const running = agent.prompt("work through both batches");
+  runStarts.forEach(fn => fn());
   await started;
   runner.submit("!fixture");
   await runner.pending;
-  assert.equal(manager.getEntries().filter(entry => entry.type === "custom").length, 1, "visible entry lands while the tool is blocked");
+  assert.equal(manager.getEntries().filter(entry => entry.type === "custom").length, 0, "the visible entry waits until the agent reads the result");
+  assert.equal(runner.runs()[0].details.exitCode, exitCode, "meanwhile the finished run stays in the pending area");
   assert.equal(manager.getEntries().filter(entry => entry.type === "custom_message").length, 0, "context waits for the safe boundary");
   await session._queueSteer("human steering");
   await session.sendCustomMessage({ customType: "notification", content: "subsequent notification", display: false }, { triggerTurn: true, deliverAs: "steer" });
@@ -308,7 +318,101 @@ for (const exitCode of [0, 2]) test(`native steering delivers shell exit ${exitC
   assert.equal(next[resultIndex + 1].content[0].text, "human steering");
   assert.equal(next[resultIndex + 2].customType, "notification");
   assert.equal(manager.getEntries().filter(entry => entry.type === "custom_message" && entry.customType === "workflow-shell").length, 1);
+  const types = manager.getEntries().map(entry => entry.type === "message" ? entry.message.toolCallId ?? entry.message.role : `${entry.type}:${entry.customType}`);
+  assert.ok(types.indexOf("t1") < types.indexOf("custom:workflow-shell"), "the entry lands after the batch it waited behind");
+  assert.equal(types.indexOf("custom:workflow-shell") + 1, types.indexOf("custom_message:workflow-shell"), "and where the steer is read, before any later reply");
+  assert.deepEqual(runner.runs(), []);
   assert.ok(signals.every(signal => !signal?.aborted));
+});
+
+test("native InteractiveMode mounts a shell completed during streaming between the prior reply and the steered reply", { timeout: 5000 }, async t => {
+  initTheme("dark");
+  const manager = SessionManager.inMemory("/work");
+  const handlers = {};
+  const renderers = {};
+  const requests = [];
+  let releaseReply, streaming;
+  const blocked = new Promise(resolve => { releaseReply = resolve; });
+  const started = new Promise(resolve => { streaming = resolve; });
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const agent = new Agent({
+    initialState: { model: { provider: "openai-codex", id: "fixture" } },
+    convertToLlm: messages => messages,
+    streamFn: async (_model, context, options) => {
+      requests.push(structuredClone(context.messages));
+      const first = requests.length === 1;
+      const message = { role: "assistant", content: [{ type: "text", text: first ? "prior reply" : "next reply" }], api: "openai-codex-responses", provider: "openai-codex", model: "fixture", usage, stopReason: "stop", timestamp: Date.now() };
+      return {
+        async *[Symbol.asyncIterator]() {
+          yield { type: "start", partial: { ...message, content: [] } };
+          yield { type: "text_delta", contentIndex: 0, delta: message.content[0].text, partial: message };
+          if (first) { streaming(); await blocked; assert.equal(options.signal.aborted, false); }
+          yield { type: "done" };
+        },
+        async result() { return message; },
+      };
+    },
+  });
+  t.after(() => { releaseReply(); agent.abort(); });
+  // Keep native event dispatch and persistence; resource loading and automatic
+  // compaction are outside this in-memory model/UI fixture.
+  class FixtureSession extends AgentSession {
+    _buildRuntime() {}
+    _installAgentNextTurnRefresh() {}
+  }
+  const session = new FixtureSession({ agent, sessionManager: manager, cwd: "/work",
+    settingsManager: { getRetrySettings: () => ({ enabled: false }), getCodeBlockIndent: () => 0, getShowCacheMissNotices: () => false, getShowTerminalProgress: () => false },
+  });
+  session._isAgentRunActive = true;
+  session._startRun = () => assert.fail("no competing run while the reply streams");
+  session._extensionRunner = {
+    getEntryRenderer: type => renderers[type], getMarkdownTransformers: () => [], hasHandlers: () => false,
+    async emit(event) { for (const fn of handlers[event.type] ?? []) await fn(event); },
+    async emitMessageEnd(event) { await this.emit(event); },
+  };
+  const mode = Object.assign(Object.create(InteractiveMode.prototype), {
+    runtimeHost: { session }, isInitialized: true, chatContainer: new Container(), pendingTools: new Map(),
+    entriesRenderedByBoundaryCompaction: new Set(), outputPad: 0, toolOutputExpanded: false,
+    footer: { invalidate() {} }, programStatus: { handleEvent() {} }, ui: { requestRender() {} },
+    pendingMessagesContainer: new Container(), compactionQueuedMessages: [],
+  });
+  const pi = {
+    on: (name, fn) => { (handlers[name] ??= []).push(fn); },
+    registerMessageRenderer() {}, registerEntryRenderer: (type, renderer) => { renderers[type] = renderer; },
+    appendEntry(type, data) {
+      const id = manager.appendCustomEntry(type, data);
+      session._emit({ type: "entry_appended", entry: manager.getEntry(id) });
+    },
+    sendMessage: (message, options) => session.sendCustomMessage(message, options),
+  };
+  const folds = createFolds();
+  const runner = installShell(pi, () => ({ cwd: "/work", ui: { notify() {} }, isIdle: () => false }), {
+    folds, land: deliveryLanding(pi, folds).land, working() {}, env: () => ({}),
+    exec: async (_command, _cwd, { onData }) => { onData(Buffer.from("shell result")); return { exitCode: 0 }; },
+  });
+  session.subscribe(event => mode.handleEvent(event));
+  // User input and end-of-run chrome are outside this fixture's transcript seam.
+  mode.updatePendingMessagesDisplay = () => {};
+  mode.clearStatusIndicator = () => {};
+  const draw = () => mode.chatContainer.render(80).map(strip).join("\n");
+  const running = agent.prompt("work");
+  await started;
+  assert.ok(mode.streamingComponent, "native message events mounted an in-flight assistant component");
+  runner.submit("!fixture");
+  await runner.pending;
+  assert.match(draw(), /prior reply/);
+  assert.doesNotMatch(draw(), /! fixture|shell result/, "completion cannot mount above the streaming reply");
+  assert.equal(requests.length, 1);
+  assert.equal(runner.runs().length, 1, "the completed block waits in the pending area");
+  releaseReply();
+  await running;
+  assert.equal(requests.length, 2, "the steer reaches the next safe model request");
+  assert.equal(requests[1].filter(message => message.customType === "workflow-shell").length, 1);
+  const transcript = draw();
+  assert.ok(transcript.indexOf("prior reply") < transcript.indexOf("! fixture"), transcript);
+  assert.ok(transcript.indexOf("! fixture") < transcript.indexOf("shell result"), transcript);
+  assert.ok(transcript.indexOf("shell result") < transcript.indexOf("next reply"), transcript);
+  assert.deepEqual(runner.runs(), []);
 });
 
 test("native idle delivery wakes once with the hidden shell context", async () => {
@@ -352,21 +456,26 @@ test("a run of exactly four newline-terminated lines shows all four with no more
 });
 
 // The runner: dependencies are injected, so no real shell ever spawns.
-function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds(), prefix, idle } = {}) {
+function harness({ exec = async () => ({ exitCode: 0 }), folds = createFolds(), prefix, idle, tasks } = {}) {
   const sent = [];
   const appended = [];
   const notices = [];
   const workingCalls = [];
-  const pi = { sendMessage: (message, options) => sent.push({ message, options }), appendEntry: (type, data) => appended.push({ type, data }) };
+  const handlers = {};
+  const pi = { on: (name, fn) => { (handlers[name] ??= []).push(fn); }, sendMessage: (message, options) => sent.push({ message, options }), appendEntry: (type, data) => appended.push({ type, data }) };
+  const fire = (name, event) => (handlers[name] ?? []).forEach(fn => fn(event));
+  let changes = 0;
   const runner = createShellRunner({
-    pi, folds, exec, prefix, idle,
+    pi, folds, exec, prefix, idle, tasks,
+    land: deliveryLanding(pi, folds).land,
+    changed: () => { changes++; },
     cwd: () => "/work",
     notify: (text, level) => notices.push({ text, level }),
     env: () => ({ PATH: "/bin" }),
     working: state => workingCalls.push(state),
     now: () => 1000,
   });
-  return { runner, sent, appended, notices, workingCalls, folds, pi };
+  return { runner, sent, appended, notices, workingCalls, folds, pi, fire, changes: () => changes };
 }
 
 test("a shell prefix runs before the command, which reaches exec in an eval, but details.command stays the typed command", async () => {
@@ -441,6 +550,8 @@ test("! sends a hidden custom message carrying its contextText", async () => {
   assert.equal(message.display, false);
   assert.equal(message.content, contextText(message.details));
   assert.equal(message.details.output, "hi");
+  assert.equal(message.details.truncated, false);
+  assert.equal(message.details.fullOutputPath, undefined);
   assert.equal(h.appended.length, 1);
 });
 
@@ -449,6 +560,7 @@ test("! wakes idle or steers busy; a cancelled ! starts none; !! sends nothing",
   const turn = { triggerTurn: true, deliverAs: "steer" };
   for (const [input, idle, cancel, expected] of [["!pwd", true, false, turn], ["!pwd", false, false, turn], ["!pwd", true, true, { triggerTurn: false }], ["!!pwd", true, false, undefined]]) {
     const h = harness({ exec: cancel ? hang : undefined, idle: () => idle });
+    if (!idle) h.fire("agent_start");
     h.runner.submit(input);
     if (cancel) h.runner.abort();
     await h.runner.pending;
@@ -505,17 +617,234 @@ test("working is set with the command and cleared once settled", async () => {
   assert.equal(h.workingCalls.at(-1), null);
 });
 
-test("a second submit while one is running warns and keeps the composer text; no second exec", async () => {
-  let calls = 0;
-  let resolveExec;
-  const exec = () => { calls++; return new Promise(resolve => { resolveExec = () => resolve({ exitCode: 0 }); }); };
+// Each exec waits for its own release, so the tests decide when a run ends.
+function gated() {
+  const calls = [];
+  const exec = (command, _cwd, { signal, onData }) => new Promise((resolve, reject) => {
+    calls.push({ command, signal, resolve: (exitCode = 0) => resolve({ exitCode }), onData });
+    signal.addEventListener("abort", () => reject(new Error("aborted")));
+  });
+  return { calls, exec };
+}
+
+test("runs submitted while one is running queue in submit order, one at a time", async () => {
+  const { calls, exec } = gated();
   const h = harness({ exec });
-  h.runner.submit("!sleep 1");
-  const result = h.runner.submit("!ls");
-  assert.equal(result, "busy");
-  assert.equal(calls, 1);
-  assert.equal(h.notices.at(-1).level, "warning");
-  resolveExec();
+  assert.equal(h.runner.submit("!npm install"), true);
+  assert.equal(h.runner.submit("!npm test"), true);
+  assert.equal(h.runner.submit("!!ls"), true);
+  assert.deepEqual(calls.map(call => call.command), ["npm install"], "the rest wait for the head");
+  assert.deepEqual(h.runner.runs().map(run => run.state), ["running", "queued", "queued"]);
+  assert.equal(h.notices.length, 0);
+  calls[0].resolve();
+  await sleep(0);
+  assert.deepEqual(calls.map(call => call.command), ["npm install", "npm test"]);
+  calls[1].resolve(1);
+  await sleep(0);
+  calls[2].resolve();
+  await h.runner.pending;
+  assert.deepEqual(h.appended.map(entry => entry.data.command), ["npm install", "npm test", "ls"]);
+  assert.deepEqual(h.sent.map(entry => entry.message.details.exitCode), [0, 1], "!! sends nothing");
+  assert.deepEqual(h.workingCalls.map(call => call?.command ?? null), ["npm install", "npm test", "ls", null]);
+  assert.deepEqual(h.runner.runs(), []);
+});
+
+test("Ctrl+B hands the running head to a user task, lands its launch and starts the next run", async () => {
+  const { calls, exec } = gated();
+  const notified = [];
+  let runner;
+  const tasks = createTasks({ notify: (text, options) => notified.push({ text, options }), record: entry => runner.taskEnded(entry) });
+  const h = harness({ exec, tasks });
+  runner = h.runner;
+  h.runner.submit("!npm run dev");
+  h.runner.submit("!echo next");
+  calls[0].onData(Buffer.from("listening\n"));
+  h.runner.background();
+  assert.equal(tasks.live(), 1);
+  assert.equal(tasks.live({ leased: true }), 0, "a user task holds no lease");
+  assert.deepEqual(tasks.list(), [{ id: "t1", status: "running", command: "npm run dev" }]);
+  assert.deepEqual(h.appended[0].data, { command: "npm run dev", task: "t1", running: true });
+  assert.equal(strip(shellLines(h.appended[0].data, {}, theme, 40).at(-1)), "  ↳ task t1 · running");
+  assert.deepEqual(calls.map(call => call.command), ["npm run dev", "echo next"]);
+  assert.deepEqual(h.runner.runs().map(run => run.command), ["echo next"]);
+  calls[1].resolve();
+  await h.runner.pending;
+  calls[0].onData(Buffer.from("served\n"));
+  calls[0].resolve();
+  await sleep(0);
+  await sleep(0);
+  const ended = h.appended.at(-1).data;
+  assert.equal(ended.task, "t1");
+  assert.equal(ended.output, "listening\nserved", "output before and after the hand-over");
+  assert.equal(ended.exitCode, 0);
+  assert.match(strip(shellLines(ended, {}, theme, 80)[4]), /exit 0 · task t1 · 0s$/);
+  assert.match(notified[0].text, /^Background task t1 completed \(exit 0\): npm run dev/);
+  assert.equal(notified[0].options.details.id, "t1");
+  assert.equal(h.sent.length, 1, "only the foreground run sends its own context");
+});
+
+test("a task stop kills a backgrounded run, whose block lands cancelled with no exit code", async () => {
+  const { calls, exec } = gated();
+  let runner;
+  const tasks = createTasks({ notify() {}, record: entry => runner.taskEnded(entry) });
+  const h = harness({ exec, tasks });
+  runner = h.runner;
+  h.runner.submit("!npm run dev");
+  h.runner.background();
+  assert.equal(tasks.stop("t1"), true);
+  assert.equal(calls[0].signal.aborted, true);
+  await sleep(0);
+  await sleep(0);
+  const ended = h.appended.at(-1).data;
+  assert.equal(ended.task, "t1");
+  assert.equal(ended.cancelled, true);
+  assert.equal(ended.exitCode, undefined);
+});
+
+test("a backgrounded !! stays hidden from the model and lands without a message", async () => {
+  const { calls, exec } = gated();
+  const notified = [];
+  let runner;
+  const tasks = createTasks({ notify: text => notified.push(text), record: entry => runner.taskEnded(entry) });
+  const h = harness({ exec, tasks });
+  runner = h.runner;
+  h.runner.submit("!!sleep 9");
+  h.runner.background();
+  assert.deepEqual(tasks.list(), []);
+  calls[0].resolve();
+  await sleep(0);
+  await sleep(0);
+  assert.equal(h.appended.at(-1).data.task, "t1");
+  assert.deepEqual(notified, []);
+});
+
+test("Esc cancels the running head and drops the queue with one notice; the head's result still lands", async () => {
+  const { calls, exec } = gated();
+  const h = harness({ exec });
+  h.runner.submit("!npm install");
+  h.runner.submit("!npm test");
+  h.runner.submit("!!ls");
+  h.runner.abort();
+  await h.runner.pending;
+  assert.equal(calls.length, 1, "nothing queued ever runs");
+  assert.equal(h.notices.length, 1);
+  assert.deepEqual(h.notices[0], { text: "Dropped 2 queued shell commands: !npm test, !!ls", level: "info" });
+  assert.deepEqual(h.appended.map(entry => [entry.data.command, entry.data.cancelled]), [["npm install", true]]);
+  assert.deepEqual(h.sent[0].options, { triggerTurn: false });
+});
+
+test("while the agent is busy a result lands at its steer's message_start, not at completion", async () => {
+  const h = harness({ idle: () => false });
+  h.fire("agent_start");
+  h.runner.submit("!pwd");
+  await h.runner.pending;
+  assert.equal(h.appended.length, 0);
+  assert.equal(h.runner.runs().length, 1, "done but unwritten, it stays in the pending area");
+  const changes = h.changes();
+  h.fire("message_start", { message: { role: "custom", customType: "workflow-shell", details: { ...h.sent[0].message.details } } });
+  assert.equal(h.appended.length, 0, "another message with equal details is not this one");
+  h.fire("message_start", { message: h.sent[0].message });
+  assert.equal(h.appended.length, 1);
+  assert.equal(h.appended[0].data, h.sent[0].message.details);
+  assert.deepEqual(h.runner.runs(), []);
+  assert.ok(h.changes() > changes, "landing redraws the pending area");
+  h.fire("agent_settled");
+  assert.equal(h.appended.length, 1, "landed once");
+});
+
+test("while busy, !! and a cancelled run land at agent_settled", async () => {
+  const { exec } = gated();
+  for (const [input, cancel] of [["!!pwd", false], ["!pwd", true]]) {
+    const h = harness({ idle: () => false, exec: cancel ? exec : undefined });
+    h.fire("agent_start");
+    h.runner.submit(input);
+    if (cancel) h.runner.abort();
+    await h.runner.pending;
+    for (const sent of h.sent) h.fire("message_start", { message: sent.message });
+    assert.equal(h.appended.length, 0, input);
+    h.fire("agent_settled");
+    assert.equal(h.appended.length, 1, input);
+  }
+});
+
+test("while busy, a ! landing at its steer's message_start writes an earlier !! first", async () => {
+  const { calls, exec } = gated();
+  const h = harness({ idle: () => false, exec });
+  h.fire("agent_start");
+  h.runner.submit("!!a");
+  h.runner.submit("!b");
+  calls[0].resolve();
+  await sleep(0);
+  calls[1].resolve();
+  await h.runner.pending;
+  assert.equal(h.appended.length, 0);
+  h.fire("message_start", { message: h.sent[0].message });
+  assert.deepEqual(h.appended.map(entry => entry.data.command), ["a", "b"]);
+});
+
+test("while busy, a backgrounded ! lands at its task notice's message_start, a backgrounded !! at agent_settled", async () => {
+  const { calls, exec } = gated();
+  const notified = [];
+  let runner;
+  const tasks = createTasks({ notify: (text, options) => notified.push(options.details), record: entry => runner.taskEnded(entry) });
+  const h = harness({ idle: () => false, exec, tasks });
+  runner = h.runner;
+  h.fire("agent_start");
+  h.runner.submit("!npm run dev");
+  h.runner.background();
+  h.runner.submit("!!sleep 9");
+  h.runner.background();
+  assert.equal(h.appended.length, 2, "the launches land at once");
+  calls[0].resolve();
+  calls[1].resolve();
+  await sleep(0);
+  await sleep(0);
+  assert.equal(notified.length, 1);
+  assert.equal(h.appended.length, 2);
+  h.fire("message_start", { message: { role: "custom", details: { ...notified[0] } } });
+  assert.equal(h.appended.length, 2, "another message with equal details is not this one");
+  h.fire("message_start", { message: { role: "custom", details: notified[0] } });
+  assert.deepEqual(h.appended.slice(2).map(entry => entry.data.task), ["t1"]);
+  h.fire("agent_settled");
+  assert.deepEqual(h.appended.slice(2).map(entry => entry.data.task), ["t1", "t2"]);
+});
+
+test("while busy, a ! whose steer never starts a message lands at agent_settled", async () => {
+  const h = harness({ idle: () => false });
+  h.fire("agent_start");
+  h.runner.submit("!pwd");
+  await h.runner.pending;
+  assert.equal(h.appended.length, 0);
+  h.fire("agent_settled");
+  assert.equal(h.appended.length, 1);
+  assert.equal(h.appended[0].data, h.sent[0].message.details);
+  assert.deepEqual(h.runner.runs(), []);
+});
+
+test("with no run active a !! lands at once, though isIdle() reads false through a compaction", async () => {
+  const h = harness({ idle: () => false });
+  h.fire("agent_start");
+  h.fire("agent_settled");
+  h.runner.submit("!!pwd");
+  await h.runner.pending;
+  assert.equal(h.appended.length, 1);
+  assert.deepEqual(h.runner.runs(), []);
+});
+
+test("pending blocks read queued, running and the done result", async () => {
+  const { calls, exec } = gated();
+  const h = harness({ exec, idle: () => false });
+  h.fire("agent_start");
+  h.runner.submit("!first");
+  h.runner.submit("!second");
+  const notes = () => h.runner.runs().map(run => strip(pendingShellLines(run, theme, 60).at(-1)));
+  assert.deepEqual(notes(), ["  ↳ running · ctrl+b to background", "  ↳ queued"]);
+  calls[0].onData(Buffer.from("out\n"));
+  calls[0].resolve();
+  await sleep(0);
+  assert.deepEqual(notes(), ["  out", "  ↳ running · ctrl+b to background"]);
+  assert.match(strip(pendingShellLines(h.runner.runs()[0], theme, 60)[4]), /^• Output · 1 line · exit 0/);
+  calls[1].resolve();
   await h.runner.pending;
 });
 
@@ -570,21 +899,44 @@ test("control bytes the ANSI stripper does not know (bare ESC, BEL, backspace) a
   assert.equal(h.sent[0].message.details.output, "acbcd\te");
 });
 
-test("output beyond the default cap is truncated and flagged", async () => {
+test("output beyond the default cap is truncated and flagged, and the context names the full output file", async t => {
   const output = Array.from({ length: 2500 }, (_, i) => `line ${i}`).join("\n");
   const exec = async (_command, _cwd, { onData }) => { onData(Buffer.from(output)); return { exitCode: 0 }; };
   const h = harness({ exec });
   h.runner.submit("!ls");
   await h.runner.pending;
   const details = h.sent[0].message.details;
+  // Only the file: the process's one log directory serves later tests too.
+  t.after(() => rmSync(details.fullOutputPath, { force: true }));
   assert.equal(details.truncated, true);
   assert.ok(details.output.split("\n").length <= 2000);
+  assert.ok(h.sent[0].message.content.endsWith(`[Output truncated]\nFull output: ${details.fullOutputPath}`));
+  assert.equal(readFileSync(details.fullOutputPath, "utf8"), output);
 });
 
-test("a live buffer bound keeps memory bounded while a command runs and marks the run truncated", async () => {
+for (const marker of ["!", "!!"]) test(`${marker} flags an evicted prefix even when the retained tail cleans to empty`, async t => {
+  const output = "meaningful output\n" + "\n".repeat(256 * 1024 + 1);
+  const h = harness({ exec: async (_command, _cwd, { onData }) => { onData(Buffer.from(output)); return { exitCode: 0 }; } });
+  h.runner.submit(`${marker}fixture`);
+  await h.runner.pending;
+  const details = h.appended[0].data;
+  if (details.fullOutputPath) t.after(() => rmSync(details.fullOutputPath, { force: true }));
+  assert.equal(details.output, "");
+  assert.equal(details.truncated, true);
+  assert.match(shellLines(details, {}, theme, 80).map(strip).join("\n"), /output truncated/);
+  if (marker === "!!") {
+    assert.equal(details.fullOutputPath, undefined);
+    assert.deepEqual(h.sent, []);
+  } else {
+    assert.equal(readFileSync(details.fullOutputPath, "utf8"), output);
+    assert.match(h.sent[0].message.content, /\[Output truncated\]/);
+    assert.ok(h.sent[0].message.content.endsWith(`Full output: ${details.fullOutputPath}`));
+  }
+});
+
+test("output past the inline byte cap marks the run truncated", async t => {
   const chunk = "x".repeat(1024);
-  // Comfortably more than DEFAULT_MAX_BYTES * 2 worth of chunks.
-  const chunkCount = 200;
+  const chunkCount = 300;
   const exec = async (_command, _cwd, { onData }) => {
     for (let i = 0; i < chunkCount; i++) onData(Buffer.from(chunk));
     return { exitCode: 0 };
@@ -593,8 +945,8 @@ test("a live buffer bound keeps memory bounded while a command runs and marks th
   h.runner.submit("!ls");
   await h.runner.pending;
   const details = h.sent[0].message.details;
+  t.after(() => rmSync(details.fullOutputPath, { force: true }));
   assert.equal(details.truncated, true);
-  assert.ok(details.output.length < chunk.length * chunkCount, "the rolling buffer dropped from the front while the command ran");
 });
 
 test("a multi-byte UTF-8 character split across two chunks decodes intact", async () => {
@@ -618,29 +970,64 @@ test("a rejection from a replaced session (sendMessage throwing) does not escape
   await assert.doesNotReject(() => h.runner.pending);
 });
 
-test("installShell aborts a running command on session_shutdown", async () => {
-  const handlers = {};
-  const pi = {
-    on: (name, fn) => { handlers[name] = fn; },
-    registerMessageRenderer() {},
-    registerEntryRenderer() {},
-    sendMessage() {},
-    appendEntry() {},
-  };
-  let resolveExec;
-  let sawAbort = false;
-  const exec = (_command, _cwd, { signal }) => new Promise((resolve, reject) => {
-    signal.addEventListener("abort", () => { sawAbort = true; reject(new Error("aborted")); });
-    resolveExec = () => resolve({ exitCode: 0 });
+test("stop() at shutdown aborts the head, and a run finishing while shutdown awaits starts nothing and lands nothing", async () => {
+  const calls = [];
+  const exec = (command, _cwd, { signal }) => new Promise(resolve => {
+    calls.push({ command, signal, resolve: () => resolve({ exitCode: 0 }) });
   });
-  const ctx = { cwd: "/work", ui: { notify() {} }, isIdle: () => true };
-  const runner = installShell(pi, () => ctx, { working() {}, exec, env: () => ({}) });
-  runner.submit("!sleep 5");
-  assert.ok(handlers.session_shutdown, "installShell registers a session_shutdown handler");
-  handlers.session_shutdown();
-  assert.equal(sawAbort, true);
-  await runner.pending;
-  void resolveExec;
+  const h = harness({ exec });
+  h.runner.submit("!sleep 5");
+  h.runner.submit("!echo next");
+  const changes = h.changes();
+  h.runner.stop();
+  assert.ok(h.changes() > changes, "the pending area redraws without the discarded runs");
+  assert.equal(calls[0].signal.aborted, true);
+  // The shell ignored the kill long enough to finish normally.
+  calls[0].resolve();
+  await h.runner.pending;
+  await sleep(0);
+  h.fire("agent_settled");
+  assert.deepEqual(calls.map(call => call.command), ["sleep 5"], "the queued run never starts");
+  assert.deepEqual(h.appended, []);
+  assert.deepEqual(h.sent, []);
+  assert.deepEqual(h.runner.runs(), []);
+  assert.equal(h.workingCalls.at(-1), null);
+});
+
+test("a landing pushed between shutdown and the next session start is dropped", () => {
+  const handlers = {};
+  const appended = [];
+  const pi = { on: (name, fn) => { handlers[name] = fn; }, appendEntry: (type, data) => appended.push({ type, data }) };
+  const landing = deliveryLanding(pi, createFolds());
+  handlers.agent_start();
+  landing.land("workflow-shell", { command: "waiting" });
+  landing.close();
+  landing.land("workflow-shell", { command: "late" });
+  landing.open();
+  handlers.agent_settled();
+  assert.deepEqual(appended, []);
+  landing.land("workflow-shell", { command: "fresh" });
+  assert.deepEqual(appended.map(entry => entry.data.command), ["fresh"]);
+});
+
+test("a !! run keeps no log file, however long its output", async () => {
+  const output = "x".repeat(200 * 1024);
+  const h = harness({ exec: async (_command, _cwd, { onData }) => { onData(Buffer.from(output)); return { exitCode: 0 }; } });
+  h.runner.submit("!!cat big");
+  await h.runner.pending;
+  assert.equal(h.appended[0].data.truncated, true);
+  assert.equal(h.appended[0].data.fullOutputPath, undefined);
+});
+
+test("\\r progress output that truncates once cleaned names its full output file", async t => {
+  const output = Array.from({ length: 2500 }, (_, i) => `${i}%`).join("\r");
+  const h = harness({ exec: async (_command, _cwd, { onData }) => { onData(Buffer.from(output)); return { exitCode: 0 }; } });
+  h.runner.submit("!curl -O big");
+  await h.runner.pending;
+  const details = h.sent[0].message.details;
+  t.after(() => rmSync(details.fullOutputPath, { force: true }));
+  assert.equal(details.truncated, true);
+  assert.equal(readFileSync(details.fullOutputPath, "utf8"), output);
 });
 
 test("installShell reads the context fresh on each submit, not one captured at install time", async () => {
@@ -669,9 +1056,11 @@ test("running() reflects an in-flight command", async () => {
 
 test("abortable() is false while the agent is not idle, even though the command is running", async () => {
   let resolveExec;
+  const pi = { on() {}, sendMessage() {}, appendEntry() {} };
   const runner = createShellRunner({
-    pi: { sendMessage() {}, appendEntry() {} },
+    pi,
     folds: createFolds(),
+    land: deliveryLanding(pi).land,
     exec: (_command, _cwd, { signal }) => new Promise((resolve, reject) => {
       signal.addEventListener("abort", () => reject(new Error("aborted")));
       resolveExec = () => resolve({ exitCode: 0 });

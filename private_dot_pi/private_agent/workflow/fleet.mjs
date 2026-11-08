@@ -591,7 +591,7 @@ export function installFleet(pi, ctx, {
       const group = state.groups.includes(entry);
       const { key } = entry;
       const index = state.cursor;
-      void (group ? workflow(entry) : peek(entry)).catch(error => state.ctx?.ui?.notify?.(String(error?.message ?? error), "error")).then(aborted => {
+      void (group ? workflow(entry) : peek(entry)).catch(error => { if (!state.stopped) state.ctx?.ui?.notify?.(String(error?.message ?? error), "error"); }).then(aborted => {
         if (aborted) return;
         const rows = fleetRows(state);
         state.focused = rows.length > 0;

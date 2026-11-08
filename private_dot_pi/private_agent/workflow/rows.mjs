@@ -356,6 +356,11 @@ export function createFolds(toolsExpanded = () => undefined, { quiet = false } =
   return { timeline: [], facts: new Map(), invalidate: new Map(), titles: new Map(), views: new Map(), revision: 0, derived: null, boundaries: 0, toolsExpanded, repaint: () => {}, nonce: Math.random().toString(36).slice(2, 8), doneSeq: 0, quiet, streamBoundary: null };
 }
 export const defaultFolds = createFolds();
+// pi renders a frame between session_shutdown and the next session_start,
+// after the old ctx turns stale and any read of its `ui` throws.
+export function detachFolds(folds) {
+  folds.toolsExpanded = () => undefined;
+}
 export function setRepaint(folds, repaint) {
   folds.repaint = repaint;
 }
@@ -541,6 +546,51 @@ export function appendVisible(pi, type, data, folds = defaultFolds) {
     folds.revision += 1;
   } else closeFolds(folds);
   pi.appendEntry(type, data);
+}
+
+// An entry reporting a result the agent has yet to read lands where it reads
+// it (docs/pi-design.md rule 5): appended while a reply streams, pi mounts it
+// above that reply, written before the agent saw the result. So while a run
+// is active it waits for pi's message_start of the message carrying `details`
+// (a steer is read between tool batches), or agent_settled for a message that
+// never reaches the loop (sent without a turn, dropped by clearQueue, or none
+// at all). With no run, nothing streams, so it lands at once. The run is
+// tracked from agent_start rather than read from isIdle(), which is false
+// through a manual compaction or branch summary that no agent_settled ends.
+export function deliveryLanding(pi, folds = defaultFolds) {
+  let waiting = [];
+  let running = false;
+  // Closed from session shutdown to the next start (index.mjs): shutdown
+  // awaits its cleanup, and what reports in meanwhile belongs to the
+  // departing session.
+  let closed = false;
+  const land = item => {
+    waiting = waiting.filter(other => other !== item);
+    appendVisible(pi, item.type, item.data, folds);
+    item.landed?.();
+  };
+  // One with no details queued before the match lands with it, keeping
+  // queue order: a later `!` must not be written above an earlier `!!`.
+  pi.on("message_start", event => {
+    const matches = item => item.details && item.details === event.message?.details;
+    for (const item of waiting.slice(0, waiting.findLastIndex(matches) + 1)) if (!item.details || matches(item)) land(item);
+  });
+  pi.on("agent_start", () => { running = true; });
+  pi.on("agent_settled", () => {
+    running = false;
+    for (const item of waiting) land(item);
+  });
+  return {
+    land(type, data, { details, landed } = {}) {
+      if (closed) return;
+      const item = { type, data, details, landed };
+      if (running) waiting.push(item);
+      else land(item);
+    },
+    close() { closed = true; waiting = []; },
+    // A new session starts with no run.
+    open() { closed = false; running = false; },
+  };
 }
 
 export function summarise(counts) {

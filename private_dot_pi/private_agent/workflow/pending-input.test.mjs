@@ -360,3 +360,45 @@ test("a hidden send-now run consumes steering before its first request and follo
   assert.deepEqual(texts(requests[1]), ["first", "draft", "later"]);
   assert.equal(requests[0].find(m => m.role === "user").content[1].type, "image");
 });
+
+test("unwritten ! runs draw after the queues, one spaced block each, and redraw on refresh with no queue event", () => {
+  const runs = [];
+  const control = installPendingInput(() => palette("mocha"), InteractiveMode, () => runs);
+  const { mode, queue, children, render } = host();
+  mode.defaultEditor = { setText() {} };
+  mode.editor = { getText: () => "" };
+  mode.extensionDialogs = [{}];
+  // The workflow sets its editor at session start, before any `!` exists.
+  mode.setCustomEditorComponent(undefined);
+  runs.push({ command: "npm install", state: "running" }, { command: "npm test", state: "queued" });
+  control.refresh();
+  let lines = render(60).map(plain);
+  assert.equal(lines[0], "", "a blank above the first block");
+  assert.match(lines[2], /^! npm install/);
+  assert.deepEqual(lines.filter(line => line.includes("↳")), ["  ↳ running · ctrl+b to background", "  ↳ queued"]);
+  assert.equal(lines[lines.indexOf("  ↳ running · ctrl+b to background") + 1], "", "and above the next");
+  assert.equal(lines.at(-1), "  ↳ queued", "the native widget owns the final gap");
+  queue.steering.push("steer");
+  runs[0].details = { command: "npm install", output: "added 3 packages", exitCode: 0 };
+  runs[1].state = "running";
+  mode.updatePendingMessagesDisplay();
+  lines = render(60).map(plain);
+  assert.ok(lines.findIndex(line => line.includes("steer")) < lines.findIndex(line => line.startsWith("! npm install")));
+  assert.ok(lines.includes("• Output · 1 line · exit 0"));
+  assert.ok(lines.includes("  added 3 packages"));
+  runs.length = 0;
+  queue.steering.length = 0;
+  control.refresh();
+  assert.equal(children.length, 0);
+});
+
+test("a reinstall's shellRuns getter replaces the first one's", t => {
+  t.after(() => installPendingInput(() => palette("mocha")));
+  installPendingInput(() => palette("mocha"), InteractiveMode, () => [{ command: "stale", state: "running" }]);
+  installPendingInput(() => palette("mocha"), InteractiveMode, () => [{ command: "fresh", state: "running" }]);
+  const { mode, render } = host();
+  mode.updatePendingMessagesDisplay();
+  const text = render(60).map(plain).join("\n");
+  assert.match(text, /! fresh/);
+  assert.doesNotMatch(text, /stale/);
+});
