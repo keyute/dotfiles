@@ -135,11 +135,16 @@ Architecture decisions behind the managed pi setup and their triggers; model, ro
   their own boundary). Reversal trigger: pi-subagents gains a per-launch host
   policy hook, with equivalent cancellation and process-exit ownership → move
   to its sandboxed engine and delete `orchestrate.mjs`.
-- Owned OSC 7501 reports the footer's aggregate activity, children included,
-  for the TUI root; Rex renders it natively. The launcher sets
-  `PI_PROGRAM_STATUS=0` so pi's native root-only status cannot overwrite it;
-  the same check is all that holds off the plugin's per-job reporter.
-  Revisit when native status accounts for background work.
+- Owned OSC 7501 reports the TUI root's run and one record per live child
+  and workflow, in Claude Code's shape (rule 4); Rex renders it natively.
+  The launcher sets `PI_PROGRAM_STATUS=0`, which keeps pi's native root
+  reporter and pi-subagents' per-job reporter (finished jobs left as
+  done/error, owned workflows unknown) from writing competing records; with
+  it pi-tui sends no query of its own, so the owned reporter queries and
+  reads the reply itself. pi-tui's `formatProgramStatus` carries neither
+  `id` nor `title`, so the records are encoded in `program-status.mjs`.
+  Reversal trigger: pi-tui exports multi-record formatting and its support
+  state, or native status covers background work.
 - MCP is pi's own, fed the managed servers. Accepted: a connect per server per session and per child; another extension's `pi.registerMcpServer()` adds an unmanaged server. Reversal trigger: children regularly fail their launch on a slow server connect → own the child launcher, or give children fail-soft MCP.
 - `web_fetch` is owned and runs in the pi process, outside SRT, as Claude Code's WebFetch runs outside its Bash sandbox: it reaches public hosts only (the address check sits in the connection's DNS lookup, so an answer cannot change between check and connect), and has the search-tier model answer from the page as untrusted data. It needs no broker action: no file or process effect. Not adopted: pi-web-access has the same fetch, but two of its four tools would be used, its per-call `proxy` and `workflow` parameters cannot be switched off, and it moves Exa outside SRT; OpenAI's hosted search only may open a URL named in the prompt. Reversal trigger: a maintained plugin's fetch fits with a one-line seam → adopt it, delete `web_fetch` and its three packages.
 - Nesting roles use upstream blocking `bg_wait`, not a custom wake runtime; the `timeoutMs` backstop with its `checkpointBeforeDeadlineMs` steer (`extensions/subagent/config.json`) replaces the 30-minute cutoff. Revisit when upstream delivers completion-triggered turns to headless children.

@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { setTimeout as sleep } from "node:timers/promises";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { buildSegments, formatReset, installFooter, paintMode, paintSegment, parseCodexHeaders, parseCodexRateLimits, parseGitChanges, parseRateLimits, readRateLimits, windowLabel } from "./footer.mjs";
 import { createTurnClock, formatTurn } from "./rows.mjs";
-import { openWait } from "./dialog.mjs";
+import { confirmWait, openWait } from "./dialog.mjs";
 import { installProgramStatus } from "./program-status.mjs";
 
 // A footer wired to fake pi/ctx objects; handlers are invoked by event name.
@@ -14,7 +15,8 @@ function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = 
   const handlers = {};
   const entries = [];
   const messages = [];
-  const pi = { on: (name, fn) => { handlers[name] = fn; }, registerEntryRenderer() {}, appendEntry: (kind, data) => entries.push({ kind, data }) };
+  const session = { name: undefined };
+  const pi = { on: (name, fn) => { handlers[name] = fn; }, registerEntryRenderer() {}, appendEntry: (kind, data) => entries.push({ kind, data }), getSessionName: () => session.name };
   const widget = {};
   const visible = [];
   let component;
@@ -46,9 +48,9 @@ function harness({ active = 0, live = 0, tickMs = 5, settleMs = 0, readLimits = 
   const footer = installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity: next => { activity.push(next); onActivity?.(next); }, clock: createTurnClock([["Iterating", "Iterated"]], () => 0), tickMs, settleMs, readLimits });
   process.env.PATH = path;
   const fire = (name, event = {}, eventCtx = ctx) => handlers[name]?.(event, eventCtx);
-  // Aggregate callback states, before the reporter maps completed work to done.
-  const states = () => activity.map(a => (a.message ? `${a.state}:${a.message}` : a.state)).filter((s, i, all) => s !== all[i - 1]);
-  return { fire, entries, messages, fleet, tasks, root, widget, visible, activity, states, working: footer.working, refreshUsage: footer.refreshUsage, attach: () => footer.attach(ctx), render: () => component.render(100)[0], renders: () => renders, done: () => { fire("session_shutdown"); component?.dispose(); } };
+  // The root record as reported, `state/kind:message`, repeats dropped.
+  const states = () => activity.map(({ root: r }) => `${r.state}${r.kind ? `/${r.kind}` : ""}${r.message ? `:${r.message}` : ""}`).filter((s, i, all) => s !== all[i - 1]);
+  return { fire, entries, messages, fleet, tasks, root, session, widget, visible, activity, states, working: footer.working, refreshUsage: footer.refreshUsage, attach: () => footer.attach(ctx), render: () => component.render(100)[0], renders: () => renders, done: () => { fire("session_shutdown"); component?.dispose(); } };
 }
 
 const usageWindow = usedPercent => [{ usedPercent, resetsAt: null, windowMins: 300 }];
@@ -461,13 +463,13 @@ test("the turn line waits for background tasks as it waits for children", () => 
   h.done();
 });
 
-test("a user task counts on the status line but holds neither the turn nor program status", () => {
+test("a user task counts on the status line but holds neither the turn nor the root's waiting text", () => {
   const h = harness({ mountFooter: true });
   h.tasks.live = options => (options?.leased ? 0 : 1);
   h.fire("agent_start");
   h.fire("agent_settled");
   assert.equal(h.entries.length, 1, "the turn closes with only a user task live");
-  assert.equal(h.activity.at(-1).state, "idle");
+  assert.deepEqual(h.activity.at(-1).root, { state: "done", message: "" });
   assert.match(h.render(), /1 shell · *$/);
   h.done();
 });
@@ -834,45 +836,79 @@ test("a waiting row keeps its glyph through an invalidate, with no spinner", () 
   h.done();
 });
 
-test("aggregate activity follows the turn: working through the waiting row and its wakes, idle once the work ends", t => {
+test("the root is the main run: working while it runs, done naming the work the turn still waits on, plain done once it ends", t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
   let active = 1;
   const h = harness({ settleMs: 250 });
   h.fleet.activeCount = () => active;
-  assert.deepEqual(h.states(), ["idle"], "attach reports the state");
+  assert.deepEqual(h.states(), ["idle"], "attach reports idle, live work or not");
   h.fire("agent_start");
   h.fire("agent_settled");
-  assert.deepEqual(h.states(), ["idle", "working"], "the settled root still waits on its child");
+  assert.deepEqual(h.states(), ["idle", "working", "done:Waiting on 1 agent"]);
   h.fire("agent_start");
   h.fire("agent_settled");
-  assert.deepEqual(h.states(), ["idle", "working"], "a wake is the same turn");
+  assert.deepEqual(h.states().slice(3), ["working", "done:Waiting on 1 agent"], "a wake runs the root again");
   active = 0;
   h.fleet.changed();
+  assert.equal(h.states().at(-1), "done", "work ending moves the waiting text at once");
   t.mock.timers.tick(250);
-  assert.deepEqual(h.states(), ["idle", "working", "idle"]);
   assert.equal(h.entries.length, 1);
   h.done();
 });
 
-test("a waiting prompt reports blocked with its title over a waiting turn and with none; a view reports nothing", async () => {
+test("a waiting prompt reports blocked with its kind and message over a waiting turn and with none; a view reports nothing", async () => {
   const h = harness({ active: 1 });
   h.fire("agent_start");
   h.fire("agent_settled");
   h.fire("ui_prompt_start", { kind: "confirm", title: "Approve" });
   h.fire("ui_prompt_end", { kind: "confirm" });
-  assert.deepEqual(h.states(), ["working", "blocked:Approve", "working"], "a child live at attach is working");
+  assert.deepEqual(h.states().slice(2), ["done:Waiting on 1 agent", "blocked:Approve", "done:Waiting on 1 agent"], "an undeclared confirm has no kind");
   h.fire("ui_prompt_start", { kind: "custom" });
   h.fire("ui_prompt_end", { kind: "custom" });
-  assert.deepEqual(h.states(), ["working", "blocked:Approve", "working"], "a bare custom dialog is a view");
-  await openWait({ ui: { custom: async () => { h.fire("ui_prompt_start", { kind: "custom" }); h.fire("ui_prompt_end", { kind: "custom" }); } } }, () => {});
-  assert.deepEqual(h.states().slice(3), ["blocked", "working"], "a wait mounted through openWait blocks");
+  assert.equal(h.states().length, 5, "a bare custom dialog is a view");
+  await openWait({ ui: { custom: async () => { h.fire("ui_prompt_start", { kind: "custom" }); h.fire("ui_prompt_end", { kind: "custom" }); } } }, () => {}, { kind: "question", message: "Pick one" });
+  assert.deepEqual(h.states().slice(5), ["blocked/question:Pick one", "done:Waiting on 1 agent"], "a wait mounted through openWait blocks with what it declared");
   h.fire("agent_settled", { aborted: true });
   h.fire("ui_prompt_start", { kind: "select", title: "Select model" });
-  assert.equal(h.states().at(-1), "blocked:Select model");
+  assert.equal(h.states().at(-1), "blocked/question:Select model");
   assert.match(h.widget.row.render(80)[0], /^π Waiting for you…/, "shown with no turn, without a spinner frame");
   h.fire("ui_prompt_end", { kind: "select" });
-  assert.equal(h.states().at(-1), "working", "the child still runs");
+  assert.equal(h.states().at(-1), "idle", "the interrupt left the root idle, the child still running");
   assert.deepEqual(h.widget.row.render(80), []);
+  h.done();
+});
+
+test("a prompt reports the earliest pending wait of its own span kind, never another span's", async () => {
+  const h = harness();
+  const pending = [];
+  const ui = { custom: () => new Promise(resolve => pending.push(resolve)) };
+  const first = openWait({ ui }, () => {}, { kind: "question", message: "First" });
+  h.fire("ui_prompt_start", { kind: "select", title: "Select model" });
+  h.fire("ui_prompt_end", { kind: "select" });
+  assert.deepEqual(h.states().slice(1), ["blocked/question:Select model", "idle"], "a native select is not the custom wait's block");
+  const second = openWait({ ui }, () => {}, { kind: "permission", message: "Second" });
+  h.fire("ui_prompt_start", { kind: "custom" });
+  h.fire("ui_prompt_end", { kind: "custom" });
+  assert.deepEqual(h.states().slice(3), ["blocked/question:First", "idle"], "the earliest declared wait is the one shown");
+  pending.forEach(resolve => resolve());
+  await Promise.all([first, second]);
+  h.done();
+});
+
+test("a wait answered inside a still-open span hands the blocked message to the next one", async () => {
+  const h = harness({ mountFooter: true });
+  const pending = [];
+  const ui = { confirm: () => new Promise(resolve => { if (!pending.length) h.fire("ui_prompt_start", { kind: "confirm", title: "One" }); pending.push(resolve); }) };
+  const first = confirmWait({ ui }, { kind: "permission", message: "approve bash: one" }, "One", "");
+  const second = confirmWait({ ui }, { kind: "permission", message: "approve bash: two" }, "Two", "");
+  await sleep(0);
+  pending[0](true);
+  await first;
+  assert.deepEqual(h.states().slice(1), ["blocked/permission:approve bash: one", "blocked/permission:approve bash: two"]);
+  h.fire("ui_prompt_end", { kind: "confirm" });
+  pending[1](true);
+  await second;
+  assert.equal(h.states().at(-1), "idle");
   h.done();
 });
 
@@ -907,7 +943,7 @@ test("a waiting turn that closes under a waiting prompt keeps the prompt's row",
   h.done();
 });
 
-test("a compaction and a `!` report working with no turn, an interrupt over live work stays working, and a shutdown reports nothing until attach", () => {
+test("a compaction and a `!` report working with no turn, an interrupt over live work is idle, and a shutdown reports nothing until attach", () => {
   let active = 0;
   const h = harness();
   h.fleet.activeCount = () => active;
@@ -928,7 +964,7 @@ test("a compaction and a `!` report working with no turn, an interrupt over live
   active = 2;
   h.fire("agent_start");
   h.fire("agent_settled", { aborted: true });
-  assert.equal(h.states().at(-1), "working");
+  assert.equal(h.states().at(-1), "idle");
   assert.deepEqual([h.entries[0].data.aborted, h.entries[0].data.running], [true, { agents: 2, shells: 0 }]);
   h.fire("agent_start");
   h.fire("session_before_compact");
@@ -990,67 +1026,135 @@ test("interrupts name workflows without counting their children twice", () => {
   h.done();
 });
 
-test("aggregate OSC waits for children, workflows and shells, while views never block", async t => {
-  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+// The footer's activity through the real reporter, answered as a terminal would.
+function terminal(t) {
   const frames = [];
-  const reporter = installProgramStatus({ isTTY: true, write: frame => frames.push(frame) });
+  const stdin = new EventEmitter();
+  const reporter = installProgramStatus({ stdout: { isTTY: true, write: data => frames.push(...data.match(/\x1b\][^\x1b]*\x1b\\/g)) }, stdin, proc: new EventEmitter() });
+  stdin.emit("data", "\x1b]7501;?\x1b\\");
+  frames.length = 0;
   reporter.attach();
+  t.after(() => reporter.shutdown());
+  return { frames, report: reporter.report };
+}
+const b64 = text => Buffer.from(text).toString("base64");
+const wire = (state, { id, kind, title, msg } = {}) => `\x1b]7501;${[`state=${state}`, "app=pi", id && `id=${id}`, kind && `kind=${kind}`, title && `title=${b64(title)}`, msg && `msg=${b64(msg)}`].filter(Boolean).join(":")}\x1b\\`;
+
+test("a settled root over live children, workflows and shells is done with the waiting text, each child its own record", t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+  const osc = terminal(t);
   let workflows = 1;
-  const h = harness({ active: 1, live: 1, settleMs: 250, orchestrate: { live: () => workflows, onChange() {} }, onActivity: reporter.report });
-  t.after(() => { reporter.shutdown(); h.done(); });
-  const wire = state => `\x1b]7501;state=${state}:app=pi\x1b\\`;
+  const h = harness({ active: 2, live: 1, settleMs: 250, orchestrate: { live: () => workflows, onChange() {} }, onActivity: osc.report });
+  t.after(h.done);
+  h.fleet.liveRecords = () => [{ id: "run2", state: "working", title: "Fix the flake" }, { id: "run1", state: "working", title: "worker" }, ...(workflows ? [{ id: "wf_1", state: "working", title: "Audit" }] : [])];
   h.fire("agent_start");
   h.fire("agent_settled");
-  t.mock.timers.tick(1000);
-  h.fire("ui_prompt_start", { kind: "custom" });
-  h.fire("ui_prompt_end", { kind: "custom" });
-  assert.deepEqual(frames, [wire("working")], "work live at attach is working");
-  h.fire("ui_prompt_start", { kind: "confirm", title: "PRIVATE QUESTION SENTINEL" });
-  assert.equal(frames.at(-1), wire("blocked"));
-  assert.ok(frames.every(frame => /^\x1b\]7501;state=(idle|working|blocked):app=pi\x1b\\$/.test(frame)), "wire contains no prompt, title or other activity body");
-  h.fire("ui_prompt_end");
-  h.fleet.activeCount = () => 0;
-  h.fleet.changed();
-  t.mock.timers.tick(1000);
-  h.tasks.live = () => 0;
-  h.tasks.changed();
-  t.mock.timers.tick(1000);
-  assert.equal(frames.at(-1), wire("working"), "the childless workflow still owns activity");
+  t.mock.timers.tick(250);
+  assert.deepEqual(osc.frames, [
+    wire("idle"),
+    wire("working", { id: "run1", title: "worker" }), wire("working", { id: "run2", title: "Fix the flake" }), wire("working", { id: "wf_1", title: "Audit" }), wire("working"),
+    wire("done", { msg: "Waiting on 1 workflow, 2 agents, 1 shell" }),
+  ], "children sort by id ahead of the root");
+  osc.frames.length = 0;
   workflows = 0;
   h.fleet.changed();
-  t.mock.timers.tick(250);
-  assert.equal(frames.at(-1), wire("working"), "the reporter's idle grace follows the footer's close grace");
-  t.mock.timers.tick(249);
-  assert.equal(frames.at(-1), wire("working"));
-  t.mock.timers.tick(1);
-  assert.equal(frames.at(-1), wire("done"));
-  h.fire("ui_prompt_start", { kind: "custom" });
-  h.fire("ui_prompt_end", { kind: "custom" });
-  assert.equal(frames.at(-1), wire("done"), "an idle view cannot erase completion");
-  assert.equal(frames.filter(frame => frame === wire("done")).length, 1);
+  assert.deepEqual(osc.frames, [wire("clear", { id: "wf_1" }), wire("done", { msg: "Waiting on 2 agents, 1 shell" })], "an ended workflow clears and the text follows at once");
 });
 
-test("OSC stays working after an abort or a typed prompt closes the turn over a live child, and is done when it ends", t => {
+test("an interrupt leaves the root idle, a failed run reports its error, and an aborted compaction is idle", t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
-  const frames = [];
-  const reporter = installProgramStatus({ isTTY: true, write: frame => frames.push(frame) });
-  reporter.attach();
-  let active = 1;
-  const h = harness({ settleMs: 250, onActivity: reporter.report });
-  h.fleet.activeCount = () => active;
-  t.after(() => { reporter.shutdown(); h.done(); });
-  const wire = state => `\x1b]7501;state=${state}:app=pi\x1b\\`;
-  for (const close of [() => h.fire("agent_settled", { aborted: true }), () => { h.fire("agent_settled"); h.fire("input", { source: "interactive" }); }]) {
-    frames.length = 0;
-    active = 1;
+  const osc = terminal(t);
+  const h = harness({ active: 1, onActivity: osc.report });
+  t.after(h.done);
+  h.fire("agent_start");
+  h.fire("agent_settled", { aborted: true });
+  t.mock.timers.tick(250);
+  assert.deepEqual(osc.frames, [wire("idle"), wire("working"), wire("idle")], "no done after Esc, live child or not");
+  h.fire("agent_start");
+  h.fire("message_end", { message: { role: "assistant", stopReason: "error", errorMessage: "429 rate limited\nretry later" } });
+  h.fire("agent_settled");
+  t.mock.timers.tick(250);
+  assert.equal(osc.frames.at(-1), wire("error", { msg: "429 rate limited" }));
+  h.fire("agent_start");
+  h.fire("message_end", { message: { role: "assistant", stopReason: "error", errorMessage: "overloaded" } });
+  h.fire("message_end", { message: { role: "assistant", stopReason: "stop" } });
+  h.fire("agent_settled");
+  t.mock.timers.tick(250);
+  assert.equal(osc.frames.at(-1), wire("done", { msg: "Waiting on 1 agent" }), "a successful retry replaces the error");
+  h.fire("session_before_compact");
+  h.fire("session_compact_failed", { reason: "manual", errorMessage: "summary failed", aborted: false });
+  t.mock.timers.tick(250);
+  assert.equal(osc.frames.at(-1), wire("error", { msg: "summary failed" }));
+  h.fire("session_before_compact");
+  h.fire("session_compact_failed", { reason: "manual", aborted: true });
+  t.mock.timers.tick(250);
+  assert.equal(osc.frames.at(-1), wire("idle"));
+});
+
+for (const stopReason of ["stop", "error"]) {
+  test(`interrupted automatic compaction after a ${stopReason} response stays idle through non-aborted settlement`, t => {
+    t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+    const osc = terminal(t);
+    const h = harness({ onActivity: osc.report });
+    t.after(h.done);
     h.fire("agent_start");
-    close();
-    t.mock.timers.tick(1000);
-    assert.equal(h.entries.at(-1).data.running.agents, 1, "the turn closed naming the child");
-    assert.equal(frames.at(-1), wire("working"));
-    active = 0;
-    h.fleet.changed();
+    h.fire("message_end", { message: { role: "assistant", stopReason, errorMessage: "earlier response error" } });
+    h.fire("agent_end");
+    h.fire("session_before_compact");
+    h.fire("session_compact_failed", { reason: "threshold", aborted: true });
+    h.fire("message_end", { message: { role: "toolResult" } });
+    h.fire("agent_settled", { aborted: false });
     t.mock.timers.tick(250);
-    assert.equal(frames.at(-1), wire("done"));
-  }
+    assert.deepEqual(h.activity.at(-1).root, { state: "idle" });
+    assert.deepEqual(osc.frames, [wire("idle"), wire("working"), wire("idle")]);
+    assert.equal(h.entries[0].data.aborted, false, "compaction interruption does not change turn-line semantics");
+  });
+
+  test(`a later ${stopReason} response supersedes an interrupted compaction`, t => {
+    const h = harness();
+    t.after(h.done);
+    h.fire("agent_start");
+    h.fire("session_before_compact");
+    h.fire("session_compact_failed", { reason: "overflow", aborted: true });
+    h.fire("message_end", { message: { role: "assistant", stopReason, errorMessage: "later response error" } });
+    h.fire("agent_settled", { aborted: false });
+    assert.deepEqual(h.activity.at(-1).root, stopReason === "error"
+      ? { state: "error", message: "later response error" }
+      : { state: "done", message: "" });
+  });
+}
+
+for (const reset of ["agent_start", "attach"]) {
+  test(`${reset} clears a pending compaction interruption`, t => {
+    const h = harness();
+    t.after(h.done);
+    h.fire("agent_start");
+    h.fire("message_end", { message: { role: "assistant", stopReason: "error", errorMessage: "old error" } });
+    h.fire("session_before_compact");
+    h.fire("session_compact_failed", { reason: "threshold", aborted: true });
+    if (reset === "attach") {
+      h.fire("session_shutdown");
+      h.attach();
+      assert.deepEqual(h.activity.at(-1).root, { state: "idle" });
+    } else h.fire("agent_start");
+    h.fire("agent_settled", { aborted: false });
+    assert.deepEqual(h.activity.at(-1).root, { state: "done", message: "" });
+  });
+}
+
+test("working carries the session name, which a rename updates; a prompt outranks done and gives it back", t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval", "setTimeout"], now: 0 });
+  const osc = terminal(t);
+  const h = harness({ onActivity: osc.report });
+  t.after(h.done);
+  h.session.name = "Fix login";
+  h.fire("agent_start");
+  h.session.name = "Fix login flow";
+  h.fire("session_info_changed", { name: h.session.name });
+  h.fire("agent_settled");
+  t.mock.timers.tick(250);
+  h.fire("ui_prompt_start", { kind: "input", title: "Branch name?" });
+  h.fire("ui_prompt_end", { kind: "input" });
+  t.mock.timers.tick(250);
+  assert.deepEqual(osc.frames, [wire("idle"), wire("working", { msg: "Fix login" }), wire("working", { msg: "Fix login flow" }), wire("done"), wire("blocked", { kind: "question", msg: "Branch name?" }), wire("done")]);
 });

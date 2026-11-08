@@ -1,4 +1,4 @@
-import { freeSlot } from "./dialog.mjs";
+import { confirmWait } from "./dialog.mjs";
 import { commandDomains, unsandboxed } from "./policy.mjs";
 
 // The user task the classifier sees, newest characters kept; the task
@@ -94,10 +94,14 @@ export async function reviewAction(ctx, config, task, request, denials, record) 
   // pi's confirm takes the composer slot; whatever view holds it (the fleet
   // peek, /plan show) must close first, and fully: pi reports only the
   // outermost prompt, so a confirm opened inside the view's span would never
-  // mark the user blocked.
-  await freeSlot();
+  // mark the user blocked. The terminal status names the call by bash's own
+  // description parameter, never its command, which can carry secrets; any
+  // other tool's `description` is an ordinary argument (an MCP issue body)
+  // and is never read, so it shows as `approve <tool>`.
+  const description = request.tool === "bash" && !request.server && typeof request.args?.description === "string" ? request.args.description.trim() : "";
+  const block = { kind: "permission", message: `approve ${request.tool}${description ? `: ${description}` : ""}` };
   const denied = overridden ? ` the classifier denied${reason ? ` (${JSON.stringify(reason)})` : ""}` : "";
-  if (!await ctx.ui.confirm(`Approve this ${escalated ? "unsandboxed " : ""}action${denied} once?`, action.slice(0, 12_000))) return "the user declined it";
+  if (!await confirmWait(ctx, block, `Approve this ${escalated ? "unsandboxed " : ""}action${denied} once?`, action.slice(0, 12_000))) return "the user declined it";
   denials.count = 0;
   return true;
 }

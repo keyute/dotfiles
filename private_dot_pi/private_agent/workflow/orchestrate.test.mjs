@@ -60,8 +60,8 @@ function harness({ concurrency, behave = params => ({ status: "completed", outpu
     own: (alias, group) => { h.owned.push(alias); h.ownershipGroups.push(group); },
     disown: alias => h.owned.splice(h.owned.indexOf(alias), 1),
     // Each change is logged as the statuses at that moment.
-    track: ({ title, records }) => {
-      const group = { title, records, log: [] };
+    track: ({ id, title, records }) => {
+      const group = { id, title, records, log: [] };
       h.groups.push(group);
       group.handle = { changed: () => group.log.push(records.map(record => record.status).join(",")), end: () => group.log.push("end") };
       return group.handle;
@@ -263,11 +263,13 @@ test("phase() and opts.phase reach the records, the explicit option winning; a n
   assert.equal(value(viaPhase), "agent() phase must be a string");
 });
 
-test("a run tracks one fleet group: its title, each status change, and its end", async () => {
+test("a run tracks one fleet group: its id, title, each status change, and its end", async () => {
   const h = harness({ behave: params => params.task === "b" ? { status: "failed" } : { status: "completed", output: "" } });
-  await h.wait(await h.orchestrate.tool.execute("call-1", { title: "Audit", script: `await agent("a", { agentType: "scout" }); await parallel([() => agent("b", { agentType: "scout" })]); return 1` }, undefined, undefined, { hasUI: true }));
+  const admitted = await h.orchestrate.tool.execute("call-1", { title: "Audit", script: `await agent("a", { agentType: "scout" }); await parallel([() => agent("b", { agentType: "scout" })]); return 1` }, undefined, undefined, { hasUI: true });
+  await h.wait(admitted);
   assert.equal(h.groups.length, 1);
   assert.equal(h.groups[0].title, "Audit");
+  assert.equal(h.groups[0].id, admitted.details.workflow.id, "the workflow's terminal status record takes its own id");
   assert.deepEqual(h.groups[0].log, ["launching", "running", "completed", "completed,launching", "completed,running", "completed,failed", "end"]);
 });
 

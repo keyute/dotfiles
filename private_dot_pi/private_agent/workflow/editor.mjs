@@ -55,7 +55,7 @@ export function argumentCompletions(current) {
 export class CaretEditor extends sdk.CustomEditor {
   // The editor factory is handed an EditorTheme (borders and autocomplete only),
   // so the palette for the shade and the caret arrives separately.
-  constructor(tui, theme, keybindings, { fleet, palette, shell, agentBash, pending, notify, copyToClipboard = sdk.copyToClipboard } = {}) {
+  constructor(tui, theme, keybindings, { fleet, palette, shell, agentBash, pending, notify, onSuspend, copyToClipboard = sdk.copyToClipboard } = {}) {
     super(tui, theme, keybindings, { paddingX: PROMPT_PADDING, embedWorkingStatus: false });
     this.fleet = fleet;
     this.palette = palette;
@@ -63,6 +63,7 @@ export class CaretEditor extends sdk.CustomEditor {
     this.agentBash = agentBash;
     this.pending = pending;
     this.notify = notify;
+    this.onSuspend = onSuspend;
     this.copyToClipboard = copyToClipboard;
     // pi-tui's Editor declares `onSubmit` as a bare class field, which
     // installs an own data property on this instance during super() and
@@ -514,6 +515,9 @@ export class CaretEditor extends sdk.CustomEditor {
       this.reopenCompletion(before);
       return;
     }
+    // pi's suspend (Ctrl+Z, its copied action handler) hands the pane to the
+    // shell and reports nothing of the owned terminal status: clear it first.
+    if (this.keybindings.matches(data, "app.suspend") && this.actionHandlers.has("app.suspend")) this.onSuspend?.();
     const at = this.getCursor();
     const was = (this.getLines()[at.line] ?? "").length;
     super.handleInput(data);

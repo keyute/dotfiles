@@ -1221,6 +1221,8 @@ export function noteLine(text, theme) {
 }
 
 const runningCounts = running => [running.workflows && plural(running.workflows, "workflow"), liveWork(running)].filter(Boolean).join(", ");
+// The waiting row's words, shared with the root's terminal status; empty with nothing counted.
+export const waitingText = running => { const work = runningCounts(running); return work ? `Waiting on ${work}` : ""; };
 
 // `running` marks a turn the user's typing or an interrupt closed while work
 // was still live: its line names that work instead of claiming done. Entries
@@ -1252,8 +1254,7 @@ export function createTurnClock(verbs = TURN_VERBS, pick = () => Math.floor(Math
     // clock still running. Counts can read zero while a wake is on its way.
     waitingLabel(running, now = Date.now()) {
       if (startedAt == null) return "";
-      const work = runningCounts(running);
-      return `${work ? `Waiting on ${work}` : verb[0]}… ${formatDuration(now - startedAt)}`;
+      return `${waitingText(running) || verb[0]}… ${formatDuration(now - startedAt)}`;
     },
     stop(now = Date.now(), { aborted = false, running } = {}) {
       if (startedAt == null) return null;

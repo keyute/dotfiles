@@ -15,7 +15,7 @@ import {
   showPlan,
 } from "./plan-approval.mjs";
 import { reviewAction } from "./approval.mjs";
-import { blocksUser, closeView } from "./dialog.mjs";
+import { closeView, promptBlock } from "./dialog.mjs";
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const assistant = (content, stopReason = "toolUse") => ({ role: "assistant", content, api: "openai-codex-responses", provider: "openai-codex", model: "fixture", usage, stopReason, timestamp: Date.now() });
@@ -503,7 +503,8 @@ test("plan show reuses Markdown work across repaint and scroll, but rerenders on
 function spannedUi(reported) {
   let depth = 0;
   const span = async (kind, open) => {
-    if (depth++ === 0) reported.push(`start ${blocksUser({ kind }) ? "blocked" : "view"}`);
+    const block = promptBlock({ kind });
+    if (depth++ === 0) reported.push(`start ${block ? `${block.kind}:${block.message}` : "view"}`);
     try { return await open(); } finally { if (--depth === 0) reported.push("end"); }
   };
   const components = [];
@@ -523,7 +524,7 @@ test("plan show closes before a wait mounts, so the wait's prompt reports blocke
   const approval = requestPlanApproval(ctx);
   assert.equal(await shown, undefined);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(reported, ["start view", "end", "start blocked"]);
+  assert.deepEqual(reported, ["start view", "end", "start permission:Approve the current plan?"]);
   ui.components.at(-1).handleInput("\r");
   assert.deepEqual(await approval, { decision: PLAN_APPROVED });
 });
@@ -538,7 +539,7 @@ test("a wait arriving while another caller is still closing the view waits for t
   await first;
   assert.equal(await shown, undefined);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(reported, ["start view", "end", "start blocked"]);
+  assert.deepEqual(reported, ["start view", "end", "start permission:Approve the current plan?"]);
   ui.components.at(-1).handleInput("\r");
   assert.deepEqual(await approval, { decision: PLAN_APPROVED });
 });
@@ -551,7 +552,7 @@ test("the broker confirm closes an open plan view before it asks", async () => {
   const config = { models: { provider: "openai-codex" } };
   assert.equal(await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true" } }, { count: 0 }), true);
   assert.equal(await shown, undefined);
-  assert.deepEqual(reported, ["start view", "end", "start blocked", "end"]);
+  assert.deepEqual(reported, ["start view", "end", "start permission:approve bash", "end"]);
 });
 
 test("read calls do not isolate sibling tools", () => {

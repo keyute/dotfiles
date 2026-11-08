@@ -202,5 +202,5 @@ class PlanApprovalComponent extends Dialog {
 
 export async function requestPlanApproval(ctx, signal) {
   if (ctx.mode !== "tui") return { decision: PLAN_CANCELLED };
-  return openWait(ctx, (tui, theme, keybindings, done) => new PlanApprovalComponent(tui, theme, keybindings, done, signal));
+  return openWait(ctx, (tui, theme, keybindings, done) => new PlanApprovalComponent(tui, theme, keybindings, done, signal), { kind: "permission", message: "Approve the current plan?" });
 }

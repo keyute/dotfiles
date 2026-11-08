@@ -152,16 +152,20 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   line and the waiting row. On the ordering pins, close only
   at `agent_settled`; lost: the close when the last work ends with no wake.
   *Pin:* `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`.
-- **Prompt span** (`dialog.mjs` `openView`/`openWait`/`blocksUser`): pi wraps
+- **Prompt span** (`dialog.mjs` `openView`/`openWait`/`confirmWait`/`promptBlock`): pi wraps
   every `ctx.ui.custom` in one `custom` prompt span, emits `ui_prompt_*` only
   for the outermost prompt, and its end carries that prompt's kind. A custom
   dialog is a view unless `openWait` mounts it (plan approval, the
   questionnaire); terminal status
   `blocked` and `Waiting for you…`, one footer flag, take only native prompts
-  and waits, pairing the end with that flag. A dialog opened inside a view's span (the
+  and waits, pairing the end with that flag. What a prompt asks — the root's
+  blocked `kind` and `msg` — is declared by the wait (`openWait`, and
+  `confirmWait` for the broker's native confirm) and matched to the event by
+  its span kind, the earliest wait first; an undeclared native prompt is read
+  from the event's kind and title. A dialog opened inside a view's span (the
   peek, `/plan show`) would go unreported, so views mount through `openView`
   and `closeView` returns the mount, settled after pi's span closes; `openWait`
-  and the broker confirm await it. A native prompt another extension opens
+  and `confirmWait` await it. A native prompt another extension opens
   over a view (pi-subagents' authority and spawn-budget confirms) has no such
   hook and goes unreported. Closing a view also prevents native dialog stacking
   from restoring it after an answer. *Why:* opening a peek marked terminal status blocked
@@ -169,6 +173,20 @@ that path too. Pi's CLI runs `dist/bundle/cli.js`; the bundled-entry test in
   prompt; lost: a view marks terminal status blocked and shows `Waiting for you…`. *Pin:*
   `stability.test.mjs`, `footer.test.mjs`, `fleet.test.mjs`,
   `approval.test.mjs`, `plan-approval.test.mjs`, `questionnaire.test.mjs`.
+- **Program status reply and suspend** (`program-status.mjs`, `editor.mjs`):
+  with `PI_PROGRAM_STATUS=0` pi-tui sends no OSC 7501 query and drops every
+  `7501;?` reply its stdin buffer parses, queried or not, before any
+  extension input; the UI, and so raw stdin, starts before `session_start`.
+  The owned reporter writes its own query at install and scans raw
+  `process.stdin` for the reply, carrying a split reply over; nothing is
+  reported before it. pi's Ctrl+Z (`app.suspend`, copied onto the custom
+  editor as an action handler) stops the TUI without touching the owned
+  records, so `CaretEditor` calls the reporter's `suspend` before handing
+  the key on, and `SIGCONT` resends. *Why:* rule 4's terminal status. *On
+  red:* repair; lost: every owned record (no reply is seen) or the clear on
+  suspend. *Retire:* when pi-tui exposes its support state and multi-record
+  reporting. *Pin:* `stability.test.mjs`, `program-status.test.mjs`,
+  `editor.test.mjs`, `integration.test.mjs`.
 - **Activity-entry visibility** (`rows.mjs` `installActivityEntries`): wraps
   the host `InteractiveMode.addCustomEntryToChat`, retaining every owned
   completion's native host. Its render checks the current `customComponent`

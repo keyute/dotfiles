@@ -372,6 +372,7 @@ test("pinned upstream packages register against the managed extension and prefli
   // The unsandboxed flag is offered to root and withheld from a read-only role (policy refuses it regardless).
   assert.ok(tools.get("workspace_bash").parameters.properties.dangerouslyDisableSandbox);
   assert.ok(tools.get("workspace_bash").parameters.properties.allowed_domains);
+  assert.equal(tools.get("workspace_bash").parameters.properties.description.type, "string");
   const childHandlers = new Map();
   const childTools = new Map();
   await installWorkflow({ ...pi, on(name, fn) { const list = childHandlers.get(name) ?? []; list.push(fn); childHandlers.set(name, list); }, registerTool(tool) { childTools.set(tool.name, tool); } }, configPath, "fixture-shell", runtime);
@@ -824,7 +825,7 @@ test("late workflow usage persists silently through root wiring and serialized r
   assert.deepEqual(snapshot.details.runs[0].usage, usage, "persisted snapshots are immutable");
 });
 
-test("only a TUI root reports OSC status, attaching first and suspending before awaited cleanup", async t => {
+test("only a TUI root reports OSC status once the terminal answers, attaching first and suspending before awaited cleanup", async t => {
   const { config } = fixture(t);
   config.models.classifierFilter = config.models.classifierJudge = { model: "gpt-5.6-luna", reasoningEffort: "low" };
   const configPath = join(config.agentDir, "workflow.json");
@@ -838,6 +839,13 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
     if (typeof frame === "string" && frame.startsWith("\x1b]7501;")) { frames.push(frame); return true; }
     return write(frame, ...args);
   });
+  // pi-tui swallows the query's reply; the reporter reads raw stdin, faked here.
+  const readers = [];
+  t.mock.method(process.stdin, "on", (event, listener) => { if (event === "data") readers.push(listener); return process.stdin; });
+  t.mock.method(process.stdin, "off", (_event, listener) => { readers.splice(readers.indexOf(listener), 1); return process.stdin; });
+  const answer = () => readers.at(-1)(Buffer.from("\x1b]7501;?\x1b\\"));
+  const QUERY = "\x1b]7501;?\x1b\\";
+  const frame = (state, pairs = "") => `\x1b]7501;state=${state}:app=pi${pairs}\x1b\\`;
   const flush = () => new Promise(resolve => setImmediate(resolve));
   const { installWorkflow } = await import("./index.mjs");
   // A fresh install per mode: status is wired only at the first UI session start.
@@ -849,17 +857,20 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
       ? { capabilities: { stop: true } }
       : { fleet: { entries: [], totalActive: 0 }, asyncSnapshot: { version: 1, runs: [] } } }));
     const pi = {
-      events, getThinkingLevel: () => "low", setThinkingLevel() {},
+      events, getThinkingLevel: () => "low", setThinkingLevel() {}, getSessionName: () => undefined,
       on(name, fn) { const list = handlers.get(name) ?? []; list.push(fn); handlers.set(name, list); },
       registerTool() {}, registerCommand() {}, registerShortcut() {}, registerFlag() {}, registerMessageRenderer() {}, registerToolRenderer() {}, registerMarkdownTransformer() {}, registerEntryRenderer() {}, appendEntry() {},
       sendMessage() {}, getFlag() { return false; }, getAllTools: () => [], getActiveTools: () => [], setActiveTools() {}, getMcpServers: () => [],
     };
     const policy = { mode: "plan", epoch: 1 };
     const InteractiveMode = class { getUserMessageText() {} updatePendingMessagesDisplay() {} addCustomEntryToChat() {} };
-    await installWorkflow(pi, configPath, role, { startBroker: async () => ({ env: {}, policy, setMode: async next => { policy.mode = next; }, close }), requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
+    let review;
+    await installWorkflow(pi, configPath, role, { startBroker: async (_config, _cwd, reviewer) => { review = reviewer; return { env: {}, policy, setMode: async next => { policy.mode = next; }, close }; }, requestBroker: async () => ({ mode: policy.mode }), installSubagents() {}, InteractiveMode, AssistantMessageComponent: class { updateContent() {} } });
     let editor, editorFactory;
     const replaceEditor = () => { editor = editorFactory({ terminal: { rows: 24 }, requestRender() {} }, { borderColor: text => text, selectList: {} }, { matches: () => false }); };
-    const ui = { setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent(factory) { editorFactory = factory; replaceEditor(); }, addAutocompleteProvider() {} };
+    // pi's confirm reports its prompt span as the runner does.
+    const confirm = async title => { await fire("ui_prompt_start", { kind: "confirm", title }); await fire("ui_prompt_end", { kind: "confirm" }); return false; };
+    const ui = { confirm, setStatus() {}, setToolsExpanded() {}, getToolsExpanded: () => false, notify() {}, setWorkingVisible() {}, setWidget() {}, setFooter() {}, setHeader() {}, setEditorComponent(factory) { editorFactory = factory; replaceEditor(); }, addAutocompleteProvider() {} };
     const ctx = {
       cwd: process.cwd(), mode, hasUI, isIdle: () => true, isProjectTrusted: () => true, model: { provider: "openai-codex", id: "gpt-5.6-sol" }, getContextUsage: () => null,
       sessionManager: { getSessionId: () => `status-${mode}`, getSessionFile: () => `/abs/${mode}.jsonl`, getBranch: () => [], getEntries: () => [], buildContextEntries: () => [] },
@@ -870,6 +881,7 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
     t.after(() => fire("session_shutdown", { reason: "quit" }));
     Object.defineProperty(fire, "editor", { get: () => editor });
     fire.replaceEditor = replaceEditor;
+    fire.review = request => review(request);
     return fire;
   };
   for (const mode of ["rpc", "json", "print"]) {
@@ -897,28 +909,48 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
   await child("agent_settled");
   await flush();
   assert.deepEqual(frames, [], "non-TUI, headless, non-TTY and child sessions never report");
+  const silent = await start("tui");
+  await silent("agent_start");
+  await silent("agent_settled");
+  await silent("session_shutdown", { reason: "quit" });
+  assert.deepEqual(frames.splice(0), [QUERY], "a terminal that never answers gets the query and nothing else");
   const terminal = await start("tui");
+  answer();
   await terminal("ui_prompt_start", { kind: "confirm", title: "PRIVATE QUESTION SENTINEL" });
+  await terminal("ui_prompt_end", { kind: "confirm" });
+  const command = "curl -H 'Authorization: PRIVATE COMMAND SENTINEL' https://example.com";
+  assert.equal(await terminal.review({ tool: "bash", args: { command, description: "Fetch the status page" } }), "the user declined it");
   await terminal("session_shutdown", { reason: "quit" });
-  assert.deepEqual(frames.splice(0), ["\x1b]7501;state=idle:app=pi\x1b\\", "\x1b]7501;state=blocked:app=pi\x1b\\", "\x1b]7501;state=clear:app=pi\x1b\\"]);
+  const b64 = text => Buffer.from(text).toString("base64");
+  const reported = frames.splice(0);
+  assert.deepEqual(reported, [QUERY, frame("idle"), frame("blocked", `:msg=${b64("PRIVATE QUESTION SENTINEL")}`), frame("blocked", `:kind=permission:msg=${b64("approve bash: Fetch the status page")}`), frame("clear")]);
+  const decoded = reported.flatMap(sent => [...sent.matchAll(/(?:msg|title)=([A-Za-z0-9+/=]+)/g)].map(match => Buffer.from(match[1], "base64").toString()));
+  assert.ok(![...reported, ...decoded].some(text => text.includes("PRIVATE COMMAND SENTINEL")), "the approval names the call, never its command");
   let releaseCleanup, cleanupStarted = false;
   const cleanup = new Promise(resolve => { releaseCleanup = resolve; });
   t.after(() => releaseCleanup());
   const fire = await start("tui", () => { cleanupStarted = true; return cleanup; });
+  answer();
   await flush();
-  assert.deepEqual(frames, ["\x1b]7501;state=idle:app=pi\x1b\\"], "attach precedes the footer's initial idle report");
+  assert.deepEqual(frames.splice(0), [QUERY, frame("idle")], "attach precedes the footer's initial idle report, flushed by the reply");
   const replaced = fire.editor;
   replaced.dragging = true;
   fire.replaceEditor();
   assert.equal(replaced.dragging, false, "factory replacement disposes the previous editor");
+  fire.editor.keybindings = { matches: (data, action) => action === "app.suspend" && data === "\x1a" };
+  fire.editor.actionHandlers.set("app.suspend", () => {});
+  fire.editor.handleInput("\x1a");
+  assert.deepEqual(frames.splice(0), [frame("clear")], "Ctrl+Z on the installed editor clears the status");
+  process.emit("SIGCONT");
+  assert.deepEqual(frames.splice(0), [frame("idle")], "resuming resends the root");
 
   t.mock.timers.enable({ apis: ["setTimeout"] });
   await fire("agent_start");
   await flush();
-  assert.equal(frames.at(-1), "\x1b]7501;state=working:app=pi\x1b\\");
+  assert.equal(frames.at(-1), frame("working"));
   await fire("agent_settled");
   t.mock.timers.tick(100);
-  assert.equal(frames.length, 2, "settling has not prematurely reported done");
+  assert.equal(frames.length, 1, "settling has not prematurely reported done");
   fire.editor.dragging = true;
   const closing = fire("session_shutdown", { reason: "switch" });
   await flush();
@@ -938,7 +970,7 @@ test("only a TUI root reports OSC status, attaching first and suspending before 
   assert.equal(previousEditor.dragging, false, "session start disposes before replacing the editor");
   await restarting;
   await flush();
-  assert.deepEqual(frames.slice(before), ["\x1b]7501;state=idle:app=pi\x1b\\"]);
+  assert.deepEqual(frames.slice(before), [frame("idle")]);
 });
 
 test("a frame between session_shutdown and the next session_start never reads the stale ctx, nor records an entry", { skip: !existsSync("/bin/zsh") && "no /bin/zsh" }, async t => {
@@ -1203,10 +1235,10 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   // Includes pinned SDK tools and fixture managed descriptions. Production
   // driver/description bodies are separately capped by the render fixture;
   // plugin prompt content and the vendor base prompt are not measured here.
-  assert.ok(toolChars <= 11540, `registered declarations grew: ${toolChars} chars (~${Math.ceil(toolChars / 4)} tokens)`);
+  assert.ok(toolChars <= 11660, `registered declarations grew: ${toolChars} chars (~${Math.ceil(toolChars / 4)} tokens)`);
   const snippets = [...tools.values()].reduce((sum, tool) => sum + (tool.promptSnippet?.length ?? 0), 0);
   const runtimePromptChars = toolChars + snippets + workflowPrompt({ mode: "plan", readonly: true, isRoot: true, ultracode: true }).length;
-  assert.ok(runtimePromptChars <= 12650, `runtime prompt pieces grew: ${runtimePromptChars} chars`);
+  assert.ok(runtimePromptChars <= 12770, `runtime prompt pieces grew: ${runtimePromptChars} chars`);
   assert.deepEqual(activeTools.at(-1), ["workspace_read", "workspace_write", "workspace_edit", "workspace_grep", "workspace_find", "workspace_ls", "workspace_bash", "workspace_task", "orchestrate", "submit_plan", "subagent", "web_search", "web_fetch"]);
   let orchestrateVerdict;
   for (const handler of handlers.get("tool_call")) orchestrateVerdict ??= await handler({ toolName: "orchestrate", input: { script: "return 1" } }, ctx);

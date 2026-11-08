@@ -337,7 +337,7 @@ export function createOrchestrate({ pi, config, fleet, check, mode, isReady, des
   async function finish(run, params, argsJson) {
     let result;
     try {
-      run.group = fleet.track({ title: params.title, records: run.records });
+      run.group = fleet.track({ id: run.workflow.id, title: params.title, records: run.records });
       result = await executeRun(run, params, argsJson);
     } catch (error) {
       result = { ...shaped(run), isError: true, content: [{ type: "text", text: scrub(error.message) }] };

@@ -250,12 +250,26 @@ export function installFleet(pi, ctx, {
   // A stopped fleet's listeners belong to a torn-down session.
   const changed = () => { if (!state.stopped) for (const listener of listeners) listener(); };
 
+  const owned = id => state.groups.some(group => group.started.has(id) || group.records.some(record => record.runId === id));
   const activeCount = ({ excludeWorkflows = false } = {}) => {
     const ids = new Set([...state.active, ...state.owed.keys()]);
     if (!excludeWorkflows) return Math.max(ids.size, state.totalActive);
-    const owned = id => state.groups.some(group => group.started.has(id) || group.records.some(record => record.runId === id));
     const polledOwned = state.runs.filter(run => ACTIVE_RUN_STATES.has(run.state) && owned(run.id)).length;
     return Math.max([...ids].filter(id => !owned(id)).length, state.totalActive - polledOwned);
+  };
+  // The root's OSC 7501 child records: each live child the unowned count
+  // covers, by run id, and each live workflow, never its children — even
+  // once the workflow has ended and stopped owning them.
+  const liveRecords = () => {
+    const polled = state.runs.filter(run => ACTIVE_RUN_STATES.has(run.state) && run.id);
+    const ids = new Set([...state.active, ...state.owed.keys(), ...polled.map(run => run.id)]);
+    return [
+      ...[...ids].filter(id => !owned(id) && !state.launches.get(id)?.workflow).map(id => {
+        const launch = state.launches.get(id);
+        return { id, state: "working", title: launch?.task || launch?.agent || polled.find(run => run.id === id)?.label || "subagent" };
+      }),
+      ...state.groups.map(group => ({ id: group.id, state: "working", title: group.title || "workflow" })),
+    ];
   };
 
   // Must key every rendered segment, or the no-change check below freezes it.
@@ -264,9 +278,10 @@ export function installFleet(pi, ctx, {
     const before = shape();
     const total = state.totalActive;
     const unowned = activeCount({ excludeWorkflows: true });
+    const records = JSON.stringify(liveRecords());
     setEntries(state, fleet, snapshot);
     if (shape() !== before) state.tui?.requestRender();
-    if (state.totalActive !== total || activeCount({ excludeWorkflows: true }) !== unowned) changed();
+    if (state.totalActive !== total || activeCount({ excludeWorkflows: true }) !== unowned || JSON.stringify(liveRecords()) !== records) changed();
   };
   // UI jobs-changed is an invalidation, not a snapshot. A change during an
   // RPC must survive that reply; same-stack bursts need only one read.
@@ -341,6 +356,8 @@ export function installFleet(pi, ctx, {
     const id = event.result?.details?.runId ?? event.result?.details?.asyncId;
     if (launch && id) state.launches.set(id, { ...launch, asyncDir: event.result?.details?.asyncDir });
     wake();
+    // The child's record takes its title from here.
+    if (launch && id) changed();
   });
   // Initial and ready snapshots cover jobs restored with the session. Live
   // children are counted from launch events: status can lag agent_settled,
@@ -615,14 +632,15 @@ export function installFleet(pi, ctx, {
     // that beats the reply is still known as the workflow's.
     own: (alias, group) => { state.workflowCalls.set(alias, group); },
     disown: alias => { state.workflowCalls.delete(alias); },
-    // A workflow's overview row, live until end(). `records` is the
+    // A workflow's overview row, live until end(). `id` is the workflow's
+    // own, its terminal status record's. `records` is the
     // run's own array, mutated in place (`startedAt` once running,
     // `durationMs`/`tokens` once complete); the caller calls changed() after
     // each status change. The workflow view holds the group after end().
-    track: ({ title, records }) => {
+    track: ({ id, title, records }) => {
       const listeners = new Set();
       const group = {
-        title, records, started: new Set(), startedAt: Date.now(), endedAt: undefined,
+        id, title, records, started: new Set(), startedAt: Date.now(), endedAt: undefined,
         onChange: listener => { listeners.add(listener); return () => listeners.delete(listener); },
         changed: () => {
           clamp(state);
@@ -660,7 +678,8 @@ export function installFleet(pi, ctx, {
     // Runs restored with the session never emit async-started; snapshots
     // cover them, while lifecycle events are the fast path for live launches.
     activeCount,
-    // Fires whenever activeCount may have changed.
+    liveRecords,
+    // Fires whenever activeCount or liveRecords may have changed.
     onChange: listener => { listeners.add(listener); },
     focused: () => state.focused,
     attach: tui => { state.tui = tui; },

@@ -351,7 +351,7 @@ export function registerQuestionnaire(pi) {
         const drafts = await openWait(ctx, (tui, theme, keybindings, done) => {
           component = new QuestionnaireComponent(tui, theme, keybindings, done, params.questions, signal);
           return component;
-        });
+        }, { kind: "question", message: params.questions[0].question });
         return questionnaireResult(params.questions, drafts, !drafts);
       } finally { component?.dispose(); }
     },

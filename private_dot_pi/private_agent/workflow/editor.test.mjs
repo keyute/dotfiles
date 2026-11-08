@@ -392,6 +392,18 @@ test("the copy shortcut uses the composer range before the last-message action",
   assert.equal(fallback, 1);
 });
 
+test("Ctrl+Z clears the owned terminal status before pi's suspend handler runs, and only when pi will suspend", () => {
+  const seen = [];
+  const caret = editor({ onSuspend: () => seen.push("clear") });
+  caret.keybindings = { matches: (data, action) => action === "app.suspend" ? data === "\x1a" : keybindings.matches(data, action) };
+  caret.handleInput("\x1a");
+  assert.deepEqual(seen, [], "no suspend handler, nothing cleared");
+  caret.actionHandlers.set("app.suspend", () => seen.push("suspend"));
+  caret.handleInput("\x1a");
+  caret.handleInput("a");
+  assert.deepEqual(seen, ["clear", "suspend"]);
+});
+
 for (const copyOnSelect of [false, true]) {
   test(`clipboard rejection is nonfatal for ${copyOnSelect ? "mouse copy-on-select" : "the copy shortcut"}`, async () => {
     const copies = [], notices = [], unhandled = [];

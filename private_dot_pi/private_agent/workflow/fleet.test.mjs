@@ -395,6 +395,22 @@ test("a restored run's close, seen in the refreshed snapshot, notifies listeners
   assert.deepEqual([fleet.activeCount(), changes], [0, 2]);
 });
 
+test("a snapshot swapping one active polled run for another at equal count notifies listeners", async () => {
+  const bus = fakeBus();
+  bus.entries = [{ agent: "a" }];
+  bus.runs = [{ id: "r1", state: "running", label: "one" }];
+  const fleet = installFleet({ events: bus, on() {}, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0, timeoutMs: 10 });
+  let changes = 0;
+  fleet.onChange(() => changes++);
+  fleet.wake();
+  await sleep(1);
+  assert.deepEqual([fleet.activeCount(), changes, fleet.liveRecords().map(record => record.id)], [1, 1, ["r1"]]);
+  bus.runs = [{ id: "r2", state: "running", label: "two" }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(30);
+  assert.deepEqual([fleet.activeCount(), changes, fleet.liveRecords().map(record => record.id)], [1, 2, ["r2"]]);
+});
+
 test("peek opens the intended active sibling after a completed sibling drops", async () => {
   const bus = fakeBus();
   const hooks = {};
@@ -1016,6 +1032,37 @@ test("workflow aliases exclude owned children from counts without changing total
   const next = fleet.track({ title: "Different owner", records: [] });
   assert.equal(fleet.activeCount({ excludeWorkflows: true }), 3, "a different live workflow does not claim a past owner's child");
   next.end();
+  hooks.session_shutdown();
+});
+
+test("live records: one per unowned live child, titled by its launch, and one per workflow, never its children", async () => {
+  const bus = fakeBus();
+  const hooks = {};
+  const fleet = installFleet({ events: bus, on: (name, fn) => { hooks[name] = fn; }, appendEntry() {}, registerEntryRenderer() {} }, null, { pollMs: 5, quietMs: 0 });
+  let changes = 0;
+  fleet.onChange(() => changes++);
+  const group = fleet.track({ id: "wf_1", title: "Audit", records: [{ runId: "owned", status: "running" }] });
+  hooks.tool_execution_start({ toolName: "subagent", toolCallId: "c1", args: { agent: "worker", title: "Fix the flake", task: "long prompt" } });
+  bus.emit("subagent:async-started", { id: "run1" });
+  fleet.own("rpc-owned", group);
+  bus.emit("subagent:async-started", { id: "owned", toolCallId: "rpc-owned" });
+  bus.emit("subagent:async-started", { id: "run2" });
+  bus.runs = [{ id: "restored", state: "running", label: "scout" }];
+  bus.emit("subagent:jobs-changed", { version: 1 });
+  await sleep(20);
+  const before = changes;
+  hooks.tool_execution_end({ toolName: "subagent", toolCallId: "c1", result: { details: { runId: "run1" } } });
+  assert.equal(changes, before + 1, "a landing title is a change");
+  assert.deepEqual(fleet.liveRecords(), [
+    { id: "run1", state: "working", title: "Fix the flake" },
+    { id: "run2", state: "working", title: "subagent" },
+    { id: "restored", state: "working", title: "scout" },
+    { id: "wf_1", state: "working", title: "Audit" },
+  ]);
+  group.end();
+  bus.emit("subagent:async-complete", { runId: "run2", success: true });
+  bus.emit("subagent:process-terminal", { runId: "run2", state: "observed" });
+  assert.deepEqual(fleet.liveRecords().map(record => record.id), ["run1", "restored"], "an ended workflow's record goes, and its unfinished child gets none");
   hooks.session_shutdown();
 });
 

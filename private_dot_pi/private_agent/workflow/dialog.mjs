@@ -39,20 +39,47 @@ export function closeView() {
   return closing;
 }
 // A view can open while an earlier one is still closing; the slot is free only once none remains.
-export async function freeSlot() { while (view || closing) await closeView(); }
+async function freeSlot() { while (view || closing) await closeView(); }
 
 // pi wraps every ctx.ui.custom in one `custom` prompt span, a peek or a plan
 // view as much as a question; a custom dialog is a view unless it mounts here.
-let waits = 0;
-export async function openWait(ctx, factory) {
+// `block` is what the wait asks the user: `{ kind?, message }`, the root's
+// blocked terminal status (OSC 7501 `kind` is `permission` or `question`).
+const waits = [];
+const waitListeners = new Set();
+// Fires whenever a wait is declared or settles; returns the unsubscribe.
+export function onWaitsChange(listener) {
+  waitListeners.add(listener);
+  return () => waitListeners.delete(listener);
+}
+const waitsChanged = () => waitListeners.forEach(listener => listener());
+async function declare(span, block, open) {
+  const wait = { span, block };
+  waits.push(wait);
+  waitsChanged();
+  try { return await open(); } finally { waits.splice(waits.indexOf(wait), 1); waitsChanged(); }
+}
+export async function openWait(ctx, factory, block) {
   // Mounts synchronously when no view holds the slot.
   if (view || closing) await freeSlot();
-  waits++;
-  try { return await ctx.ui.custom(factory); } finally { waits--; }
+  return declare("custom", block, () => ctx.ui.custom(factory));
 }
-// Whether a ui_prompt_start is something the user must answer. pi's end event
-// carries the outermost prompt's kind, so consumers pair it with their own flag.
-export const blocksUser = event => event?.kind !== "custom" || waits > 0;
+// pi's own confirm, opened by the workflow with a declared block; it takes the
+// composer slot too, so a view holding it closes first.
+export async function confirmWait(ctx, block, title, message) {
+  await freeSlot();
+  return declare("confirm", block, () => ctx.ui.confirm(title, message));
+}
+// What a ui_prompt_start asks the user, or null for a view. pi reports only
+// the outermost prompt, so the earliest wait of that span is the one shown;
+// pi's end event carries the outermost prompt's kind, so consumers pair it
+// with their own state. Undeclared native prompts ask by their title.
+export function promptBlock(event) {
+  const declared = waits.find(wait => wait.span === event?.kind);
+  if (declared) return declared.block;
+  if (event?.kind === "custom") return null;
+  return { ...(event?.kind !== "confirm" && { kind: "question" }), message: event?.title ?? "" };
+}
 
 // Rule 11: every dialog is one frame, one cursor, one accent. This is that rule in code.
 export class Dialog {

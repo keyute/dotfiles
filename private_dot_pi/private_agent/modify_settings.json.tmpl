@@ -36,8 +36,8 @@
 # this declared subset does not name (theme and thinking level are managed, so
 # they reset on apply; objects merge recursively, arrays and scalars are replaced).
 # modelThinkingLevels is deleted: per-model overrides outrank defaultThinkingLevel.
-# terminal.showTerminalProgress is deleted (pi's default is off): its OSC 9;4 bar tracks the
-# root run only and contradicts the owned OSC 7501 report while children run; `/settings` can persist it.
+# terminal.showTerminalProgress is deleted (pi's default is off): its OSC 9;4 bar is a second
+# report of the root run beside the owned OSC 7501 records; `/settings` can persist it.
 set -euo pipefail
 
 input=$(cat)

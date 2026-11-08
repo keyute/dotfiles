@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseDecision, reviewAction } from "./approval.mjs";
-import { openView } from "./dialog.mjs";
+import { openView, promptBlock } from "./dialog.mjs";
 
 const config = { models: { provider: "openai-codex", classifierFilter: { model: "filter", reasoningEffort: "minimal" }, classifierJudge: { model: "judge", reasoningEffort: "medium" } } };
 
@@ -175,6 +175,25 @@ test("the confirm waits for the closing view to settle", async () => {
   holdSlot([], "closing", 5).then(() => seen.push("closed"));
   await reviewAction(ctx, config, "test", { tool: "bash", args: { command: "true" } }, { count: 0 });
   assert.deepEqual(seen, ["closed", "confirm"]);
+});
+
+test("the confirm declares a permission block named by bash's description or the tool, never a command or another tool's arguments", async () => {
+  const blocks = [];
+  const ctx = { hasUI: true, modelRegistry: { find: () => undefined }, ui: { notify: () => {}, confirm: async title => { blocks.push(promptBlock({ kind: "confirm", title })); return true; } } };
+  const command = "curl -H 'Authorization: PRIVATE SENTINEL' https://example.com";
+  await reviewAction(ctx, config, "test", { tool: "bash", args: { command, description: "Fetch the status page" } }, { count: 0 });
+  await reviewAction(ctx, config, "test", { tool: "bash", args: { command } }, { count: 0 });
+  await reviewAction(ctx, config, "test", { tool: "create_issue", server: "github", args: { title: "t", description: "PRIVATE BODY SENTINEL" } }, { count: 0 });
+  await reviewAction(ctx, config, "test", { tool: "bash", server: "shell", args: { command: "true", description: "PRIVATE MCP SENTINEL" } }, { count: 0 });
+  await reviewAction(ctx, config, "test", { tool: "write", args: { path: "a", description: "PRIVATE ARG SENTINEL" } }, { count: 0 });
+  assert.deepEqual(blocks, [
+    { kind: "permission", message: "approve bash: Fetch the status page" },
+    { kind: "permission", message: "approve bash" },
+    { kind: "permission", message: "approve create_issue" },
+    { kind: "permission", message: "approve bash" },
+    { kind: "permission", message: "approve write" },
+  ], "only bash's description is read; another tool's is an ordinary argument");
+  assert.equal(promptBlock({ kind: "confirm", title: "Other" }).message, "Other", "the declaration ends with the confirm");
 });
 
 test("a view opened while the confirm waits on a closing one is closed too before the confirm", async () => {

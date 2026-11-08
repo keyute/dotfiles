@@ -17,7 +17,7 @@ alias lsql='lazysql'
 # The CLI is the repo's lockfile-pinned copy: pi breaks extension APIs across
 # 0.x point releases, and the workflow extension must match it exactly.
 pi() {
-  # The workflow owns aggregate OSC 7501 instead of native root-only status.
+  # The workflow owns OSC 7501 (root plus one record per child); this keeps pi's and pi-subagents' reporters off.
   # No startup network activity (version check, catalog refresh).
   PI_PROGRAM_STATUS=0 PI_OFFLINE=1 "{{ .chezmoi.sourceDir }}/node_modules/.bin/pi" --no-builtin-tools --no-extensions -e "{{ .chezmoi.homeDir }}/.pi/agent/extensions/workflow.ts" "$@"
 }

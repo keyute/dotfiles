@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 import { Loader, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { PAD, appendVisible, createTurnClock, defaultFolds, firstLine, formatDuration, formatTurn, noteLine, paintCounts, setRepaint, shortTitle } from "./rows.mjs";
+import { PAD, appendVisible, createTurnClock, defaultFolds, firstLine, formatDuration, formatTurn, noteLine, paintCounts, setRepaint, shortTitle, waitingText } from "./rows.mjs";
 import { hostEnvironment } from "./sandbox-runner.mjs";
-import { blocksUser } from "./dialog.mjs";
+import { onWaitsChange, promptBlock } from "./dialog.mjs";
 
 // The GET fallback uses the ChatGPT backend's unversioned usage endpoint.
 // The bearer token is pi's stored openai-codex
@@ -203,7 +203,7 @@ const USAGE_MIN_INTERVAL_MS = 60_000;
 const GIT_MIN_INTERVAL_MS = 5_000;
 
 export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, clock = createTurnClock(), tickMs = 1000, settleMs = 250, wakeMs = 10_000, readLimits = readRateLimits, folds = defaultFolds } = {}) {
-  const state = { ctx, limits: null, changes: null, usageAt: -Infinity, gitAt: 0, tui: null, tick: null, prompt: null, waiting: false, stopped: false, endedAt: 0, settle: null, wake: null, working: null, compacting: false, shell: null };
+  const state = { ctx, limits: null, changes: null, usageAt: -Infinity, gitAt: 0, tui: null, tick: null, prompt: null, promptEvent: null, waiting: false, stopped: false, endedAt: 0, settle: null, wake: null, working: null, compacting: false, shell: null, rest: "idle", runError: null, compactionInterrupted: false };
   let usageInFlight;
   let nativeRevision = 0;
   const acceptNative = limits => {
@@ -261,7 +261,8 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
     state.tick = null;
   };
   // A user task (a `!` sent to the background) is the user's, not the turn's:
-  // the status line counts it, but it holds neither the turn nor program status.
+  // the status line counts it, but it holds neither the turn nor the root's
+  // waiting text.
   const busy = () => ({ agents: fleet?.activeCount?.({ excludeWorkflows: true }) ?? 0, shells: tasks?.live?.({ leased: true }) ?? 0, ...(orchestrate && { workflows: orchestrate.live() }) });
   const live = () => { const { agents, shells, workflows = 0 } = busy(); return agents + shells + workflows > 0; };
   // A prompt waiting on the user outranks the rest (rule 11), drawn without a
@@ -279,15 +280,24 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
     else if (state.waiting) state.working?.snapshot(clock.waitingLabel(busy()));
     else state.working?.setMessage(clock.label());
   };
-  // Terminal program status (program-status.mjs) follows the work, not the turn: blocked
-  // while a prompt waits on the user, working while the turn is open (its
-  // clock runs through the waiting row and its wakes), anything is live (also
-  // after an abort or a typed prompt closed the turn), pi compacts or a `!`
-  // runs, else idle. It is reported after every turn handler and timer close;
-  // the reporter drops repeats. A session that has shut down reports nothing
-  // until it is attached again, so /new cannot complete the departed turn.
-  const activity = () => state.prompt ? { state: "blocked", message: state.prompt.title }
-    : { state: clock.running() || live() || state.compacting || state.shell ? "working" : "idle" };
+  // Terminal program status (program-status.mjs), Claude Code's shape: the
+  // root is the main run, not the turn — blocked while a prompt waits on the
+  // user, working while the root runs, pi compacts or a `!` runs, else the
+  // last run's rest state: done (naming the work still live, which the
+  // waiting row also waits on), error with its message, or idle before the
+  // first run and after an interrupt. Each live child and workflow is a
+  // record of its own. It is reported after every turn handler, work change
+  // and timer close; the reporter drops repeats. A session that has shut down
+  // reports nothing until it is attached again, so /new cannot complete the
+  // departed turn.
+  const root = () => {
+    if (state.prompt) return { state: "blocked", ...state.prompt };
+    if ((clock.running() && !state.waiting) || state.compacting || state.shell) return { state: "working", message: pi.getSessionName() };
+    if (state.rest === "done") return { state: "done", message: waitingText(busy()) };
+    if (state.rest === "error") return { state: "error", message: state.runError };
+    return { state: "idle" };
+  };
+  const activity = () => ({ root: root(), children: fleet?.liveRecords?.() ?? [] });
   const report = () => { if (!state.stopped) onActivity?.(activity()); };
   const on = (name, handler) => pi.on(name, (...args) => { const result = handler(...args); report(); return result; });
   const stopWorking = () => {
@@ -355,8 +365,8 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
     if (state.waiting && !state.stopped && !state.wake && state.ctx.isIdle() && !live()) close({ at: state.endedAt });
   };
   const workChanged = () => {
-    // With the turn closed, work ending still moves program status.
-    if (!state.waiting || state.stopped) return report();
+    report();
+    if (!state.waiting || state.stopped) return;
     state.endedAt = Date.now();
     showLabel();
     clearSettle();
@@ -370,6 +380,8 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
   tasks?.onChange(workChanged);
   orchestrate?.onChange(workChanged);
   on("agent_start", () => {
+    state.compactionInterrupted = false;
+    state.runError = null;
     clock.start();
     clearSettle();
     clearWake();
@@ -379,6 +391,11 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
   });
   pi.on("message_end", event => {
     if (event.message.role === "assistant" || event.message.role === "toolResult") void refreshUsage();
+    // The latest response decides, so a retried error gives way to its retry.
+    if (event.message.role === "assistant") {
+      state.compactionInterrupted = false;
+      state.runError = event.message.stopReason === "error" ? firstLine(event.message.errorMessage).trim() || "Error" : null;
+    }
   });
   pi.on("agent_end", (_event, eventCtx) => {
     void refreshUsage();
@@ -386,6 +403,7 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
   });
   // The turn's tick stays armed through the waiting row: its clock still runs.
   on("agent_settled", event => {
+    state.rest = event?.aborted || state.compactionInterrupted ? "idle" : state.runError ? "error" : "done";
     if (!clock.running()) return;
     if (event?.aborted) return close({ aborted: true, ...(live() && { running: busy() }) });
     if (!live()) return close();
@@ -406,8 +424,8 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
     }
     return { action: "continue" };
   });
-  on("ui_prompt_start", event => { state.prompt = blocksUser(event) ? { title: event.title } : null; showLabel(); });
-  on("ui_prompt_end", () => { state.prompt = null; showLabel(); });
+  on("ui_prompt_start", event => { state.promptEvent = event; state.prompt = promptBlock(event); showLabel(); });
+  on("ui_prompt_end", () => { state.promptEvent = null; state.prompt = null; showLabel(); });
   // pi draws its own indicator while it compacts, in the status container just
   // above this row; rule 3 allows one, so the row stands down and comes back
   // with the turn. Its auto-retry countdown has no documented event and keeps
@@ -416,10 +434,24 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
   // Compaction counts as not idle and emits no input, so work that ended during
   // it is re-checked here or the waiting row would never close.
   on("session_compact", () => { startWorking(); if (state.shell) armShell(); workChanged(); });
-  on("session_compact_failed", () => { startWorking(); if (state.shell) armShell(); workChanged(); });
+  // Compaction's abort does not mark agent_settled aborted; retain the
+  // interrupt until a later assistant response supersedes it.
+  on("session_compact_failed", event => {
+    if (event?.aborted) {
+      state.compactionInterrupted = true;
+      state.rest = "idle";
+    } else {
+      state.runError = firstLine(event?.errorMessage).trim() || "Compaction failed";
+      state.rest = "error";
+    }
+    startWorking();
+    if (state.shell) armShell();
+    workChanged();
+  });
+  pi.on("session_info_changed", report);
   // The open turn is dropped, not closed: after /new its line would land in the
   // next session. A prompt or compaction it cut off would report on at attach.
-  pi.on("session_shutdown", () => { state.stopped = true; state.waiting = false; state.prompt = null; state.compacting = false; clock.stop(); clearTick(); clearSettle(); clearWake(); stopWorking(); });
+  pi.on("session_shutdown", () => { state.stopped = true; state.waiting = false; state.prompt = null; state.promptEvent = null; state.compacting = false; clock.stop(); clearTick(); clearSettle(); clearWake(); stopWorking(); });
   pi.registerEntryRenderer("workflow-turn", (entry, _options, theme) => new Text(formatTurn(entry.data, theme), 0, 0));
   pi.on("turn_start", (_event, eventCtx) => void refreshGit(eventCtx.cwd));
   void refreshGit(ctx.cwd);
@@ -429,6 +461,9 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
   const attach = uiCtx => {
     state.ctx = uiCtx;
     state.stopped = false;
+    state.rest = "idle";
+    state.runError = null;
+    state.compactionInterrupted = false;
     void refreshUsage();
     // pi's built-in working row is switched off in favour of the widget above
     // the composer; with it off no working indicator is ever built, so pi's
@@ -442,6 +477,14 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
       // click or a later completion joining their group repaints through here.
       setRepaint(folds, () => tui.requestRender());
       const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+      // pi opens one span for overlapping prompts, so a wait answered inside it
+      // leaves the next declared wait showing under the same start event.
+      const unwatchWaits = onWaitsChange(() => {
+        if (!state.promptEvent) return;
+        state.prompt = promptBlock(state.promptEvent);
+        showLabel();
+        report();
+      });
       // The turn tick stops between turns; this keeps the short-window reset countdown current while idle.
       const refresh = setInterval(() => tui.requestRender(), 60_000);
       refresh.unref?.();
@@ -449,6 +492,7 @@ export function installFooter(pi, ctx, { fleet, tasks, orchestrate, onActivity, 
       return {
         dispose() {
           unsubscribe();
+          unwatchWaits();
           clearInterval(refresh);
         },
         invalidate() {},
