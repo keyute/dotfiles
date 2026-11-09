@@ -52,6 +52,9 @@ agents:
       # rules miss `git -C x commit` and `sh -c` forms
       - "Bash(git push:*)"
       - "Bash(git commit:*)"
+      - "Bash(wt merge:*)"
+      - "Bash(wt step commit:*)"
+      - "Bash(wt step squash:*)"
   pi:
     home: "~/.pi"
     # lines this harness's own prompt surface already carries; the shared

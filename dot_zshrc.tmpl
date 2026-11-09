@@ -105,6 +105,7 @@ _sync_appearance() {
 add-zsh-hook precmd _sync_appearance
 
 eval "$(zoxide init zsh --cmd cd)"
+eval "$(wt config shell init zsh)"
 
 # Pin the emacs keymap: zsh picks viins whenever EDITOR/VISUAL contains "vi"
 # at zle init, so shells that inherit EDITOR=nvim from a parent environment

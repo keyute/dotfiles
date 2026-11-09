@@ -26,6 +26,7 @@ export const mayReachServer = (config, role, server) => role === "root" || confi
 const REVIEWED = [
   /\bgit\b.*\bpush\b/,
   /\bgit\b.*\bcommit\b/,
+  /\bwt\b.*\b(merge|commit|squash)\b/,
   /\bdocker\b.*\bpush\b/,
   /\b(npm|pnpm|yarn)\b.*\bpublish\b/,
   /\b(curl|wget)\b.*\s(-[a-zA-Z]*[dFTX]|--data|--form|--json|--request|--upload-file|--method|--post-|--body-)/,

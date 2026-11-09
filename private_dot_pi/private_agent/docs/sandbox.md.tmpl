@@ -20,7 +20,7 @@ If behavior seems changed, verify against the source and update its template in 
   Code, and run without review; the profile is the boundary. Only remote-mutating
   commands it cannot judge (pushes, publishes, non-read `gh` calls, data-sending
   `curl`/`wget`, remote shells and copies; `workflow/policy.mjs` owns the list) and
-  `git commit` (the user commits) go to the classifier.
+  commits (the user commits) go to the classifier.
   Workspace file edits run without review once execution is approved.
 - Classifier errors/uncertainty prompt the root session; unattended requests deny.
   A pending dialog is announced in the footer: the call fails after ten minutes;

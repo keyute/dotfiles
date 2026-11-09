@@ -1,0 +1,5 @@
+# Hand-written messages for wt's own commits (merge squash, step commit/squash):
+# the rendered prompt arrives commented out in $EDITOR. Setting it also stops
+# wt's first-commit LLM offer from rewriting this chezmoi-owned file.
+[commit.generation]
+command = '''f=$(mktemp); printf '\n\n' > "$f"; sed 's/^/# /' >> "$f"; ${EDITOR:-vi} "$f" < /dev/tty > /dev/tty; grep -v '^#' "$f"'''
