@@ -174,7 +174,7 @@ subagent_tiers:
     small: claude-haiku-5-5
     top: claude-opus-5-5
     # settings.json renders this pin's Agent(model:…) alias deny
-    frontier: claude-fable-5-1
+    frontier: claude-fable-5-2
   pi:
     small: gpt-6-luna
     top: gpt-6.1-sol

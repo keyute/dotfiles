@@ -92,6 +92,8 @@
   "spinnerTipsEnabled": false,
   {{- /* no session recap on returning after 5+ minutes away */}}
   "awaySummaryEnabled": false,
+  {{- /* no compaction of a 200K+ conversation left idle for about an hour */}}
+  "idleCompaction": false,
   {{- /* no built-in commit/PR workflow text or git status snapshot (branch, status, recent commits) in the system prompt */}}
   "includeGitInstructions": false,
   {{- /* no agent view: `claude agents`, --bg, /background and the on-demand daemon */}}
