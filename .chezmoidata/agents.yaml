@@ -75,9 +75,9 @@ agents:
       reasoning_effort: high
       # approval classifier: one tier model for both stages; the filter answers
       # every reviewed action, anything but allow is re-judged
-      classifier: { tier: top, filter_effort: low, judge_effort: medium }
+      classifier: {tier: top, filter_effort: low, judge_effort: medium}
       # contextWindow per tier in ~/.pi/agent/models.json; an unlisted tier keeps pi's catalog window
-      context_window: { frontier: 872000 }
+      context_window: {frontier: 872000}
     sensitive_subpaths:
       - "agent/auth.json"
       - "agent/sessions"
@@ -177,8 +177,8 @@ subagent_tiers:
     frontier: claude-fable-5-2
   pi:
     small: gpt-6-luna
-    top: gpt-6.1-sol
-    frontier: gpt-6-astra
+    top: gpt-6.2-sol
+    frontier: gpt-6.2-astra
 # advisory fan-out size both drivers' workflow tools show: small <5 agents,
 # medium <10, large <50
 workflow_size: medium
@@ -229,7 +229,6 @@ agent_sandbox:
 agent_mcp_servers:
   # auto_approve_tools: Claude emits an allow rule and pi's workflow/policy.mjs
   # allows a read-only call outright; omission keeps normal review.
-
   context7:
     package_bin: context7-mcp
     args: []
