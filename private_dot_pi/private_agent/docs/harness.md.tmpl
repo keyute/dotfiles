@@ -1,7 +1,7 @@
 # Pi workflow reference
 
 Env-specific facts; if behavior seems changed, verify against the source repo and update its
-template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
+template in the chezmoi repo.
 
 ## Launch and pins
 
@@ -18,7 +18,7 @@ template in the chezmoi repo. Decisions: the repo's `docs/decisions.md`.
 {{- $cls := .agents.pi.defaults.classifier }}{{ $clsModel := index .subagent_tiers.pi $cls.tier }}
   runs two tool-less stages: `{{ $clsModel }}` at {{ $cls.filter_effort }} reasoning screens each reviewed action; anything
   but allow goes to `{{ $clsModel }}` at {{ $cls.judge_effort }} reasoning on the same prompt, whose verdict is final.
-- Specialist roles, from `subagents` in agents.yaml (`docs/decisions.md` records each why):
+- Specialist roles, from `subagents` in agents.yaml:
 
 | role | model | reasoning |
 |---|---|---|

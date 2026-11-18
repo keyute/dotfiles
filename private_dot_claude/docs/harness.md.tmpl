@@ -1,6 +1,6 @@
 # Claude Code workflow reference
 
-Env-specific facts; decisions and their triggers live in the chezmoi repo's `docs/decisions.md`.
+Env-specific facts.
 If behavior seems changed, verify (claude-code-guide) and update its template in the chezmoi repo.
 
 ## Models
@@ -13,7 +13,7 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
   cache, so the next request re-reads the whole history uncached at the frontier rate, and
   `/model <name>` saves it as the default until the next apply. In a
   frontier-model session don't fork — forks inherit it.
-- Roles render from `subagents` in agents.yaml; `docs/decisions.md` records each why. Pins do not
+- Roles render from `subagents` in agents.yaml. Pins do not
   follow `/model`; a child without explicit effort takes its pin's `modelSettings`
   effort, which settings.json sets for every pin, not the session's effort.
 

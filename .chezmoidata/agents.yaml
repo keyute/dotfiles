@@ -90,6 +90,8 @@ subagents:
   # directly and the pi render via translation (pi-roles). `omit_instructions`
   # renders Claude's omitClaudeMd and pi's inheritProjectContext/
   # inheritGlobalContext false. `nests` lets a role launch children.
+  # `effort` is optional: a role sets it only where a miss is costly, the rest
+  # run at `subagent_effort`.
   # Overrides each harness's built-in exploration role (Claude matches on this
   # exact name).
   Explore:
@@ -101,20 +103,17 @@ subagents:
     description: "Read-only bounded lookup or known-area flow trace, including directly related files. Use explore-deep for broad or cross-subsystem investigation."
   explore-deep:
     tier: top
-    effort: medium
     readonly: true
     omit_instructions: true
     tools: "Read, Bash"
     description: "Read-only broad or cross-subsystem investigation."
   infra-reviewer:
     tier: top
-    effort: medium
     readonly: true
     tools: "Read, Bash"
     description: "Review Kubernetes/Helm/ArgoCD manifest diffs — chart values, CRDs, GitOps app definitions — for correctness and upgrade safety before merging."
   diff-reviewer:
     tier: top
-    effort: medium
     readonly: true
     tools: "Read, Bash"
     description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language (Kubernetes/Helm/ArgoCD manifests: infra-reviewer); read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them."
@@ -128,21 +127,22 @@ subagents:
     description: "Judge one finished artifact against the requirements it was built from, in one pass — dispatched for the fresh-eyes self-review before work is called done, not for ordinary diff review. Reports requirements that went unimplemented as readily as defects in what was written; read-only."
   dep-researcher:
     tier: top
-    effort: medium
     readonly: true
     omit_instructions: true
+    # no Bash: an off-list host costs a reviewed per-command allowance there,
+    # while the fetch tools reach it unreviewed
     tools: "Read, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Research one dependency bump — upstream changelog, breaking changes, migration steps, changed defaults. Dispatched per dependency by the dep-audit skill; returns findings only, never edits."
   researcher:
     tier: top
-    effort: medium
     readonly: true
     omit_instructions: true
+    # no Bash: an off-list host costs a reviewed per-command allowance there,
+    # while the fetch tools reach it unreviewed
     tools: "Read, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
   implementer:
     tier: mid
-    effort: medium
     readonly: false
     tools: "Read, Bash, Edit, Write"
     description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. NOT for exploratory work or an unsettled design; never commits."
@@ -166,6 +166,7 @@ subagents:
     tools: "Read, Bash"
     description: "Read-only bounded planning research: relevant files, constraints, trade-offs and proposed steps. Returns options and open decisions."
 # explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
+# A model release replaces an ID here and nothing else.
 subagent_tiers:
   claude:
     small: claude-haiku-5-5
@@ -179,6 +180,8 @@ subagent_tiers:
     mid: gpt-6.1-sol
     top: gpt-6.1-sol
     frontier: gpt-6-astra
+# effort of every role that sets none
+subagent_effort: medium
 # advisory fan-out size both drivers' workflow tools show: small <5 agents,
 # medium <10, large <50
 workflow_size: medium

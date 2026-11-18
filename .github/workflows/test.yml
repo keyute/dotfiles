@@ -18,9 +18,7 @@ concurrency:
 jobs:
   # docs/, README.md and AGENTS.md are chezmoi-ignored —
   # repo-local only — so a commit touching nothing else cannot change a
-  # rendered target. docs/decisions.md and AGENTS.md still trigger the run:
-  # render.test reads them from source. Everything else, this workflow
-  # included, runs render.
+  # rendered target. Everything else, this workflow included, runs render.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -50,10 +48,9 @@ jobs:
           filters: |
             chezmoi:
               - '**'
-              - '!docs/pi-*.md'
-              - '!docs/agent-authoring.md'
-              - '!docs/rex-settings.md'
+              - '!docs/**'
               - '!README.md'
+              - '!AGENTS.md'
 
   # Fast gate on every PR and push to main: render.test applies the whole tree
   # headless into a scratch home with run scripts and externals excluded. modify_ scripts are not in the

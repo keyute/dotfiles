@@ -1,6 +1,6 @@
 # Pi implementation working record
 
-Architecture decisions behind the managed pi setup and their triggers; model, role and setting decisions are in `docs/decisions.md`.
+Architecture decisions behind the managed pi setup and their triggers.
 
 ## Decisions
 

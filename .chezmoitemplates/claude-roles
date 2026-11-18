@@ -12,7 +12,7 @@
     {{- $tier := get $meta "tier" -}}
     {{- $model := get $root.subagent_tiers.claude $tier -}}
     {{- if not $model -}}{{- fail (printf "%s: unknown tier %s" $name $tier) -}}{{- end -}}
-    {{- $effort := get $meta "effort" -}}
+    {{- $effort := default $root.subagent_effort (get $meta "effort") -}}
     {{- if not $effort -}}{{- fail (printf "%s: missing effort" $name) -}}{{- end -}}
     {{- $roles = set $roles $name (dict "model" $model "effort" $effort) -}}
   {{- end -}}

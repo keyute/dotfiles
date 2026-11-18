@@ -7,16 +7,13 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
 - Intent lives beside its projection: each bullet ends in a non-rendering
   `{{/* <principle>: <why> */}}` comment. An intent change edits the bullet
   and its comment together.
-- A comment opens with `model:` when the line compensates a model default;
-  an untagged line is an owner contract.
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`;
   rules only a session driver needs → `driver-instructions.md`.
 - Subagent and skill bodies render for every harness: keep harness-specific
   nouns — tool names, agent names, instruction filenames — out of them, and take
   what varies as a parameter.
 - Harness-specific *intent* → a commented bullet in that harness's consumer
-  template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl`), judged on its
-  `docs/decisions.md` event like any principle. A
+  template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl`). A
   tag encodes intent intrinsic to that harness, never the harness where a
   failure was observed; what varies only by path (the doc pointers) takes a
   per-harness value from agents.yaml inside the shared projection.
@@ -36,8 +33,7 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
 
 - One imperative intent line plus a why; the why records the tradeoff or
   failure the rule is meant to protect, so the rule survives cases it never
-  enumerated. Evidence and numbers stay out of the why; a row only where One
-  record calls for one.
+  enumerated. Evidence and numbers stay out of the why.
 - State the constraint with its concrete trigger, not a description of the
   preferred world.
 - Say what to do; reserve "never" for absolute boundaries and emphasis

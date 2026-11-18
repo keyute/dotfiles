@@ -21,31 +21,31 @@
 - Keep implementations simple: no unrequested features, refactors or
   abstractions, one-shot helpers, or speculative error handling/fallbacks.
   Validate at system boundaries or for an invariant/observed failure; trust
-  internal code. No flags or compatibility shims where code can just change.{{/* model: simplicity: unrequested abstraction is debt and models add it unasked; reasoning effort does not reliably prevent it */}}
+  internal code. No flags or compatibility shims where code can just change.{{/* simplicity: unrequested abstraction is debt and models add it unasked; reasoning effort does not reliably prevent it */}}
 - Match the surrounding code's style, design language, and colocation; if the
   project's rules don't settle it, find the codebase's pattern before writing.{{/* style_matching: consistency outlives preference */}}
 - Deliver code whose comments carry only what a reader can't reconstruct from
   it — non-obvious rationale, constraints, invariants, units, protocol/API
   contracts, hazards; reason in scratch, not the source. Leave unrelated
   existing comments alone; drop a pre-existing one only when your change made
-  it wrong or redundant.{{/* model: comment_discipline: models over-narrate by default; a comment that restates the code rots, the load-bearing ones are what a fresh reader cannot recover, and opportunistic comment churn buries the diff */}}
+  it wrong or redundant.{{/* comment_discipline: models over-narrate by default; a comment that restates the code rots, the load-bearing ones are what a fresh reader cannot recover, and opportunistic comment churn buries the diff */}}
 - A pre-existing bug, performance concern, or adjacent cleanup found while
   working goes in the summary as a follow-up, not into the change, unless the
   requested behaviour cannot work without it; keep scratch checks out of the
   repo, and add tests to the repository only where the task asks or it already
-  keeps tests for that kind of change, sized like their neighbours.{{/* model: scope_of_extras: models deliver what was asked and more; unrequested extras and committed scratch tests widen the diff the user must review */}}
+  keeps tests for that kind of change, sized like their neighbours.{{/* scope_of_extras: models deliver what was asked and more; unrequested extras and committed scratch tests widen the diff the user must review */}}
 - Make the code pass the tests, never the tests pass the code — no hard-coding
   for known inputs, no editing, skipping, or deleting a failing test; when a
   test or the task itself is wrong, say so, and stop only when it blocks a
-  correct completion or needs my decision.{{/* model: test_integrity: agents optimise for the gate, and a weakened test is a false green that outlives the session */}}
+  correct completion or needs my decision.{{/* test_integrity: agents optimise for the gate, and a weakened test is a false green that outlives the session */}}
 - Claims about actions taken, state, and verification rest on a tool result
   from this session: failing tests with the relevant output, skipped steps by
-  name, unverified work labelled as such.{{/* model: faithful_reporting: self-reports drift from what ran, and a false done costs more than an honest blocked */}}
+  name, unverified work labelled as such.{{/* faithful_reporting: self-reports drift from what ran, and a false done costs more than an honest blocked */}}
 - If one part of the work is blocked, finish every other part and say what you
-  left out and why.{{/* model: partial_delivery: scaling the work down is my call, not the agent's */}}
+  left out and why.{{/* partial_delivery: scaling the work down is my call, not the agent's */}}
 {{ if not (has "call_batching" $native) -}}
 - Issue independent tool calls together in one message; keep dependent work
-  sequential.{{/* model: call_batching: serial independent calls spend turns and wall-clock for nothing */}}
+  sequential.{{/* call_batching: serial independent calls spend turns and wall-clock for nothing */}}
 {{ end -}}
 - Never read credential stores, shell history, agent transcripts/session stores,
   or auth configs unless I explicitly ask for that specific path — the sandbox

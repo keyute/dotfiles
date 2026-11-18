@@ -22,7 +22,7 @@
   {{- $harnesses := get $meta "harnesses" -}}
   {{- if or (not $harnesses) (has "pi" $harnesses) -}}
     {{- $tier := get $meta "tier" -}}
-    {{- $effort := get $meta "effort" -}}
+    {{- $effort := default $root.subagent_effort (get $meta "effort") -}}
     {{- if not $effort -}}{{- fail (printf "%s: missing effort" $name) -}}{{- end -}}
     {{- $pin := get $root.subagent_tiers.pi $tier -}}
     {{- if not $pin -}}{{- fail (printf "%s: unknown tier %s" $name $tier) -}}{{- end -}}

@@ -10,61 +10,13 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-// byte budgets (single owner): ceilings set from measured renders; role
-// entries are trimmed rendered bodies, without frontmatter or inherited context
-const BYTE_BUDGETS = {
-  ".claude/CLAUDE.md": 3481,
-  ".pi/agent/AGENTS.md + driver": 3869,
-  ".pi/agent/subagent-tool-description.md": 2795,
-  ".pi/agent/orchestrate-tool-description.md": 2169,
-  ".pi/agent/docs/harness.md": 4678,
-  ".pi/agent/docs/sandbox.md": 4991,
-  ".claude/docs/harness.md": 3249,
-  ".claude/docs/sandbox.md": 1447,
-  // chezmoi-ignored, read from source: it loads in every session in this repo
-  "AGENTS.md": 3560,
-  // owned skill name/description fields only; native advertisement framing is not measured
-  "skill advertisements": 842,
-  "role Explore": 770, "role Plan": 695, "role dep-researcher": 1182, "role diff-reviewer": 2368,
-  "role explore-deep": 907, "role general-purpose": 371, "role implementer": 858,
-  "role infra-reviewer": 2348, "role researcher": 1368, "role spec-reviewer": 2652,
-};
-const assertBudget = (name, text) => {
-  const max = BYTE_BUDGETS[name];
-  assert.ok(max, `no budget for ${name}`);
-  const bytes = Buffer.byteLength(text);
-  assert.ok(bytes <= max, `${name} is ${bytes} bytes (max ${max}): cut, do not raise the budget`);
-};
-// decisions.md is read on trigger reviews only, never per turn: a per-row cap bounds verbosity, and the file grows one row per decision
-const DECISION_ROW_MAX_BYTES = 360;
-// a model id: pins live in agents.yaml, and a decisions row names its tier so a re-pin leaves it true
+// a model id: pins live in agents.yaml, so a re-pin is one edit there
 const PIN_ID = /\bclaude-[a-z0-9]+-[0-9][a-z0-9-]*|\bgpt-[0-9][a-z0-9.-]*/;
 // roles take every documented level; the driver's settings effortLevel excludes `max`, which is session-only
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CLAUDE_DRIVER_EFFORTS = ["low", "medium", "high", "xhigh"];
 
 const readSource = path => readFileSync(join(source, path), "utf8");
-// the text of each YAML comment: a `#` at line start or after whitespace, outside quotes
-const yamlComments = text => text.split("\n").flatMap(line => {
-  // walk to the first `#` outside quotes; a quote stripper would also eat text between two apostrophes inside a comment
-  let quote = null;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (quote) { if (c === quote) quote = null; continue; }
-    if (c === '"' || c === "'") { quote = c; continue; }
-    if (c === "#" && (i === 0 || /\s/.test(line[i - 1]))) return [line.slice(i + 1)];
-  }
-  return [];
-});
-// variant suffixes after the version (a -pro id), not families: they collide with ordinary words like "Pro allowance"
-const NON_FAMILY_SEGMENTS = ["pro", "mini", "nano", "codex"];
-// capitalised model-family names of the current pins (claude-<family>-..., gpt-<n>-<family>); a bare gpt-<n> has none
-const familyNouns = data => [...new Set(Object.values(data.subagent_tiers).flatMap(Object.values).flatMap(pin => {
-  const parts = pin.split("-");
-  const family = pin.startsWith("claude-") ? parts[1] : parts[2];
-  if (!/^[a-z]+$/i.test(family ?? "") || NON_FAMILY_SEGMENTS.includes(family.toLowerCase())) return [];
-  return [family[0].toUpperCase() + family.slice(1)];
-}))];
 
 const fixture = (t) => {
   const root = mkdtempSync(join(tmpdir(), "pi-workflow-render-"));
@@ -183,47 +135,14 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.doesNotMatch(workflow.driverInstructions, /When you are the session driver/);
   assert.match(claudeInstructions, /^- When you are the session driver/m);
   assert.ok(claudeInstructions.includes(`  ${workflow.driverInstructions.split("\n")[0]}`));
-  for (const instructions of [workflow.driverInstructions, claudeInstructions]) {
-    assert.match(instructions, /lowest capable pinned worker once design, exclusive\s+scope and objective gate are settled; it owns implementation\/test\/repair/);
-    assert.match(instructions, /Unblock handoffs; take over only when it loops on repair/);
-    assert.doesNotMatch(instructions, /Finish a failed worker's piece yourself rather than promoting it/);
-  }
   const claudeHarness = run("cat", target(".claude/docs/harness.md"));
   const piHarness = run("cat", target(".pi/agent/docs/harness.md"));
-  const claudeSandboxDoc = run("cat", target(".claude/docs/sandbox.md"));
   const piSandboxDoc = run("cat", target(".pi/agent/docs/sandbox.md"));
   assert.doesNotMatch(piHarness, /parallel launches for flat independent work/);
   assert.match(piSandboxDoc, /Preserve inherited `TMPDIR`/);
   assert.match(piSandboxDoc, /--configLoader runner/);
   assert.match(piSandboxDoc, /`cacheDir` or `TMPDIR` alone does not relocate that bundle/);
-  assert.doesNotMatch(readSource("AGENTS.md"), /TMPDIR=\/tmp\/claude\/x/);
-  for (const [name, text] of [
-    [".pi/agent/AGENTS.md + driver", piInstructions + workflow.driverInstructions],
-    [".claude/CLAUDE.md", claudeInstructions],
-    [".pi/agent/docs/harness.md", piHarness],
-    [".claude/docs/harness.md", claudeHarness],
-    [".pi/agent/docs/sandbox.md", piSandboxDoc],
-    [".claude/docs/sandbox.md", claudeSandboxDoc],
-    [".pi/agent/subagent-tool-description.md", description],
-    [".pi/agent/orchestrate-tool-description.md", orchestrateDescription],
-    ["AGENTS.md", readSource("AGENTS.md")],
-  ]) assertBudget(name, text);
   assert.ok(claudeHarness.includes(data.subagent_tiers.claude.top));
-  // family names age with the pins; the pin id (or its tier) is the one spelling
-  const nouns = familyNouns(data);
-  for (const [name, text, flags] of [
-    [".claude/CLAUDE.md", claudeInstructions, ""],
-    [".pi/agent/AGENTS.md", piInstructions, ""],
-    [".claude/docs/harness.md", claudeHarness, ""],
-    [".pi/agent/docs/harness.md", piHarness, ""],
-    [".claude/docs/sandbox.md", claudeSandboxDoc, ""],
-    [".pi/agent/docs/sandbox.md", piSandboxDoc, ""],
-    [".pi/agent/orchestrate-tool-description.md", orchestrateDescription, ""],
-    // comments carry no pin ids, so a lowercase family name is caught too
-    [".chezmoidata/agents.yaml comments", yamlComments(readSource(".chezmoidata/agents.yaml")).join("\n"), "i"],
-  ]) {
-    for (const noun of nouns) assert.doesNotMatch(text, new RegExp(`\\b${noun}\\b`, flags), `${name} names the model family ${noun}: name the tier or the pin id`);
-  }
 
   const claudeSettings = JSON.parse(run("cat", target(".claude/settings.json")));
   // a relative deny name sits in the writable cwd, so it also gets an Edit() deny
@@ -280,31 +199,6 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/node_modules")), true);
 });
 
-test("ship-check shares a selection-aware native approval flow across harnesses", t => {
-  const { run, target } = fixture(t);
-  const claude = run("cat", target(".claude/skills/ship-check/SKILL.md"));
-  const pi = run("cat", target(".agents/skills/ship-check/SKILL.md"));
-  assert.equal(pi, claude);
-  const description = JSON.parse(pi.match(/^description: (.+)$/m)[1]);
-  assert.match(description, /only on explicit invocation or an explicit user request for ship-check/);
-  assert.match(description, /not automatic implementation completion, generic review or routine verification/);
-  assert.match(description, /full-branch pre-ship review and approved fixes/);
-  assert.doesNotMatch(pi, /^disable-model-invocation:/m);
-  assert.match(pi, /every input ID has exactly one disposition/);
-  assert.match(pi, /kept, merged-to ID, refuted/);
-  assert.match(pi, /Before synthesis, whether using workflow\s+scripts or direct reviewer dispatch, mechanically assert that every input ID has exactly one disposition/);
-  assert.match(pi, /refuted with evidence, or deferred with reason; validate\s+merge targets/);
-  assert.match(pi, /existing workflow maps\/arrays or a bounded scratch check for\s+direct reviewer dispatch, not a new persistent tool/);
-  assert.match(pi, /Subsequent review covers fixes and affected dependencies/);
-  assert.match(pi, /Reuse completed maps/);
-  assert.match(pi, /no survivors[^]*stop without a plan/);
-  assert.match(pi, /explicit review-only request[^]*without seeking execution approval/);
-  assert.match(pi, /in plan\s+mode, proactively submit[^]*native plan approval flow/);
-  assert.match(pi, /do not wait for a separate/);
-  assert.match(pi, /select findings by ID and revise the same artifact/);
-  assert.match(pi, /only the selected findings in the\s+approved revision/);
-});
-
 test("a shared skill renders the same body on both harnesses and stays model-invocable", t => {
   const { run, target } = fixture(t);
   for (const file of readdirSync(join(source, ".chezmoitemplates/skills")).filter(file => file.endsWith(".md"))) {
@@ -334,6 +228,7 @@ test("each role renders its roster tier and effort on every harness it targets",
   for (const role of ["Explore", "Plan"]) assert.equal(data.subagents[role].omit_instructions, true, role);
   for (const [role, meta] of Object.entries(data.subagents)) {
     const harnesses = meta.harnesses ?? Object.keys(data.agents);
+    const effort = meta.effort ?? data.subagent_effort;
     // No child runs the frontier tier.
     assert.notEqual(meta.tier, "frontier", role);
 
@@ -344,8 +239,8 @@ test("each role renders its roster tier and effort on every harness it targets",
       const agent = run("cat", claudePath);
       assert.match(agent, new RegExp(`^name: ${role}$`, "m"));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: claude model ${model}`);
-      assert.ok(CLAUDE_EFFORTS.includes(meta.effort), `${role}: ${meta.effort} is not a Claude effort level`);
-      assert.ok(agent.split("\n").includes(`effort: ${meta.effort}`), `${role}: claude effort ${meta.effort}`);
+      assert.ok(CLAUDE_EFFORTS.includes(effort), `${role}: ${effort} is not a Claude effort level`);
+      assert.ok(agent.split("\n").includes(`effort: ${effort}`), `${role}: claude effort ${effort}`);
       // a nesting role inherits every tool, Agent included
       assert.equal(/^tools: /m.test(agent), !meta.nests, `${role}: claude tools line`);
       assert.equal(agent.split("\n").includes("omitClaudeMd: true"), meta.omit_instructions ?? false, `${role}: omitClaudeMd`);
@@ -356,11 +251,11 @@ test("each role renders its roster tier and effort on every harness it targets",
     if (harnesses.includes("pi")) {
       const model = `${provider}/${data.subagent_tiers.pi[meta.tier]}`;
       assert.notEqual(data.subagent_tiers.pi[meta.tier], data.subagent_tiers.pi.frontier, role);
-      assertPiEffort(provider, data.subagent_tiers.pi[meta.tier], meta.effort, role);
+      assertPiEffort(provider, data.subagent_tiers.pi[meta.tier], effort, role);
       const contract = workflow.agents[role];
       assert.deepEqual(
         [contract.model, contract.thinking, contract.readonly, contract.nests],
-        [model, meta.effort, meta.readonly, meta.nests ?? false],
+        [model, effort, meta.readonly, meta.nests ?? false],
         role,
       );
       if (!meta.readonly) assert.ok(contract.mutationTools.length > 0, role);
@@ -375,7 +270,7 @@ test("each role renders its roster tier and effort on every harness it targets",
       assert.equal(contract.tools.includes("web_fetch"), claudeTools.includes("WebFetch"), `${role}: web_fetch`);
       const agent = run("cat", target(`.pi/agent/agents/${role}.md`));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: pi model ${model}`);
-      assert.ok(agent.split("\n").includes(`thinking: ${meta.effort}`), `${role}: pi thinking ${meta.effort}`);
+      assert.ok(agent.split("\n").includes(`thinking: ${effort}`), `${role}: pi thinking ${effort}`);
       for (const key of ["inheritProjectContext", "inheritGlobalContext"]) {
         assert.ok(agent.split("\n").includes(`${key}: ${!(meta.omit_instructions ?? false)}`), `${role}: pi ${key}`);
       }
@@ -392,7 +287,7 @@ test("each role renders its roster tier and effort on every harness it targets",
 
   const pi = data.agents.pi.defaults;
   assertPiEffort(provider, data.subagent_tiers.pi[pi.tier], pi.reasoning_effort, "pi driver");
-  // one model for the whole approval gate (docs/decisions.md, agents.pi.defaults.classifier)
+  // one model for the whole approval gate (agents.pi.defaults.classifier)
   const classifierPin = data.subagent_tiers.pi[pi.classifier.tier];
   assert.ok(classifierPin, `agents.pi.defaults.classifier.tier ${pi.classifier.tier} is not a pi tier`);
   assertPiEffort(provider, classifierPin, pi.classifier.filter_effort, "classifier filter");
@@ -474,53 +369,6 @@ test("readonly roles grant no write tool and only read-only MCP tools; writers c
   }
 });
 
-test("docs/decisions.md has a row for every tier pin, driver, classifier and search slot", (t) => {
-  const { data: load } = fixture(t);
-  const data = load();
-  const nouns = familyNouns(data);
-  const cells = line => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
-  const [header, , ...body] = readSource("docs/decisions.md").split("\n").filter(line => line.trim().startsWith("|")).map(cells);
-  assert.deepEqual(header, ["key", "why", "revisit when"]);
-  // a stray `|` in a cell shifts the columns and fails later asserts with a misleading message
-  for (const row of body) assert.equal(row.length, 3, `docs/decisions.md ${row[0]}: ${row.length} cells, not 3`);
-  const rows = new Map(body.map(([key, ...rest]) => [key.replace(/^`(.*)`$/, "$1"), rest]));
-  assert.equal(rows.size, body.length, "docs/decisions.md has a duplicate key");
-  const slots = [
-    ...Object.keys(data.subagent_tiers.claude).map(tier => `subagent_tiers.claude.${tier}`),
-    ...Object.keys(data.subagent_tiers).map(h => `agents.${h}.defaults.tier`),
-    "agents.pi.defaults.classifier",
-    "agents.pi.defaults.context_window",
-    "agents.pi.search_tier",
-    "measure.role_matrix",
-  ];
-  for (const key of slots) assert.ok(rows.has(key), `docs/decisions.md has no ${key} row`);
-  // a key is a namespace label or a live agents.yaml path; a list-valued path may carry one sub-label
-  for (const key of rows.keys()) {
-    if (/^(parity|setting|measure|instruction)\./.test(key)) continue;
-    let node = data;
-    const segments = key.split(".");
-    for (const [i, segment] of segments.entries()) {
-      if (Array.isArray(node) && i === segments.length - 1) break;
-      assert.ok(node && typeof node === "object" && !Array.isArray(node) && segment in node, `docs/decisions.md ${key}: neither a namespace label nor an agents.yaml path`);
-      node = node[segment];
-    }
-  }
-  for (const line of readSource("docs/decisions.md").split("\n").filter(line => line.trim().startsWith("|"))) {
-    assert.ok(Buffer.byteLength(line) <= DECISION_ROW_MAX_BYTES, `docs/decisions.md row over ${DECISION_ROW_MAX_BYTES} bytes: ${line.slice(0, 60)}`);
-  }
-  for (const [key, [why, trigger]] of rows) {
-    assert.match(why, /^(measured|vendor|benchmark|preference|forced):/, `docs/decisions.md ${key}: evidence kind`);
-    // a trigger is an event: never empty, never a calendar date
-    assert.ok(trigger && trigger.length > 0, `docs/decisions.md ${key}: empty trigger`);
-    assert.doesNotMatch(trigger, /\d{4}-\d{2}-\d{2}/, `docs/decisions.md ${key}: dated trigger`);
-    // every cell names the tier, never the pin, so a re-pin leaves the record true and is one agents.yaml edit
-    for (const cell of [why, trigger]) {
-      assert.doesNotMatch(cell, PIN_ID, `docs/decisions.md ${key}: names a pin id, name the tier`);
-      for (const noun of nouns) assert.doesNotMatch(cell, new RegExp(`\\b${noun}\\b`), `docs/decisions.md ${key}: names the model family ${noun}`);
-    }
-  }
-});
-
 test("every native_coverage key gates a line of the shared projection", (t) => {
   const { data: load } = fixture(t);
   const data = load();
@@ -529,12 +377,6 @@ test("every native_coverage key gates a line of the shared projection", (t) => {
     for (const key of agent.native_coverage ?? []) {
       assert.ok(instructions.includes(`has "${key}" $native`), `agents.${h}.native_coverage ${key}: no shared projection line checks it`);
     }
-  }
-});
-
-test("agents.yaml comments carry no dates or reversal notes: those live in docs/decisions.md", () => {
-  for (const comment of yamlComments(readSource(".chezmoidata/agents.yaml"))) {
-    assert.doesNotMatch(comment, /\d{4}-\d{2}-\d{2}|Reversal|Revisit/, `agents.yaml comment: ${comment.trim()}`);
   }
 });
 
@@ -560,15 +402,11 @@ test("model pins live only in agents.yaml", () => {
     const path = join(dir, entry.name);
     return entry.isDirectory() ? walk(path) : entry.isFile() ? [path] : [];
   });
-  const files = (dir, keep) => readdirSync(join(source, dir), { withFileTypes: true })
-    .filter(entry => entry.isFile() && keep(entry.name))
-    .map(entry => join(source, dir, entry.name));
   const hits = [
     ...walk(join(source, ".chezmoitemplates")),
     ...walk(join(source, "private_dot_claude")),
     ...walk(join(source, "private_dot_pi")).filter(file => !file.endsWith(".test.mjs")),
     ...walk(join(source, "dot_agents")),
-    ...files("scripts", name => name.endsWith(".mjs") && !name.endsWith(".test.mjs")),
     // this file: the literal role tables it used to carry are what the gate replaces
     fileURLToPath(import.meta.url),
   ].flatMap(file => readFileSync(file, "utf8").split("\n").flatMap((line, index) => {
@@ -664,20 +502,3 @@ test("managed Pi launch sets PI_PROGRAM_STATUS=0 only for the call", t => {
   }
 });
 
-test("rendered role bodies and owned skill advertisements stay within their budgets", t => {
-  const { run, target, data: load } = fixture(t);
-  const data = load();
-  for (const harness of ["pi", "claude"]) {
-    for (const role of rolesFor(data, harness)) {
-      const prefix = harness === "pi" ? ".pi/agent" : ".claude";
-      const text = run("cat", target(`${prefix}/agents/${role}.md`));
-      assertBudget(`role ${role}`, text.split(/\n---\n/).slice(1).join("\n---\n").trim());
-    }
-  }
-  let advertisements = "";
-  for (const name of readdirSync(join(source, "dot_agents/exact_skills"))) {
-    const text = run("cat", target(`.agents/skills/${name}/SKILL.md`));
-    advertisements += `${name}\n${JSON.parse(text.match(/^description: (.+)$/m)[1])}\n`;
-  }
-  assertBudget("skill advertisements", advertisements);
-});

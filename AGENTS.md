@@ -37,25 +37,25 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
 
 ## Harness iteration
 
-Changing models, roles, settings or instruction lines follows
-`docs/decisions.md` Events; review runs only on those events and only over
-what the event touches, never as a scheduled or whole-harness sweep.
-
-- **One record, only if needed.** Shared values live in agents.yaml. A
-  decision gets a `docs/decisions.md` row (owned code: a `docs/pi-*.md`
-  entry) only if the code, a key comment or the vendor default cannot show
-  its why *and* a named event would reverse it; else git history holds it.
-  Edit it in the same change. A key comment says what the key does or the
-  hazard that breaks it, never evidence or a date. Agent memory holds only
+- **A model release is one line.** Replace the ID in `subagent_tiers`
+  (`.chezmoidata/agents.yaml`) and run `npm run test:pi`; a pi ID the pinned
+  SDK catalog lacks waits for the pi dependabot PR. No evaluation, and nothing
+  else moves on a release; revert the line if work visibly gets worse.
+- **Tiers follow the kind of work**: small for bounded lookups, mid for
+  implementing a settled design, top for judgement (review, research,
+  planning); frontier drives or escalates and never runs a child. A role sets
+  `effort` only where a miss is costly; the rest take `subagent_effort`.
+  Change one because I ask or a role visibly fails, never from a benchmark or
+  a usage reading. When a weekly limit binds, lower an effort one step.
+- **No decision log.** A setting's why is its key comment — what the key does
+  or the hazard that breaks it — and git history. Agent memory holds only
   session-side gotchas.
 - **Rough parity by default.** Both harnesses reach roughly the same end
   state where each can, not a faithful port. Name the boundary that enforces a restriction — sandbox, policy, tool list — never
   imply one.
 - **Set a vendor setting only to change its default**, to pin a value the
   harness UI persists, or because owned code reads it.
-- **A line earns its place.** An always-loaded instruction line, or a rule in
-  this file, the `docs/decisions.md` header or `docs/agent-authoring.md`,
-  exists only for a diagnosed, recurring failure that the harness prompt, the
-  code or a check does not already prevent; when `git log -p` shows one
-  oscillating, delete it or change its intent, never reword it. Read
-  `docs/agent-authoring.md` before editing an instruction source.
+- **Keep always-loaded text short.** An instruction line, or a rule in this
+  file, exists for a failure that recurred and that the harness prompt, the
+  code or a check does not already prevent. Read `docs/agent-authoring.md`
+  before editing an instruction source.

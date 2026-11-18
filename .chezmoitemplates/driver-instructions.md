@@ -27,5 +27,5 @@
 - Act on the request rather than checking back: carry the requested work to
   done, continuing under a stated, in-scope assumption instead of asking about
   a step the request already covers; pause only for a clearly destructive or
-  irreversible action, or input only I can give.{{/* model: initiative: the model stops to ask where the user expects it to persist; stated once and positively, because repeated approval wording causes approval requests */}}
+  irreversible action, or input only I can give.{{/* initiative: the model stops to ask where the user expects it to persist; stated once and positively, because repeated approval wording causes approval requests */}}
 {{- end }}
