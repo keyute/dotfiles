@@ -1232,9 +1232,8 @@ test("headless root cleanup uses plugin RPC before its shutdown hook and still c
   ctx.model = { provider: "openai-codex", id: "gpt-5.6-sol" };
   const toolChars = [...tools.values()].reduce((sum, tool) => sum + JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters, promptGuidelines: tool.promptGuidelines }).length, 0);
   // These declarations are unchanged by the driver-section extraction.
-  // Includes pinned SDK tools and fixture managed descriptions. Production
-  // driver/description bodies are separately capped by the render fixture;
-  // plugin prompt content and the vendor base prompt are not measured here.
+  // Includes pinned SDK tools and fixture managed descriptions; plugin prompt
+  // content and the vendor base prompt are not measured here.
   assert.ok(toolChars <= 11660, `registered declarations grew: ${toolChars} chars (~${Math.ceil(toolChars / 4)} tokens)`);
   const snippets = [...tools.values()].reduce((sum, tool) => sum + (tool.promptSnippet?.length ?? 0), 0);
   const runtimePromptChars = toolChars + snippets + workflowPrompt({ mode: "plan", readonly: true, isRoot: true, ultracode: true }).length;

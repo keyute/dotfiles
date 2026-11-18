@@ -5,7 +5,7 @@
   {{- $_ := set $modelSettings $pin (dict "effortLevel" $.agents.claude.defaults.reasoning_effort) -}}
 {{- end -}}
 {{- /* the frontier pin's Agent-tool alias is its family segment (claude-<family>-…),
-       so the deny follows the pin; denied_tools hand-lists only aliases with no tier */}}
+       so the deny follows the pin */}}
 {{- $permDeny := append .agents.claude.denied_tools (printf "Agent(model:%s)" (index (splitList "-" .subagent_tiers.claude.frontier) 1)) -}}
 {{- /* The harness merges Read()/Edit() denies into the Bash sandbox's deny
        lists. Relative names also get Edit() because they fall inside the

@@ -54,4 +54,4 @@
 - Never commit on my behalf — I stage, commit, and push myself.{{/* commit_etiquette: authorship and review stay mine */}}
 - After an unresolved sandbox or policy denial, or for a mode/approval
   question, read `{{ $ag.docs }}/sandbox.md`; pins, tiers, limits, web search,
-  MCP: `{{ $ag.docs }}/harness.md`.{{/* doc_pointers: a doc read after a denial cuts repeat denials; a standing read-first pointer made pi load harness.md before most launches with no effect */}}
+  MCP: `{{ $ag.docs }}/harness.md`.{{/* doc_pointers: a doc read after a denial cuts repeat denials; a standing read-first pointer loads the doc into every session */}}

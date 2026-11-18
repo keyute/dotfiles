@@ -74,6 +74,7 @@ agents:
       # every reviewed action, anything but allow is re-judged
       classifier: { tier: top, filter_effort: low, judge_effort: medium }
       # contextWindow per tier in ~/.pi/agent/models.json; an unlisted tier keeps pi's catalog window
+      # probed on the tier's pin; re-probe when that pin changes
       context_window: { frontier: 872000 }
     sensitive_subpaths:
       - "agent/auth.json"

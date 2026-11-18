@@ -14,8 +14,8 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   what varies as a parameter.
 - Harness-specific *intent* → a commented bullet in that harness's consumer
   template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl`). A
-  tag encodes intent intrinsic to that harness, never the harness where a
-  failure was observed; what varies only by path (the doc pointers) takes a
+  bullet goes there only for intent intrinsic to that harness, never because
+  the failure was observed there; what varies only by path (the doc pointers) takes a
   per-harness value from agents.yaml inside the shared projection.
 - Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
   from it, never hand-write what it already encodes.

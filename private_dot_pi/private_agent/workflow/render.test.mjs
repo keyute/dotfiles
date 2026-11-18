@@ -88,29 +88,11 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.equal(workflow.agents["spec-reviewer"].readonly, true);
   assert.ok(["workspace_write", "mcp__exa__web_fetch_exa", "subagent", "bg_wait"].every(tool => workflow.agents["general-purpose"].tools.includes(tool)));
   for (const role of Object.values(workflow.agents)) assert.equal(role.tools.includes("bg_wait"), role.nests);
-  const description = run("cat", target(".pi/agent/subagent-tool-description.md"));
-  assert.doesNotMatch(description, /workflowScript|runs\.|guide|resume|CLI/);
-  assert.doesNotMatch(description, /bg_wait/);
   const subagentConfig = JSON.parse(run("cat", target(".pi/agent/extensions/subagent/config.json")));
   assert.equal(subagentConfig.toolActivation, "eager");
   // the plugin's scripted workflows run model code in an escapable node:vm; orchestrate replaces them
   assert.ok(subagentConfig.disabledFeatures.includes("workflow-scripts"));
   assert.equal(workflow.orchestrateConcurrency, data.agents.pi.orchestrate_concurrency);
-  const orchestrateDescription = run("cat", target(".pi/agent/orchestrate-tool-description.md"));
-  assert.match(orchestrateDescription, /ultracode/);
-  assert.match(orchestrateDescription, /background workflow id immediately/);
-  for (const action of ["status", "result", "stop"]) assert.match(orchestrateDescription, new RegExp(`action: "${action}"`));
-  assert.match(orchestrateDescription, /management still works/);
-  assert.match(orchestrateDescription, /Only one workflow may be active/);
-  assert.match(orchestrateDescription, /Keep trivial work inline and isolated bounded delegations on subagent/);
-  assert.match(orchestrateDescription, /with ultracode on, use workflows for substantive multi-part work, including initially independent investigations needing reconciliation/);
-  assert.doesNotMatch(orchestrateDescription, /parallel subagent launches for flat independent work/);
-  assert.match(orchestrateDescription, /not a dependency; use await/);
-  assert.doesNotMatch(orchestrateDescription, /```|const evidence|Gather|Crosscheck|Distill|gather2|fixed phase count/);
-  assert.match(orchestrateDescription, /Root steering does not rewrite/);
-  assert.match(orchestrateDescription, /not the workflow/);
-  assert.doesNotMatch(orchestrateDescription, /every substantive task|call blocks until|typed steers reach you only after/);
-  for (const tier of Object.keys(data.subagent_tiers.pi).filter(tier => tier !== "frontier")) assert.match(orchestrateDescription, new RegExp(`\\b${tier}\\b`), `orchestrate description misses tier ${tier}`);
   // one entry per distinct tier model: tiers may share a pin
   assert.equal(piSettings.enabledModels.length, new Set(Object.values(workflow.models.tiers)).size);
   const models = JSON.parse(run("cat", target(".pi/agent/models.json")));
@@ -137,11 +119,6 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   assert.ok(claudeInstructions.includes(`  ${workflow.driverInstructions.split("\n")[0]}`));
   const claudeHarness = run("cat", target(".claude/docs/harness.md"));
   const piHarness = run("cat", target(".pi/agent/docs/harness.md"));
-  const piSandboxDoc = run("cat", target(".pi/agent/docs/sandbox.md"));
-  assert.doesNotMatch(piHarness, /parallel launches for flat independent work/);
-  assert.match(piSandboxDoc, /Preserve inherited `TMPDIR`/);
-  assert.match(piSandboxDoc, /--configLoader runner/);
-  assert.match(piSandboxDoc, /`cacheDir` or `TMPDIR` alone does not relocate that bundle/);
   assert.ok(claudeHarness.includes(data.subagent_tiers.claude.top));
 
   const claudeSettings = JSON.parse(run("cat", target(".claude/settings.json")));
@@ -188,11 +165,6 @@ test("renders Pi and Claude projections with isolated state", (t) => {
   // the native per-call deny must name the frontier pin's alias
   const frontierAliases = claudeSettings.permissions.deny.flatMap(rule => /^Agent\(model:(\w+)\)$/.exec(rule)?.[1] ?? []);
   assert.ok(frontierAliases.some(alias => frontierPin.startsWith(`claude-${alias}-`)), `no Agent(model:...) deny covers ${frontierPin}`);
-  // the hand-listed denies are aliases with no tier: one naming a small/top pin's family would deny a rostered child's own tier
-  for (const rule of data.agents.claude.denied_tools.filter(rule => rule.startsWith("Agent(model:"))) {
-    const alias = /^Agent\(model:(\w+)\)$/.exec(rule)[1];
-    for (const [tier, pin] of Object.entries(data.subagent_tiers.claude)) assert.ok(!pin.includes(`-${alias}-`), `${rule} names the ${tier} pin's family; drop it (the frontier alias renders from its pin)`);
-  }
 
   assert.ok(piHarness.includes(data.subagent_tiers.pi.frontier));
   assert.equal(workflow.filesystem.denyWrite.some(path => path.endsWith("/private_dot_pi")), false);

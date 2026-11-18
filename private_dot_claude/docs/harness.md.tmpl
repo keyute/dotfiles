@@ -13,14 +13,14 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
   cache, so the next request re-reads the whole history uncached at the frontier rate, and
   `/model <name>` saves it as the default until the next apply. In a
   frontier-model session don't fork — forks inherit it.
-- Roles render from `subagents` in agents.yaml. Pins do not
-  follow `/model`; a child without explicit effort takes its pin's `modelSettings`
-  effort, which settings.json sets for every pin, not the session's effort.
+- Roles render from `subagents` in agents.yaml; each carries its own model and
+  effort, and pins do not follow `/model`. An agent that sets no effort (a built-in, some plugin
+  agents) takes its pin's `modelSettings` effort, which settings.json sets for every pin, not the session's.
 
 | role | model | effort |
 |---|---|---|
 {{ range $name, $role := includeTemplate "claude-roles" (dict "root" .) | fromJson -}}
-| {{ $name }} | `{{ $role.model }}` | {{ $role.effort | default "—" }} |
+| {{ $name }} | `{{ $role.model }}` | {{ $role.effort }} |
 {{ end }}
 - `general-purpose` and `Plan` override the built-ins. `CLAUDE_CODE_SUBAGENT_MODEL`
   (`{{ .subagent_tiers.claude.top }}`) is only the fallback for the built-in `claude` type, plugin agents and
@@ -28,10 +28,8 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
   Workflow `agent()` on that pin, whatever its `model` or agentType (Explore included).
   It is not cheap Explore: use direct pinned Explore for isolated bounded leaves.
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
-{{- $modelDeny := list }}
-{{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ end }}
-- The `Agent(model:…)` deny rules (the frontier pin's alias{{ if $modelDeny }}, plus `{{ $modelDeny | join "`, `" }}`{{ end }}) keep per-call children on the tier pins;
-  they do not see a third-party `model: inherit`, nor prove routing.
+- The `Agent(model:…)` deny rule for the frontier pin's alias keeps per-call children on the tier pins;
+  it does not see a third-party `model: inherit`, nor prove routing.
 {{- $omit := list }}
 {{- range $name, $meta := .subagents }}{{ if and (get $meta "omit_instructions") (or (not (get $meta "harnesses")) (has "claude" (get $meta "harnesses"))) }}{{ $omit = append $omit $name }}{{ end }}{{ end }}
 - Every custom subagent except the omit_instructions roles ({{ $omit | join ", " }}) loads

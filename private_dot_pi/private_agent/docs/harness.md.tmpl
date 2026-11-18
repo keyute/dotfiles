@@ -28,7 +28,7 @@ template in the chezmoi repo.
 - `workflow/children.mjs` rejects frontier children, `tier` overrides included. Every tier pin is in the SDK's subscription
   catalog (the startup probe checks each); if one is dropped, fail unavailable, not an alias or API billing.
 - All models draw one plan allowance at their own rate ([live rate card](https://learn.chatgpt.com/docs/pricing));
-  API task cost is not Pro allowance; compare completed tasks including retries.
+  API task cost is not Pro allowance.
 {{- $cw := list }}{{ range $tier, $n := .agents.pi.defaults.context_window }}{{ $cw = append $cw (printf "%s (%v tokens)" $tier $n) }}{{ end }}
 - Context window: pinned for {{ $cw | join ", " }}; other tiers keep pi's catalog figure.
   A `context_length_exceeded` below the pin means the subscription limit moved.

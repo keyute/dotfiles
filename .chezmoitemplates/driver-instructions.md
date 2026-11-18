@@ -13,7 +13,7 @@
 - Before calling merged/applied work done, use `spec-reviewer` when checks
   do not gate its requirements, and always for auth/security boundaries,
   data loss/migration, concurrency or external contracts. Give artifact,
-  requirements, snapshot and green gates; one pass. Re-review fixes only.{{/* self_review: a producing context endorses its own output; a fresh-context pass catches what same-session review endorses, and iterated rounds add false positives faster than catches. The named role keeps the pass off write-capable or omission-blind reviewers; the skip and fix-scoped re-review keep it off trivial gated work. */}}
+  requirements, snapshot and green gates; one pass. Re-review fixes only.{{/* self_review: a producing context endorses its own output; iterated rounds add false positives faster than catches. The named role keeps the pass off write-capable or omission-blind reviewers; the skip and fix-scoped re-review keep it off trivial gated work. */}}
 {{- if not (has "user_run_commands" $native) }}
 - When you cannot run a command yourself — a sandbox or classifier denial you
   cannot route around, a declined unsandboxed call, an interactive login — hand
