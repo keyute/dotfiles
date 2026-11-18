@@ -11,9 +11,14 @@ A release moves a pin, never the layout: the tier set (small/top/frontier),
 which tier drives, the classifier and search tiers, and each role's tier and
 effort change only on their own row's event, as their own change after the
 re-pin has landed, unless `npm run test:pi` forces an effort the new pin
-lacks; the owner picks its substitute. A tier is added only when a role
-misses at one tier, the next catches it, and a model is priced between them;
-a tier nothing uses is dropped.
+lacks; the owner picks its substitute. A tier is added per harness, for a
+named role, on that role's event only: a miss the candidate model catches, or
+the pool binding with that role a visible share of the reading. Price and
+benchmarks nominate; a paired replay of the role's recent dispatches admits
+it: the candidate, at some effort, reaches the role's acceptance for less
+spend or time than any existing tier that reaches it, tried at the role's
+effort and one lower, failed attempts and driver repair counted. A tier
+nothing uses is dropped.
 
 - **Successor or retirement.** A successor replaces its pin when the vendor
   or a benchmark rates it at least as good at no more total cost per task;
@@ -57,11 +62,14 @@ a tier nothing uses is dropped.
   with it; a `docs/pi-design.md` rule is the end state, so a replacement that
   breaks one changes the rule first.
 - **The pool binds** (a harness blocks a session on its weekly limit). The
-  owner runs `! node scripts/agent-usage.mjs` (the stores are sandbox-denied):
-  a recent re-pin whose rows cost more than its predecessor's (Claude
-  role|model per dispatch, in $ or seconds; pi model|origin per call) is
-  reverted first, or its row is rewritten as measured.
-  Otherwise lower that driver's effort, then its tier.
+  owner runs `! node scripts/agent-usage.mjs` (the stores are sandbox-denied);
+  its dollars are catalog estimates that rank rows, not allowance. A recent
+  re-pin whose rows cost more than its predecessor's (Claude role|model per
+  dispatch, in $ or seconds; pi model|origin per call) is the first suspect:
+  revert it, or keep it on a paired replay and rewrite its row as measured.
+  Otherwise the largest row moves one step: a driver in its row's order, a
+  role to the cheapest arm of the replay above, its own pin one effort lower
+  included. The next reading confirms or reverts the step.
 
 ## Decisions
 
@@ -71,12 +79,12 @@ a tier nothing uses is dropped.
 | subagent_tiers.claude.top | benchmark: AA $/task nominated it; no paired replay | successor or retirement (Events); an unattended text-only turn ends → the previous top pin |
 | subagent_tiers.claude.frontier | preference: escalation-only under its 50% weekly cap | the cap is lifted → re-open the driver; successor or retirement (Events) |
 | agents.claude.defaults.tier | preference: top at effort high | the Claude pool binds → lower effort, then tier |
-| agents.pi.defaults.tier | preference: frontier drives while the pi pool is slack; effort high per AA Terminal-Bench (cheaper per task than lower effort) | the pi pool binds → lower effort, then tier |
+| agents.pi.defaults.tier | preference: frontier drives while the pi pool is slack; effort high per AA Terminal-Bench (cheaper per task than lower effort) | the pi pool binds → the top tier, effort held |
 | agents.pi.defaults.classifier | vendor: top tier for both stages on its system card's injection defence, judge medium; preference: filter low, the pin having no off level | an observed false allow, or false denies blocking work → re-judge; the pi pool binds → judge low, then a cheaper tier |
 | agents.pi.defaults.context_window | measured: an 838,180-input-token request accepted on the frontier tier via the subscription route (2026-09-29); small and top tiers unprobed | a re-pin, or context_length_exceeded below the window → re-probe that tier at ~840k input tokens, drop it if rejected; the pi pool binds on long turns → a larger reserve |
 | agents.pi.search_tier | preference: each search is one extra request on the pool, so the small tier | an observed search miss the top tier catches → top |
 | setting.native_coverage | measured: covered lines are in Claude Code's driver and subagent prompts; pi's specialist_pinning by the managed subagent schema having no model field; initiative is driver-only: a child cannot check back | a Claude Code release lacks a covered line → unshave it |
-| measure.role_matrix | preference: top/medium default, lookups lower, recall-critical higher; benchmark: Explore at high, where the small pin first matches the old pin; pi unmeasured | an observed Explore miss → a mid tier; Explore slower than explore-deep → medium; a lens miss a later review catches → high; a small re-pin → probe a role at small |
+| measure.role_matrix | preference: top/medium default, lookups lower, recall-critical higher; benchmark: Explore at high, where the small pin first matches the old pin; pi unmeasured | Explore slower than explore-deep → medium; a lens miss a later review catches → high; a small re-pin → probe a role at small |
 | parity.researcher_no_bash | forced: an off-list host costs a reviewed per-command `allowed_domains` in Bash on both harnesses, while WebFetch/WebSearch reach it unreviewed | the allowlist covers upstream hosts, or a fetch tool fails on them → Bash |
 | subagents.infra-reviewer | preference: chart/CRD/GitOps hazards are not inferable from surrounding manifests | a manifest review where diff-reviewer's lens finds the same hazards → fold in |
 | subagents.diff-reviewer | preference: one any-language reviewer; the go/python/ts/shell presets were generic checklists dispatched only by ship-check | a shipped language-specific defect the correctness lens missed → restore that preset |
