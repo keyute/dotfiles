@@ -7,7 +7,7 @@ Launch plain JavaScript in an isolated VM; returns a background workflow id imme
 Manage with {action: "status", id?} to list runs or inspect one, {action: "result", id} to retrieve its outcome, or {action: "stop", id} to stop it. Only one workflow may be active at a time.
 
 The script reaches only:
-- agent(prompt, { agentType, tier?, schema?, label?, phase? }): resolves to the child's final text, or schema-validated value (JSON Schema); rejects on child failure. agentType comes from subagent's list. tier overrides its pin: {{ $tiers | join ", " }}; default is its own tier; frontier is refused. label titles its row; phase overrides phase(). model, effort and isolation are refused.
+- agent(prompt, { agentType, tier?, schema?, label?, phase? }): resolves to the child's final text, or schema-validated value (JSON Schema); rejects on child failure. agentType comes from subagent's list. tier overrides its pin: {{ $tiers | join ", " }}; frontier is refused. label titles its row; phase overrides phase(). model, effort and isolation are refused.
 - phase(title): default heading for later agent() calls, not a dependency; use await.
 - parallel([() => agent(...), ...]): runs the thunks concurrently; results in order, null where one failed.
 - pipeline(items, ...stages): each item runs through stage(previous, item, index) on its own, with no barrier between stages; null where a stage failed.

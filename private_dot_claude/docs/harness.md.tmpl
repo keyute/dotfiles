@@ -30,7 +30,7 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
 {{- $modelDeny := list }}
 {{- range .agents.claude.denied_tools }}{{ if hasPrefix "Agent(model:" . }}{{ $modelDeny = append $modelDeny . }}{{ end }}{{ end }}
-- The `Agent(model:…)` deny rules (the frontier pin's alias, plus `{{ $modelDeny | join "`, `" }}`) keep per-call children on the tier pins;
+- The `Agent(model:…)` deny rules (the frontier pin's alias{{ if $modelDeny }}, plus `{{ $modelDeny | join "`, `" }}`{{ end }}) keep per-call children on the tier pins;
   they do not see a third-party `model: inherit`, nor prove routing.
 {{- $omit := list }}
 {{- range $name, $meta := .subagents }}{{ if and (get $meta "omit_instructions") (or (not (get $meta "harnesses")) (has "claude" (get $meta "harnesses"))) }}{{ $omit = append $omit $name }}{{ end }}{{ end }}

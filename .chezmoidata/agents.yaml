@@ -45,9 +45,6 @@ agents:
       - "DesignSync"
       - "RemoteTrigger"
       - "Agent(isolation:remote)"
-      # Agent-tool aliases with no small/top pin; the frontier pin's alias is
-      # rendered from subagent_tiers, so children run only tier pins
-      - "Agent(model:sonnet)"
       # a speed bump under the never-commit/push rule, not a boundary: prefix
       # rules miss `git -C x commit` and `sh -c` forms
       - "Bash(git push:*)"
@@ -144,7 +141,7 @@ subagents:
     tools: "Read, WebSearch, WebFetch, mcp__exa__web_search_exa, mcp__exa__web_fetch_exa, mcp__context7__resolve-library-id, mcp__context7__query-docs"
     description: "Answer one bounded research question from the web and library docs — practitioner practice, vendor guidance, a library's documented behaviour — and return sourced findings with URL, date and evidence quality. Not for code exploration (explore-*) or a dependency bump (dep-researcher); never edits."
   implementer:
-    tier: top
+    tier: mid
     effort: medium
     readonly: false
     tools: "Read, Bash, Edit, Write"
@@ -172,11 +169,14 @@ subagents:
 subagent_tiers:
   claude:
     small: claude-haiku-5-5
+    mid: claude-sonnet-5-5
     top: claude-opus-5-5
     # settings.json renders this pin's Agent(model:…) alias deny
     frontier: claude-fable-5-2
   pi:
     small: gpt-6-luna
+    # same pin as top: the roster's mid roles run the top pin on this harness
+    mid: gpt-6.1-sol
     top: gpt-6.1-sol
     frontier: gpt-6-astra
 # advisory fan-out size both drivers' workflow tools show: small <5 agents,

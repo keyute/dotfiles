@@ -7,7 +7,7 @@ nobody takes.
 
 ## Events
 
-A release moves a pin, never the layout: the tier set (small/top/frontier),
+A release moves a pin, never the layout: the tier set (small/mid/top/frontier),
 which tier drives, the classifier and search tiers, and each role's tier and
 effort change only on their own row's event, as their own change after the
 re-pin has landed, unless `npm run test:pi` forces an effort the new pin
@@ -75,7 +75,8 @@ nothing uses is dropped.
 
 | key | why | revisit when |
 |---|---|---|
-| subagent_tiers.claude.small | benchmark: AA at high 38 ($0.08/task) vs the previous small pin's 36 at low ($0.35–0.42), below it on AutomationBench tool use at every effort; Explore is ~0.4% of Claude spend | successor or retirement (Events); an observed Explore miss the previous small pin catches → a tier between small and top |
+| subagent_tiers.claude.small | benchmark: AA at high 38 ($0.08/task) vs the previous small pin's 36 at low ($0.35–0.42), below it on AutomationBench tool use at every effort; Explore is ~0.4% of Claude spend | successor or retirement (Events); an observed Explore miss the mid tier catches → Explore to mid |
+| subagent_tiers.claude.mid | measured: implementer replay on 5 test-gated tasks, accepted 5/5 at 0.42× the top tier's cost at medium and 0.6× its time (2026-11-18); the pool bound with implementer the largest role row | successor or retirement (Events); an implementer miss the top tier catches on re-dispatch → back to top |
 | subagent_tiers.claude.top | benchmark: AA $/task nominated it; no paired replay | successor or retirement (Events); an unattended text-only turn ends → the previous top pin |
 | subagent_tiers.claude.frontier | preference: escalation-only under its 50% weekly cap | the cap is lifted → re-open the driver; successor or retirement (Events) |
 | agents.claude.defaults.tier | preference: top at effort high | the Claude pool binds → lower effort, then tier |
