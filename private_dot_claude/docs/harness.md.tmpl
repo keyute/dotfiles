@@ -7,7 +7,7 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
 
 - Driver: `{{ index .subagent_tiers.claude .agents.claude.defaults.tier }}` at effort `{{ .agents.claude.defaults.reasoning_effort }}`, pinned under `modelSettings` for every pin so a `/model` escalation keeps it.
 - Escalate effort first: `/effort xhigh` keeps the prompt cache. `{{ .subagent_tiers.claude.frontier }}`
-  is escalation-only: for an ambiguous root-cause or architecture problem
+  runs the `Plan` role; as the driver it is escalation-only: for an ambiguous root-cause or architecture problem
   where the driver at higher effort fell short, start a fresh session with
   `claude --model {{ .subagent_tiers.claude.frontier }}`. Do not `/model` a grown session: each model has its own
   cache, so the next request re-reads the whole history uncached at the frontier rate, and
@@ -19,7 +19,7 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
 
 | role | model | effort |
 |---|---|---|
-{{ range $name, $role := includeTemplate "claude-roles" (dict "root" .) | fromJson -}}
+{{ range $name, $role := includeTemplate "roles" (dict "root" . "harness" "claude") | fromJson -}}
 | {{ $name }} | `{{ $role.model }}` | {{ $role.effort }} |
 {{ end }}
 - `general-purpose` and `Plan` override the built-ins. `CLAUDE_CODE_SUBAGENT_MODEL`
@@ -30,6 +30,7 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
   Forks continue the parent model; the built-in guide and statusline helpers keep their own pins.
 - The `Agent(model:…)` deny rule for the frontier pin's alias keeps per-call children on the tier pins;
   it does not see a third-party `model: inherit`, nor prove routing.
+  `Plan` reaches the frontier through its own pin, which that rule does not match.
 {{- $omit := list }}
 {{- range $name, $meta := .subagents }}{{ if and (get $meta "omit_instructions") (or (not (get $meta "harnesses")) (has "claude" (get $meta "harnesses"))) }}{{ $omit = append $omit $name }}{{ end }}{{ end }}
 - Every custom subagent except the omit_instructions roles ({{ $omit | join ", " }}) loads

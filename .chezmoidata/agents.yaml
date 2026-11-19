@@ -83,18 +83,33 @@ agents:
       - "agent/mcp.json"
       - "agent/mcp-auth.json"
       - "agent/workflow.json"
+  kopi:
+    home: "~/.kopi"
+    # lines the shared projection skips here: the Agent tool takes no model, and
+    # input never runs a `!` command
+    native_coverage: [specialist_pinning, user_run_commands]
+    # no `docs`: kopi refuses its own home to its file tools and Bash, so a doc
+    # there is unreadable; the projection then renders no doc pointer
+    defaults:
+      provider: openai-codex
+      # a subagent_tiers key, never a second copy of the pin
+      tier: top
+    # kopi refuses its whole home to its own tools and Bash
+    sensitive_subpaths: []
 # shared subagent definitions rendered for every harness; bodies live in
 # .chezmoitemplates/subagents/<name>.md. Each harness maps `tier` to a pin in
 # subagent_tiers.
 subagents:
   # `harnesses` scopes a role (default: all). `tools` binds the Claude render
-  # directly and the pi render via translation (pi-roles). `omit_instructions`
-  # renders Claude's omitClaudeMd and pi's inheritProjectContext/
-  # inheritGlobalContext false. `nests` lets a role launch children.
+  # directly, the pi render via translation (pi-roles) and kopi's as a YAML list
+  # (a roster `mcp__*` omits the list there). `omit_instructions` renders
+  # Claude's omitClaudeMd, pi's inheritProjectContext/inheritGlobalContext false
+  # and kopi's `instructions: false`. `readonly` renders kopi's `mode: plan`.
+  # `nests` lets a role launch children.
   # `effort` is optional: a role sets it only where a miss is costly, the rest
   # run at `subagent_effort`.
   # Overrides each harness's built-in exploration role (Claude matches on this
-  # exact name).
+  # exact name; kopi has no built-ins and renders role names lowercase).
   Explore:
     tier: small
     effort: high
@@ -156,18 +171,19 @@ subagents:
     nests: true
     tools: "Read, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
     description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation; prefer a specialist when one fits."
-  # Claude only: overrides the built-in planner, which inherits the session model
+  # Overrides Claude Code's built-in planner, which inherits the session model.
+  # The frontier's only child role; off pi, which refuses frontier children.
   Plan:
-    harnesses: [claude]
-    tier: top
+    harnesses: [claude, kopi]
+    tier: frontier
     effort: high
     readonly: true
     # its body's read-the-instructions line is then its only route to them
     omit_instructions: true
     tools: "Read, Bash"
     description: "Read-only bounded planning research: relevant files, constraints, trade-offs and proposed steps. Returns options and open decisions."
-# explicit model IDs, not aliases. `frontier` is the tier no child ever runs.
-# A model release replaces an ID here and nothing else.
+# explicit model IDs, not aliases. `frontier` drives, and runs only the Plan
+# role as a child. A model release replaces an ID here and nothing else.
 subagent_tiers:
   claude:
     small: claude-haiku-5-5
@@ -179,6 +195,11 @@ subagent_tiers:
     small: gpt-6-luna
     # same pin as top: the roster's mid roles run the top pin on this harness
     mid: gpt-6.1-sol
+    top: gpt-6.1-sol
+    frontier: gpt-6-astra
+  kopi:
+    small: gpt-6-luna
+    mid: gpt-6.1-terra
     top: gpt-6.1-sol
     frontier: gpt-6-astra
 # effort of every role that sets none
@@ -231,8 +252,9 @@ agent_sandbox:
       - sum.golang.org
       - nodejs.org
 agent_mcp_servers:
-  # auto_approve_tools: Claude emits an allow rule and pi's workflow/policy.mjs
-  # allows a read-only call outright; omission keeps normal review.
+  # auto_approve_tools: Claude and kopi emit an allow rule and pi's
+  # workflow/policy.mjs allows a read-only call outright; omission keeps normal
+  # review.
 
   context7:
     package_bin: context7-mcp

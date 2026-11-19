@@ -43,14 +43,14 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
   else moves on a release; revert the line if work visibly gets worse.
 - **Tiers follow the kind of work**: small for bounded lookups, mid for
   implementing a settled design, top for judgement (review, research,
-  planning); frontier drives or escalates and never runs a child. A role sets
-  `effort` only where a miss is costly; the rest take `subagent_effort`.
+  planning); frontier drives, and runs only the `Plan` role as a child. A role
+  sets `effort` only where a miss is costly; the rest take `subagent_effort`.
   Change one because I ask or a role visibly fails, never from a benchmark or
   a usage reading. When a weekly limit binds, lower an effort one step.
 - **No decision log.** A setting's why is its key comment — what the key does
   or the hazard that breaks it — and git history. Agent memory holds only
   session-side gotchas.
-- **Rough parity by default.** Both harnesses reach roughly the same end
+- **Rough parity by default.** Every harness reaches roughly the same end
   state where each can, not a faithful port. Name the boundary that enforces a restriction — sandbox, policy, tool list — never
   imply one.
 - **Set a vendor setting only to change its default**, to pin a value the

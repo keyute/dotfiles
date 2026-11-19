@@ -6,8 +6,8 @@
 {{- $self := .self -}}
 {{- $root := .root -}}
 {{- $ag := index $root.agents $self -}}
-{{- /* rules the harness's own system prompt already carries; see
-       .chezmoidata/agents.yaml native_coverage */ -}}
+{{- /* lines skipped for this harness: already carried by its own prompt, or naming
+       a capability it lacks; see .chezmoidata/agents.yaml native_coverage */ -}}
 {{- $native := list -}}
 {{- if hasKey $ag "native_coverage" -}}{{ $native = $ag.native_coverage }}{{- end -}}
 
@@ -52,6 +52,8 @@
   denies them, and a denial there is the boundary, not an obstacle. If you
   believe you read a credential, flag it immediately so I can rotate it.{{/* credential_hygiene: exposure is irreversible; the path list itself is enforced by the sandbox from agents.yaml via the agent-sandbox template, not projected */}}
 - Never commit on my behalf — I stage, commit, and push myself.{{/* commit_etiquette: authorship and review stay mine */}}
+{{ if hasKey $ag "docs" -}}
 - After an unresolved sandbox or policy denial, or for a mode/approval
   question, read `{{ $ag.docs }}/sandbox.md`; pins, tiers, limits, web search,
   MCP: `{{ $ag.docs }}/harness.md`.{{/* doc_pointers: a doc read after a denial cuts repeat denials; a standing read-first pointer loads the doc into every session */}}
+{{ end -}}

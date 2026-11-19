@@ -5,7 +5,7 @@
 {{- $name := .name -}}
 {{- $root := .root -}}
 {{- $meta := index $root.subagents $name -}}
-{{- $role := get (includeTemplate "claude-roles" (dict "root" $root) | fromJson) $name -}}
+{{- $role := get (includeTemplate "roles" (dict "root" $root "harness" "claude") | fromJson) $name -}}
 {{- if not $role -}}{{- fail (printf "%s: not in the roster, or scoped to another harness" $name) -}}{{- end -}}
 ---
 name: {{ $name }}

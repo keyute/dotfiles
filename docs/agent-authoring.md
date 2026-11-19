@@ -13,7 +13,8 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   nouns — tool names, agent names, instruction filenames — out of them, and take
   what varies as a parameter.
 - Harness-specific *intent* → a commented bullet in that harness's consumer
-  template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl`). A
+  template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl` / kopi's
+  `private_dot_kopi/AGENTS.md.tmpl`). A
   bullet goes there only for intent intrinsic to that harness, never because
   the failure was observed there; what varies only by path (the doc pointers) takes a
   per-harness value from agents.yaml inside the shared projection.

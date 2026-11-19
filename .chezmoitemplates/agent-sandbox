@@ -1,7 +1,7 @@
 {{- /* agent-sandbox: resolve the agnostic sandbox filesystem policy for one agent.
        input:  dict "self" <agent name> "root" <template data>
        output: JSON {denyRead, allowWrite, denyWrite}; denyWrite is the repo's
-       node_modules, live code both harnesses run outside their sandboxes */ -}}
+       node_modules, live code every harness runs outside its sandbox */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
 {{- $denyRead := list -}}

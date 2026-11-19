@@ -1,6 +1,6 @@
 {{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries for one
        harness. Skips entries scoped to other harnesses (`harnesses` list).
-       input:  dict "root" (the root template data) "harness" ("claude"|"pi")
+       input:  dict "root" (the root template data) "harness" ("claude"|"pi"|"kopi")
                ["policyOnly" true]
        output: JSON {name: {connection: {...}, policy: {...}}}
                  connection: {type: "stdio", command, args, env}

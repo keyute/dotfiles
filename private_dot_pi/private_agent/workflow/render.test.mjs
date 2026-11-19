@@ -15,6 +15,8 @@ const PIN_ID = /\bclaude-[a-z0-9]+-[0-9][a-z0-9-]*|\bgpt-[0-9][a-z0-9.-]*/;
 // roles take every documented level; the driver's settings effortLevel excludes `max`, which is session-only
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CLAUDE_DRIVER_EFFORTS = ["low", "medium", "high", "xhigh"];
+const KOPI_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const KOPI_TOOLS = ["Read", "Glob", "Grep", "LS", "Write", "Edit", "Bash", "WebFetch", "WebSearch", "Skill"];
 
 const readSource = path => readFileSync(join(source, path), "utf8");
 
@@ -201,13 +203,13 @@ test("each role renders its roster tier and effort on every harness it targets",
   for (const [role, meta] of Object.entries(data.subagents)) {
     const harnesses = meta.harnesses ?? Object.keys(data.agents);
     const effort = meta.effort ?? data.subagent_effort;
-    // No child runs the frontier tier.
-    assert.notEqual(meta.tier, "frontier", role);
+    // The frontier runs only the Plan role as a child.
+    assert.equal(meta.tier === "frontier", role === "Plan", role);
 
     const claudePath = target(`.claude/agents/${role}.md`);
     if (harnesses.includes("claude")) {
       const model = data.subagent_tiers.claude[meta.tier];
-      assert.notEqual(model, data.subagent_tiers.claude.frontier, role);
+      if (role !== "Plan") assert.notEqual(model, data.subagent_tiers.claude.frontier, role);
       const agent = run("cat", claudePath);
       assert.match(agent, new RegExp(`^name: ${role}$`, "m"));
       assert.ok(agent.split("\n").includes(`model: ${model}`), `${role}: claude model ${model}`);
@@ -220,8 +222,34 @@ test("each role renders its roster tier and effort on every harness it targets",
       assert.notEqual(invoke("cat", claudePath).status, 0, `${role} must not render for claude`);
     }
 
+    const kopiRole = role.toLowerCase();
+    const kopiPath = target(`.kopi/agents/${kopiRole}.md`);
+    if (harnesses.includes("kopi")) {
+      const agent = run("cat", kopiPath);
+      const lines = agent.split("\n");
+      const front = lines.slice(1, lines.indexOf("---", 1));
+      const keys = front.map(line => line.split(":")[0]);
+      assert.ok(keys.every(key => ["name", "description", "model", "effort", "tools", "mode", "instructions"].includes(key)), `${role}: kopi frontmatter keys ${keys}`);
+      assert.ok(front.includes(`name: ${kopiRole}`), `${role}: kopi name`);
+      assert.ok(front.includes(`model: ${data.agents.kopi.defaults.provider}/${data.subagent_tiers.kopi[meta.tier]}`), `${role}: kopi model`);
+      assert.ok(KOPI_EFFORTS.includes(effort), `${role}: ${effort} is not a kopi effort level`);
+      assert.ok(front.includes(`effort: ${effort}`), `${role}: kopi effort ${effort}`);
+      assert.equal(front.includes("mode: plan"), meta.readonly ?? false, `${role}: kopi mode`);
+      assert.equal(front.includes("instructions: false"), meta.omit_instructions ?? false, `${role}: kopi instructions`);
+      const toolsLine = front.find(line => line.startsWith("tools: "));
+      assert.equal(toolsLine !== undefined, !meta.tools.includes("mcp__*"), `${role}: kopi tools line`);
+      const toolNames = toolsLine?.slice("tools: [".length, -1).split(",").map(tool => tool.trim());
+      if (toolNames) assert.deepEqual(toolNames, meta.tools.split(",").map(tool => tool.trim()), `${role}: kopi tools`);
+      for (const tool of toolNames ?? []) {
+        assert.ok(KOPI_TOOLS.includes(tool) || tool.startsWith("mcp__"), `${role}: kopi tool ${tool}`);
+      }
+    } else {
+      assert.notEqual(invoke("cat", kopiPath).status, 0, `${role} must not render for kopi`);
+    }
+
     if (harnesses.includes("pi")) {
       const model = `${provider}/${data.subagent_tiers.pi[meta.tier]}`;
+      // pi refuses frontier children, so the frontier Plan role must not target pi
       assert.notEqual(data.subagent_tiers.pi[meta.tier], data.subagent_tiers.pi.frontier, role);
       assertPiEffort(provider, data.subagent_tiers.pi[meta.tier], effort, role);
       const contract = workflow.agents[role];
@@ -276,17 +304,20 @@ test("every roster role and shared skill has its source stubs, and every stub a 
   const stubDirs = {
     claude: [["private_dot_claude/exact_agents", ".md.tmpl"]],
     pi: [["private_dot_pi/private_agent/exact_agents", ".md.tmpl"], ["private_dot_pi/private_agent/exact_policy-roles", ".ts.tmpl"]],
+    kopi: [["private_dot_kopi/exact_agents", ".md.tmpl"]],
   };
   for (const [harness, dirs] of Object.entries(stubDirs)) {
     const roles = rolesFor(data, harness);
     for (const [dir, suffix] of dirs) {
-      for (const role of roles) assert.ok(existsSync(join(source, dir, `${role}${suffix}`)), `missing stub ${dir}/${role}${suffix}`);
+      // kopi stubs carry the lowercased roster name
+      const stubName = role => harness === "kopi" ? role.toLowerCase() : role;
+      for (const role of roles) assert.ok(existsSync(join(source, dir, `${stubName(role)}${suffix}`)), `missing stub ${dir}/${stubName(role)}${suffix}`);
       for (const file of readdirSync(join(source, dir))) {
-        assert.ok(file.endsWith(suffix) && roles.includes(file.slice(0, -suffix.length)), `${dir}/${file} names no ${harness} role in the roster`);
+        assert.ok(file.endsWith(suffix) && roles.map(stubName).includes(file.slice(0, -suffix.length)), `${dir}/${file} names no ${harness} role in the roster`);
       }
     }
   }
-  // subagent-{claude,pi}.md include subagents/<role>.md for each roster role; shared includes sit one level up
+  // subagent-{claude,pi,kopi}.md include subagents/<role>.md for each roster role; shared includes sit one level up
   const roleBodies = readdirSync(join(source, ".chezmoitemplates/subagents")).filter(file => file.endsWith(".md"));
   for (const file of roleBodies) {
     assert.ok(Object.hasOwn(data.subagents, file.slice(0, -".md".length)), `.chezmoitemplates/subagents/${file} names no role in the roster`);
@@ -341,6 +372,43 @@ test("readonly roles grant no write tool and only read-only MCP tools; writers c
   }
 });
 
+test("renders the kopi config from the shared policy", (t) => {
+  const { run, target, data: load } = fixture(t);
+  const data = load();
+  const provider = data.agents.kopi.defaults.provider;
+  const config = JSON.parse(run("cat", target(".kopi/config.json")));
+  const claude = JSON.parse(run("cat", target(".claude/settings.json")));
+  // kopi rejects unknown keys, and nothing may restate a default
+  assert.deepEqual(Object.keys(config).sort(), ["classifier", "mcpServers", "model", "permissions", "sandbox", "smallModel", "statusline", "version"]);
+  assert.equal(config.model, `${provider}/${data.subagent_tiers.kopi[data.agents.kopi.defaults.tier]}`);
+  assert.equal(config.smallModel, `${provider}/${data.subagent_tiers.kopi.small}`);
+  assert.deepEqual(config.classifier, { enabled: true });
+  assert.deepEqual(config.statusline, { right: ["notice", "tasks", "mode"] });
+  assert.equal(config.sandbox.enabled, true);
+  assert.equal(Object.hasOwn(config.sandbox, "network"), false);
+  for (const path of config.sandbox.denyRead) {
+    assert.ok(!/[*?[]/.test(path), `denyRead ${path} has a glob character`);
+    assert.ok(config.permissions.deny.includes(`*(${path})`), `permissions.deny misses *(${path})`);
+  }
+  const paths = Object.entries(data.agent_sandbox.filesystem.paths);
+  for (const [path] of paths.filter(([, mode]) => mode === "none")) assert.ok(config.sandbox.denyRead.includes(path), `denyRead misses ${path}`);
+  assert.deepEqual([...config.sandbox.allowWrite].sort(), paths.filter(([, mode]) => mode === "write").map(([path]) => path).sort());
+  for (const other of [data.agents.claude.home, data.agents.pi.home]) assert.ok(config.sandbox.denyRead.includes(other), `denyRead misses ${other}`);
+  assert.ok(claude.permissions.deny.includes("Read(~/.kopi)"));
+  assert.ok(JSON.parse(run("cat", target(".pi/agent/workflow.json"))).filesystem.denyRead.includes("~/.kopi"));
+  for (const tool of ["Edit", "Write"]) {
+    assert.ok(config.permissions.deny.includes(`${tool}(${data.chezmoi.sourceDir}/node_modules)`), `${tool} node_modules deny`);
+  }
+  const mcp = rules => rules.filter(rule => rule.startsWith("mcp__"));
+  assert.deepEqual(mcp(config.permissions.allow), mcp(claude.permissions.allow));
+  assert.deepEqual(mcp(config.permissions.deny), mcp(claude.permissions.deny));
+  assert.deepEqual(config.permissions.allow.filter(rule => !rule.startsWith("mcp__")), ["WebFetch", "WebSearch"]);
+  for (const [name, server] of Object.entries(config.mcpServers)) assert.deepEqual(Object.keys(server).sort(), ["args", "command", "env", "type"], name);
+  const instructions = run("cat", target(".kopi/AGENTS.md"));
+  assert.match(instructions, /^- When you are the session driver/m);
+  assert.doesNotMatch(instructions, /sandbox\.md/);
+});
+
 test("every native_coverage key gates a line of the shared projection", (t) => {
   const { data: load } = fixture(t);
   const data = load();
@@ -362,7 +430,7 @@ test("shared subagent and skill bodies name no harness-specific file, tool prefi
   for (const file of files) {
     // a harness-specific noun belongs in a template action, which renders it per harness
     const prose = readSource(file).replace(/\{\{[\s\S]*?\}\}/g, "");
-    for (const noun of ["CLAUDE.md", "AGENTS.md", "workspace_", "mcp__", "~/.claude", "~/.pi"]) {
+    for (const noun of ["CLAUDE.md", "AGENTS.md", "workspace_", "mcp__", "~/.claude", "~/.pi", "~/.kopi"]) {
       assert.ok(!prose.includes(noun), `${file} names ${noun} outside a template action`);
     }
   }
@@ -377,6 +445,7 @@ test("model pins live only in agents.yaml", () => {
   const hits = [
     ...walk(join(source, ".chezmoitemplates")),
     ...walk(join(source, "private_dot_claude")),
+    ...walk(join(source, "private_dot_kopi")),
     ...walk(join(source, "private_dot_pi")).filter(file => !file.endsWith(".test.mjs")),
     ...walk(join(source, "dot_agents")),
     // this file: the literal role tables it used to carry are what the gate replaces
@@ -428,7 +497,7 @@ test("settings.json keeps user entries and drops per-model thinking overrides", 
 test("the whole tree applies into an isolated destination", (t) => {
   const { run, target } = fixture(t);
   run("apply", "--no-tty", ["--exclude", "scripts,externals"]);
-  const configs = [".claude.json", ".claude/settings.json", ".pi/agent/settings.json", ".pi/agent/workflow.json"]
+  const configs = [".claude.json", ".claude/settings.json", ".pi/agent/settings.json", ".pi/agent/workflow.json", ".kopi/config.json"]
     .map(path => JSON.parse(readFileSync(target(path), "utf8")));
   // configs point MCP/statusline commands into the source dir's node_modules/.bin;
   // a missing binary renders fine but breaks at runtime

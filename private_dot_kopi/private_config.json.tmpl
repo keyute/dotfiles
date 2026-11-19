@@ -1,0 +1,55 @@
+{{- $kopi := .agents.kopi -}}
+{{- $tiers := .subagent_tiers.kopi -}}
+{{- $sb := includeTemplate "agent-sandbox" (dict "self" "kopi" "root" .) | fromJson -}}
+{{- /* both ask by default */ -}}
+{{- $allow := list "WebFetch" "WebSearch" -}}
+{{- /* the sandbox covers only Bash, and kopi denies no credential path outside its
+       own home: each path the sandbox denies is denied to every file tool too */ -}}
+{{- $deny := list -}}
+{{- range $sb.denyRead -}}{{- $deny = append $deny (printf "*(%s)" .) -}}{{- end -}}
+{{- /* kopi has no sandbox deny-write: these keep its file tools off the MCP
+       servers' code, but Bash started in this repo in execute mode can still
+       write it */ -}}
+{{- range $sb.denyWrite -}}
+  {{- $deny = append $deny (printf "Edit(%s)" .) -}}
+  {{- $deny = append $deny (printf "Write(%s)" .) -}}
+{{- end -}}
+{{- /* an auto-approved server is allowed only its readonly_tools, so a tool it
+       adds later keeps review; a bare deny removes the tool from the model */ -}}
+{{- $servers := dict -}}
+{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "harness" "kopi") | fromJson -}}
+  {{- $_ := set $servers $name $entry.connection -}}
+  {{- range $entry.policy.denied_tools -}}{{- $deny = append $deny (printf "mcp__%s__%s" $name .) -}}{{- end -}}
+  {{- if $entry.policy.auto_approve_tools -}}
+    {{- range $entry.policy.readonly_tools -}}{{- $allow = append $allow (printf "mcp__%s__%s" $name .) -}}{{- end -}}
+  {{- end -}}
+{{- end -}}
+{
+  "version": 1,
+  {{- /* driver pin from agents.yaml */}}
+  "model": {{ printf "%s/%s" $kopi.defaults.provider (index $tiers $kopi.defaults.tier) | toJson }},
+  {{- /* answers WebFetch and WebSearch; unset, they run on the session model */}}
+  "smallModel": {{ printf "%s/%s" $kopi.defaults.provider $tiers.small | toJson }},
+  {{- /* the default right side without `sandbox`: enabled below, it never changes */}}
+  "statusline": {
+    "right": ["notice", "tasks", "mode"]
+  },
+  "permissions": {
+    "allow": {{ $allow | toPrettyJson | indent 4 | trim }},
+    "deny": {{ $deny | toPrettyJson | indent 4 | trim }}
+  },
+  {{- /* with it on, an Edit or Write no rule matches runs without asking;
+       the calls still left asking (MCP tools with no allow rule) are reviewed on the session model */}}
+  "classifier": {
+    "enabled": true
+  },
+  {{- /* Bash runs in the OS sandbox; refuse to start without it */}}
+  "sandbox": {
+    "enabled": true,
+    "allowWrite": {{ $sb.allowWrite | toPrettyJson | indent 4 | trim }},
+    {{- /* plain paths, no globs: a relative name covers only <start dir>/name */}}
+    "denyRead": {{ $sb.denyRead | toPrettyJson | indent 4 | trim }}
+  },
+  {{- /* op secrets resolve at apply, into this private file only */}}
+  "mcpServers": {{ $servers | toPrettyJson | indent 2 | trim }}
+}
