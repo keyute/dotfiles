@@ -32,7 +32,7 @@
   "smallModel": {{ printf "%s/%s" $kopi.defaults.provider $tiers.small | toJson }},
   {{- /* the default right side without `sandbox`: enabled below, it never changes */}}
   "statusline": {
-    "right": ["notice", "tasks", "mode"]
+    "right": ["$notice", "$shells", "$mode"]
   },
   "permissions": {
     "allow": {{ $allow | toPrettyJson | indent 4 | trim }},

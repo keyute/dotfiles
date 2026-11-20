@@ -383,7 +383,7 @@ test("renders the kopi config from the shared policy", (t) => {
   assert.equal(config.model, `${provider}/${data.subagent_tiers.kopi[data.agents.kopi.defaults.tier]}`);
   assert.equal(config.smallModel, `${provider}/${data.subagent_tiers.kopi.small}`);
   assert.deepEqual(config.classifier, { enabled: true });
-  assert.deepEqual(config.statusline, { right: ["notice", "tasks", "mode"] });
+  assert.deepEqual(config.statusline, { right: ["$notice", "$shells", "$mode"] });
   assert.equal(config.sandbox.enabled, true);
   assert.equal(Object.hasOwn(config.sandbox, "network"), false);
   for (const path of config.sandbox.denyRead) {
