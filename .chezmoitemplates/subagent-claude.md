@@ -6,13 +6,12 @@
 {{- $root := .root -}}
 {{- $meta := index $root.subagents $name -}}
 {{- $role := get (includeTemplate "roles" (dict "root" $root "harness" "claude") | fromJson) $name -}}
-{{- if not $role -}}{{- fail (printf "%s: not in the roster, or scoped to another harness" $name) -}}{{- end -}}
+{{- if not $role -}}{{- fail (printf "%s: not in the roster" $name) -}}{{- end -}}
 ---
 name: {{ $name }}
 description: {{ $meta.description | toJson }}
-{{- /* a nesting role gets every tool, Agent included, by omitting `tools`;
-       the roster's list is pi's translation input */}}
-{{- if not (get $meta "nests") }}
+{{- /* no `tools` list grants every tool, Agent included */}}
+{{- if hasKey $meta "tools" }}
 tools: {{ $meta.tools }}
 {{- end }}
 model: {{ $role.model }}

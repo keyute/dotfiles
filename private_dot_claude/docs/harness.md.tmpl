@@ -32,7 +32,7 @@ If behavior seems changed, verify (claude-code-guide) and update its template in
   it does not see a third-party `model: inherit`, nor prove routing.
   `Plan` reaches the frontier through its own pin, which that rule does not match.
 {{- $omit := list }}
-{{- range $name, $meta := .subagents }}{{ if and (get $meta "omit_instructions") (or (not (get $meta "harnesses")) (has "claude" (get $meta "harnesses"))) }}{{ $omit = append $omit $name }}{{ end }}{{ end }}
+{{- range $name, $meta := .subagents }}{{ if get $meta "omit_instructions" }}{{ $omit = append $omit $name }}{{ end }}{{ end }}
 - Every custom subagent except the omit_instructions roles ({{ $omit | join ", " }}) loads
   `~/.claude/CLAUDE.md`; all draw the same Max pools (5-hour
   window, shared weekly pool; the frontier model's weekly cap is shared, not reserved); check `/usage`.

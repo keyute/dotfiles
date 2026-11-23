@@ -6,18 +6,7 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-    # pi pins typebox exactly; a pi bump that moves it fails stability.test
-    ignore:
-      - dependency-name: "typebox"
     groups:
-      # pi's family moves as one PR; first matching group wins, keeping it out of non-breaking
-      pi:
-        applies-to: "version-updates"
-        patterns:
-          - "@earendil-works/*"
-          - "pi-*"
-          - "catppuccin-pi-theme"
-          - "@anthropic-ai/sandbox-runtime"
       non-breaking:
         applies-to: "version-updates"
         patterns:

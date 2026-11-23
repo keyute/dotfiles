@@ -1,20 +1,14 @@
 {{- /* roles: resolve the shared role definitions to one harness's pins.
        input: dict "root" <template data> "harness" <agents key>
-       output: JSON map keyed by role name to model (bare pin) and effort; roles
-       scoped to other harnesses are omitted */ -}}
+       output: JSON map keyed by role name to model (bare pin) and effort */ -}}
 {{- $root := .root -}}
 {{- $harness := .harness -}}
 {{- $roles := dict -}}
 {{- range $name, $meta := $root.subagents -}}
-  {{- $harnesses := get $meta "harnesses" -}}
-  {{- $scoped := true -}}
-  {{- if $harnesses -}}{{- if not (has $harness $harnesses) -}}{{- $scoped = false -}}{{- end -}}{{- end -}}
-  {{- if $scoped -}}
-    {{- $tier := get $meta "tier" -}}
-    {{- $model := get (index $root.subagent_tiers $harness) $tier -}}
-    {{- if not $model -}}{{- fail (printf "%s: unknown tier %s" $name $tier) -}}{{- end -}}
-    {{- $effort := default $root.subagent_effort (get $meta "effort") -}}
-    {{- $roles = set $roles $name (dict "model" $model "effort" $effort) -}}
-  {{- end -}}
+  {{- $tier := get $meta "tier" -}}
+  {{- $model := get (index $root.subagent_tiers $harness) $tier -}}
+  {{- if not $model -}}{{- fail (printf "%s: unknown tier %s" $name $tier) -}}{{- end -}}
+  {{- $effort := default $root.subagent_effort (get $meta "effort") -}}
+  {{- $roles = set $roles $name (dict "model" $model "effort" $effort) -}}
 {{- end -}}
 {{- $roles | toJson -}}

@@ -54,7 +54,7 @@ jobs:
 
   # Fast gate on every PR and push to main: render.test applies the whole tree
   # headless into a scratch home with run scripts and externals excluded. modify_ scripts are not in the
-  # `scripts` exclude class, so both harnesses' MCP/merge paths still execute —
+  # `scripts` exclude class, so Claude's MCP merge path still executes —
   # with 1Password stubbed so no real secret ever reaches a runner.
   render:
     needs: changes
@@ -80,12 +80,11 @@ jobs:
       - name: Install repo npm dependencies
         run: npm ci --ignore-scripts --prefix "$GITHUB_WORKSPACE"
 
-      # shellcheck and ripgrep are not on the macOS runner image; the live
-      # tests below need rg.
-      - name: Install shellcheck and ripgrep
+      # shellcheck is not on the macOS runner image.
+      - name: Install shellcheck
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
-        run: brew install shellcheck ripgrep
+        run: brew install shellcheck
 
       # fresh.yml runs these only weekly and only down the paths they take.
       - name: Render and check run scripts
@@ -100,13 +99,9 @@ jobs:
           # Plain run_*.sh scripts (no template directives) are checked in place.
           shellcheck --shell=bash --format=gcc "$out"/run_*.sh run_*.sh
 
-      # Includes the render test, the roster/stub/pin drift gate. The live SRT
-      # tests run only here: they need a host Unix socket the local agent
-      # sandbox denies.
-      - name: Run pi and render tests
-        env:
-          PI_WORKFLOW_LIVE_TESTS: "1"
-        run: npm run test:pi
+      # The roster/stub/pin drift gate.
+      - name: Run render test
+        run: npm test
 
   # One stable check name for branch protection, so the required-checks list
   # does not have to track individual jobs.

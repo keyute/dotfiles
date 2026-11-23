@@ -1,3 +1,0 @@
-{{- $tier := .agents.pi.search_tier -}}
-{{- $pin := get .subagent_tiers.pi $tier -}}
-{{- dict "provider" .agents.pi.defaults.provider "model" $pin | toPrettyJson }}

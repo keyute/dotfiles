@@ -1,8 +1,7 @@
 {{- /* agent-instructions: the shared, harness-agnostic instruction projection every
        root and non-omit_instructions child loads; authoring rules and the
        per-bullet `principle: why` comment convention are in docs/agent-authoring.md.
-       input: dict "self" <agent name> "root" <template data>; optional
-       omitDriver: Pi projects driver rules through root-only workflow config */ -}}
+       input: dict "self" <agent name> "root" <template data> */ -}}
 {{- $self := .self -}}
 {{- $root := .root -}}
 {{- $ag := index $root.agents $self -}}
@@ -12,11 +11,27 @@
 {{- if hasKey $ag "native_coverage" -}}{{ $native = $ag.native_coverage }}{{- end -}}
 
 ## Working agreements
-
-{{- if not (get . "omitDriver") }}
 - When you are the session driver (the model this session started on, not a
   dispatched worker):
-{{ includeTemplate "driver-instructions.md" . | trim | indent 2 }}
+  - Delegate planning and implementation; never redo a child's work. Hand
+    implementation to the lowest capable pinned worker once design, exclusive
+    scope and objective gate are settled; it owns implementation/test/repair.
+    Unblock handoffs; take over only when it loops on repair. Verify its writes by
+    diff; adjudicate gate evidence; rerun only on changed inputs, missing
+    evidence or concrete doubt.{{/* driver_ownership: the driver's context is the scarce resource, so redoing a child's planning or implementation pays twice; a recoverable handoff blocker must not transfer ownership to the driver, a repair loop is the one takeover trigger, and an unchanged gate rerun repeats evidence the driver already has */}}
+{{- if not (has "specialist_pinning" $native) }}
+  - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
+    does not show it: don't override their model.{{/* specialist_pinning: presets are tuned once, not per session */}}
+{{- end }}
+  - Before calling merged/applied work done, use `spec-reviewer` when checks
+    do not gate its requirements, and always for auth/security boundaries,
+    data loss/migration, concurrency or external contracts. Give artifact,
+    requirements, snapshot and green gates; one pass. Re-review fixes only.{{/* self_review: a producing context endorses its own output; iterated rounds add false positives faster than catches. The named role keeps the pass off write-capable or omission-blind reviewers; the skip and fix-scoped re-review keep it off trivial gated work. */}}
+{{- if not (has "initiative" $native) }}
+  - Act on the request rather than checking back: carry the requested work to
+    done, continuing under a stated, in-scope assumption instead of asking about
+    a step the request already covers; pause only for a clearly destructive or
+    irreversible action, or input only I can give.{{/* initiative: the model stops to ask where the user expects it to persist; stated once and positively, because repeated approval wording causes approval requests */}}
 {{- end }}
 - Keep implementations simple: no unrequested features, refactors or
   abstractions, one-shot helpers, or speculative error handling/fallbacks.

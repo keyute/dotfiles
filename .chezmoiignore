@@ -4,4 +4,4 @@ node_modules/
 docs/
 README.md
 AGENTS.md
-.pi/agent/workflow/*.test.mjs
+tests/

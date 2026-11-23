@@ -7,16 +7,16 @@
 {{- $root := .root -}}
 {{- $meta := index $root.subagents $name -}}
 {{- $role := get (includeTemplate "roles" (dict "root" $root "harness" "kopi") | fromJson) $name -}}
-{{- if not $role -}}{{- fail (printf "%s: not in the roster, or scoped to another harness" $name) -}}{{- end -}}
+{{- if not $role -}}{{- fail (printf "%s: not in the roster" $name) -}}{{- end -}}
 ---
 name: {{ $name | lower }}
 description: {{ $meta.description | toJson }}
 model: {{ $root.agents.kopi.defaults.provider }}/{{ $role.model }}
 effort: {{ $role.effort }}
-{{- /* kopi matches `tools` by exact name, so mcp__* would grant no MCP tool;
-       omitting the list grants every child tool. ToolSearch is never listed:
-       a child builds its own */}}
-{{- if not (contains "mcp__*" $meta.tools) }}
+{{- /* kopi matches `tools` by exact name, so a wildcard would grant nothing;
+       no list grants every child tool. ToolSearch is never listed: a child
+       builds its own */}}
+{{- if hasKey $meta "tools" }}
 tools: [{{ $meta.tools }}]
 {{- end }}
 {{- if $meta.readonly }}

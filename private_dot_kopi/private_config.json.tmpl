@@ -17,7 +17,7 @@
 {{- /* an auto-approved server is allowed only its readonly_tools, so a tool it
        adds later keeps review; a bare deny removes the tool from the model */ -}}
 {{- $servers := dict -}}
-{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "harness" "kopi") | fromJson -}}
+{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" .) | fromJson -}}
   {{- $_ := set $servers $name $entry.connection -}}
   {{- range $entry.policy.denied_tools -}}{{- $deny = append $deny (printf "mcp__%s__%s" $name .) -}}{{- end -}}
   {{- if $entry.policy.auto_approve_tools -}}

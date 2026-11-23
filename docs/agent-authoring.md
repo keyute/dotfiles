@@ -8,12 +8,13 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   `{{/* <principle>: <why> */}}` comment. An intent change edits the bullet
   and its comment together.
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`;
-  rules only a session driver needs → `driver-instructions.md`.
+  rules only a session driver needs nest under that projection's
+  session-driver bullet.
 - Subagent and skill bodies render for every harness: keep harness-specific
   nouns — tool names, agent names, instruction filenames — out of them, and take
   what varies as a parameter.
 - Harness-specific *intent* → a commented bullet in that harness's consumer
-  template (`CLAUDE.md.tmpl` / pi's `AGENTS.md.tmpl` / kopi's
+  template (`CLAUDE.md.tmpl` / kopi's
   `private_dot_kopi/AGENTS.md.tmpl`). A
   bullet goes there only for intent intrinsic to that harness, never because
   the failure was observed there; what varies only by path (the doc pointers) takes a
@@ -26,8 +27,6 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   into every session; discretionary loading under-triggers.
 - An on-demand doc loads whole at its trigger, so it carries only what that
   trigger's question needs, each fact at its current state.
-- Implementation mechanics a harness editor needs go to
-  `docs/pi-implementation.md`, not the deployed doc.
 - Occasional workflows → skills.
 
 ## Style

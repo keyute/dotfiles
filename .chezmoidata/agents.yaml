@@ -3,7 +3,7 @@ agents:
     home: "~/.claude"
     # lines this harness's own prompt surface already carries; the shared
     # projection skips them
-    native_coverage: [call_batching, user_run_commands, initiative]
+    native_coverage: [call_batching, initiative]
     # on-demand docs the shared doc-pointer line names
     docs: "~/.claude/docs"
     defaults:
@@ -52,42 +52,10 @@ agents:
       - "Bash(wt merge:*)"
       - "Bash(wt step commit:*)"
       - "Bash(wt step squash:*)"
-  pi:
-    home: "~/.pi"
-    # lines this harness's own prompt surface already carries; the shared
-    # projection skips them
-    native_coverage: [specialist_pinning]
-    docs: "~/.pi/agent/docs"
-    # model tier pi-web-search bills at (the plugin's ~/.pi/agent/web-search.json);
-    # web_fetch's answer model runs at it too
-    search_tier: small
-    # most subagent sessions live at once, across the whole tree (broker lease cap)
-    child_limit: 20
-    # in-flight agent() launches per orchestrate run; kept below child_limit so
-    # direct launches keep their leases
-    orchestrate_concurrency: 8
-    defaults:
-      provider: openai-codex
-      tier: frontier
-      reasoning_effort: high
-      # approval classifier: one tier model for both stages; the filter answers
-      # every reviewed action, anything but allow is re-judged
-      classifier: { tier: top, filter_effort: low, judge_effort: medium }
-      # contextWindow per tier in ~/.pi/agent/models.json; an unlisted tier keeps pi's catalog window
-      # probed on the tier's pin; re-probe when that pin changes
-      context_window: { frontier: 872000 }
-    sensitive_subpaths:
-      - "agent/auth.json"
-      - "agent/sessions"
-      - "agent/models.json"
-      - "agent/mcp.json"
-      - "agent/mcp-auth.json"
-      - "agent/workflow.json"
   kopi:
     home: "~/.kopi"
-    # lines the shared projection skips here: the Agent tool takes no model, and
-    # input never runs a `!` command
-    native_coverage: [specialist_pinning, user_run_commands]
+    # lines the shared projection skips here: the Agent tool takes no model
+    native_coverage: [specialist_pinning]
     # no `docs`: kopi refuses its own home to its file tools and Bash, so a doc
     # there is unreadable; the projection then renders no doc pointer
     defaults:
@@ -100,12 +68,10 @@ agents:
 # .chezmoitemplates/subagents/<name>.md. Each harness maps `tier` to a pin in
 # subagent_tiers.
 subagents:
-  # `harnesses` scopes a role (default: all). `tools` binds the Claude render
-  # directly, the pi render via translation (pi-roles) and kopi's as a YAML list
-  # (a roster `mcp__*` omits the list there). `omit_instructions` renders
-  # Claude's omitClaudeMd, pi's inheritProjectContext/inheritGlobalContext false
-  # and kopi's `instructions: false`. `readonly` renders kopi's `mode: plan`.
-  # `nests` lets a role launch children.
+  # `tools` binds the Claude render directly and kopi's as a YAML list; omitting
+  # it grants every tool (on Claude that includes Agent, so the role can launch
+  # children). `omit_instructions` renders Claude's omitClaudeMd and kopi's
+  # `instructions: false`. `readonly` renders kopi's `mode: plan`.
   # `effort` is optional: a role sets it only where a miss is costly, the rest
   # run at `subagent_effort`.
   # Overrides each harness's built-in exploration role (Claude matches on this
@@ -162,19 +128,16 @@ subagents:
     readonly: false
     tools: "Read, Bash, Edit, Write"
     description: "Implement one bounded slice of a settled design — pattern-repeat edits and spec'd fixes through substantive implementation inside owned files — against explicit acceptance criteria and a verification command. NOT for exploratory work or an unsettled design; never commits."
-  # Overrides Claude Code's built-in of the same name and is pi's managed
-  # catch-all: the only role that may launch children.
+  # Overrides Claude Code's built-in of the same name; the one role with no
+  # tools list, so on Claude it may launch children.
   general-purpose:
     tier: top
     effort: high
     readonly: false
-    nests: true
-    tools: "Read, Bash, Edit, Write, WebSearch, WebFetch, mcp__*"
     description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation; prefer a specialist when one fits."
   # Overrides Claude Code's built-in planner, which inherits the session model.
-  # The frontier's only child role; off pi, which refuses frontier children.
+  # The frontier's only child role.
   Plan:
-    harnesses: [claude, kopi]
     tier: frontier
     effort: high
     readonly: true
@@ -191,12 +154,6 @@ subagent_tiers:
     top: claude-opus-5-5
     # settings.json renders this pin's Agent(model:…) alias deny
     frontier: claude-fable-5-2
-  pi:
-    small: gpt-6-luna
-    # same pin as top: the roster's mid roles run the top pin on this harness
-    mid: gpt-6.1-sol
-    top: gpt-6.1-sol
-    frontier: gpt-6-astra
   kopi:
     small: gpt-6-luna
     mid: gpt-6.1-terra
@@ -204,9 +161,6 @@ subagent_tiers:
     frontier: gpt-6-astra
 # effort of every role that sets none
 subagent_effort: medium
-# advisory fan-out size both drivers' workflow tools show: small <5 agents,
-# medium <10, large <50
-workflow_size: medium
 agent_sandbox:
   filesystem:
     paths:
@@ -252,15 +206,12 @@ agent_sandbox:
       - sum.golang.org
       - nodejs.org
 agent_mcp_servers:
-  # auto_approve_tools: Claude and kopi emit an allow rule and pi's
-  # workflow/policy.mjs allows a read-only call outright; omission keeps normal
-  # review.
+  # auto_approve_tools: Claude and kopi emit an allow rule per readonly tool;
+  # omission keeps normal review.
 
   context7:
     package_bin: context7-mcp
     args: []
-    # pi runs the server inside SRT; these hosts open for its process alone
-    domains: [context7.com]
     auto_approve_tools: true
     readonly_tools: [resolve-library-id, query-docs]
     env:
@@ -269,8 +220,6 @@ agent_mcp_servers:
   exa:
     package_bin: exa-mcp-server
     args: []
-    # pi runs the server inside SRT; this host opens for its process alone
-    domains: [api.exa.ai]
     auto_approve_tools: true
     readonly_tools: [web_search_exa, web_fetch_exa]
     env:
@@ -283,7 +232,6 @@ agent_mcp_servers:
     # take_screenshot, evaluate, console_messages, network_request/s) write
     # anywhere under the workspace or output dir, navigate reaches any host, and
     # the server runs outside the bash sandbox
-    unsandboxed: true
     denied_tools:
       # executes arbitrary JS in the Playwright *server* process
       - browser_run_code_unsafe

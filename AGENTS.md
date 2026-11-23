@@ -2,7 +2,8 @@
 
 ## Repo conventions
 
-Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
+Chezmoi source repo; `docs/`, `tests/`, `README.md` and this file are
+repo-local only.
 
 - When changing a dotfile or harness integration, extend or replace its existing
   mechanism rather than layering on a parallel one. Keep one owner per setting,
@@ -20,17 +21,11 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
 - Keep vendor-templated files (gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
 
-- Edit source state only; verify with `npm run test:pi` (preserve the inherited
+- Edit source state only; verify with `npm test` (preserve the inherited
   `TMPDIR`).
-- Declare a subagent or MCP server once in `.chezmoidata/agents.yaml`,
-  scoped with `harnesses:` where not for every harness; a shared skill
-  body lives once in `.chezmoitemplates/skills/` with a one-line stub per
-  harness. *Why: copies drift from the data.*
-- Code the harness spawns outside the sandbox (MCP servers, hooks)
-  treats caller-supplied paths, repos and arguments as hostile: pin its config,
-  refuse sandbox-writable roots, and ship a malicious-input test.
-- Before adding to `private_dot_pi/private_agent/workflow/`, read the module map atop
-  `docs/pi-design.md`.
+- Declare a subagent or MCP server once in `.chezmoidata/agents.yaml`;
+  a shared skill body lives once in `.chezmoitemplates/skills/` with a
+  one-line stub per harness. *Why: copies drift from the data.*
 - Leave `chezmoi apply` and 1Password signin to me. Resolved values belong
   only in applied private targets, never in source files, commits, or
   terminal output.
@@ -38,8 +33,7 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
 ## Harness iteration
 
 - **A model release is one line.** Replace the ID in `subagent_tiers`
-  (`.chezmoidata/agents.yaml`) and run `npm run test:pi`; a pi ID the pinned
-  SDK catalog lacks waits for the pi dependabot PR. No evaluation, and nothing
+  (`.chezmoidata/agents.yaml`) and run `npm test`. No evaluation, and nothing
   else moves on a release; revert the line if work visibly gets worse.
 - **Tiers follow the kind of work**: small for bounded lookups, mid for
   implementing a settled design, top for judgement (review, research,
@@ -53,8 +47,8 @@ Chezmoi source repo; `docs/`, `README.md` and this file are repo-local only.
 - **Rough parity by default.** Every harness reaches roughly the same end
   state where each can, not a faithful port. Name the boundary that enforces a restriction — sandbox, policy, tool list — never
   imply one.
-- **Set a vendor setting only to change its default**, to pin a value the
-  harness UI persists, or because owned code reads it.
+- **Set a vendor setting only to change its default** or to pin a value the
+  harness UI persists.
 - **Keep always-loaded text short.** An instruction line, or a rule in this
   file, exists for a failure that recurred and that the harness prompt, the
   code or a check does not already prevent. Read `docs/agent-authoring.md`

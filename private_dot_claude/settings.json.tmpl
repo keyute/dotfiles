@@ -20,7 +20,7 @@
        1Password. An auto-approved server gets a per-tool allow for each of its
        readonly_tools only, so a tool it adds later keeps normal review;
        denied_tools are denied outright. */ -}}
-{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "harness" "claude" "policyOnly" true) | fromJson -}}
+{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "policyOnly" true) | fromJson -}}
   {{- range $entry.policy.denied_tools -}}
     {{- $permDeny = append $permDeny (printf "mcp__%s__%s" $name .) -}}
   {{- end -}}
@@ -56,11 +56,11 @@
     "DISABLE_TELEMETRY": "1",
     {{- /* no Sentry error reports */}}
     "DISABLE_ERROR_REPORTING": "1",
-    {{- /* --add-dir directories also load their CLAUDE.md files, as pi does */}}
+    {{- /* --add-dir directories also load their CLAUDE.md files */}}
     "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
     {{- /* stdio MCP servers get only an allowlisted env, not the full shell env */}}
     "CLAUDE_CODE_MCP_ALLOWLIST_ENV": "1",
-    {{- /* a subagent's subagent cannot spawn another (main is depth 0), matching pi's maxSubagentDepth */}}
+    {{- /* a subagent's subagent cannot spawn another (main is depth 0) */}}
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"
   },
   {{- /* no Remote Control bridge to claude.ai or the mobile app */}}
@@ -94,12 +94,11 @@
   "includeGitInstructions": false,
   {{- /* no agent view: `claude agents`, --bg, /background and the on-demand daemon */}}
   "disableAgentView": true,
-  {{- /* alternate-screen TUI, as pi's managed launch */}}
+  {{- /* alternate-screen TUI */}}
   "tui": "fullscreen",
-  {{- /* mirrors the shared workflow_size that pi's orchestrate description also
-         reads; a value here pins and hides the /config "Dynamic workflow size"
-         choice */}}
-  "workflowSizeGuideline": {{ .workflow_size | quote }},
+  {{- /* advisory fan-out size (small <5 agents, medium <10, large <50); a value
+         here pins and hides the /config "Dynamic workflow size" choice */}}
+  "workflowSizeGuideline": "medium",
   {{- /* Internal one-time consent flag for the auto-mode workflow prompt; the
          CLI writes it into this chezmoi-owned file, so without it every apply
          brings the prompt back. */}}

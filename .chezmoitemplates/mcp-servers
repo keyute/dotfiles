@@ -1,39 +1,27 @@
-{{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries for one
-       harness. Skips entries scoped to other harnesses (`harnesses` list).
-       input:  dict "root" (the root template data) "harness" ("claude"|"pi"|"kopi")
-               ["policyOnly" true]
+{{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries.
+       input: dict "root" (the root template data) ["policyOnly" true]
        output: JSON {name: {connection: {...}, policy: {...}}}
                  connection: {type: "stdio", command, args, env}
                              — env op: refs resolved via onepasswordRead;
                              command node_modules/.bin/<package_bin>; a
                              leading `~/` in args expands to home
-                 policy:     {auto_approve_tools, denied_tools, readonly_tools,
-                             unsandboxed, domains} — always all keys,
-                             normalized to false/[] so consumers can index
-                             them unguarded (unsandboxed: pi's broker leases
-                             the server process without an srt profile; domains: hosts a
-                             sandboxed server process must reach)
+                 policy:     {auto_approve_tools, denied_tools, readonly_tools}
+                             — always all keys, normalized to false/[] so
+                             consumers can index them unguarded
        policyOnly omits `connection` entirely (and resolves no secrets), so a
        caller that must not depend on 1Password can still reuse this filter. It
        omits rather than emitting connection with unresolved refs on purpose: a
        credential-stripped server object looks usable and would be written as a
        broken config, whereas a missing one fails loudly. */ -}}
 {{- $root := .root -}}
-{{- $harness := .harness -}}
 {{- /* get, not .policyOnly: chezmoi renders with missingkey=error */ -}}
 {{- $policyOnly := get . "policyOnly" -}}
 {{- $out := dict -}}
 {{- range $name, $cfg := $root.agent_mcp_servers -}}
-  {{- $harnesses := get $cfg "harnesses" -}}
-  {{- if and $harnesses (not (has $harness $harnesses)) -}}
-    {{- continue -}}
-  {{- end -}}
   {{- $entry := dict "policy" (dict
         "auto_approve_tools" (default false (get $cfg "auto_approve_tools"))
         "denied_tools" (default (list) (get $cfg "denied_tools"))
-        "readonly_tools" (default (list) (get $cfg "readonly_tools"))
-        "unsandboxed" (default false (get $cfg "unsandboxed"))
-        "domains" (default (list) (get $cfg "domains"))) -}}
+        "readonly_tools" (default (list) (get $cfg "readonly_tools"))) -}}
   {{- if not $policyOnly -}}
     {{- $command := printf "%s/node_modules/.bin/%s" $root.chezmoi.sourceDir $cfg.package_bin -}}
     {{- $args := list -}}
