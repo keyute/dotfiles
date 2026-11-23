@@ -8,8 +8,8 @@ Set these manually in native Settings:
 - Font: PragmataPro VF Mono Liga, 13 pt; prefer ligatures enabled.
 - Copy on selection: on.
 - Option as Alt: on. Left-only Option is unavailable; do not add a shim.
-- Match program backgrounds: **off**. Enabling it caused the confirmed large
-  Pi prompt background issue.
+- Match program backgrounds: **off**. Enabling it caused a confirmed large
+  prompt-background issue in a TUI.
 - Integrations › Coding Agents: off, and do not run `rex skill setup` — it writes
   a hook into `~/.claude/settings.json` and skills into directories chezmoi owns.
 

@@ -32,9 +32,9 @@ failures=$(jq -r --slurpfile claude "$tmp/home/.claude/settings.json" --slurpfil
     ($claude[0].permissions.allow + $kopi[0].permissions.allow
       | map(select(startswith("mcp__") and (test("^mcp__.+__[^*]") | not)) | "server-wide MCP allow rule \(.)"))
   | .[]' <<<"$data")
-# the frontier runs only the Plan role as a child
-[ "$(grep -lx "model: $frontier" "$agents"/*.md)" = "$agents/Plan.md" ] ||
-  failures="${failures:+$failures$'\n'}the frontier pin $frontier is not on Plan.md alone"
+# the frontier is the escalation driver: no role runs on it
+[ -z "$(grep -lx "model: $frontier" "$agents"/*.md)" ] ||
+  failures="${failures:+$failures$'\n'}the frontier pin $frontier is on an agent file"
 if [ -n "$failures" ]; then
   printf '%s\n' "$failures" >&2
   exit 1

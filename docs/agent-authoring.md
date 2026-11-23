@@ -18,16 +18,9 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
   template (`CLAUDE.md.tmpl` / kopi's
   `private_dot_kopi/AGENTS.md.tmpl`). A
   bullet goes there only for intent intrinsic to that harness, never because
-  the failure was observed there; what varies only by path (the doc pointers) takes a
-  per-harness value from agents.yaml inside the shared projection.
+  the failure was observed there.
 - Policy and model/tier data → `.chezmoidata/agents.yaml`; generate prose
   from it, never hand-write what it already encodes.
-- Environment facts → on-demand docs; every pointer carries an explicit
-  trigger that names a question ("read X before changing tiers"), never a
-  routine step — delegating, reviewing, starting a task — or the doc loads
-  into every session; discretionary loading under-triggers.
-- An on-demand doc loads whole at its trigger, so it carries only what that
-  trigger's question needs, each fact at its current state.
 - Occasional workflows → skills.
 
 ## Style

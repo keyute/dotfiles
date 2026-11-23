@@ -46,10 +46,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: chezmoi -S "$GITHUB_WORKSPACE" apply --no-tty
 
-      # run scripts and externals always differ from state, so verify only files
+      # run scripts and externals always differ from state, so verify only files.
+      # verify prints nothing, so the diff first names what drifted.
       - name: Verify applied state
         run: |
           set -euo pipefail
+          chezmoi -S "$GITHUB_WORKSPACE" diff --exclude scripts,externals
           chezmoi -S "$GITHUB_WORKSPACE" verify --exclude scripts,externals
 
       - name: Disk after

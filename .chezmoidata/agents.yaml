@@ -1,8 +1,6 @@
 agents:
   claude:
     home: "~/.claude"
-    # on-demand docs the shared doc-pointer line names
-    docs: "~/.claude/docs"
     defaults:
       # a subagent_tiers key, never a second copy of the pin
       tier: top
@@ -51,8 +49,6 @@ agents:
       - "Bash(wt step squash:*)"
   kopi:
     home: "~/.kopi"
-    # no `docs`: kopi refuses its own home to its file tools and Bash, so a doc
-    # there is unreadable; the projection then renders no doc pointer
     defaults:
       provider: openai-codex
       # a subagent_tiers key, never a second copy of the pin
@@ -129,18 +125,10 @@ subagents:
     effort: high
     readonly: false
     description: "Catch-all for multi-step work that fits no specialist — research plus implementation, or a task that needs its own delegation; prefer a specialist when one fits."
-  # Overrides Claude Code's built-in planner, which inherits the session model.
-  # The frontier's only child role.
-  Plan:
-    tier: frontier
-    effort: high
-    readonly: true
-    # its body's read-the-instructions line is then its only route to them
-    omit_instructions: true
-    tools: "Read, Bash"
-    description: "Read-only bounded planning research: relevant files, constraints, trade-offs and proposed steps. Returns options and open decisions."
-# explicit model IDs, not aliases. `frontier` drives, and runs only the Plan
-# role as a child. A model release replaces an ID here and nothing else.
+# explicit model IDs, not aliases. `frontier` is the escalation driver and no
+# role runs on it: start a fresh session on it rather than `/model` a grown one,
+# since each model has its own cache. A model release replaces an ID here and
+# nothing else.
 subagent_tiers:
   claude:
     small: claude-haiku-5-5
@@ -152,7 +140,6 @@ subagent_tiers:
     small: gpt-6-luna
     mid: gpt-6.1-terra
     top: gpt-6.1-sol
-    frontier: gpt-6-astra
 # effort of every role that sets none
 subagent_effort: medium
 agent_sandbox:
@@ -202,24 +189,21 @@ agent_sandbox:
 agent_mcp_servers:
   # A server is hosted (`url`, with `bearer_op` the 1Password ref whose value
   # becomes its Authorization bearer at apply) or local stdio (`command`, `args`).
-  # auto_approve_tools: Claude and kopi emit an allow rule per readonly tool;
-  # omission keeps normal review.
+  # auto_approve: Claude and kopi emit an allow rule per listed tool; a tool
+  # left out, or a server without the key, keeps normal review.
   context7:
     url: https://mcp.context7.com/mcp
     bearer_op: Personal/Context7/api key
-    auto_approve_tools: true
-    readonly_tools: [resolve-library-id, query-docs]
+    auto_approve: [resolve-library-id, query-docs]
   exa:
     url: https://mcp.exa.ai/mcp
     bearer_op: Personal/Exa/api key
-    auto_approve_tools: true
-    readonly_tools: [web_search_exa, web_fetch_exa]
+    auto_approve: [web_search_exa, web_fetch_exa]
   playwright:
-    readonly_tools: [browser_navigate, browser_navigate_back, browser_snapshot, browser_tabs, browser_wait_for]
     # the Homebrew formula (dot_Brewfile); run_onchange_after_playwright-browser
     # installs the Chromium build each release pins
     command: /opt/homebrew/bin/playwright-mcp
-    # not auto_approve_tools: tools taking a caller-chosen filename (snapshot,
+    # no auto_approve: tools taking a caller-chosen filename (snapshot,
     # take_screenshot, evaluate, console_messages, network_request/s) write
     # anywhere under the workspace or output dir, navigate reaches any host, and
     # the server runs outside the bash sandbox

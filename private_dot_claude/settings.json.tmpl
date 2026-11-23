@@ -14,19 +14,17 @@
   {{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}
   {{- if not (or (hasPrefix "~" .) (hasPrefix "/" .)) -}}{{- $permDeny = append $permDeny (printf "Edit(%s)" .) -}}{{- end -}}
 {{- end -}}
-{{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
-       resolving their op secrets here would make settings.json depend on
-       1Password. An auto-approved server gets a per-tool allow for each of its
-       readonly_tools only, so a tool it adds later keeps normal review;
-       denied_tools are denied outright. */ -}}
-{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" . "policyOnly" true) | fromJson -}}
-  {{- range $entry.policy.denied_tools -}}
+{{- /* Read from the data, not the mcp-servers template: the servers themselves
+       are rendered into ~/.claude.json, and resolving their op secrets here
+       would make settings.json depend on 1Password. Allows are per tool, so a
+       tool a server adds later keeps normal review; denied_tools are denied
+       outright. */ -}}
+{{- range $name, $cfg := .agent_mcp_servers -}}
+  {{- range default (list) (get $cfg "denied_tools") -}}
     {{- $permDeny = append $permDeny (printf "mcp__%s__%s" $name .) -}}
   {{- end -}}
-  {{- if $entry.policy.auto_approve_tools -}}
-    {{- range $entry.policy.readonly_tools -}}
-      {{- $allowedPerms = append $allowedPerms (printf "mcp__%s__%s" $name .) -}}
-    {{- end -}}
+  {{- range default (list) (get $cfg "auto_approve") -}}
+    {{- $allowedPerms = append $allowedPerms (printf "mcp__%s__%s" $name .) -}}
   {{- end -}}
 {{- end -}}
 {

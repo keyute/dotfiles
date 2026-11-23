@@ -7,16 +7,13 @@
        own home: each path the sandbox denies is denied to every file tool too */ -}}
 {{- $deny := list -}}
 {{- range $sb.denyRead -}}{{- $deny = append $deny (printf "*(%s)" .) -}}{{- end -}}
-{{- /* an auto-approved server is allowed only its readonly_tools, so a tool it
-       adds later keeps review; a bare deny removes the tool from the model */ -}}
-{{- $servers := dict -}}
-{{- range $name, $entry := includeTemplate "mcp-servers" (dict "root" .) | fromJson -}}
-  {{- $_ := set $servers $name $entry.connection -}}
-  {{- range $entry.policy.denied_tools -}}{{- $deny = append $deny (printf "mcp__%s__%s" $name .) -}}{{- end -}}
-  {{- if $entry.policy.auto_approve_tools -}}
-    {{- range $entry.policy.readonly_tools -}}{{- $allow = append $allow (printf "mcp__%s__%s" $name .) -}}{{- end -}}
-  {{- end -}}
+{{- /* allows are per tool, so a tool a server adds later keeps review; a bare
+       deny removes the tool from the model */ -}}
+{{- range $name, $cfg := .agent_mcp_servers -}}
+  {{- range default (list) (get $cfg "denied_tools") -}}{{- $deny = append $deny (printf "mcp__%s__%s" $name .) -}}{{- end -}}
+  {{- range default (list) (get $cfg "auto_approve") -}}{{- $allow = append $allow (printf "mcp__%s__%s" $name .) -}}{{- end -}}
 {{- end -}}
+{{- $servers := includeTemplate "mcp-servers" (dict "root" .) | fromJson -}}
 {
   "version": 1,
   {{- /* driver pin from agents.yaml */}}

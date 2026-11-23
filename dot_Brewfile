@@ -2,6 +2,7 @@ tap "artginzburg/tap", trusted: true
 tap "buo/cask-upgrade", trusted: true
 tap "hashicorp/tap", trusted: true
 tap "jundot/omlx", "https://github.com/jundot/omlx", trusted: true
+tap "keyute/tap", trusted: true
 tap "mobile-dev-inc/tap", trusted: true
 tap "siderolabs/tap", trusted: true
 brew "asimov", start_service: true
@@ -54,6 +55,7 @@ brew "yt-dlp"
 brew "zoxide"
 brew "artginzburg/tap/sudo-touchid"
 brew "hashicorp/tap/vault"
+brew "keyute/tap/kopi"
 brew "mobile-dev-inc/tap/maestro"
 brew "siderolabs/tap/talosctl"
 brew "siderolabs/tap/sidero-tools"

@@ -20,7 +20,6 @@ repo-local only.
   coupling workaround, or uses only a sliver.
 - Keep vendor-templated files (gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
-
 - Edit source state only; verify with `tests/check.sh` (preserve the inherited
   `TMPDIR`).
 - Declare a subagent or MCP server once in `.chezmoidata/agents.yaml`;
@@ -37,8 +36,8 @@ repo-local only.
   (`.chezmoidata/agents.yaml`) and run `tests/check.sh`. No evaluation, and
   nothing else moves on a release; revert the line if work visibly gets worse.
 - **Tiers follow the kind of work**: small for bounded lookups, mid for
-  implementing a settled design, top for judgement (review, research,
-  planning); frontier drives, and runs only the `Plan` role as a child. A role
+  implementing a settled design, top for judgement (review, research) and the
+  default driver; frontier is the escalation driver and runs no child role. A role
   sets `effort` only where a miss is costly; the rest take `subagent_effort`.
   Change one because I ask or a role visibly fails, never from a benchmark or
   a usage reading. When a weekly limit binds, lower an effort one step.
@@ -51,6 +50,6 @@ repo-local only.
 - **Set a vendor setting only to change its default** or to pin a value the
   harness UI persists.
 - **Keep always-loaded text short.** An instruction line, or a rule in this
-  file, exists for a failure that recurred and that the harness prompt, the
-  code or a check does not already prevent. Read `docs/agent-authoring.md`
+  file, exists for a failure that recurred and that the code or a check does not
+  already prevent. Read `docs/agent-authoring.md`
   before editing an instruction source.

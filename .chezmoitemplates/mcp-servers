@@ -1,39 +1,23 @@
-{{- /* mcp-servers: resolve agent_mcp_servers into concrete server entries.
-       input: dict "root" (the root template data) ["policyOnly" true]
-       output: JSON {name: {connection: {...}, policy: {...}}}
-                 connection: http: {type, url, headers}, Authorization being
-                             "Bearer " + the bearer_op ref resolved via
-                             onepasswordRead; stdio: {type, command, args}, a
-                             leading `~/` in args expands to home
-                 policy:     {auto_approve_tools, denied_tools, readonly_tools}
-                             — always all keys, normalized to false/[] so
-                             consumers can index them unguarded
-       policyOnly omits `connection` entirely (and resolves no secrets), so a
-       caller that must not depend on 1Password can still reuse this filter. It
-       omits rather than emitting connection with unresolved refs on purpose: a
-       credential-stripped server object looks usable and would be written as a
-       broken config, whereas a missing one fails loudly. */ -}}
+{{- /* mcp-servers: resolve agent_mcp_servers into concrete connection entries.
+       input: dict "root" (the root template data)
+       output: JSON {name: connection}
+                 http:  {type, url, headers}, Authorization being "Bearer " + the
+                        bearer_op ref resolved via onepasswordRead
+                 stdio: {type, command, args}, a leading `~/` in args expands to home
+       Every caller resolves 1Password; a template that must render without it
+       reads the policy keys (auto_approve, denied_tools) from the data instead. */ -}}
 {{- $root := .root -}}
-{{- /* get, not .policyOnly: chezmoi renders with missingkey=error */ -}}
-{{- $policyOnly := get . "policyOnly" -}}
 {{- $out := dict -}}
 {{- range $name, $cfg := $root.agent_mcp_servers -}}
-  {{- $entry := dict "policy" (dict
-        "auto_approve_tools" (default false (get $cfg "auto_approve_tools"))
-        "denied_tools" (default (list) (get $cfg "denied_tools"))
-        "readonly_tools" (default (list) (get $cfg "readonly_tools"))) -}}
-  {{- if not $policyOnly -}}
-    {{- if hasKey $cfg "url" -}}
-      {{- $bearer := printf "Bearer %s" (onepasswordRead (printf "op://%s" $cfg.bearer_op)) -}}
-      {{- $entry = set $entry "connection" (dict "type" "http" "url" $cfg.url "headers" (dict "Authorization" $bearer)) -}}
-    {{- else -}}
-      {{- $args := list -}}
-      {{- range $cfg.args -}}
-        {{- $args = append $args (regexReplaceAll "^~/" . (printf "%s/" $root.chezmoi.homeDir)) -}}
-      {{- end -}}
-      {{- $entry = set $entry "connection" (dict "type" "stdio" "command" $cfg.command "args" $args) -}}
+  {{- if hasKey $cfg "url" -}}
+    {{- $bearer := printf "Bearer %s" (onepasswordRead (printf "op://%s" $cfg.bearer_op)) -}}
+    {{- $out = set $out $name (dict "type" "http" "url" $cfg.url "headers" (dict "Authorization" $bearer)) -}}
+  {{- else -}}
+    {{- $args := list -}}
+    {{- range $cfg.args -}}
+      {{- $args = append $args (regexReplaceAll "^~/" . (printf "%s/" $root.chezmoi.homeDir)) -}}
     {{- end -}}
+    {{- $out = set $out $name (dict "type" "stdio" "command" $cfg.command "args" $args) -}}
   {{- end -}}
-  {{- $out = set $out $name $entry -}}
 {{- end -}}
 {{- $out | toJson -}}

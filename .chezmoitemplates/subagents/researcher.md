@@ -8,7 +8,9 @@ search-result snippet as if you had read the page, and never infer a fact from a
 title or a version number. A built-in fetch whose prompt asks for the claims and
 verbatim quotes you need counts as reading the page.
 
-{{ includeTemplate "web-search.md" (dict) | trim }}
+- Web search and fetch: start with the built-in tools (Exa bills per call). Escalate
+  to the Exa MCP (search or fetch) only after a built-in call for that same need came
+  back sparse, stale, refused or empty — not alongside it.
 
 Return exactly:
 
