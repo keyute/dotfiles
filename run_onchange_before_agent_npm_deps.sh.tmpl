@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-# package-lock.json: {{ include "package-lock.json" | sha256sum }}
-
-npm ci --ignore-scripts --prefix "{{ .chezmoi.sourceDir }}"
-
-"{{ .chezmoi.sourceDir }}/node_modules/.bin/playwright-mcp" install-browser chromium --no-shell

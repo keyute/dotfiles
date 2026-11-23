@@ -1,9 +1,6 @@
 agents:
   claude:
     home: "~/.claude"
-    # lines this harness's own prompt surface already carries; the shared
-    # projection skips them
-    native_coverage: [call_batching, initiative]
     # on-demand docs the shared doc-pointer line names
     docs: "~/.claude/docs"
     defaults:
@@ -54,8 +51,6 @@ agents:
       - "Bash(wt step squash:*)"
   kopi:
     home: "~/.kopi"
-    # lines the shared projection skips here: the Agent tool takes no model
-    native_coverage: [specialist_pinning]
     # no `docs`: kopi refuses its own home to its file tools and Bash, so a doc
     # there is unreadable; the projection then renders no doc pointer
     defaults:
@@ -100,8 +95,7 @@ subagents:
     tools: "Read, Bash"
     description: "Review a changed diff through one assigned lens (correctness, simplify, or tests) in any language (Kubernetes/Helm/ArgoCD manifests: infra-reviewer); read-only, cites changed hunks. Dispatched per file group by the ship-check skill. Judges the changed lines, not the requirements behind them."
   spec-reviewer:
-    # the projection's self-review rule names this role literally; render.test
-    # fails on a rename
+    # the projection's self-review rule names this role literally: rename both together
     tier: top
     effort: high
     readonly: true
@@ -206,28 +200,25 @@ agent_sandbox:
       - sum.golang.org
       - nodejs.org
 agent_mcp_servers:
+  # A server is hosted (`url`, with `bearer_op` the 1Password ref whose value
+  # becomes its Authorization bearer at apply) or local stdio (`command`, `args`).
   # auto_approve_tools: Claude and kopi emit an allow rule per readonly tool;
   # omission keeps normal review.
-
   context7:
-    package_bin: context7-mcp
-    args: []
+    url: https://mcp.context7.com/mcp
+    bearer_op: Personal/Context7/api key
     auto_approve_tools: true
     readonly_tools: [resolve-library-id, query-docs]
-    env:
-      CONTEXT7_API_KEY:
-        op: Personal/Context7/api key
   exa:
-    package_bin: exa-mcp-server
-    args: []
+    url: https://mcp.exa.ai/mcp
+    bearer_op: Personal/Exa/api key
     auto_approve_tools: true
     readonly_tools: [web_search_exa, web_fetch_exa]
-    env:
-      EXA_API_KEY:
-        op: Personal/Exa/api key
   playwright:
     readonly_tools: [browser_navigate, browser_navigate_back, browser_snapshot, browser_tabs, browser_wait_for]
-    package_bin: playwright-mcp
+    # the Homebrew formula (dot_Brewfile); run_onchange_after_playwright-browser
+    # installs the Chromium build each release pins
+    command: /opt/homebrew/bin/playwright-mcp
     # not auto_approve_tools: tools taking a caller-chosen filename (snapshot,
     # take_screenshot, evaluate, console_messages, network_request/s) write
     # anywhere under the workspace or output dir, navigate reaches any host, and

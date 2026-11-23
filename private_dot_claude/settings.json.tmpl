@@ -14,7 +14,6 @@
   {{- $permDeny = append $permDeny (printf "Read(%s)" .) -}}
   {{- if not (or (hasPrefix "~" .) (hasPrefix "/" .)) -}}{{- $permDeny = append $permDeny (printf "Edit(%s)" .) -}}{{- end -}}
 {{- end -}}
-{{- range $sb.denyWrite -}}{{- $permDeny = append $permDeny (printf "Edit(/%s/**)" .) -}}{{- end -}}
 {{- /* policyOnly: the servers themselves are rendered into ~/.claude.json, and
        resolving their op secrets here would make settings.json depend on
        1Password. An auto-approved server gets a per-tool allow for each of its
@@ -65,10 +64,10 @@
   },
   {{- /* no Remote Control bridge to claude.ai or the mobile app */}}
   "disableRemoteControl": true,
-  {{- /* ccstatusline */}}
+  {{- /* private_dot_claude/executable_statusline.sh */}}
   "statusLine": {
     "type": "command",
-    "command": "{{ .chezmoi.sourceDir }}/node_modules/.bin/ccstatusline"
+    "command": "~/.claude/statusline.sh"
   },
   {{- /* plugin set from agents.yaml */}}
   "enabledPlugins": {{ .agents.claude.plugins | toPrettyJson | indent 2 | trim }},

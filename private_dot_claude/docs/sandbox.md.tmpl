@@ -6,9 +6,7 @@ Generated from `.chezmoidata/agents.yaml` in the chezmoi repo.
 ## The two enforcement layers
 
 1. **Bash sandbox** (`settings.json → sandbox`) governs shell commands: writes
-   only inside `allowWrite` and never under the `Edit(...)` denies on live code
-   the harnesses run unsandboxed (the repo's `node_modules`),
-   outbound network only to `allowedDomains`. Reads are
+   only inside `allowWrite`, outbound network only to `allowedDomains`. Reads are
    allowed everywhere except the `Read(...)` permission denies, which the harness
    merges into the sandbox; a relative deny name also gets an `Edit(...)` deny,
    since it sits inside the writable cwd. Bash reads the agent's own home (`{{ $agent.home }}`)

@@ -4,8 +4,8 @@ name: Fresh
 # weekly + manual dispatch only, never per-PR. No path filters by design —
 # the point is ordering: a script invoking a binary that no earlier step
 # installed must fail the apply. Manual baseline is git, chezmoi and Homebrew
-# only: node/npm come from the repo's own run_once bootstrap script and jq from
-# macOS, so the apply is validated from bare.
+# only: everything else comes from the Brewfile and jq from macOS, so the apply
+# is validated from bare.
 on:
   workflow_dispatch:
   schedule:
@@ -34,9 +34,9 @@ jobs:
       - name: Disk before
         run: df -h /
 
-      # Real home, everything included: npm deps + Playwright Chromium, full
-      # `brew bundle --global` (formulae, casks incl. mactex, omlx service),
-      # nvim Lazy restore. The omlx model script only asserts its Hugging Face
+      # Real home, everything included: full `brew bundle --global` (formulae,
+      # casks incl. mactex, omlx service), Playwright Chromium, nvim Lazy
+      # restore. The omlx model script only asserts its Hugging Face
       # sources under CI=true: the runner's Metal VM times out inside a 12B
       # conversion, so the fetch/convert path is exercised on real machines.
       # `brew bundle cleanup --force` will uninstall runner-preinstalled

@@ -5,10 +5,6 @@
 {{- $self := .self -}}
 {{- $root := .root -}}
 {{- $ag := index $root.agents $self -}}
-{{- /* lines skipped for this harness: already carried by its own prompt, or naming
-       a capability it lacks; see .chezmoidata/agents.yaml native_coverage */ -}}
-{{- $native := list -}}
-{{- if hasKey $ag "native_coverage" -}}{{ $native = $ag.native_coverage }}{{- end -}}
 
 ## Working agreements
 - When you are the session driver (the model this session started on, not a
@@ -19,7 +15,7 @@
     Unblock handoffs; take over only when it loops on repair. Verify its writes by
     diff; adjudicate gate evidence; rerun only on changed inputs, missing
     evidence or concrete doubt.{{/* driver_ownership: the driver's context is the scarce resource, so redoing a child's planning or implementation pays twice; a recoverable handoff blocker must not transfer ownership to the driver, a repair loop is the one takeover trigger, and an unchanged gate rerun repeats evidence the driver already has */}}
-{{- if not (has "specialist_pinning" $native) }}
+{{- if ne $self "kopi" }}{{/* kopi's Agent tool takes no model */}}
   - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
     does not show it: don't override their model.{{/* specialist_pinning: presets are tuned once, not per session */}}
 {{- end }}
@@ -27,7 +23,7 @@
     do not gate its requirements, and always for auth/security boundaries,
     data loss/migration, concurrency or external contracts. Give artifact,
     requirements, snapshot and green gates; one pass. Re-review fixes only.{{/* self_review: a producing context endorses its own output; iterated rounds add false positives faster than catches. The named role keeps the pass off write-capable or omission-blind reviewers; the skip and fix-scoped re-review keep it off trivial gated work. */}}
-{{- if not (has "initiative" $native) }}
+{{- if ne $self "claude" }}{{/* Claude Code's own prompt carries this */}}
   - Act on the request rather than checking back: carry the requested work to
     done, continuing under a stated, in-scope assumption instead of asking about
     a step the request already covers; pause only for a clearly destructive or
@@ -58,7 +54,7 @@
   name, unverified work labelled as such.{{/* faithful_reporting: self-reports drift from what ran, and a false done costs more than an honest blocked */}}
 - If one part of the work is blocked, finish every other part and say what you
   left out and why.{{/* partial_delivery: scaling the work down is my call, not the agent's */}}
-{{ if not (has "call_batching" $native) -}}
+{{ if ne $self "claude" -}}{{- /* Claude Code's own prompt carries this */ -}}
 - Issue independent tool calls together in one message; keep dependent work
   sequential.{{/* call_batching: serial independent calls spend turns and wall-clock for nothing */}}
 {{ end -}}

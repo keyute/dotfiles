@@ -10,9 +10,10 @@ Gate for adding a line: `AGENTS.md` (Harness iteration).
 - Harness-agnostic projection → `.chezmoitemplates/agent-instructions.md`;
   rules only a session driver needs nest under that projection's
   session-driver bullet.
-- Subagent and skill bodies render for every harness: keep harness-specific
-  nouns — tool names, agent names, instruction filenames — out of them, and take
-  what varies as a parameter.
+- Subagent bodies render for every harness and a skill is one plain file every
+  harness reads: keep harness-specific nouns — tool names, agent names,
+  instruction filenames — out of both; a subagent body takes what varies as a
+  parameter.
 - Harness-specific *intent* → a commented bullet in that harness's consumer
   template (`CLAUDE.md.tmpl` / kopi's
   `private_dot_kopi/AGENTS.md.tmpl`). A

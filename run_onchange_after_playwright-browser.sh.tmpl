@@ -1,0 +1,7 @@
+#!/bin/bash
+{{- $bin := .agent_mcp_servers.playwright.command }}
+# Each playwright-mcp release pins its own Chromium build, so this re-runs when
+# brew moves the formula. Runs after run_onchange_after_brew, which installs it.
+# playwright-mcp version: {{ if lookPath $bin }}{{ output $bin "--version" | trim }}{{ end }}
+set -euo pipefail
+{{ $bin | quote }} install-browser chromium --no-shell

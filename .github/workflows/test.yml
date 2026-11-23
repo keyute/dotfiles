@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-  merge_group:
 
 permissions: {}
 
@@ -16,49 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # docs/, README.md and AGENTS.md are chezmoi-ignored —
-  # repo-local only — so a commit touching nothing else cannot change a
-  # rendered target. Everything else, this workflow included, runs render.
-  changes:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      chezmoi: ${{ steps.filter.outputs.chezmoi }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # merge_group runs diff against merge_group.base_sha, which
-          # paths-filter fetches when it isn't local — a fetch that
-          # persist-credentials: false leaves unauthenticated. fetch-depth: 0
-          # puts the base in the clone so it never fires. Pull requests read
-          # the file list from the API and don't need this.
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Detect changed paths
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
-        with:
-          # Negated patterns are ignored under the default `some` quantifier,
-          # which would leave this filter matching every commit.
-          predicate-quantifier: some-with-excludes
-          filters: |
-            chezmoi:
-              - '**'
-              - '!docs/**'
-              - '!README.md'
-              - '!AGENTS.md'
-
-  # Fast gate on every PR and push to main: render.test applies the whole tree
-  # headless into a scratch home with run scripts and externals excluded. modify_ scripts are not in the
-  # `scripts` exclude class, so Claude's MCP merge path still executes —
-  # with 1Password stubbed so no real secret ever reaches a runner.
-  render:
-    needs: changes
-    if: needs.changes.outputs.chezmoi != 'false'
+  # tests/check.sh applies the whole tree headless into a scratch home with run
+  # scripts and externals excluded. modify_ scripts still execute, with
+  # 1Password stubbed so no real secret reaches a runner. The job id `ci` is the
+  # check name a branch ruleset requires.
+  ci:
     runs-on: macos-latest
     permissions:
       contents: read
@@ -70,15 +31,6 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/setup-verify-env
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: current
-          cache: npm
-
-      - name: Install repo npm dependencies
-        run: npm ci --ignore-scripts --prefix "$GITHUB_WORKSPACE"
 
       # shellcheck is not on the macOS runner image.
       - name: Install shellcheck
@@ -96,20 +48,7 @@ jobs:
             chezmoi -S "$GITHUB_WORKSPACE" execute-template < "$f" > "$out/${f%.tmpl}"
             echo "render ok: $f"
           done
-          # Plain run_*.sh scripts (no template directives) are checked in place.
-          shellcheck --shell=bash --format=gcc "$out"/run_*.sh run_*.sh
+          shellcheck --shell=bash --format=gcc "$out"/run_*.sh tests/check.sh private_dot_claude/executable_statusline.sh
 
-      # The roster/stub/pin drift gate.
-      - name: Run render test
-        run: npm test
-
-  # One stable check name for branch protection, so the required-checks list
-  # does not have to track individual jobs.
-  ci:
-    if: always()
-    needs: [changes, render]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check job results
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
+      - name: Run check
+        run: tests/check.sh

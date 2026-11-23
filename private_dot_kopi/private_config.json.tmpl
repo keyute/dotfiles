@@ -7,13 +7,6 @@
        own home: each path the sandbox denies is denied to every file tool too */ -}}
 {{- $deny := list -}}
 {{- range $sb.denyRead -}}{{- $deny = append $deny (printf "*(%s)" .) -}}{{- end -}}
-{{- /* kopi has no sandbox deny-write: these keep its file tools off the MCP
-       servers' code, but Bash started in this repo in execute mode can still
-       write it */ -}}
-{{- range $sb.denyWrite -}}
-  {{- $deny = append $deny (printf "Edit(%s)" .) -}}
-  {{- $deny = append $deny (printf "Write(%s)" .) -}}
-{{- end -}}
 {{- /* an auto-approved server is allowed only its readonly_tools, so a tool it
        adds later keeps review; a bare deny removes the tool from the model */ -}}
 {{- $servers := dict -}}

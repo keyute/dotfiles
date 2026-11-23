@@ -21,11 +21,12 @@ repo-local only.
 - Keep vendor-templated files (gh, 1Password) verbatim
   except for the customised lines. *Why: they stay diffable against upstream.*
 
-- Edit source state only; verify with `npm test` (preserve the inherited
+- Edit source state only; verify with `tests/check.sh` (preserve the inherited
   `TMPDIR`).
 - Declare a subagent or MCP server once in `.chezmoidata/agents.yaml`;
-  a shared skill body lives once in `.chezmoitemplates/skills/` with a
-  one-line stub per harness. *Why: copies drift from the data.*
+  a shared skill is one plain `dot_agents/exact_skills/<name>/SKILL.md`,
+  linked into Claude by `private_dot_claude/exact_skills/symlink_<name>`.
+  *Why: copies drift from the data.*
 - Leave `chezmoi apply` and 1Password signin to me. Resolved values belong
   only in applied private targets, never in source files, commits, or
   terminal output.
@@ -33,8 +34,8 @@ repo-local only.
 ## Harness iteration
 
 - **A model release is one line.** Replace the ID in `subagent_tiers`
-  (`.chezmoidata/agents.yaml`) and run `npm test`. No evaluation, and nothing
-  else moves on a release; revert the line if work visibly gets worse.
+  (`.chezmoidata/agents.yaml`) and run `tests/check.sh`. No evaluation, and
+  nothing else moves on a release; revert the line if work visibly gets worse.
 - **Tiers follow the kind of work**: small for bounded lookups, mid for
   implementing a settled design, top for judgement (review, research,
   planning); frontier drives, and runs only the `Plan` role as a child. A role
