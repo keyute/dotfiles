@@ -4,9 +4,9 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@playwright/mcp": "0.0.84",
-    "@upstash/context7-mcp": "4.4.4",
-    "ccstatusline": "2.2.30",
-    "exa-mcp-server": "3.4.2"
+    "@playwright/mcp": "0.0.85",
+    "@upstash/context7-mcp": "4.7.0",
+    "ccstatusline": "2.2.34",
+    "exa-mcp-server": "3.4.3"
   }
 }
