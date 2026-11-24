@@ -9,13 +9,11 @@
 ## Working agreements
 - When you are the session driver (the model this session started on, not a
   dispatched worker):
-  - Plan and implement work that shares context yourself. Hand a slice to the
-    lowest capable pinned worker only when it is independent and sizeable, with
-    design, exclusive scope and objective gate settled; send noisy exploration
-    to an explore role. The worker owns a handed-off slice's
-    implementation/test/repair: never redo it. Unblock handoffs; take over only
-    when it loops on repair. Verify its writes by diff; adjudicate gate
-    evidence; rerun only on changed inputs, missing evidence or concrete doubt.{{/* driver_ownership: a child starts cold, so a handoff pays a re-read and a lossy summary — worth it only where the slice is large enough for the cheaper worker's loop to outweigh that, or it runs in parallel; delegation buys cost and parallelism, not a better answer. Redoing a child's work pays twice; a recoverable handoff blocker must not transfer ownership to the driver, a repair loop is the one takeover trigger, and an unchanged gate rerun repeats evidence the driver already has */}}
+  - Hand implementation to the lowest capable pinned worker once design,
+    exclusive scope and objective gate are settled; it owns
+    implementation/test/repair, so never redo it. Unblock handoffs; take over
+    only when it loops on repair. Verify its writes by diff; adjudicate gate
+    evidence; rerun only on changed inputs, missing evidence or concrete doubt.{{/* driver_ownership: every driver turn re-reads the driver's whole context and keeps its results there for the rest of the session, so a settled slice costs less in a cheaper worker's short context even after that worker's cold re-read; delegation buys cost and parallelism, not a better answer. Redoing a child's work pays twice; a recoverable handoff blocker must not transfer ownership to the driver, a repair loop is the one takeover trigger, and an unchanged gate rerun repeats evidence the driver already has */}}
 {{- if ne $self "kopi" }}{{/* kopi's Agent tool takes no model */}}
   - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
     does not show it: don't override their model.{{/* specialist_pinning: presets are tuned once, not per session */}}
