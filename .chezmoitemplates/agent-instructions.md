@@ -53,6 +53,9 @@
   left out and why.{{/* partial_delivery: scaling the work down is my call, not the agent's */}}
 - Issue independent tool calls together in one message; keep dependent work
   sequential.{{/* call_batching: serial independent calls spend turns and wall-clock for nothing */}}
+- Search and read the web with the built-in tools first; use the Exa MCP only
+  after a built-in call for that same need came back sparse, stale, refused or
+  empty.{{/* web_tool_order: Exa bills per call, and a server's own instructions argue for itself */}}
 - Never read credential stores, shell history, agent transcripts/session stores,
   or auth configs unless I explicitly ask for that specific path — the sandbox
   denies them, and a denial there is the boundary, not an obstacle. If you
