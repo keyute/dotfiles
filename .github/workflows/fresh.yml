@@ -35,8 +35,8 @@ jobs:
         run: df -h /
 
       # Real home, everything included: full `brew bundle --global` (formulae,
-      # casks incl. mactex, omlx service), Playwright Chromium, nvim Lazy
-      # restore. The omlx model script only asserts its Hugging Face
+      # casks incl. mactex, omlx service), Playwright Chromium, nvim plugin
+      # sync. The omlx model script only asserts its Hugging Face
       # sources under CI=true: the runner's Metal VM times out inside a 12B
       # conversion, so the fetch/convert path is exercised on real machines.
       # `brew bundle cleanup --force` will uninstall runner-preinstalled

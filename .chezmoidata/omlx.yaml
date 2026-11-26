@@ -15,7 +15,7 @@ omlx:
   models:
     # `id` is the served model id: omlx registers a model under its leaf
     # directory name, not its repo name. Renaming it means editing
-    # dot_config/nvim/lua/plugins/editor/minuet-ai.lua, which requests it by name.
+    # dot_config/nvim/exact_plugin/minuet-ai.lua, which requests it by name.
     - id: Mellum2-12B-A2.5B-Base-4bit
       repo: JetBrains/Mellum2-12B-A2.5B-Base
       # Held at the historical mlx-community segment (not a real repo) because

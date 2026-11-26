@@ -1,9 +1,12 @@
 #!/bin/bash
 
-# Lockfile hash: {{ include "dot_config/nvim/lazy-lock.json" | sha256sum }}
+# Lockfile hash: {{ include "dot_config/nvim/nvim-pack-lock.json" | sha256sum }}
+
+set -euo pipefail
+
+# stdin is /dev/null: with no UI and no pending input the install prompt takes its default (Yes)
+echo "Removing unused nvim plugins..."
+nvim --headless "+lua vim.pack.del(vim.iter(vim.pack.get(nil, { info = false })):filter(function(p) return not p.active end):map(function(p) return p.spec.name end):totable())" "+if v:errmsg != '' | cquit | endif" +qa </dev/null
 
 echo "Updating nvim plugins..."
-nvim --headless "+Lazy! restore" +qa
-
-echo "Removing unused nvim plugins..."
-nvim --headless "+Lazy! clean" +qa
+nvim --headless "+lua vim.pack.update(nil, { target = 'lockfile', force = true })" "+if v:errmsg != '' | cquit | endif" +qa </dev/null

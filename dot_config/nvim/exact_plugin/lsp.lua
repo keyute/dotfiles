@@ -1,0 +1,157 @@
+vim.pack.add({
+	"https://github.com/mason-org/mason.nvim",
+	"https://github.com/neovim/nvim-lspconfig",
+	"https://github.com/b0o/SchemaStore.nvim",
+	"https://github.com/mason-org/mason-lspconfig.nvim",
+})
+
+require("mason").setup()
+
+vim.api.nvim_create_autocmd("LspAttach", {
+	group = vim.api.nvim_create_augroup("kickstart-lsp-attach", { clear = true }),
+	callback = function(event)
+		local map = function(keys, func, desc, mode)
+			mode = mode or "n"
+			vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = "LSP: " .. desc })
+		end
+
+		map("gd", function()
+			Snacks.picker.lsp_definitions()
+		end, "[G]oto [D]efinition")
+		-- nowait so `gr` opens references immediately instead of waiting for the
+		-- builtin gr* chords; rename/code action move to <leader>cr/<leader>ca.
+		vim.keymap.set("n", "gr", function()
+			Snacks.picker.lsp_references()
+		end, { buffer = event.buf, desc = "LSP: [G]oto [R]eferences", nowait = true })
+		vim.keymap.set("n", "<leader>cr", function()
+			return ":IncRename " .. vim.fn.expand("<cword>")
+		end, { buffer = event.buf, desc = "LSP: [C]ode [R]ename", expr = true })
+		map("<leader>ca", vim.lsp.buf.code_action, "[C]ode [A]ction", { "n", "x" })
+		map("gI", function()
+			Snacks.picker.lsp_implementations()
+		end, "[G]oto [I]mplementation")
+		map("gy", function()
+			Snacks.picker.lsp_type_definitions()
+		end, "[G]oto T[y]pe Definition")
+		map("grD", vim.lsp.buf.declaration, "[G]oto [D]eclaration")
+		map("<leader>ss", function()
+			Snacks.picker.lsp_symbols()
+		end, "[S]earch LSP [S]ymbols")
+		map("<leader>sS", function()
+			Snacks.picker.lsp_workspace_symbols()
+		end, "[S]earch LSP Workspace [S]ymbols")
+
+		local client = vim.lsp.get_client_by_id(event.data.client_id)
+		if client and client:supports_method(vim.lsp.protocol.Methods.textDocument_documentHighlight, event.buf) then
+			local highlight_augroup = vim.api.nvim_create_augroup("kickstart-lsp-highlight", { clear = false })
+			vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+				buffer = event.buf,
+				group = highlight_augroup,
+				callback = vim.lsp.buf.document_highlight,
+			})
+
+			vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+				buffer = event.buf,
+				group = highlight_augroup,
+				callback = vim.lsp.buf.clear_references,
+			})
+
+			vim.api.nvim_create_autocmd("LspDetach", {
+				group = vim.api.nvim_create_augroup("kickstart-lsp-detach", { clear = true }),
+				callback = function(event2)
+					vim.lsp.buf.clear_references()
+					vim.api.nvim_clear_autocmds({
+						group = "kickstart-lsp-highlight",
+						buffer = event2.buf,
+					})
+				end,
+			})
+		end
+
+		-- Prefer LSP folds over the global treesitter foldexpr (set in config/options.lua)
+		if client and client:supports_method(vim.lsp.protocol.Methods.textDocument_foldingRange, event.buf) then
+			local win = vim.api.nvim_get_current_win()
+			vim.wo[win][0].foldexpr = "v:lua.vim.lsp.foldexpr()"
+		end
+
+		if client and client:supports_method(vim.lsp.protocol.Methods.textDocument_inlayHint, event.buf) then
+			vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
+
+			vim.api.nvim_create_autocmd("InsertEnter", {
+				buffer = event.buf,
+				callback = function()
+					vim.lsp.inlay_hint.enable(false, { bufnr = event.buf })
+				end,
+			})
+
+			vim.api.nvim_create_autocmd("InsertLeave", {
+				buffer = event.buf,
+				callback = function()
+					vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
+				end,
+			})
+
+			map("<leader>th", function()
+				vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({ bufnr = event.buf }))
+			end, "[T]oggle Inlay [H]ints")
+		end
+	end,
+})
+
+-- Formatter/linter binaries (conform/nvim-lint); LSP servers are covered by
+-- mason-lspconfig below. Installed via mason-registry directly —
+-- mason-tool-installer was dropped (unmaintained, mason-v2 compat issue #78).
+local ensure_installed_tools = {
+	"stylua",
+	"prettier",
+	"prettierd",
+	"ruff",
+	"rumdl",
+	"yamlfmt",
+	"sqlfluff",
+	"eslint_d",
+	"golangci-lint",
+	"gofumpt",
+	"goimports",
+}
+local mason_registry = require("mason-registry")
+-- Installs are async and mason only logs failures; without this a broken
+-- install leaves formatters/linters silently missing (conform runs with
+-- notify_on_error = false).
+mason_registry:on(
+	"package:install:failed",
+	vim.schedule_wrap(function(pkg)
+		vim.notify("mason: failed to install " .. pkg.name, vim.log.levels.ERROR)
+	end)
+)
+mason_registry.refresh(function()
+	for _, tool in ipairs(ensure_installed_tools) do
+		local pkg = mason_registry.get_package(tool)
+		if not pkg:is_installed() then
+			pkg:install()
+		end
+	end
+end)
+
+require("mason-lspconfig").setup({
+	ensure_installed = {
+		"lua_ls",
+		"bashls",
+		"dockerls",
+		"docker_compose_language_service",
+		"gopls",
+		"marksman",
+		"mdx_analyzer",
+		"jsonls",
+		"helm_ls",
+		"ty",
+		"tailwindcss",
+		"tsc",
+		"yamlls",
+		"tofu_ls",
+		"html",
+		"cssls",
+		"taplo",
+		"texlab",
+	},
+})
