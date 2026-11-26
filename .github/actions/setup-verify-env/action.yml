@@ -17,16 +17,7 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$RUNNER_TEMP/opstub"
-        cat > "$RUNNER_TEMP/opstub/op" <<'EOF'
-        #!/bin/sh
-        # chezmoi probes `op --version` to pick CLI syntax; every read gets a
-        # fixed placeholder so no real secret exists on the runner.
-        case "$1" in
-          --version) echo "2.30.0" ;;
-          signin) echo "ci-stub-session" ;;
-          account) echo "[]" ;;
-          *) printf 'ci-op-stub' ;;
-        esac
-        EOF
+        # Every read gets a fixed placeholder so no real secret exists on the runner.
+        printf '#!/bin/sh\nprintf ci-op-stub\n' > "$RUNNER_TEMP/opstub/op"
         chmod +x "$RUNNER_TEMP/opstub/op"
         echo "$RUNNER_TEMP/opstub" >> "$GITHUB_PATH"

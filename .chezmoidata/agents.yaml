@@ -1,10 +1,7 @@
 agents:
   claude:
     home: "~/.claude"
-    defaults:
-      # a subagent_tiers key, never a second copy of the pin
-      tier: top
-      reasoning_effort: high
+    reasoning_effort: high
     # subpaths of home denied even to this agent itself (transcripts, credentials,
     # history); the rest of home — notably projects/<proj>/memory — stays readable
     sensitive_subpaths:
@@ -49,10 +46,6 @@ agents:
       - "Bash(wt step squash:*)"
   kopi:
     home: "~/.kopi"
-    defaults:
-      provider: openai-codex
-      # a subagent_tiers key, never a second copy of the pin
-      tier: top
     # kopi refuses its whole home to its own tools and Bash
     sensitive_subpaths: []
 # shared subagent definitions rendered for every harness; bodies live in
@@ -128,7 +121,8 @@ subagents:
 # explicit model IDs, not aliases. `frontier` is the escalation driver and no
 # role runs on it: start a fresh session on it rather than `/model` a grown one,
 # since each model has its own cache. A model release replaces an ID here and
-# nothing else.
+# nothing else. `top` is also each harness's driver pin; kopi's are in its own
+# `provider/id` form.
 subagent_tiers:
   claude:
     small: claude-haiku-5-5
@@ -137,9 +131,9 @@ subagent_tiers:
     # settings.json renders this pin's Agent(model:…) alias deny
     frontier: claude-fable-5-2
   kopi:
-    small: gpt-6-luna
-    mid: gpt-6.1-terra
-    top: gpt-6.1-sol
+    small: openai-codex/gpt-6-luna
+    mid: openai-codex/gpt-6.1-terra
+    top: openai-codex/gpt-6.1-sol
 # effort of every role that sets none
 subagent_effort: medium
 agent_sandbox:
@@ -174,7 +168,8 @@ agent_sandbox:
       "~/Library/Caches/uv": write
       "~/Library/Caches/go-build": write
   network:
-    # binds and listens on all interfaces, and reaches every localhost port
+    # binds and listens on all interfaces, and reaches every localhost port.
+    # Claude only: kopi's proxy network cannot listen or reach localhost on macOS
     allow_local_binding: true
     allowed_domains:
       - github.com

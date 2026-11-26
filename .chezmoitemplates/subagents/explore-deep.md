@@ -1,3 +1,3 @@
-{{ includeTemplate "explore-common.md" (dict) }}
+{{ includeTemplate "subagents/Explore.md" (dict) }}
 This is a deep pass: check multiple locations and naming conventions, follow the
 flow across files, and prefer completeness over speed.

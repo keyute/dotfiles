@@ -5,8 +5,8 @@
 {{- $name := .name -}}
 {{- $root := .root -}}
 {{- $meta := index $root.subagents $name -}}
-{{- $role := get (includeTemplate "roles" (dict "root" $root "harness" "claude") | fromJson) $name -}}
-{{- if not $role -}}{{- fail (printf "%s: not in the roster" $name) -}}{{- end -}}
+{{- $model := index $root.subagent_tiers.claude $meta.tier -}}
+{{- if not $model -}}{{- fail (printf "%s: unknown tier %s" $name $meta.tier) -}}{{- end -}}
 ---
 name: {{ $name }}
 description: {{ $meta.description | toJson }}
@@ -14,8 +14,8 @@ description: {{ $meta.description | toJson }}
 {{- if hasKey $meta "tools" }}
 tools: {{ $meta.tools }}
 {{- end }}
-model: {{ $role.model }}
-effort: {{ $role.effort }}
+model: {{ $model }}
+effort: {{ default $root.subagent_effort (get $meta "effort") }}
 {{- if get $meta "omit_instructions" }}
 omitClaudeMd: true
 {{- end }}

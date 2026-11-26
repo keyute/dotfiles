@@ -2,7 +2,7 @@
 {{- $allowedPerms := list "WebSearch" "WebFetch" -}}
 {{- $modelSettings := dict -}}
 {{- range $tier, $pin := .subagent_tiers.claude -}}
-  {{- $_ := set $modelSettings $pin (dict "effortLevel" $.agents.claude.defaults.reasoning_effort) -}}
+  {{- $_ := set $modelSettings $pin (dict "effortLevel" $.agents.claude.reasoning_effort) -}}
 {{- end -}}
 {{- /* the frontier pin's Agent-tool alias is its family segment (claude-<family>-…),
        so the deny follows the pin */}}
@@ -37,7 +37,7 @@
     "disableBypassPermissionsMode": "disable"
   },
   {{- /* driver pin from agents.yaml */}}
-  "model": {{ (index .subagent_tiers.claude .agents.claude.defaults.tier) | toJson }},
+  "model": {{ .subagent_tiers.claude.top | toJson }},
   {{- /* every Claude pin gets the driver effort, so a /model change keeps it */}}
   "modelSettings": {{ $modelSettings | toPrettyJson | indent 2 | trim }},
   {{- /* fallback for the built-in `claude` type and plugin agents; a default, not a

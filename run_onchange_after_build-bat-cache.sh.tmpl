@@ -1,4 +1,4 @@
 #!/bin/bash
+# Sorts after run_onchange_after_brew, which installs bat (chezmoi runs scripts in name order).
 # tmThemes hash: {{ output "sh" "-c" (printf "cat %s/*.tmTheme 2>/dev/null | sha256sum" (joinPath .chezmoi.homeDir ".config/bat/themes")) | trim }}
-command -v bat >/dev/null || exit 0
 bat cache --build

@@ -1,5 +1,3 @@
-{{- $kopi := .agents.kopi -}}
-{{- $tiers := .subagent_tiers.kopi -}}
 {{- $sb := includeTemplate "agent-sandbox" (dict "self" "kopi" "root" .) | fromJson -}}
 {{- /* both ask by default */ -}}
 {{- $allow := list "WebFetch" "WebSearch" -}}
@@ -17,25 +15,29 @@
 {
   "version": 1,
   {{- /* driver pin from agents.yaml */}}
-  "model": {{ printf "%s/%s" $kopi.defaults.provider (index $tiers $kopi.defaults.tier) | toJson }},
+  "model": {{ .subagent_tiers.kopi.top | toJson }},
   {{- /* answers WebFetch and WebSearch; unset, they run on the session model */}}
-  "smallModel": {{ printf "%s/%s" $kopi.defaults.provider $tiers.small | toJson }},
-  {{- /* the default right side without `sandbox`: enabled below, it never changes */}}
+  "smallModel": {{ .subagent_tiers.kopi.small | toJson }},
+  {{- /* left: the default plus the plan windows, where Claude's statusline.sh shows
+         them; right: the default without `sandbox` (enabled below, it never changes) */}}
   "statusline": {
-    "right": ["$notice", "$shells", "$mode"]
+    "left": ["$model", "$context", "(ses $limit_5h( $reset_5h))", "(wk $limit_wk( $reset_wk))", "$branch( $changes)"],
+    "right": ["$notice", "$shells", "$ultracode", "$mode"]
   },
   "permissions": {
     "allow": {{ $allow | toPrettyJson | indent 4 | trim }},
     "deny": {{ $deny | toPrettyJson | indent 4 | trim }}
   },
   {{- /* with it on, an Edit or Write no rule matches runs without asking;
-       the calls still left asking (MCP tools with no allow rule) are reviewed on the session model */}}
+       the calls still left asking (MCP tools with no allow rule, `unsandboxed` Bash calls) are reviewed on the session model */}}
   "classifier": {
     "enabled": true
   },
   {{- /* Bash runs in the OS sandbox; refuse to start without it */}}
   "sandbox": {
     "enabled": true,
+    {{- /* hosts sandboxed Bash may reach through kopi's proxy; none otherwise */}}
+    "allowDomains": {{ .agent_sandbox.network.allowed_domains | toPrettyJson | indent 4 | trim }},
     "allowWrite": {{ $sb.allowWrite | toPrettyJson | indent 4 | trim }},
     {{- /* plain paths, no globs: a relative name covers only <start dir>/name */}}
     "denyRead": {{ $sb.denyRead | toPrettyJson | indent 4 | trim }}

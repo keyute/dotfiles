@@ -1,4 +1,6 @@
-{{ includeTemplate "agent-instructions.md" (dict "self" "claude" "root" .) }}
+{{ includeTemplate "agent-instructions.md" }}
+- The subagents in `{{ .agents.claude.home }}/agents` are pinned and the dispatch-time list
+  does not show it: don't override their model.{{/* specialist_pinning: presets are tuned once, not per session */}}
 - As the driver, give each Workflow `agent()` its roster `agentType` (no
   effort). A loop over a discovered list counts toward the size guideline;
   verify findings in batches per group, not one agent per finding.{{/* workflow_burn: cost is agent count x lifetime x read volume; agentType carries the role's tools, body and effort while CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL fixes the model */}}

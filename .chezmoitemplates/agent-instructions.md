@@ -1,10 +1,6 @@
 {{- /* agent-instructions: the shared, harness-agnostic instruction projection every
        root and non-omit_instructions child loads; authoring rules and the
-       per-bullet `principle: why` comment convention are in docs/agent-authoring.md.
-       input: dict "self" <agent name> "root" <template data> */ -}}
-{{- $self := .self -}}
-{{- $root := .root -}}
-{{- $ag := index $root.agents $self -}}
+       per-bullet `principle: why` comment convention are in docs/agent-authoring.md. */ -}}
 
 ## Working agreements
 - When you are the session driver (the model this session started on, not a
@@ -14,10 +10,6 @@
     implementation/test/repair, so never redo it. Unblock handoffs; take over
     only when it loops on repair. Verify its writes by diff; adjudicate gate
     evidence; rerun only on changed inputs, missing evidence or concrete doubt.{{/* driver_ownership: every driver turn re-reads the driver's whole context and keeps its results there for the rest of the session, so a settled slice costs less in a cheaper worker's short context even after that worker's cold re-read; delegation buys cost and parallelism, not a better answer. Redoing a child's work pays twice; a recoverable handoff blocker must not transfer ownership to the driver, a repair loop is the one takeover trigger, and an unchanged gate rerun repeats evidence the driver already has */}}
-{{- if ne $self "kopi" }}{{/* kopi's Agent tool takes no model */}}
-  - The subagents in `{{ $ag.home }}/agents` are pinned and the dispatch-time list
-    does not show it: don't override their model.{{/* specialist_pinning: presets are tuned once, not per session */}}
-{{- end }}
   - Before calling merged/applied work done, use `spec-reviewer` when checks
     do not gate its requirements, and always for auth/security boundaries,
     data loss/migration, concurrency or external contracts. Give artifact,

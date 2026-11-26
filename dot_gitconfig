@@ -25,8 +25,6 @@
 	format = ssh
 [interactive]
 	diffFilter = delta --color-only --features $([ "$(theme-mode 2>/dev/null || echo dark)" = light ] && echo catppuccin-latte || echo catppuccin-mocha)
-[color]
-	ui = true
 [push]
 	autoSetupRemote = true
 [fetch]

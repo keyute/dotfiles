@@ -14,14 +14,6 @@ alias lg='lazygit'
 alias lzd='lazydocker'
 alias lsql='lazysql'
 
-# `gh` handles both hosts (auto-detects host from a repo's remote). `ghe` forces the
-# GHES host for repo-independent commands and for gh-dash (`ghe dash`).
-ghe() { GH_HOST=git.kubecity.com gh "$@"; }
-
-if type brew &>/dev/null; then
-    FPATH="$(brew --prefix)/share/zsh/site-functions:$(brew --prefix)/share/zsh-completions:$FPATH"
-fi
-
 # User completions (e.g. _docker generated from the docker CLI; see run_onchange_after_docker-completion)
 FPATH="$HOME/.local/share/zsh/site-functions:$FPATH"
 
@@ -82,8 +74,6 @@ _sync_appearance() {
     fi
     export BAT_THEME="Catppuccin $Flavor"
     export K9S_SKIN="catppuccin-$flavor"
-    export GH_DASH_CONFIG="$HOME/.config/gh-dash/config.catppuccin-$flavor.yml"
-    export ENHANCE_THEME="catppuccin_$flavor"
 
     # fzf-tab isn't Catppuccin-named, so it stays an explicit mode toggle.
     if [[ $mode == light ]]; then
