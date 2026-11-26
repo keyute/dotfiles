@@ -131,9 +131,9 @@ subagent_tiers:
     # settings.json renders this pin's Agent(model:…) alias deny
     frontier: claude-fable-5-2
   kopi:
-    small: openai-codex/gpt-6-luna
-    mid: openai-codex/gpt-6.1-terra
-    top: openai-codex/gpt-6.1-sol
+    small: openai/gpt-6-luna
+    mid: openai/gpt-6.1-terra
+    top: openai/gpt-6.1-sol
 # effort of every role that sets none
 subagent_effort: medium
 agent_sandbox:
