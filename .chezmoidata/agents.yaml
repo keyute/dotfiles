@@ -133,7 +133,7 @@ subagent_tiers:
   kopi:
     small: openai/gpt-6-luna
     mid: openai/gpt-6.1-terra
-    top: openai/gpt-6.1-sol
+    top: openai/gpt-6.2-sol
 # effort of every role that sets none
 subagent_effort: medium
 agent_sandbox:
