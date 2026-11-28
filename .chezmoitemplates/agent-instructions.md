@@ -22,8 +22,10 @@
   abstractions, one-shot helpers, or speculative error handling/fallbacks.
   Validate at system boundaries or for an invariant/observed failure; trust
   internal code. No flags or compatibility shims where code can just change.{{/* simplicity: unrequested abstraction is debt and models add it unasked; reasoning effort does not reliably prevent it */}}
-- Match the surrounding code's style, design language, and colocation; if the
-  project's rules don't settle it, find the codebase's pattern before writing.{{/* style_matching: consistency outlives preference */}}
+- Match the surrounding code's style, design language, and colocation. Before
+  designing a solution, follow a reference point: the project's own pattern,
+  else the tool's or library's documentation or an established implementation;
+  write a novel approach only when none fits, and say why.{{/* prior_art: a solved problem re-solved from scratch costs review and misses the edge cases the reference already handles; consistency outlives preference */}}
 - Deliver code whose comments carry only what a reader can't reconstruct from
   it — non-obvious rationale, constraints, invariants, units, protocol/API
   contracts, hazards; reason in scratch, not the source. Leave unrelated
@@ -49,7 +51,7 @@
   after a built-in call for that same need came back sparse, stale, refused or
   empty.{{/* web_tool_order: Exa bills per call, and a server's own instructions argue for itself */}}
 - Never read credential stores, shell history, agent transcripts/session stores,
-  or auth configs unless I explicitly ask for that specific path — the sandbox
-  denies them, and a denial there is the boundary, not an obstacle. If you
-  believe you read a credential, flag it immediately so I can rotate it.{{/* credential_hygiene: exposure is irreversible; the path list itself is enforced by the sandbox from agents.yaml via the agent-sandbox template, not projected */}}
+  or auth configs unless I explicitly ask for that specific path — sandbox and
+  permission rules deny them, and a denial is the boundary, not an obstacle. If
+  you believe you read a credential, flag it immediately so I can rotate it.{{/* credential_hygiene: exposure is irreversible; the path list itself is enforced by the sandbox and permission deny rules from agents.yaml via the agent-sandbox template, not projected */}}
 - Never commit on my behalf — I stage, commit, and push myself.{{/* commit_etiquette: authorship and review stay mine */}}
