@@ -46,6 +46,7 @@ agents:
       - "Bash(wt step squash:*)"
   kopi:
     home: "~/.kopi"
+    reasoning_effort: high
     # kopi refuses its whole home to its own tools and Bash
     sensitive_subpaths: []
 # shared subagent definitions rendered for every harness; bodies live in

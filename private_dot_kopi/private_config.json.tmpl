@@ -16,6 +16,8 @@
   "version": 1,
   {{- /* driver pin from agents.yaml */}}
   "model": {{ .subagent_tiers.kopi.top | toJson }},
+  {{- /* main sessions open here, not at kopi's medium; subagents use their definition's `effort` */}}
+  "effort": {{ .agents.kopi.reasoning_effort | toJson }},
   {{- /* answers WebFetch and WebSearch; unset, they run on the session model */}}
   "smallModel": {{ .subagent_tiers.kopi.small | toJson }},
   {{- /* left: the default plus the plan windows, where Claude's statusline.sh shows

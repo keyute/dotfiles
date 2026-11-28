@@ -18,6 +18,9 @@
     done, continuing under a stated, in-scope assumption instead of asking about
     a step the request already covers; pause only for a clearly destructive or
     irreversible action, or input only I can give.{{/* initiative: the model stops to ask where the user expects it to persist; stated once and positively, because repeated approval wording causes approval requests */}}
+  - Give each Workflow `agent()` its roster `agentType` (no effort). A loop
+    over a discovered list spends one agent per item: verify findings in
+    batches per group, not one agent per finding.{{/* workflow_burn: cost is agent count x lifetime x read volume; agentType carries the role's tools, body and effort, and on kopi its pin too (Claude's CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL fixes the model there); on kopi an untyped agent gets every tool and the driver's model */}}
 - Keep implementations simple: no unrequested features, refactors or
   abstractions, one-shot helpers, or speculative error handling/fallbacks.
   Validate at system boundaries or for an invariant/observed failure; trust
