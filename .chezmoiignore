@@ -2,3 +2,4 @@ docs/
 README.md
 AGENTS.md
 tests/
+**/nvim.log
